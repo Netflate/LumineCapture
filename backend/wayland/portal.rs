@@ -6,15 +6,15 @@
 
 pub struct PortalMethod;
 
-use crate::backend::pipewire;
+use crate::backend::wayland::stream;
 
 use ashpd::enumflags2::_internal::RawBitFlags;
-use crate::backend::wayland::CaptureMethod;
+use crate::backend::CaptureMethod;
 use crate::types::CaptureResult;
 use crate::types::StreamInfo;
 use ashpd::desktop::{
     PersistMode,
-    screencast::{CursorMode, Screencast, SelectSourcesOptions, SourceType as AshpdSourceType, Streams},
+    screencast::{CursorMode, Screencast, SelectSourcesOptions, SourceType as AshpdSourceType},
 };
 use crate::types::SourceType;
 use async_trait::async_trait;
@@ -85,7 +85,7 @@ impl CaptureMethod for PortalMethod {
         let node_id = response.streams()[0].pipe_wire_node_id();
 
 
-        let frame = pipewire::stream::capture_frame(node_id, fd)
+        let frame = stream::capture_frame(node_id, fd)
             .map_err(|e| ashpd::Error::Zbus(ashpd::zbus::Error::Failure(e.to_string())))?;
 
         session.close().await?; 

@@ -1,6 +1,4 @@
-use crate::backend::wayland::{initialize_capture, initialize_overlay};
-
-use image::codecs::png::{CompressionType, FilterType, PngEncoder};
+use crate::backend::{initialize_capture, initialize_overlay};
 
 pub async fn make_screenshot(
     wayland_conn: Option<wayland_client::Connection>,
@@ -14,7 +12,7 @@ pub async fn make_screenshot(
     let screenshot = capture.capture_frame().await?;
     println!("after capturing: {}ms", started_at.elapsed().as_millis());
 
-    overlay.show_screenshot(screenshot);
+    overlay.show_screenshot(screenshot)?;
 
     
 

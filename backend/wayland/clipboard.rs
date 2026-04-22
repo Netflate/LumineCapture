@@ -2,6 +2,7 @@
 // suspicion of Undefined Behavior regarding process forking and wayland proxy lifecycle
 // requires a complete audit of the background worker logic
 
+use crate::backend::ClipboardProvider;
 
 use std::io::Write;
 use std::os::fd::{FromRawFd, IntoRawFd};
@@ -17,6 +18,19 @@ use wayland_protocols::ext::data_control::v1::client::{
     ext_data_control_manager_v1::{self, ExtDataControlManagerV1},
     ext_data_control_source_v1::{self, ExtDataControlSourceV1},
 };
+
+pub struct ClipboardMethod {
+    pub connection: wayland_client::Connection,
+}
+
+impl ClipboardProvider for ClipboardMethod {
+    fn copy_image_to_clipboard(
+        &self,
+        png_data: Vec<u8>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        copy_image_to_clipboard(png_data, &self.connection)
+    }
+}
 
 struct ClipboardState {
     seat: Option<wl_seat::WlSeat>,
@@ -97,7 +111,7 @@ impl Dispatch<ExtDataControlSourceV1, ()> for ClipboardState {
 
 pub fn copy_image_to_clipboard(
     png_data: Vec<u8>,
-    wayland_connection: wayland_client::Connection
+    wayland_connection: &wayland_client::Connection,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let conn = wayland_connection;
     let mut event_queue = conn.new_event_queue();

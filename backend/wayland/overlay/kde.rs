@@ -2,7 +2,7 @@
 // SO THIS PART IS WRITTEN, AT LEAST FOR NOW, ONLY FOR
 //             KDE WAYLAND
 
-use crate::backend::wayland::ScreenOverlay;
+use crate::backend::ScreenOverlay;
 pub struct KdeOverlay {
     pub connection: wayland_client::Connection,
 }
@@ -145,7 +145,7 @@ impl Dispatch<wl_output::WlOutput, ()> for OverlayState {
 
 impl Dispatch<wl_seat::WlSeat, ()> for OverlayState {
     fn event(
-        state: &mut Self,
+        _state: &mut Self,
         seat: &wl_seat::WlSeat,
         event: wl_seat::Event,
         _: &(),
@@ -318,13 +318,13 @@ impl Dispatch<OrgKdePlasmaVirtualDesktop, String> for OverlayState {
             org_kde_plasma_virtual_desktop::Event::Deactivated {} => {
                 if state.current_desktop.as_deref() == Some(desktop_id) {
                     for sd in &state.surfaces {
-                        sd.layer_surface.set_keyboard_interactivity(
-                            zwlr_layer_surface_v1::KeyboardInteractivity::None,
-                        );
-                        sd.surface.attach(Some(&sd.transparent_buffer.buffer), 0, 0);
-                        sd.surface.damage_buffer(0, 0, sd.width as i32, sd.height as i32);
-                        sd.layer_surface.set_layer(Layer::Background); 
-                        sd.surface.set_input_region(Some(&sd.empty_region));
+                        sd.layer_surface.set_keyboard_interactivity(                               // Since there isn't straightforward implementation of hiding 
+                            zwlr_layer_surface_v1::KeyboardInteractivity::None,                    // screenshot and its editing overlay, the best solution i've found
+                        );                                                                         // is to make it transparent, and:
+                        sd.surface.attach(Some(&sd.transparent_buffer.buffer), 0, 0); // * set KeyboardInteractivity::None to not accept keyboard input  
+                        sd.surface.damage_buffer(0, 0, sd.width as i32, sd.height as i32);    // * set layer to background, so technically it will be lower than everthing else
+                        sd.layer_surface.set_layer(Layer::Background);                             // * set input region - empty, even if its layer background, its still higher than 
+                        sd.surface.set_input_region(Some(&sd.empty_region));                       //       user's desktop, so its necessary to not block mouse input 
                         sd.surface.commit();
                     }
                 }
@@ -337,7 +337,7 @@ impl Dispatch<OrgKdePlasmaVirtualDesktop, String> for OverlayState {
                     for sd in &state.surfaces {
                         sd.layer_surface.set_layer(Layer::Overlay);
                         sd.layer_surface.set_keyboard_interactivity(
-                            zwlr_layer_surface_v1::KeyboardInteractivity::Exclusive,
+                            zwlr_layer_surface_v1::KeyboardInteractivity::Exclusive,               //  setting keyboardInteractivity, layer, and input region back
                         );
                         sd.surface.attach(Some(&sd.shm_buffer.buffer), 0, 0);
                         sd.surface
@@ -399,9 +399,9 @@ impl ScreenOverlay for KdeOverlay {
             
             
             let output = if is_window {
-                eprintln!("If its a window, then we are going to use pos 0 0 screen for output");
-                match outputs.first() {
-                    Some(o) => &o.output,
+                eprintln!("If its a window, then we are going to use pos 0 0 screen for output");           // TOFIX: that's the easiest way, but actually it would be better to 
+                match outputs.first() {                                                                     // find out whats the user main monitor, but currently i dont know how to
+                    Some(o) => &o.output,                                                      // implement that on wayland
                     None => return Err("no outputs found".into()),
                 }
             } else {
