@@ -1,8 +1,10 @@
 pub mod wayland;
 
-use crate::types::CaptureResult;
+use crate::{types::{CaptureResult, CapturedFrame, OverlayEvent, Placement}};
 use async_trait::async_trait;
 use wayland_client::Connection;
+
+
 
 #[async_trait]
 pub trait CaptureMethod {
@@ -11,7 +13,9 @@ pub trait CaptureMethod {
 
 #[async_trait]
 pub trait ScreenOverlay {
-	fn show_screenshot(&self, captured: CaptureResult) -> Result<(), Box<dyn std::error::Error>>;
+	fn present(&mut self, captured: CapturedFrame, placements: &[Placement]) -> Result<(), Box<dyn std::error::Error>>;
+	fn next_event(&mut self) -> Result<OverlayEvent, Box<dyn std::error::Error>>;
+	fn ensure_runtime(&mut self) ->Result<(), Box<dyn std::error::Error>>;
 	//fn show_overlay(&self); todo
 	//fn update_pixels(&self); todo
 }
@@ -33,8 +37,8 @@ pub fn initialize_overlay(conn: Connection) -> Box<dyn ScreenOverlay> {
 	let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
 
 	match desktop.as_str() {
-		"KDE" => Box::new(wayland::overlay::kde::KdeOverlay { connection: conn }) as Box<dyn ScreenOverlay>,
-		_ => Box::new(wayland::overlay::kde::KdeOverlay { connection: conn }) as Box<dyn ScreenOverlay>, // TODO : For now it needs to stop the app from running
+		"KDE" => Box::new(wayland::overlay::kde::KdeOverlay::new(conn)) as Box<dyn ScreenOverlay>,
+		_ => Box::new(wayland::overlay::kde::KdeOverlay::new(conn)) as Box<dyn ScreenOverlay>, // TODO : For now it needs to stop the app from running
 	}
 }
 

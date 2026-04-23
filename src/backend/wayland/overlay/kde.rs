@@ -2,12 +2,26 @@
 // SO THIS PART IS WRITTEN, AT LEAST FOR NOW, ONLY FOR
 //             KDE WAYLAND
 
+// Known necessary TOFIX bugs before MVP:
+// --> Applied scaling causes a critical issue, since the calculated pixels from the monitor do not match the screenshot pixels
+
+
 use crate::backend::ScreenOverlay;
 pub struct KdeOverlay {
     pub connection: wayland_client::Connection,
+    runtime: Option<OverlayRunTime>,
 }
 
-use crate::types::{CaptureResult, CapturedFrame, SourceType};
+impl KdeOverlay {
+    pub fn new(connection : wayland_client::Connection) -> Self {
+        Self {
+            connection: connection,
+            runtime: None,
+        }
+    }
+}
+
+use crate::types::{CapturedFrame, OverlayEvent, Placement};
 use nix::sys::memfd::{MFdFlags, memfd_create};
 use nix::unistd::ftruncate;
 use std::ffi::CStr;
@@ -24,7 +38,7 @@ use wayland_protocols_plasma::plasma_virtual_desktop::client::{
 };
 
 use wayland_client::{
-    Connection, Dispatch, QueueHandle,
+    Connection, Dispatch, QueueHandle, EventQueue,
     protocol::{
         wl_buffer, wl_compositor, wl_keyboard, wl_output, wl_region, wl_registry, wl_seat, wl_shm,
         wl_shm_pool, wl_surface,
@@ -55,17 +69,30 @@ struct OutputInfo {
     height: i32,
 }
 
+
+struct OverlayRunTime {
+    event_queue: EventQueue<OverlayState>, 
+    state: OverlayState,
+}
+
 pub struct OverlayState {
+    // wayland stuff
     compositor: Option<wl_compositor::WlCompositor>,
     layer_shell: Option<ZwlrLayerShellV1>,
     shm: Option<wl_shm::WlShm>,
     seat: Option<wl_seat::WlSeat>,
     outputs: Vec<OutputInfo>,
     surfaces: Vec<SurfaceData>,
-    current_desktop: Option<String>,
+    pending_event: Option<OverlayEvent>,
+
+    // kde stuff
     virtual_desktop_manager: Option<OrgKdePlasmaVirtualDesktopManagement>,
+    current_desktop: Option<String>,
     pending_desktop_ids: Vec<String>,
+
+    // others
     pub done: bool,
+
 }
 
 impl Dispatch<wl_registry::WlRegistry, ()> for OverlayState {
@@ -180,7 +207,7 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for OverlayState {
         {
             if key == 1 && key_state == wayland_client::WEnum::Value(wl_keyboard::KeyState::Pressed)
             {
-                state.done = true;
+                state.pending_event = Some(OverlayEvent::EscapePressed);
             }
         }
     }
@@ -352,80 +379,32 @@ impl Dispatch<OrgKdePlasmaVirtualDesktop, String> for OverlayState {
     }
 }
 impl ScreenOverlay for KdeOverlay {
-    fn show_screenshot(&self, captured: CaptureResult) -> Result<(), Box<dyn std::error::Error>> {
-        let t0 = std::time::Instant::now();
-        let conn = &self.connection;
-        let mut event_queue = conn.new_event_queue();
-        let qh = event_queue.handle();
-        conn.display().get_registry(&qh, ());
+    fn present(&mut self, captured: CapturedFrame, placements: &[Placement]) -> Result<(), Box<dyn std::error::Error>> {
 
-        let mut state = OverlayState {
-            compositor: None,
-            layer_shell: None,
-            shm: None,
-            seat: None,
-            outputs: Vec::new(),
-            surfaces: Vec::new(),
-            pending_desktop_ids: Vec::new(),
-            done: false,
-            virtual_desktop_manager: None,
-            current_desktop: None,
-        };
-
-        event_queue.roundtrip(&mut state)?;
-        event_queue.roundtrip(&mut state)?;
-
-        let pending = std::mem::take(&mut state.pending_desktop_ids);
-        if let Some(manager) = &state.virtual_desktop_manager {
-            for desktop_id in pending {
-                manager.get_virtual_desktop(desktop_id.clone(), &qh, desktop_id);
-            }
-        }
-
-        event_queue.roundtrip(&mut state)?;
-        event_queue.roundtrip(&mut state)?;
+        self.ensure_runtime()?;
+        let rt =self.runtime.as_mut().ok_or("runtime missing")?;
+        let qh  = rt.event_queue.handle();
+        let state = &mut rt.state;
 
         let compositor = state.compositor.as_ref().ok_or("no wl_compositor")?.clone();
         let layer_shell = state.layer_shell.take().ok_or("no zwlr_layer_shell_v1")?;
         let shm = state.shm.take().ok_or("no wl_shm")?;
         let outputs = std::mem::take(&mut state.outputs);
 
-        for stream in &captured.streams {
-            let is_window = matches!(stream.source_type, SourceType::Window);
-
-            let stream_pos = stream.position.unwrap_or((0, 0));
-            let stream_size = stream.size.unwrap_or((0, 0));
+        for placement in placements {
 
             
-            
-            let output = if is_window {
-                eprintln!("If its a window, then we are going to use pos 0 0 screen for output");           // TOFIX: that's the easiest way, but actually it would be better to 
-                match outputs.first() {                                                                     // find out whats the user main monitor, but currently i dont know how to
-                    Some(o) => &o.output,                                                      // implement that on wayland
-                    None => return Err("no outputs found".into()),
-                }
-            } else {
-                    let matching_output = outputs
-                    .iter()
-                    .find(|o| o.x == stream_pos.0 && o.y == stream_pos.1);
-                match matching_output {
-                    Some(o) => &o.output,
-                    None => {
-                        eprintln!("No screens found with position {:?}, then we are going to use the main screen", stream_pos);
-                        match outputs.first() {
-                            Some(o) => &o.output,
-                            None => return Err("no outputs found".into()),
-                        }
-                    }
-                }
-            };
+            let output = outputs
+                .iter()
+                .find(|o| o.x == placement.position.0 && o.y == placement.position.1)
+                .or_else(|| {
+                    eprintln!("No screens found with position {:?}, using main screen (0,0)", placement.position);
+                    outputs.first()
+                })
+                .map(|o| &o.output)
+                .ok_or_else(|| "no outputs found")?;
 
-            let (w, h) = if is_window {
-                let info = outputs.first().ok_or("no outputs found")?;
-                (info.width as u32, info.height as u32)
-            } else {
-                (stream_size.0 as u32, stream_size.1 as u32)
-            };
+            let (w, h) = (placement.size.0 as u32, placement.size.1 as u32);
             println!(" w is {}, and h is {}", w, h);
             let surface = compositor.create_surface(&qh, ());
 
@@ -446,17 +425,10 @@ impl ScreenOverlay for KdeOverlay {
             layer_surface.set_exclusive_zone(-1);
             surface.commit();
 
-            event_queue.roundtrip(&mut state)?;
+            rt.event_queue.roundtrip(state)?;
 
-            let pixels;
-            let pixels_ref  = if is_window {
-                pixels = fill_pixels(&captured.frame, w, h);
-                &pixels
-            } else {
-                &captured.frame.pixels
-            };
 
-            let shm_buffer = create_shm_buffer(&shm, &qh, w, h, pixels_ref)?;
+            let shm_buffer = create_shm_buffer(&shm, &qh, w, h, &captured.pixels)?;
             let transparent_pixels = vec![0u8; (w * h * 4) as usize];
             let transparent_buffer = create_shm_buffer(&shm, &qh, w, h, &transparent_pixels)?;
             let empty_region = compositor.create_region(&qh, ());
@@ -476,22 +448,69 @@ impl ScreenOverlay for KdeOverlay {
                 configured: false,
             });
         }
-        println!(
-            "Time from getting pixels to show the image on screen: {}ms",
-            t0.elapsed().as_millis()
-        );
-        event_queue.roundtrip(&mut state)?;
+        rt.event_queue.roundtrip(state)?;
 
-        loop {
-            event_queue.blocking_dispatch(&mut state)?;
-            if state.done {
-                break;
-            }
-        }
+
 
         Ok(())
     }
+    fn next_event(&mut self) -> Result<OverlayEvent, Box<dyn std::error::Error>> {
+        self.ensure_runtime()?;
+        let rt = self.runtime.as_mut().ok_or("overlay runtime missing")?;
+
+        loop {
+            rt.event_queue.blocking_dispatch(&mut rt.state)?;
+
+            if let Some(ev) = rt.state.pending_event.take() {
+                return Ok(ev);
+            }
+        }
+    }
+
+    fn ensure_runtime(&mut self) ->Result<(), Box<dyn std::error::Error>> {
+        if self.runtime.is_some() {
+            return Ok(());
+        }
+
+        let conn = &self.connection;
+        let mut event_queue = conn.new_event_queue();
+        let qh = event_queue.handle();
+        conn.display().get_registry(&qh, ());
+
+        let mut state = OverlayState {
+            compositor: None,
+            layer_shell: None,
+            shm: None,
+            seat: None,
+            outputs: Vec::new(),
+            surfaces: Vec::new(),
+            pending_desktop_ids: Vec::new(),
+            done: false,
+            virtual_desktop_manager: None,
+            current_desktop: None,
+            pending_event: None,
+        };
+
+        event_queue.roundtrip(&mut state)?;
+        event_queue.roundtrip(&mut state)?;
+
+        let pending = std::mem::take(&mut state.pending_desktop_ids);
+        if let Some(manager) = &state.virtual_desktop_manager {
+            for desktop_id in pending {
+                manager.get_virtual_desktop(desktop_id.clone(), &qh, desktop_id);
+            }
+        }
+
+        event_queue.roundtrip(&mut state)?;
+        event_queue.roundtrip(&mut state)?;
+
+        self.runtime = Some(OverlayRunTime { event_queue, state });
+        Ok(())
+
+    }
+
 }
+
 
 fn create_shm_buffer(
     shm: &wl_shm::WlShm,
@@ -521,25 +540,3 @@ fn create_shm_buffer(
 
 
 
-fn fill_pixels(
-    frame: &CapturedFrame,
-    screen_width: u32, 
-    screen_height: u32) -> Vec<u8> {
-    let size = (screen_width * screen_height * 4) as usize;
-    let mut buf = vec![0u8; size];
-
-    let offset_x = (screen_width - frame.width) / 2;
-    let offset_y = (screen_height - frame.height) / 2;
-
-    for row in 0..frame.height {
-        let src_start = (row * frame.width * 4) as usize;
-        let src_end = src_start + (frame.width * 4) as usize;
-
-        let dst_start = ((offset_y + row) * screen_width * 4 + offset_x * 4) as usize;
-        let dst_end = dst_start + (frame.width * 4) as usize;
-
-        buf[dst_start..dst_end].copy_from_slice(&frame.pixels[src_start..src_end]);
-    }
-
-    buf
-}
