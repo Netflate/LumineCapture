@@ -13,7 +13,9 @@ pub trait CaptureMethod {
 
 #[async_trait]
 pub trait ScreenOverlay {
-	fn present(&mut self, captured: CapturedFrame, placements: &[Placement]) -> Result<(), Box<dyn std::error::Error>>;
+	// height and width are not currently used, but fixing scaling related bugs would presumably require them
+	fn present(&mut self, width:u32, height:u32, placements: &[Placement]) -> Result<(), Box<dyn std::error::Error>>; 
+	fn update_frame(&mut self, pixels: &[u8]) -> Result<(), Box<dyn std::error::Error>>;
 	fn next_event(&mut self) -> Result<OverlayEvent, Box<dyn std::error::Error>>;
 	fn ensure_runtime(&mut self) ->Result<(), Box<dyn std::error::Error>>;
 	//fn show_overlay(&self); todo

@@ -1,9 +1,14 @@
-
+use tiny_skia::{Rect, Color, Pixmap};
+pub enum Annotation {
+    Arrow { from: (f32,f32), to: (f32,f32), color: Color },
+    Rect  { rect: Rect, color: Color },
+    Text  { pos: (f32,f32), content: String },              // Toadd text fonts, or for now system's default font 
+}
 
 pub struct EditorState {
-    pub base: CapturedFrame,          
+    pub base: Pixmap,     // doesn't change
+    pub selection: Option<Rect>, 
     pub mode: EditMode,               
-    //pub selection: Option<Rect>,      
     pub pointer: (f64, f64),
     pub mouse_down: bool,
 }
@@ -48,7 +53,7 @@ pub struct CaptureResult {
 
 #[derive(Debug, Clone, Copy)]
 pub enum OverlayEvent {
-    // PointerMove { x: f64, y: f64 },
+    PointerMove { x: f64, y: f64 },
     // MouseDownLeft,
     // MouseUpLeft,
     EscapePressed,
