@@ -25,11 +25,17 @@ use crate::types::{CapturedFrame, OverlayEvent, Placement, OutputInfo};
 use nix::sys::memfd::{MFdFlags, memfd_create};
 use nix::unistd::ftruncate;
 use wayland_client::protocol::wl_seat::Capability;
+use wayland_protocols::wp::viewporter::client::{wp_viewport, wp_viewporter};
 use std::ffi::CStr;
 use std::os::fd::AsFd;
 use std::collections::VecDeque;
 
+use wayland_protocols::wp:: {
+    fractional_scale::v1::client::{wp_fractional_scale_manager_v1, wp_fractional_scale_v1},
+    viewporter,
+};
 use wayland_cursor::CursorTheme;
+
 use wayland_protocols_wlr::layer_shell::v1::client::{
     zwlr_layer_shell_v1::{self, Layer, ZwlrLayerShellV1},
     zwlr_layer_surface_v1::{self, Anchor, ZwlrLayerSurfaceV1},
@@ -83,6 +89,9 @@ pub struct OverlayState {
     seat: Option<wl_seat::WlSeat>,
     surfaces: Vec<SurfaceData>,
     events: VecDeque<OverlayEvent>,
+    frac: Option<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1>,
+    frac_scale: Option<wp_fractional_scale_v1::WpFractionalScaleV1>,
+    viewporter: Option<wp_viewporter::WpViewporter>,
 
     // kde stuff
     virtual_desktop_manager: Option<OrgKdePlasmaVirtualDesktopManagement>,
@@ -90,6 +99,7 @@ pub struct OverlayState {
     pending_desktop_ids: Vec<String>,
 
     // others
+    scale : f64,
     pub done: bool,
 
 }
@@ -136,6 +146,12 @@ impl Dispatch<wl_registry::WlRegistry, ()> for OverlayState {
                     let ver = version.min(2);
                     state.virtual_desktop_manager = Some(registry.bind(name, ver, qh, ()));
                 }
+                "wp_fractional_scale_manager_v1" => {
+                    state.frac = Some(registry.bind(name, version, qh, ()));
+                }
+                "wp_viewporter" => {
+                    state.viewporter = Some(registry.bind(name, version, qh, ()));
+                }
                 _ => {}
             }
         }
@@ -168,6 +184,50 @@ impl Dispatch<wl_output::WlOutput, ()> for OverlayState {
         }
     }
 }
+
+impl Dispatch<wp_fractional_scale_v1::WpFractionalScaleV1, ()> for OverlayState {
+    fn event(
+        state: &mut Self,
+        proxy: &wp_fractional_scale_v1::WpFractionalScaleV1,
+        event: wp_fractional_scale_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        match event {
+            wp_fractional_scale_v1::Event::PreferredScale { scale } => {
+                let scale = scale as f64 / 120.0;
+                state.scale = scale;
+            }
+            _ => {}
+        }
+    }
+}
+
+impl Dispatch<wp_viewporter::WpViewporter, ()> for OverlayState {
+    fn event(
+        _: &mut Self,
+        _: &wp_viewporter::WpViewporter,
+        _: wp_viewporter::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
+}
+
+impl Dispatch<wp_viewport::WpViewport, ()> for OverlayState {
+    fn event(
+        _: &mut Self,
+        _: &wp_viewport::WpViewport,
+        _: wp_viewport::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
+}
+
 
 impl Dispatch<wl_seat::WlSeat, ()> for OverlayState {
     fn event(
@@ -246,6 +306,20 @@ impl Dispatch<wl_compositor::WlCompositor, ()> for OverlayState {
     ) {
     }
 }
+
+impl Dispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, ()> for OverlayState {
+    fn event(
+        _state: &mut Self,
+        _proxy: &wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1,
+        _event: wp_fractional_scale_manager_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
+}
+
+
 impl Dispatch<wl_shm_pool::WlShmPool, ()> for OverlayState {
     fn event(
         _: &mut Self,
@@ -386,7 +460,7 @@ impl Dispatch<OrgKdePlasmaVirtualDesktop, String> for OverlayState {
                     for sd in &state.surfaces {
                         sd.layer_surface.set_layer(Layer::Overlay);
                         sd.layer_surface.set_keyboard_interactivity(
-                            zwlr_layer_surface_v1::KeyboardInteractivity::Exclusive,               //  setting keyboardInteractivity, layer, and input region back
+                            zwlr_layer_surface_v1::KeyboardInteractivity::Exclusive,        //  setting keyboardInteractivity, layer, and input region back
                         );
                         sd.surface.attach(Some(&sd.shm_buffer.buffer), 0, 0);
                         sd.surface
@@ -400,6 +474,17 @@ impl Dispatch<OrgKdePlasmaVirtualDesktop, String> for OverlayState {
         }
     }
 }
+
+
+
+
+
+
+
+
+
+
+
 impl ScreenOverlay for KdeOverlay {
     fn present(&mut self, width:u32, height:u32, placements: &[Placement]) -> Result<&[OutputInfo], Box<dyn std::error::Error>> {
         self.ensure_runtime()?;
@@ -411,9 +496,7 @@ impl ScreenOverlay for KdeOverlay {
         let layer_shell = &rt.layer_shell;
         let shm = &rt.shm;
         let outputs = &rt.outputs;
-        for placement in placements {
-
-            
+        for placement in placements {          
             let output = outputs
                 .iter()
                 .find(|o| o.x == placement.position.0 && o.y == placement.position.1)
@@ -426,7 +509,15 @@ impl ScreenOverlay for KdeOverlay {
 
             let (w, h) = (placement.size.0 as u32, placement.size.1 as u32);
             println!(" w is {}, and h is {}", w, h);
+            
             let surface = compositor.create_surface(&qh, ());
+
+            if let Some(viewporter) = &state.viewporter {
+                let viewport = viewporter.get_viewport(&surface, &qh, ());
+                viewport.set_destination(w as i32, h as i32);
+            }
+
+
 
             let layer_surface = layer_shell.get_layer_surface(
                 &surface,
@@ -437,7 +528,7 @@ impl ScreenOverlay for KdeOverlay {
                 (),
             );
 
-            layer_surface.set_size(w, h);
+            layer_surface.set_size(width, height);
             layer_surface.set_anchor(Anchor::Top | Anchor::Bottom | Anchor::Left | Anchor::Right);
             layer_surface.set_keyboard_interactivity(
                 zwlr_layer_surface_v1::KeyboardInteractivity::Exclusive,
@@ -445,10 +536,15 @@ impl ScreenOverlay for KdeOverlay {
             layer_surface.set_exclusive_zone(-1);
             surface.commit();
 
+            let frac_scale = state.frac
+                .as_ref()
+                .expect("no fractional scale manager")
+                .get_fractional_scale(&surface, &qh, ());
+            state.frac_scale =Some(frac_scale);
+
             rt.event_queue.roundtrip(state)?;
 
-
-            let shm_buffer = create_shm_buffer(&shm, &qh, w, h)?;
+            let shm_buffer = create_shm_buffer(&shm, &qh, width, height)?;
             let transparent_pixels = vec![0u8; (w * h * 4) as usize];
             let mut transparent_buffer = create_shm_buffer(&shm, &qh, w, h)?;
             transparent_buffer.write_pixels(&transparent_pixels);                                       
@@ -537,6 +633,10 @@ fn ensure_runtime(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         virtual_desktop_manager: None,
         current_desktop: None,
         events: VecDeque::new(),
+        scale: 0.00,
+        frac: None,
+        frac_scale:None,
+        viewporter: None,
     };
 
     event_queue.roundtrip(&mut state)?;
