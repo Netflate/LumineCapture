@@ -1,6 +1,6 @@
 pub mod wayland;
 
-use crate::{types::{CaptureResult, CapturedFrame, OverlayEvent, Placement}};
+use crate::{types::{CaptureResult, CapturedFrame, OverlayEvent, Placement, OutputInfo}};
 use async_trait::async_trait;
 use wayland_client::Connection;
 
@@ -14,7 +14,7 @@ pub trait CaptureMethod {
 #[async_trait]
 pub trait ScreenOverlay {
 	// height and width are not currently used, but fixing scaling related bugs would presumably require them
-	fn present(&mut self, width:u32, height:u32, placements: &[Placement]) -> Result<(), Box<dyn std::error::Error>>; 
+	fn present(&mut self, width:u32, height:u32, placements: &[Placement]) -> Result<&[OutputInfo], Box<dyn std::error::Error>>; 
 	fn update_frame(&mut self, pixels: &[u8]) -> Result<(), Box<dyn std::error::Error>>;
 	fn next_event(&mut self) -> Result<OverlayEvent, Box<dyn std::error::Error>>;
 	fn ensure_runtime(&mut self) ->Result<(), Box<dyn std::error::Error>>;

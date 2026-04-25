@@ -21,7 +21,7 @@ impl KdeOverlay {
     }
 }
 
-use crate::types::{CapturedFrame, OverlayEvent, Placement};
+use crate::types::{CapturedFrame, OverlayEvent, Placement, OutputInfo};
 use nix::sys::memfd::{MFdFlags, memfd_create};
 use nix::unistd::ftruncate;
 use wayland_client::protocol::wl_seat::Capability;
@@ -64,15 +64,6 @@ struct SurfaceData {
     height: u32,
     configured: bool,
 }
-struct OutputInfo {
-    output: wl_output::WlOutput,
-    x: i32,
-    y: i32,
-    width: i32,
-    height: i32,
-}
-
-
 struct OverlayRunTime {
     event_queue: EventQueue<OverlayState>, 
     state: OverlayState,
@@ -410,7 +401,7 @@ impl Dispatch<OrgKdePlasmaVirtualDesktop, String> for OverlayState {
     }
 }
 impl ScreenOverlay for KdeOverlay {
-    fn present(&mut self, width:u32, height:u32, placements: &[Placement]) -> Result<(), Box<dyn std::error::Error>> {
+    fn present(&mut self, width:u32, height:u32, placements: &[Placement]) -> Result<&[OutputInfo], Box<dyn std::error::Error>> {
         self.ensure_runtime()?;
         let rt = self.runtime.as_mut().ok_or("runtime missing")?;
         let qh  = rt.event_queue.handle();
@@ -420,7 +411,6 @@ impl ScreenOverlay for KdeOverlay {
         let layer_shell = &rt.layer_shell;
         let shm = &rt.shm;
         let outputs = &rt.outputs;
-
         for placement in placements {
 
             
@@ -480,9 +470,7 @@ impl ScreenOverlay for KdeOverlay {
         }
         rt.event_queue.roundtrip(state)?;
 
-
-
-        Ok(())
+        Ok(&rt.outputs)
     }
     fn update_frame(&mut self, pixels: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
         let rt = self.runtime.as_mut().ok_or("runtime missing")?;

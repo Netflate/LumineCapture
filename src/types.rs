@@ -1,9 +1,22 @@
 use tiny_skia::{Rect, Color, Pixmap};
+use wayland_client::{
+    protocol::{wl_output},
+};
 pub enum Annotation {
     Arrow { from: (f32,f32), to: (f32,f32), color: Color },
     Rect  { rect: Rect, color: Color },
     Text  { pos: (f32,f32), content: String },              // Toadd text fonts, or for now system's default font 
 }
+
+#[derive(Clone)]
+pub struct OutputInfo {
+    pub output: wl_output::WlOutput,
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
 
 pub struct EditorState {
     pub base: Pixmap,     // doesn't change
