@@ -7,17 +7,16 @@
 pub struct PortalMethod;
 
 use crate::backend::wayland::stream;
+use std::os::fd::AsFd;
 
-use ashpd::enumflags2::_internal::RawBitFlags;
 use crate::backend::CaptureMethod;
-use crate::types::CaptureResult;
-use crate::types::StreamInfo;
+use crate::types::{CaptureResult, StreamInfo, MonitorFrame};
 use ashpd::desktop::{
     PersistMode,
     screencast::{CursorMode, Screencast, SelectSourcesOptions, SourceType as AshpdSourceType},
 };
-use crate::types::SourceType;
 use async_trait::async_trait;
+
 
 #[async_trait]
 impl CaptureMethod for PortalMethod {
@@ -38,7 +37,7 @@ impl CaptureMethod for PortalMethod {
                 SelectSourcesOptions::default()
                     .set_cursor_mode(CursorMode::Metadata)
                     .set_sources(Some(AshpdSourceType::Monitor.into()))
-                    .set_multiple(false)
+                    .set_multiple(true)
                     .set_restore_token(token)
                     .set_persist_mode(PersistMode::ExplicitlyRevoked),
             )
@@ -56,44 +55,33 @@ impl CaptureMethod for PortalMethod {
                 node_id: s.pipe_wire_node_id(),
                 size: s.size(),
                 position: s.position(),
-                source_type: match s.source_type().map(|st| st.bits()) {
-                    Some(1) => SourceType::Monitor,
-                    Some(2) => SourceType::Window,
-                    Some(4) => SourceType::Virtual,
-                    _ => SourceType::Monitor,
-                },
             })
             .collect();
-        response.streams().iter().for_each(|stream| {
-            println!("node id : {}", stream.pipe_wire_node_id());
-            println!("size : {:?}", stream.size());
-            println!("position : {:?}", stream.position());
-        });
 
-        println!("token : {:?} ", token);
         if token.is_none() {
             if let Some(rt) = response.restore_token() {
                 std::fs::write(path, rt)?;
             }
         }
-        let t0 = std::time::Instant::now();
+
         let fd = proxy
             .open_pipe_wire_remote(&session, Default::default())
             .await?;
-        println!("open_pipe_wire_remote: {}ms", t0.elapsed().as_millis());
 
-        let node_id = response.streams()[0].pipe_wire_node_id();
+        let mut frames = Vec::new();
 
-
-        let frame = stream::capture_frame(node_id, fd)
-            .map_err(|e| ashpd::Error::Zbus(ashpd::zbus::Error::Failure(e.to_string())))?;
+        for stream_info in streams_data {
+            let pixels = stream::capture_frame(stream_info.node_id, fd.as_fd())
+                .map_err(|e| ashpd::Error::Zbus(ashpd::zbus::Error::Failure(e.to_string())))?;
+            
+            frames.push(MonitorFrame {
+                info: stream_info,
+                pixels,
+            });
+        }
 
         session.close().await?; 
 
-        Ok(CaptureResult {
-            frame,
-            streams: streams_data,
-        })
+        Ok(CaptureResult { frames })
     }
 }
-

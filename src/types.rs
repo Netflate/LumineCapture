@@ -19,10 +19,10 @@ pub struct OutputInfo {
 
 
 pub struct EditorState {
-    pub base: Pixmap,     // doesn't change
+    pub base: Vec<Pixmap>,           // doesn't change, original screenshots
     pub selection: Option<Rect>, 
     pub mode: EditMode,               
-    pub pointer: (f64, f64),
+    pub pointer: (usize, f64, f64),
     pub mouse_down: bool,
 }
 pub enum EditMode {
@@ -37,12 +37,6 @@ pub enum SourceType {
     Window = 2,
     Virtual = 4,
 }
-#[derive(Clone)]
-pub struct CapturedFrame {
-    pub pixels: Vec<u8>,
-    pub width: u32,
-    pub height: u32,
-}
 
 pub struct Placement {
     pub size: (i32, i32),
@@ -53,20 +47,21 @@ pub struct StreamInfo {
     pub node_id: u32,
     pub size: Option<(i32, i32)>,
     pub position: Option<(i32, i32)>,
-    pub source_type: SourceType,
+}
+
+pub struct MonitorFrame {
+    pub pixels: Vec<u8>,
+    pub info: StreamInfo,
 }
 
 pub struct CaptureResult {
-    pub frame: CapturedFrame,
-    pub streams: Vec<StreamInfo>,
+    pub frames: Vec<MonitorFrame>,
 }
-
-
 
 
 #[derive(Debug, Clone, Copy)]
 pub enum OverlayEvent {
-    PointerMove { x: f64, y: f64 },
+    PointerMove { monitor_idx: usize, x: f64, y: f64},
     // MouseDownLeft,
     // MouseUpLeft,
     EscapePressed,

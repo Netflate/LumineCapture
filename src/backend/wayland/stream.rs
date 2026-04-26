@@ -1,26 +1,26 @@
-use crate::types::CapturedFrame;
 use pipewire as pw;
 use pw::{properties::properties, spa};
 use spa::pod::Pod;
 use std::sync::mpsc;
+use std::os::fd::{BorrowedFd, OwnedFd};
 
 struct UserData {
     format: spa::param::video::VideoInfoRaw,
 }
 
-pub fn capture_frame(
-    node_id: u32,
-    fd: std::os::fd::OwnedFd,
-) -> Result<CapturedFrame, Box<dyn std::error::Error>> {
-    let (tx, rx) = mpsc::sync_channel::<CapturedFrame>(1);
+pub fn capture_frame(node_id: u32, fd: BorrowedFd<'_>) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let (tx, rx) = mpsc::sync_channel::<Vec<u8>>(1);
+
+    let owned_fd: OwnedFd = fd.try_clone_to_owned()
+        .map_err(|e| format!("Failed to clone file descriptor: {}", e))?;
 
     std::thread::spawn(move || {
         pw::init();
 
-        let mainloop = pw::main_loop::MainLoopRc::new(None).unwrap();
-        let context = pw::context::ContextRc::new(&mainloop, None).unwrap();
+        let mainloop = pw::main_loop::MainLoopRc::new(None).expect("Failed to create main loop");
+        let context = pw::context::ContextRc::new(&mainloop, None).expect("Failed to create context");
 
-        let core = context.connect_fd_rc(fd, None).unwrap();
+        let core = context.connect_fd_rc(owned_fd, None).expect("Failed to connect via FD");
 
         let data = UserData {
             format: Default::default(),
@@ -35,7 +35,7 @@ pub fn capture_frame(
                 *pw::keys::MEDIA_ROLE => "Screen",
             },
         )
-        .unwrap();
+        .expect("Failed to create stream");
 
         let mainloop_clone = mainloop.clone();
         let tx_clone = tx.clone();
@@ -60,18 +60,9 @@ pub fn capture_frame(
                     return;
                 }
 
-                user_data
-                    .format
-                    .parse(param)
-                    .expect("Failed to parse format");
-                println!(
-                    "format: {:?}, size: {}x{}",
-                    user_data.format.format(),
-                    user_data.format.size().width,
-                    user_data.format.size().height,
-                );
+                user_data.format.parse(param).expect("Failed to parse format");
             })
-            .process(move |stream, user_data| {
+            .process(move |stream, _user_data| {
                 if let Some(mut buffer) = stream.dequeue_buffer() {
                     let datas = buffer.datas_mut();
                     if let Some(data) = datas.first_mut() {
@@ -82,19 +73,15 @@ pub fn capture_frame(
                         }
 
                         if let Some(bytes) = data.data() {
-                            let frame = CapturedFrame {
-                                pixels: bytes[..size].to_vec(),                         // TODO: Fix potential hang if source closes before first frame
-                                width: user_data.format.size().width,
-                                height: user_data.format.size().height,
-                            };
-                            tx_clone.send(frame).ok();
+                            let frame_data = bytes[..size].to_vec();
+                            let _ = tx_clone.send(frame_data);
                             mainloop_clone.quit();
                         }
                     }
                 }
             })
             .register()
-            .unwrap();
+            .expect("Failed to register stream listener");
 
         let mut params_buf = Vec::new();
         let pod = build_format_pod(&mut params_buf);
@@ -106,12 +93,12 @@ pub fn capture_frame(
                 pw::stream::StreamFlags::AUTOCONNECT | pw::stream::StreamFlags::MAP_BUFFERS,
                 &mut [pod],
             )
-            .unwrap();
+            .expect("Failed to connect stream");
 
         mainloop.run();
     });
 
-    Ok(rx.recv()?)
+    rx.recv().map_err(|e| format!("Failed to receive frame from thread: {}", e).into())
 }
 
 fn build_format_pod<'a>(buffer: &'a mut Vec<u8>) -> &'a Pod {

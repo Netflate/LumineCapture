@@ -20,21 +20,21 @@ impl KdeOverlay {
         }
     }
 }
+use std::collections::HashMap;
 
-use crate::types::{CapturedFrame, OverlayEvent, Placement, OutputInfo};
+use crate::types::{OverlayEvent, Placement, OutputInfo};
 use nix::sys::memfd::{MFdFlags, memfd_create};
 use nix::unistd::ftruncate;
 use wayland_client::protocol::wl_seat::Capability;
-use wayland_protocols::wp::viewporter::client::{wp_viewport, wp_viewporter};
 use std::ffi::CStr;
 use std::os::fd::AsFd;
 use std::collections::VecDeque;
 
 use wayland_protocols::wp:: {
     fractional_scale::v1::client::{wp_fractional_scale_manager_v1, wp_fractional_scale_v1},
-    viewporter,
+    viewporter::client::{wp_viewport, wp_viewporter},
 };
-use wayland_cursor::CursorTheme;
+// use wayland_cursor::CursorTheme;
 
 use wayland_protocols_wlr::layer_shell::v1::client::{
     zwlr_layer_shell_v1::{self, Layer, ZwlrLayerShellV1},
@@ -47,7 +47,7 @@ use wayland_protocols_plasma::plasma_virtual_desktop::client::{
 };
 
 use wayland_client::{
-    Connection, Dispatch, QueueHandle, EventQueue, WEnum,
+    Connection, Dispatch, QueueHandle, EventQueue,
     protocol::{
         wl_buffer, wl_compositor, wl_keyboard, wl_output, wl_region, wl_registry, wl_seat, wl_shm, wl_pointer,
         wl_shm_pool, wl_surface,
@@ -87,12 +87,13 @@ pub struct OverlayState {
     shm: Option<wl_shm::WlShm>,
     outputs: Vec<OutputInfo>,
     seat: Option<wl_seat::WlSeat>,
-    surfaces: Vec<SurfaceData>,
+    surfaces: HashMap<usize, SurfaceData>,
     events: VecDeque<OverlayEvent>,
     frac: Option<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1>,
     frac_scale: Option<wp_fractional_scale_v1::WpFractionalScaleV1>,
     viewporter: Option<wp_viewporter::WpViewporter>,
 
+    
     // kde stuff
     virtual_desktop_manager: Option<OrgKdePlasmaVirtualDesktopManagement>,
     current_desktop: Option<String>,
@@ -101,6 +102,7 @@ pub struct OverlayState {
     // others
     scale : f64,
     pub done: bool,
+    pointer_surface_idx: Option<usize>,
 
 }
 
@@ -188,7 +190,7 @@ impl Dispatch<wl_output::WlOutput, ()> for OverlayState {
 impl Dispatch<wp_fractional_scale_v1::WpFractionalScaleV1, ()> for OverlayState {
     fn event(
         state: &mut Self,
-        proxy: &wp_fractional_scale_v1::WpFractionalScaleV1,
+        _: &wp_fractional_scale_v1::WpFractionalScaleV1,
         event: wp_fractional_scale_v1::Event,
         _: &(),
         _: &Connection,
@@ -273,7 +275,6 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for OverlayState {
         }
     }
 }
-
 impl Dispatch<wl_pointer::WlPointer, ()> for OverlayState {
     fn event(
         state: &mut Self,
@@ -283,13 +284,25 @@ impl Dispatch<wl_pointer::WlPointer, ()> for OverlayState {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let wl_pointer::Event::Motion {
-            surface_x,
-            surface_y,
-            ..
-        } = event
-        {
-            state.events.push_back(OverlayEvent::PointerMove { x: surface_x, y: surface_y })
+        match event {
+            wl_pointer::Event::Enter { surface, .. } => {
+                state.pointer_surface_idx = state.surfaces.iter()
+                    .find(|(_, sd)| sd.surface == surface)
+                    .map(|(id, _)| *id);
+            }
+            wl_pointer::Event::Leave { .. } => {
+                state.pointer_surface_idx = None;
+            }
+            wl_pointer::Event::Motion { surface_x, surface_y, .. } => {
+                if let Some(monitor_idx) = state.pointer_surface_idx {
+                    state.events.push_back(OverlayEvent::PointerMove {
+                        monitor_idx,
+                        x: surface_x,
+                        y: surface_y,
+                    });
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -397,7 +410,7 @@ impl Dispatch<ZwlrLayerSurfaceV1, ()> for OverlayState {
     ) {
         if let zwlr_layer_surface_v1::Event::Configure { serial, .. } = event {
             layer_surface.ack_configure(serial);
-            for sd in &mut state.surfaces {
+            for sd in state.surfaces.values_mut() {
                 if !sd.configured {
                     sd.configured = true;
                     sd.surface.attach(Some(&sd.shm_buffer.buffer), 0, 0);
@@ -440,7 +453,7 @@ impl Dispatch<OrgKdePlasmaVirtualDesktop, String> for OverlayState {
         match event {
             org_kde_plasma_virtual_desktop::Event::Deactivated {} => {
                 if state.current_desktop.as_deref() == Some(desktop_id) {
-                    for sd in &state.surfaces {
+                    for sd in state.surfaces.values() {
                         sd.layer_surface.set_keyboard_interactivity(                               // Since there isn't straightforward implementation of hiding 
                             zwlr_layer_surface_v1::KeyboardInteractivity::None,                    // screenshot and its editing overlay, the best solution i've found
                         );                                                                         // is to make it transparent, and:
@@ -457,7 +470,7 @@ impl Dispatch<OrgKdePlasmaVirtualDesktop, String> for OverlayState {
                 if state.current_desktop.is_none() {
                     state.current_desktop = Some(desktop_id.clone());
                 } else if state.current_desktop.as_deref() == Some(desktop_id) {
-                    for sd in &state.surfaces {
+                    for sd in state.surfaces.values() {
                         sd.layer_surface.set_layer(Layer::Overlay);
                         sd.layer_surface.set_keyboard_interactivity(
                             zwlr_layer_surface_v1::KeyboardInteractivity::Exclusive,        //  setting keyboardInteractivity, layer, and input region back
@@ -486,7 +499,7 @@ impl Dispatch<OrgKdePlasmaVirtualDesktop, String> for OverlayState {
 
 
 impl ScreenOverlay for KdeOverlay {
-    fn present(&mut self, width:u32, height:u32, placements: &[Placement]) -> Result<&[OutputInfo], Box<dyn std::error::Error>> {
+    fn present(&mut self, placements: &[Placement]) -> Result<&[OutputInfo], Box<dyn std::error::Error>> {
         self.ensure_runtime()?;
         let rt = self.runtime.as_mut().ok_or("runtime missing")?;
         let qh  = rt.event_queue.handle();
@@ -496,7 +509,7 @@ impl ScreenOverlay for KdeOverlay {
         let layer_shell = &rt.layer_shell;
         let shm = &rt.shm;
         let outputs = &rt.outputs;
-        for placement in placements {          
+        for (i, placement) in placements.iter().enumerate() {        
             let output = outputs
                 .iter()
                 .find(|o| o.x == placement.position.0 && o.y == placement.position.1)
@@ -528,7 +541,7 @@ impl ScreenOverlay for KdeOverlay {
                 (),
             );
 
-            layer_surface.set_size(width, height);
+            layer_surface.set_size(w, h);
             layer_surface.set_anchor(Anchor::Top | Anchor::Bottom | Anchor::Left | Anchor::Right);
             layer_surface.set_keyboard_interactivity(
                 zwlr_layer_surface_v1::KeyboardInteractivity::Exclusive,
@@ -544,7 +557,7 @@ impl ScreenOverlay for KdeOverlay {
 
             rt.event_queue.roundtrip(state)?;
 
-            let shm_buffer = create_shm_buffer(&shm, &qh, width, height)?;
+            let shm_buffer = create_shm_buffer(&shm, &qh, w, h)?;
             let transparent_pixels = vec![0u8; (w * h * 4) as usize];
             let mut transparent_buffer = create_shm_buffer(&shm, &qh, w, h)?;
             transparent_buffer.write_pixels(&transparent_pixels);                                       
@@ -553,7 +566,7 @@ impl ScreenOverlay for KdeOverlay {
             surface.damage_buffer(0, 0, w as i32, h as i32);
             surface.commit();
 
-            state.surfaces.push(SurfaceData {
+            state.surfaces.insert(i, SurfaceData {
                 surface,
                 layer_surface,
                 shm_buffer,
@@ -568,15 +581,15 @@ impl ScreenOverlay for KdeOverlay {
 
         Ok(&rt.outputs)
     }
-    fn update_frame(&mut self, pixels: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+    fn update_frame(&mut self, monitor_idx: usize, pixels: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
         let rt = self.runtime.as_mut().ok_or("runtime missing")?;
 
-        for sd in &mut rt.state.surfaces {
-            sd.shm_buffer.write_pixels(&pixels);
-            sd.surface.attach(Some(&sd.shm_buffer.buffer), 0, 0);
-            sd.surface.damage_buffer(0, 0, sd.width as i32, sd.height as i32);
-            sd.surface.commit();
-        }
+        let sd = rt.state.surfaces.get_mut(&monitor_idx).ok_or("surface not found")?;
+        sd.shm_buffer.write_pixels(&pixels);
+        sd.surface.attach(Some(&sd.shm_buffer.buffer), 0, 0);
+        sd.surface.damage_buffer(0, 0, sd.width as i32, sd.height as i32);
+        sd.surface.commit();
+        
 
         rt.event_queue.flush()?;
         Ok(())
@@ -627,7 +640,7 @@ fn ensure_runtime(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         shm: None,
         seat: None,
         outputs: Vec::new(),
-        surfaces: Vec::new(),
+        surfaces: HashMap::new(),
         pending_desktop_ids: Vec::new(),
         done: false,
         virtual_desktop_manager: None,
@@ -637,6 +650,7 @@ fn ensure_runtime(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         frac: None,
         frac_scale:None,
         viewporter: None,
+        pointer_surface_idx: None,
     };
 
     event_queue.roundtrip(&mut state)?;
@@ -691,7 +705,7 @@ fn create_shm_buffer(
         MFdFlags::empty(),
     )?;
     ftruncate(&fd, size as i64)?;
-    let mut mmap = unsafe { memmap2::MmapMut::map_mut(&fd)? };
+    let mmap = unsafe { memmap2::MmapMut::map_mut(&fd)? };
   
 
     let pool = shm.create_pool(fd.as_fd(), size as i32, qh, ());

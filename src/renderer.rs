@@ -6,12 +6,23 @@ const MAG_SIZE: u32 = 160;
 const MAG_OFFSET: f32 = 24.0;
 
 pub fn render_frame(state: &EditorState, outputs: &[OutputInfo]) -> (Vec<u8>, u32, u32) {
-    let w = state.base.width();
-    let h = state.base.height();
-    let mut canvas = state.base.clone();
+    let monitor_idx = state
+        .pointer
+        .0
+        .min(state.base.len().saturating_sub(1));
+    let source = &state.base[monitor_idx];
+
+    let w = source.width();
+    let h = source.height();
+    let mut canvas = source.clone();
 
     draw_dimming(&mut canvas, &state.selection, w, h);
-    draw_magnifier(&mut canvas, &state.base, (state.pointer.0 as f32, state.pointer.1 as f32), outputs);
+    draw_magnifier(
+        &mut canvas,
+        source,
+        (state.pointer.1 as f32, state.pointer.2 as f32),
+        outputs,
+    );
 
     (canvas.take(), w, h)
 }
