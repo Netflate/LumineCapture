@@ -71,12 +71,15 @@ impl CaptureMethod for PortalMethod {
         let mut frames = Vec::new();
 
         for stream_info in streams_data {
-            let pixels = stream::capture_frame(stream_info.node_id, fd.as_fd())
+            let frame = stream::capture_frame(stream_info.node_id, fd.as_fd())
                 .map_err(|e| ashpd::Error::Zbus(ashpd::zbus::Error::Failure(e.to_string())))?;
             
             frames.push(MonitorFrame {
+                pixels: frame.pixels,
+                pw_width: frame.width,
+                pw_height: frame.height,
+                pw_stride: frame.stride,
                 info: stream_info,
-                pixels,
             });
         }
 

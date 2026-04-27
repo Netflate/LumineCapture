@@ -8,8 +8,18 @@ struct UserData {
     format: spa::param::video::VideoInfoRaw,
 }
 
-pub fn capture_frame(node_id: u32, fd: BorrowedFd<'_>) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let (tx, rx) = mpsc::sync_channel::<Vec<u8>>(1);
+pub struct PipewireFrame {
+    pub pixels: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+    pub stride: u32,
+}
+
+pub fn capture_frame(
+    node_id: u32,
+    fd: BorrowedFd<'_>,
+) -> Result<PipewireFrame, Box<dyn std::error::Error>> {
+    let (tx, rx) = mpsc::sync_channel::<PipewireFrame>(1);
 
     let owned_fd: OwnedFd = fd.try_clone_to_owned()
         .map_err(|e| format!("Failed to clone file descriptor: {}", e))?;
@@ -62,18 +72,37 @@ pub fn capture_frame(node_id: u32, fd: BorrowedFd<'_>) -> Result<Vec<u8>, Box<dy
 
                 user_data.format.parse(param).expect("Failed to parse format");
             })
-            .process(move |stream, _user_data| {
+            .process(move |stream, user_data| {
                 if let Some(mut buffer) = stream.dequeue_buffer() {
                     let datas = buffer.datas_mut();
                     if let Some(data) = datas.first_mut() {
-                        let chunk = data.chunk();
-                        let size = chunk.size() as usize;
+                        let (size, chunk_stride) = {
+                            let chunk = data.chunk();
+                            (chunk.size() as usize, chunk.stride())
+                        };
                         if size == 0 {
                             return;
                         }
 
                         if let Some(bytes) = data.data() {
-                            let frame_data = bytes[..size].to_vec();
+                            let width = user_data.format.size().width;
+                            let height = user_data.format.size().height;
+                            if width == 0 || height == 0 {
+                                return;
+                            }
+
+                            let default_stride = width.saturating_mul(4);
+                            let stride = match chunk_stride {
+                                s if s > 0 => s as u32,
+                                _ => default_stride,
+                            };
+
+                            let frame_data = PipewireFrame {
+                                pixels: bytes[..size].to_vec(),
+                                width,
+                                height,
+                                stride,
+                            };
                             let _ = tx_clone.send(frame_data);
                             mainloop_clone.quit();
                         }

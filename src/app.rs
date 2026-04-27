@@ -1,6 +1,6 @@
 use crate::backend::{initialize_capture, initialize_overlay};
 use crate::types::{EditMode, EditorState, OverlayEvent, Placement};
-use tiny_skia::Pixmap;
+use tiny_skia::{Pixmap, PixmapPaint, Transform};
 use crate::renderer;
 
 pub async fn make_screenshot (
@@ -12,12 +12,70 @@ pub async fn make_screenshot (
 
     let screenshots = capture.capture_frame().await?;
 
-    let base_pixmaps: Vec<Pixmap> = screenshots.frames.iter().map(|f| {
-        let mut p = Pixmap::new(f.info.size.unwrap().0 as u32, f.info.size.unwrap().1 as u32)
-            .expect("Failed to create Pixmap for monitor");
-        p.data_mut().copy_from_slice(&f.pixels);
-        p
-    }).collect();
+    let base_pixmaps: Vec<Pixmap> = screenshots
+        .frames
+        .iter()
+        .enumerate()
+        .map(|(monitor_idx, f)| {
+            let (src_w, src_h) = (f.pw_width, f.pw_height);
+            let mut src_pixmap = Pixmap::new(src_w, src_h)
+                .expect("Failed to create source Pixmap for monitor");
+
+            let row_bytes = (src_w as usize) * 4;
+            let src_stride = f.pw_stride as usize;
+            let dst = src_pixmap.data_mut();
+
+            if src_stride < row_bytes {
+                panic!(
+                    "Invalid stride for monitor {}: stride={} row_bytes={}",
+                    monitor_idx, src_stride, row_bytes
+                );
+            }
+
+            let needed = src_stride * (src_h as usize);
+            let src = f
+                .pixels
+                .get(..needed)
+                .unwrap_or_else(|| panic!(
+                    "Not enough pixel data for monitor {}: have={} need={}",
+                    monitor_idx,
+                    f.pixels.len(),
+                    needed
+                ));
+
+            for row in 0..(src_h as usize) {
+                let src_off = row * src_stride;
+                let dst_off = row * row_bytes;
+                dst[dst_off..dst_off + row_bytes]
+                    .copy_from_slice(&src[src_off..src_off + row_bytes]);
+            }
+
+            let (logical_w_i32, logical_h_i32) = f
+                .info
+                .size
+                .unwrap_or((src_w as i32, src_h as i32));
+            let logical_w = logical_w_i32.max(1) as u32;
+            let logical_h = logical_h_i32.max(1) as u32;
+
+            if logical_w == src_w && logical_h == src_h {
+                return src_pixmap;
+            }
+
+            let mut logical_pixmap = Pixmap::new(logical_w, logical_h)
+                .expect("Failed to create logical Pixmap for monitor");
+            let sx = logical_w as f32 / src_w as f32;
+            let sy = logical_h as f32 / src_h as f32;
+            logical_pixmap.draw_pixmap(
+                0,
+                0,
+                src_pixmap.as_ref(),
+                &PixmapPaint::default(),
+                Transform::from_row(sx, 0.0, 0.0, sy, 0.0, 0.0),
+                None,
+            );
+            logical_pixmap
+        })
+        .collect();
 
 
     let mut editor_state = EditorState {

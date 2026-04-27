@@ -1,9 +1,5 @@
-// GNOME does not support wlr-layer-shell
-// SO THIS PART IS WRITTEN, AT LEAST FOR NOW, ONLY FOR
-//             KDE WAYLAND
+// GNOME does not support wlr-layer-shell, so gnome alternative overlay code will be written in gnome.rs, and shared code logic will be widthdrawn to shared.rs 
 
-// Known necessary TOFIX bugs before MVP:
-// --> Applied scaling causes a critical issue, since the calculated pixels from the monitor do not match the screenshot pixels
 
 
 use crate::backend::ScreenOverlay;

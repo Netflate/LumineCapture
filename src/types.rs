@@ -51,6 +51,9 @@ pub struct StreamInfo {
 
 pub struct MonitorFrame {
     pub pixels: Vec<u8>,
+    pub pw_width: u32,
+    pub pw_height: u32,
+    pub pw_stride: u32,
     pub info: StreamInfo,
 }
 
