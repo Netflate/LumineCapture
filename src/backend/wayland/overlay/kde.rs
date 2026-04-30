@@ -1,8 +1,31 @@
-// GNOME does not support wlr-layer-shell, so gnome alternative overlay code will be written in gnome.rs, and shared code logic will be widthdrawn to shared.rs 
-
-
+use crate::backend::wayland::utils::surface::{SurfaceData};
+use crate::backend::wayland::utils::shm::{create_shm_buffer};
 
 use crate::backend::ScreenOverlay;
+use crate::backend::wayland::utils::state::{OverlayRunTime, OverlayState};
+
+use crate::types::{OverlayEvent, Placement, OutputInfo};
+
+
+// use wayland_cursor::CursorTheme;
+
+use wayland_protocols_wlr::layer_shell::v1::client::{
+    zwlr_layer_shell_v1::{Layer},
+    zwlr_layer_surface_v1::{self, Anchor},
+};
+
+use wayland_protocols_plasma::plasma_virtual_desktop::client::{
+    org_kde_plasma_virtual_desktop::{self, OrgKdePlasmaVirtualDesktop},
+    org_kde_plasma_virtual_desktop_management::{self, OrgKdePlasmaVirtualDesktopManagement},
+};
+
+use wayland_client::{
+    Connection, Dispatch, QueueHandle, 
+    protocol::wl_output,
+};
+
+
+
 pub struct KdeOverlay {
     pub connection: wayland_client::Connection,
     runtime: Option<OverlayRunTime>,
@@ -16,408 +39,10 @@ impl KdeOverlay {
         }
     }
 }
-use std::collections::HashMap;
-
-use crate::types::{OverlayEvent, Placement, OutputInfo};
-use nix::sys::memfd::{MFdFlags, memfd_create};
-use nix::unistd::ftruncate;
-use wayland_client::protocol::wl_seat::Capability;
-use std::ffi::CStr;
-use std::os::fd::AsFd;
-use std::collections::VecDeque;
-
-use wayland_protocols::wp:: {
-    fractional_scale::v1::client::{wp_fractional_scale_manager_v1, wp_fractional_scale_v1},
-    viewporter::client::{wp_viewport, wp_viewporter},
-};
-// use wayland_cursor::CursorTheme;
-
-use wayland_protocols_wlr::layer_shell::v1::client::{
-    zwlr_layer_shell_v1::{self, Layer, ZwlrLayerShellV1},
-    zwlr_layer_surface_v1::{self, Anchor, ZwlrLayerSurfaceV1},
-};
-
-use wayland_protocols_plasma::plasma_virtual_desktop::client::{
-    org_kde_plasma_virtual_desktop::{self, OrgKdePlasmaVirtualDesktop},
-    org_kde_plasma_virtual_desktop_management::{self, OrgKdePlasmaVirtualDesktopManagement},
-};
-
-use wayland_client::{
-    Connection, Dispatch, QueueHandle, EventQueue,
-    protocol::{
-        wl_buffer, wl_compositor, wl_keyboard, wl_output, wl_region, wl_registry, wl_seat, wl_shm, wl_pointer,
-        wl_shm_pool, wl_surface,
-    },
-};
-
-struct ShmBuffer {
-    buffer: wl_buffer::WlBuffer,
-    mmap: memmap2::MmapMut,
-    _fd: std::os::fd::OwnedFd,
-}
-
-struct SurfaceData {
-    surface: wl_surface::WlSurface,
-    layer_surface: ZwlrLayerSurfaceV1,
-    shm_buffer: ShmBuffer,
-    transparent_buffer: ShmBuffer,
-    empty_region: wl_region::WlRegion, 
-    width: u32,
-    height: u32,
-    configured: bool,
-}
-struct OverlayRunTime {
-    event_queue: EventQueue<OverlayState>, 
-    state: OverlayState,
-
-    compositor: wl_compositor::WlCompositor,
-    layer_shell: ZwlrLayerShellV1,
-    shm: wl_shm::WlShm,
-    outputs: Vec<OutputInfo>,
-}
-
-pub struct OverlayState {
-    // wayland stuff
-    compositor: Option<wl_compositor::WlCompositor>,
-    layer_shell: Option<ZwlrLayerShellV1>,
-    shm: Option<wl_shm::WlShm>,
-    outputs: Vec<OutputInfo>,
-    seat: Option<wl_seat::WlSeat>,
-    surfaces: HashMap<usize, SurfaceData>,
-    events: VecDeque<OverlayEvent>,
-    frac: Option<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1>,
-    frac_scale: Option<wp_fractional_scale_v1::WpFractionalScaleV1>,
-    viewporter: Option<wp_viewporter::WpViewporter>,
-
-    
-    // kde stuff
-    virtual_desktop_manager: Option<OrgKdePlasmaVirtualDesktopManagement>,
-    current_desktop: Option<String>,
-    pending_desktop_ids: Vec<String>,
-
-    // others
-    scale : f64,
-    pub done: bool,
-    pointer_surface_idx: Option<usize>,
-
-}
-
-impl Dispatch<wl_registry::WlRegistry, ()> for OverlayState {
-    fn event(
-        state: &mut Self,
-        registry: &wl_registry::WlRegistry,
-        event: wl_registry::Event,
-        _: &(),
-        _: &Connection,
-        qh: &QueueHandle<Self>,
-    ) {
-        if let wl_registry::Event::Global {
-            name,
-            interface,
-            version,
-        } = event
-        {
-            match interface.as_str() {
-                "wl_compositor" => {
-                    state.compositor = Some(registry.bind(name, version, qh, ()));
-                }
-                "wl_shm" => {
-                    state.shm = Some(registry.bind(name, version, qh, ()));
-                }
-                "wl_output" => {
-                    let output = registry.bind(name, version, qh, ());
-                    state.outputs.push(OutputInfo {
-                        output,
-                        x: 0,
-                        y: 0,
-                        width: 0,
-                        height: 0,
-                    });
-                }
-                "zwlr_layer_shell_v1" => {
-                    state.layer_shell = Some(registry.bind(name, version, qh, ()));
-                }
-                "wl_seat" => {
-                    state.seat = Some(registry.bind(name, version, qh, ()));
-                }
-                "org_kde_plasma_virtual_desktop_management" => {
-                    let ver = version.min(2);
-                    state.virtual_desktop_manager = Some(registry.bind(name, ver, qh, ()));
-                }
-                "wp_fractional_scale_manager_v1" => {
-                    state.frac = Some(registry.bind(name, version, qh, ()));
-                }
-                "wp_viewporter" => {
-                    state.viewporter = Some(registry.bind(name, version, qh, ()));
-                }
-                _ => {}
-            }
-        }
-    }
-}
-
-impl Dispatch<wl_output::WlOutput, ()> for OverlayState {
-    fn event(
-        state: &mut Self,
-        output: &wl_output::WlOutput,
-        event: wl_output::Event,
-        _: &(),
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-        match event {
-            wl_output::Event::Geometry { x, y, .. } => {
-                if let Some(info) = state.outputs.iter_mut().find(|o| &o.output == output) {
-                    info.x = x;
-                    info.y = y;
-                }
-            }
-            wl_output::Event::Mode { width, height, .. } => {
-                if let Some(info) = state.outputs.iter_mut().find(|o| &o.output == output) {
-                    info.width = width;
-                    info.height = height;
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-impl Dispatch<wp_fractional_scale_v1::WpFractionalScaleV1, ()> for OverlayState {
-    fn event(
-        state: &mut Self,
-        _: &wp_fractional_scale_v1::WpFractionalScaleV1,
-        event: wp_fractional_scale_v1::Event,
-        _: &(),
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-        match event {
-            wp_fractional_scale_v1::Event::PreferredScale { scale } => {
-                let scale = scale as f64 / 120.0;
-                state.scale = scale;
-            }
-            _ => {}
-        }
-    }
-}
-
-impl Dispatch<wp_viewporter::WpViewporter, ()> for OverlayState {
-    fn event(
-        _: &mut Self,
-        _: &wp_viewporter::WpViewporter,
-        _: wp_viewporter::Event,
-        _: &(),
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-    }
-}
-
-impl Dispatch<wp_viewport::WpViewport, ()> for OverlayState {
-    fn event(
-        _: &mut Self,
-        _: &wp_viewport::WpViewport,
-        _: wp_viewport::Event,
-        _: &(),
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-    }
-}
 
 
-impl Dispatch<wl_seat::WlSeat, ()> for OverlayState {
-    fn event(
-        _state: &mut Self,
-        seat: &wl_seat::WlSeat,
-        event: wl_seat::Event,
-        _: &(),
-        _: &Connection,
-        qh: &QueueHandle<Self>,
-    ) {
-        if let wl_seat::Event::Capabilities { capabilities } = event {
-            if let Ok(c) = capabilities.into_result() {
-                if c.contains(Capability::Pointer) {
-                    seat.get_pointer(qh, ());
-                }
-                if c.contains(Capability::Keyboard) {
-                    seat.get_keyboard(qh, ());
-                }
-            }
-        }
-    }
-}
-
-impl Dispatch<wl_keyboard::WlKeyboard, ()> for OverlayState {
-    fn event(
-        state: &mut Self,
-        _: &wl_keyboard::WlKeyboard,
-        event: wl_keyboard::Event,
-        _: &(),
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-        if let wl_keyboard::Event::Key {
-            key,
-            state: key_state,
-            ..
-        } = event
-        {
-            if key == 1 && key_state == wayland_client::WEnum::Value(wl_keyboard::KeyState::Pressed)
-            {
-                state.events.push_back(OverlayEvent::EscapePressed);
-            }
-        }
-    }
-}
-impl Dispatch<wl_pointer::WlPointer, ()> for OverlayState {
-    fn event(
-        state: &mut Self,
-        _: &wl_pointer::WlPointer,
-        event: wl_pointer::Event,
-        _: &(),
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-        match event {
-            wl_pointer::Event::Enter { surface, .. } => {
-                state.pointer_surface_idx = state.surfaces.iter()
-                    .find(|(_, sd)| sd.surface == surface)
-                    .map(|(id, _)| *id);
-            }
-            wl_pointer::Event::Leave { .. } => {
-                state.pointer_surface_idx = None;
-            }
-            wl_pointer::Event::Motion { surface_x, surface_y, .. } => {
-                if let Some(monitor_idx) = state.pointer_surface_idx {
-                    state.events.push_back(OverlayEvent::PointerMove {
-                        monitor_idx,
-                        x: surface_x,
-                        y: surface_y,
-                    });
-                }
-            }
-            _ => {}
-        }
-    }
-}
 
 
-impl Dispatch<wl_compositor::WlCompositor, ()> for OverlayState {
-    fn event(
-        _: &mut Self,
-        _: &wl_compositor::WlCompositor,
-        _: wl_compositor::Event,
-        _: &(),
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-    }
-}
-
-impl Dispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, ()> for OverlayState {
-    fn event(
-        _state: &mut Self,
-        _proxy: &wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1,
-        _event: wp_fractional_scale_manager_v1::Event,
-        _: &(),
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-    }
-}
-
-
-impl Dispatch<wl_shm_pool::WlShmPool, ()> for OverlayState {
-    fn event(
-        _: &mut Self,
-        _: &wl_shm_pool::WlShmPool,
-        _: wl_shm_pool::Event,
-        _: &(),
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-    }
-}
-impl Dispatch<wl_buffer::WlBuffer, ()> for OverlayState {
-    fn event(
-        _: &mut Self,
-        _: &wl_buffer::WlBuffer,
-        _: wl_buffer::Event,
-        _: &(),
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-    }
-}
-impl Dispatch<wl_shm::WlShm, ()> for OverlayState {
-    fn event(
-        _: &mut Self,
-        _: &wl_shm::WlShm,
-        _: wl_shm::Event,
-        _: &(),
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-    }
-}
-impl Dispatch<wl_surface::WlSurface, ()> for OverlayState {
-    fn event(
-        _: &mut Self,
-        _: &wl_surface::WlSurface,
-        _: wl_surface::Event,
-        _: &(),
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-    }
-}
-impl Dispatch<wl_region::WlRegion, ()> for OverlayState {
-    fn event(
-        _: &mut Self,
-        _: &wl_region::WlRegion,
-        _: wl_region::Event,
-        _: &(),
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-    }
-}
-impl Dispatch<ZwlrLayerShellV1, ()> for OverlayState {
-    fn event(
-        _: &mut Self,
-        _: &ZwlrLayerShellV1,
-        _: zwlr_layer_shell_v1::Event,
-        _: &(),
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-    }
-}
-impl Dispatch<ZwlrLayerSurfaceV1, ()> for OverlayState {
-    fn event(
-        state: &mut Self,
-        layer_surface: &ZwlrLayerSurfaceV1,
-        event: zwlr_layer_surface_v1::Event,
-        _: &(),
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-        if let zwlr_layer_surface_v1::Event::Configure { serial, .. } = event {
-            layer_surface.ack_configure(serial);
-            for sd in state.surfaces.values_mut() {
-                if !sd.configured {
-                    sd.configured = true;
-                    sd.surface.attach(Some(&sd.shm_buffer.buffer), 0, 0);
-                    sd.surface
-                        .damage_buffer(0, 0, sd.width as i32, sd.height as i32);
-                    sd.surface.commit();
-                }
-            }
-        }
-    }
-}
 
 impl Dispatch<OrgKdePlasmaVirtualDesktopManagement, ()> for OverlayState {
     fn event(
@@ -432,7 +57,7 @@ impl Dispatch<OrgKdePlasmaVirtualDesktopManagement, ()> for OverlayState {
             desktop_id, ..
         } = event
         {
-            state.pending_desktop_ids.push(desktop_id);
+            state.kde.as_mut().unwrap().pending_desktop_ids.push(desktop_id);
         }
     }
 }
@@ -448,34 +73,19 @@ impl Dispatch<OrgKdePlasmaVirtualDesktop, String> for OverlayState {
     ) {
         match event {
             org_kde_plasma_virtual_desktop::Event::Deactivated {} => {
-                if state.current_desktop.as_deref() == Some(desktop_id) {
+                if state.kde.as_mut().unwrap().current_desktop.as_deref() == Some(desktop_id) {
                     for sd in state.surfaces.values() {
-                        sd.layer_surface.set_keyboard_interactivity(                               // Since there isn't straightforward implementation of hiding 
-                            zwlr_layer_surface_v1::KeyboardInteractivity::None,                    // screenshot and its editing overlay, the best solution i've found
-                        );                                                                         // is to make it transparent, and:
-                        sd.surface.attach(Some(&sd.transparent_buffer.buffer), 0, 0); // * set KeyboardInteractivity::None to not accept keyboard input  
-                        sd.surface.damage_buffer(0, 0, sd.width as i32, sd.height as i32);    // * set layer to background, so technically it will be lower than everthing else
-                        sd.layer_surface.set_layer(Layer::Background);                             // * set input region - empty, even if its layer background, its still higher than 
-                        sd.surface.set_input_region(Some(&sd.empty_region));                       //       user's desktop, so its necessary to not block mouse input 
-                        sd.surface.commit();
+                        sd.set_hidden();
                     }
                 }
             }
 
             org_kde_plasma_virtual_desktop::Event::Activated {} => {
-                if state.current_desktop.is_none() {
-                    state.current_desktop = Some(desktop_id.clone());
-                } else if state.current_desktop.as_deref() == Some(desktop_id) {
+                if state.kde.as_mut().unwrap().current_desktop.is_none() {
+                    state.kde.as_mut().unwrap().current_desktop = Some(desktop_id.clone());
+                } else if state.kde.as_mut().unwrap().current_desktop.as_deref() == Some(desktop_id) {
                     for sd in state.surfaces.values() {
-                        sd.layer_surface.set_layer(Layer::Overlay);
-                        sd.layer_surface.set_keyboard_interactivity(
-                            zwlr_layer_surface_v1::KeyboardInteractivity::Exclusive,        //  setting keyboardInteractivity, layer, and input region back
-                        );
-                        sd.surface.attach(Some(&sd.shm_buffer.buffer), 0, 0);
-                        sd.surface
-                            .damage_buffer(0, 0, sd.width as i32, sd.height as i32);
-                        sd.surface.set_input_region(None);
-                        sd.surface.commit();
+                        sd.set_visible();
                     }
                 }
             }
@@ -499,29 +109,31 @@ impl ScreenOverlay for KdeOverlay {
         self.ensure_runtime()?;
         let rt = self.runtime.as_mut().ok_or("runtime missing")?;
         let qh  = rt.event_queue.handle();
-        let state = &mut rt.state;
 
-        let compositor = &rt.compositor;
-        let layer_shell = &rt.layer_shell;
-        let shm = &rt.shm;
-        let outputs = &rt.outputs;
-        for (i, placement) in placements.iter().enumerate() {        
-            let output = outputs
+        let compositor = rt.state.compositor.clone().ok_or("no compositor")?;
+        let layer_shell = rt.state.layer_shell.clone().ok_or("no layer_shell")?;
+        let shm = rt.state.shm.clone().ok_or("no shm")?;
+
+        let outputs_ref = &rt.state.outputs;
+        let found_outputs: Vec<wl_output::WlOutput> = placements.iter().map(|placement| {
+            outputs_ref
                 .iter()
                 .find(|o| o.x == placement.position.0 && o.y == placement.position.1)
                 .or_else(|| {
                     eprintln!("No screens found with position {:?}, using main screen (0,0)", placement.position);
-                    outputs.first()
+                    outputs_ref.first()
                 })
-                .map(|o| &o.output)
-                .ok_or_else(|| "no outputs found")?;
+                .map(|o| o.output.clone())
+                .ok_or("no outputs found")
+        }).collect::<Result<_, _>>()?;
 
+
+        for (i, (placement, output)) in placements.iter().zip(found_outputs.iter()).enumerate() {      
             let (w, h) = (placement.size.0 as u32, placement.size.1 as u32);
-            println!(" w is {}, and h is {}", w, h);
             
             let surface = compositor.create_surface(&qh, ());
 
-            if let Some(viewporter) = &state.viewporter {
+            if let Some(viewporter) = rt.state.viewporter.clone() {
                 let viewport = viewporter.get_viewport(&surface, &qh, ());
                 viewport.set_destination(w as i32, h as i32);
             }
@@ -545,13 +157,13 @@ impl ScreenOverlay for KdeOverlay {
             layer_surface.set_exclusive_zone(-1);
             surface.commit();
 
-            let frac_scale = state.frac
+            let frac_scale =  rt.state.frac
                 .as_ref()
                 .expect("no fractional scale manager")
                 .get_fractional_scale(&surface, &qh, ());
-            state.frac_scale =Some(frac_scale);
+             rt.state.frac_scale =Some(frac_scale);
 
-            rt.event_queue.roundtrip(state)?;
+            rt.event_queue.roundtrip( &mut rt.state)?;
 
             let shm_buffer = create_shm_buffer(&shm, &qh, w, h)?;
             let transparent_pixels = vec![0u8; (w * h * 4) as usize];
@@ -562,7 +174,7 @@ impl ScreenOverlay for KdeOverlay {
             surface.damage_buffer(0, 0, w as i32, h as i32);
             surface.commit();
 
-            state.surfaces.insert(i, SurfaceData {
+             rt.state.surfaces.insert(i, SurfaceData {
                 surface,
                 layer_surface,
                 shm_buffer,
@@ -573,9 +185,8 @@ impl ScreenOverlay for KdeOverlay {
                 configured: false,
             });
         }
-        rt.event_queue.roundtrip(state)?;
 
-        Ok(&rt.outputs)
+        Ok(&rt.state.outputs)
     }
     fn update_frame(&mut self, monitor_idx: usize, pixels: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
         let rt = self.runtime.as_mut().ok_or("runtime missing")?;
@@ -619,103 +230,15 @@ impl ScreenOverlay for KdeOverlay {
         }
     }
 
-fn ensure_runtime(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-    if self.runtime.is_some() {
-        return Ok(());
-    }
-
-    let conn = &self.connection;
-    let mut event_queue = conn.new_event_queue();
-    let qh = event_queue.handle();
-    conn.display().get_registry(&qh, ());
-
-    
-    let mut state = OverlayState {
-        compositor: None,
-        layer_shell: None,
-        shm: None,
-        seat: None,
-        outputs: Vec::new(),
-        surfaces: HashMap::new(),
-        pending_desktop_ids: Vec::new(),
-        done: false,
-        virtual_desktop_manager: None,
-        current_desktop: None,
-        events: VecDeque::new(),
-        scale: 0.00,
-        frac: None,
-        frac_scale:None,
-        viewporter: None,
-        pointer_surface_idx: None,
-    };
-
-    event_queue.roundtrip(&mut state)?;
-    event_queue.roundtrip(&mut state)?;
-
-    let pending = std::mem::take(&mut state.pending_desktop_ids);
-    if let Some(manager) = &state.virtual_desktop_manager {
-        for desktop_id in pending {
-            manager.get_virtual_desktop(desktop_id.clone(), &qh, desktop_id);
+    fn ensure_runtime(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if self.runtime.is_some() {
+            return Ok(());
         }
+
+        let rt = OverlayRunTime::new(&self.connection)?;
+        self.runtime = Some(rt);
+        Ok(())
     }
 
-    event_queue.roundtrip(&mut state)?;
-    event_queue.roundtrip(&mut state)?;
-
-    let compositor = state.compositor.take().ok_or("no wl_compositor")?;
-    let layer_shell = state.layer_shell.take().ok_or("no zwlr_layer_shell_v1")?;
-    let shm = state.shm.take().ok_or("no wl_shm")?;
-    let outputs = std::mem::take(&mut state.outputs);
-
-    self.runtime = Some(OverlayRunTime {
-        compositor,
-        layer_shell,
-        shm,
-        outputs,
-        event_queue,
-        state,
-    });
-
-    // by defualt it's cross, since screenshot starts with selection mode
-    //let rt = self.runtime.as_ref().unwrap();
-    //let mut cursor_theme = CursorTheme::load(conn, rt.shm.clone(), 32).expect("Could not load cursor theme");
-
-
-    Ok(())
 }
 
-}
-
-
-fn create_shm_buffer(
-    shm: &wl_shm::WlShm,
-    qh: &QueueHandle<OverlayState>,
-    width: u32,
-    height: u32,
-) -> Result<ShmBuffer, Box<dyn std::error::Error>> {
-    let stride = width * 4;
-    let size = (stride * height) as usize;
-
-    let fd = memfd_create(
-        CStr::from_bytes_with_nul(b"lumine-shm\0")?,
-        MFdFlags::empty(),
-    )?;
-    ftruncate(&fd, size as i64)?;
-    let mmap = unsafe { memmap2::MmapMut::map_mut(&fd)? };
-  
-
-    let pool = shm.create_pool(fd.as_fd(), size as i32, qh, ());
-    let buffer = pool.create_buffer(0, width as i32, height as i32, stride as i32,
-        wl_shm::Format::Argb8888, qh, ());
-    pool.destroy();
-
-    Ok(ShmBuffer { buffer, mmap: mmap, _fd: fd })
-}
-
-
-
-impl ShmBuffer {
-    fn write_pixels(&mut self, pixels : &[u8]) {
-        self.mmap[..pixels.len()].copy_from_slice(pixels);
-    }
-}

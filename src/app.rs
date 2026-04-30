@@ -6,11 +6,14 @@ use crate::renderer;
 pub async fn make_screenshot (
     wayland_conn: Option<wayland_client::Connection>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let t0 = std::time::Instant::now();                                   // will be removed x1
+    
     let conn = wayland_conn.unwrap();
     let capture = initialize_capture();
     let mut overlay = initialize_overlay(conn);
-
     let screenshots = capture.capture_frame().await?;
+    println!("after capturing {}ms", t0.elapsed().as_millis());                 // x2
+    
 
     let base_pixmaps: Vec<Pixmap> = screenshots
         .frames
@@ -76,8 +79,8 @@ pub async fn make_screenshot (
             logical_pixmap
         })
         .collect();
-
-
+    
+    
     let mut editor_state = EditorState {
         base: base_pixmaps,
         mode: EditMode::Selection,
@@ -85,22 +88,24 @@ pub async fn make_screenshot (
         pointer: (0, 0.0, 0.0),
         mouse_down: false,
     };
-
+    
     let placements: Vec<Placement> = screenshots.frames.iter()
-        .map(|stream| Placement {
-            position: stream.info.position.unwrap_or((0, 0)),
-            size: stream.info.size.unwrap_or((0, 0)),
-        })
-        .collect();
+    .map(|stream| Placement {
+        position: stream.info.position.unwrap_or((0, 0)),
+        size: stream.info.size.unwrap_or((0, 0)),
+    })
+    .collect();
 
+
+println!("after saving base screenshot {}ms", t0.elapsed().as_millis());                 // x3
     let outputs = overlay.present(&placements)?.to_vec();
-
     // Initial paint: draw and upload a frame for each monitor once.
     for monitor_idx in 0..editor_state.base.len() {
         editor_state.pointer.0 = monitor_idx;
         let (pixels, _, _) = renderer::render_frame(&editor_state, &outputs);
         overlay.update_frame(monitor_idx, &pixels)?;
     }
+    println!("after initialising overlay and showing it {}ms", t0.elapsed().as_millis());                 // x4
 
     loop {
         let ev = overlay.next_event()?;

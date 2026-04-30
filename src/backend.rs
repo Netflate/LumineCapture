@@ -29,8 +29,8 @@ pub fn initialize_capture() -> Box<dyn CaptureMethod> {
 	let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
 
 	match desktop.as_str() {
-		"KDE" | "GNOME" => Box::new(wayland::portal::PortalMethod) as Box<dyn CaptureMethod>,
-		_ => Box::new(wayland::portal::PortalMethod) as Box<dyn CaptureMethod>, // TODO : For now it needs to stop the app from running
+		"KDE" | "GNOME" => Box::new(wayland::capture::portal::PortalMethod) as Box<dyn CaptureMethod>,
+		_ => Box::new(wayland::capture::portal::PortalMethod) as Box<dyn CaptureMethod>, // TODO : For now it needs to stop the app from running
 	}
 }
 
@@ -47,8 +47,8 @@ pub fn initialize_clipboard(conn: Connection) -> Box<dyn ClipboardProvider> {
 	let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
 
 	match desktop.as_str() {
-		"KDE" | "GNOME" => Box::new(wayland::clipboard::ClipboardMethod { connection: conn }) as Box<dyn ClipboardProvider>,
-		_ => Box::new(wayland::clipboard::ClipboardMethod { connection: conn }) as Box<dyn ClipboardProvider>, // TODO : For now it needs to stop the app from running
+		"KDE" | "GNOME" => Box::new(wayland::clipboard::ext_data_control::ClipboardMethod { connection: conn }) as Box<dyn ClipboardProvider>,
+		_ => Box::new(wayland::clipboard::ext_data_control::ClipboardMethod { connection: conn }) as Box<dyn ClipboardProvider>, // TODO : For now it needs to stop the app from running
 	}
 }
 

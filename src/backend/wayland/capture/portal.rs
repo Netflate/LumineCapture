@@ -6,7 +6,7 @@
 
 pub struct PortalMethod;
 
-use crate::backend::wayland::stream;
+use crate::backend::wayland::capture::stream;
 use std::os::fd::AsFd;
 
 use crate::backend::CaptureMethod;
