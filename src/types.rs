@@ -20,6 +20,8 @@ pub struct OutputInfo {
 
 pub struct EditorState {
     pub base: Vec<Pixmap>,           // doesn't change, original screenshots
+    pub canvas: Vec<Pixmap>,
+    pub dimmed: Vec<Pixmap>,
     pub selection: Option<Rect>, 
     pub mode: EditMode,               
     pub pointer: (usize, f64, f64),

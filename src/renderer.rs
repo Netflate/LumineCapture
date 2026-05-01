@@ -1,30 +1,31 @@
-use crate::types::{EditorState, OutputInfo};
+use crate::types::{MagnifierState, OutputInfo};
 use tiny_skia::{Color, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform};
 
 const ZOOM: f32 = 4.5;
 const MAG_SIZE: u32 = 160;
 const MAG_OFFSET: f32 = 24.0;
 
-pub fn render_frame(state: &EditorState, outputs: &[OutputInfo], monitor_idx: usize) -> (Vec<u8>, u32, u32) {
-    let source = &state.base[monitor_idx];
-    let w = source.width();
-    let h = source.height();
-    let mut canvas = source.clone();
+pub fn render_frame(
+    canvas: &mut Pixmap,
+    base: &Pixmap,          // only for magnifier 
+    dimmed: &mut Pixmap,            
+    selection: &Option<Rect>,
+    selection_dirty: bool, 
+    magnifier: &Option<MagnifierState>,
+    outputs: &[OutputInfo],
+    is_mag_monitor: bool,
+) {
+    if selection_dirty {
+        dimmed.data_mut().copy_from_slice(base.data());
+        draw_dimming(dimmed, selection, base.width(), base.height());
+    }
+    else { canvas.data_mut().copy_from_slice(dimmed.data());}
 
-    draw_dimming(&mut canvas, &state.selection, w, h);
-
-    if let Some(ref mag) = state.magnifier {
-        if mag.monitor_idx == monitor_idx {
-            draw_magnifier(
-                &mut canvas,
-                source,
-                (mag.pos.0 as f32, mag.pos.1 as f32),
-                outputs,
-            );
+    if is_mag_monitor {
+        if let Some(mag) = magnifier {
+            draw_magnifier(canvas, base, (mag.pos.0 as f32, mag.pos.1 as f32), outputs);
         }
     }
-
-    (canvas.take(), w, h)
 }
 
 fn draw_dimming(canvas: &mut Pixmap, selection: &Option<Rect>, w: u32, h: u32) {

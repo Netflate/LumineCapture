@@ -6,13 +6,13 @@ use crate::renderer;
 pub async fn make_screenshot (
     wayland_conn: Option<wayland_client::Connection>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let t0 = std::time::Instant::now();                                   // will be removed x1
+    let t0 = std::time::Instant::now();                               
     
     let conn = wayland_conn.unwrap();
     let capture = initialize_capture();
     let mut overlay = initialize_overlay(conn);
     let screenshots = capture.capture_frame().await?;
-    println!("after capturing {}ms", t0.elapsed().as_millis());                 // x2
+    println!("after capturing {}ms", t0.elapsed().as_millis());               
     
 
     let base_pixmaps: Vec<Pixmap> = screenshots
@@ -80,9 +80,18 @@ pub async fn make_screenshot (
         })
         .collect();
     
+    let canvas = base_pixmaps.iter()
+        .map(|p| Pixmap::new(p.width(), p.height()).unwrap())
+        .collect();
     
+    let dimmed = base_pixmaps.iter()
+        .map(|p| Pixmap::new(p.width(), p.height()).unwrap())
+        .collect();
+
     let mut editor_state = EditorState {
         base: base_pixmaps,
+        canvas: canvas,
+        dimmed : dimmed,
         mode: EditMode::Selection,
         selection: None,
         pointer: (0, 0.0, 0.0),
@@ -98,15 +107,24 @@ pub async fn make_screenshot (
     .collect();
 
 
-    println!("after saving base screenshot {}ms", t0.elapsed().as_millis());                 // x3
+    println!("after saving base screenshot {}ms", t0.elapsed().as_millis());                
     let outputs = overlay.present(&placements)?.to_vec();
-    // Initial paint: draw and upload a frame for each monitor once.
+    // Initial paint: draw and upload a frame for each monitor once
     for monitor_idx in 0..editor_state.base.len() {
         editor_state.pointer.0 = monitor_idx;
-        let (pixels, _, _) = renderer::render_frame(&editor_state, &outputs, monitor_idx);
-        overlay.update_frame(monitor_idx, &pixels)?;
+        renderer::render_frame(
+            &mut editor_state.canvas[monitor_idx],
+            &editor_state.base[monitor_idx],
+            &mut editor_state.dimmed[monitor_idx],
+            &editor_state.selection,
+            true,
+            &editor_state.magnifier,
+            &outputs,
+            false, 
+        );
+        overlay.update_frame(monitor_idx, editor_state.canvas[monitor_idx].data())?;
     }
-    println!("after initialising overlay and showing it {}ms", t0.elapsed().as_millis());                 // x4
+    println!("after initialising overlay and showing it {}ms", t0.elapsed().as_millis());                
 
     let mut dirty_mask : u32 = 0 ;
         
@@ -144,12 +162,25 @@ pub async fn make_screenshot (
                 if (dirty_mask & (1 << i)) != 0 {
                     let t0 = std::time::Instant::now();
                     
-                    let (pixels, _, _) = renderer::render_frame(&editor_state, &outputs, i );
-                    println!("render {}: {}ms", i, t0.elapsed().as_millis());
-                    overlay.update_frame(i, &pixels)?;
-                    println!("render + output {}: {}ms", i, t0.elapsed().as_millis());
-                }
+                    let is_mag_monitor = editor_state.magnifier
+                    .as_ref()
+                    .map_or(false, |m| m.monitor_idx == i);
+                
+                renderer::render_frame(
+                    &mut editor_state.canvas[i],
+                    &editor_state.base[i],
+                    &mut editor_state.dimmed[i],
+                    &editor_state.selection,
+                    false,
+                    &editor_state.magnifier,
+                    &outputs,
+                    is_mag_monitor,
+                );
+                println!("render {}: {}ms", i, t0.elapsed().as_millis());
+                overlay.update_frame(i, editor_state.canvas[i].data())?;
+                println!("render + output {}: {}ms", i, t0.elapsed().as_millis());
             }
+        }
             dirty_mask = 0;
         }
     }
