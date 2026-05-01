@@ -1,5 +1,5 @@
 use crate::backend::{initialize_capture, initialize_overlay};
-use crate::types::{EditMode, EditorState, OverlayEvent, Placement};
+use crate::types::{EditMode, EditorState, OverlayEvent, Placement, MagnifierState};
 use tiny_skia::{Pixmap, PixmapPaint, Transform};
 use crate::renderer;
 
@@ -87,6 +87,7 @@ pub async fn make_screenshot (
         selection: None,
         pointer: (0, 0.0, 0.0),
         mouse_down: false,
+        magnifier: None,
     };
     
     let placements: Vec<Placement> = screenshots.frames.iter()
@@ -97,34 +98,60 @@ pub async fn make_screenshot (
     .collect();
 
 
-println!("after saving base screenshot {}ms", t0.elapsed().as_millis());                 // x3
+    println!("after saving base screenshot {}ms", t0.elapsed().as_millis());                 // x3
     let outputs = overlay.present(&placements)?.to_vec();
     // Initial paint: draw and upload a frame for each monitor once.
     for monitor_idx in 0..editor_state.base.len() {
         editor_state.pointer.0 = monitor_idx;
-        let (pixels, _, _) = renderer::render_frame(&editor_state, &outputs);
+        let (pixels, _, _) = renderer::render_frame(&editor_state, &outputs, monitor_idx);
         overlay.update_frame(monitor_idx, &pixels)?;
     }
     println!("after initialising overlay and showing it {}ms", t0.elapsed().as_millis());                 // x4
 
+    let mut dirty_mask : u32 = 0 ;
+        
     loop {
         let ev = overlay.next_event()?;
         match ev {
             OverlayEvent::EscapePressed => break,
             OverlayEvent::PointerMove { monitor_idx, x, y } => {
-                if monitor_idx >= editor_state.base.len() {
-                    continue;
-                }
-
                 editor_state.pointer = (monitor_idx, x, y);
 
-                let t0 = std::time::Instant::now();
-                let (pixels, _, _) = renderer::render_frame(&editor_state, &outputs);
-                println!("render monitor {}: {}ms", monitor_idx, t0.elapsed().as_millis());
-                overlay.update_frame(monitor_idx, &pixels)?;
+                if let Some(ref mag) = editor_state.magnifier {
+                    if mag.monitor_idx != monitor_idx {
+                        dirty_mask |= 1 << mag.monitor_idx;
+                    }
+                }
+                match editor_state.magnifier {
+                    None => {
+                        editor_state.magnifier = Some(MagnifierState {
+                            monitor_idx,
+                            pos: (x, y),
+                        });
+                    }
+                    Some(ref mut mag) => {
+                        mag.monitor_idx = monitor_idx;
+                        mag.pos = (x, y);
+                    }
+                }
+
+                dirty_mask |= 1 << monitor_idx;
             }
         }
-    }
 
+        if dirty_mask != 0 {
+            for i in 0..outputs.len() {
+                if (dirty_mask & (1 << i)) != 0 {
+                    let t0 = std::time::Instant::now();
+                    
+                    let (pixels, _, _) = renderer::render_frame(&editor_state, &outputs, i );
+                    println!("render {}: {}ms", i, t0.elapsed().as_millis());
+                    overlay.update_frame(i, &pixels)?;
+                    println!("render + output {}: {}ms", i, t0.elapsed().as_millis());
+                }
+            }
+            dirty_mask = 0;
+        }
+    }
     Ok(())
 }

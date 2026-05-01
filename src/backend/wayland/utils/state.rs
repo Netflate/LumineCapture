@@ -423,4 +423,3 @@ impl Dispatch<ZwlrLayerSurfaceV1, ()> for OverlayState {
         }
     }
 }
-// `ensure_runtime` implementation moved into `OverlayRunTime::new`

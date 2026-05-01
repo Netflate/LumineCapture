@@ -24,6 +24,12 @@ pub struct EditorState {
     pub mode: EditMode,               
     pub pointer: (usize, f64, f64),
     pub mouse_down: bool,
+    pub magnifier: Option<MagnifierState> ,
+}
+
+pub struct MagnifierState {
+    pub monitor_idx:usize,
+    pub pos : (f64, f64),    
 }
 pub enum EditMode {
     Selection,

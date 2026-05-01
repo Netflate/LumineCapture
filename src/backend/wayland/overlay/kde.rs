@@ -241,4 +241,3 @@ impl ScreenOverlay for KdeOverlay {
     }
 
 }
-

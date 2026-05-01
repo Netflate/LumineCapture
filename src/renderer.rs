@@ -5,24 +5,24 @@ const ZOOM: f32 = 4.5;
 const MAG_SIZE: u32 = 160;
 const MAG_OFFSET: f32 = 24.0;
 
-pub fn render_frame(state: &EditorState, outputs: &[OutputInfo]) -> (Vec<u8>, u32, u32) {
-    let monitor_idx = state
-        .pointer
-        .0
-        .min(state.base.len().saturating_sub(1));
+pub fn render_frame(state: &EditorState, outputs: &[OutputInfo], monitor_idx: usize) -> (Vec<u8>, u32, u32) {
     let source = &state.base[monitor_idx];
-
     let w = source.width();
     let h = source.height();
     let mut canvas = source.clone();
 
     draw_dimming(&mut canvas, &state.selection, w, h);
-    draw_magnifier(
-        &mut canvas,
-        source,
-        (state.pointer.1 as f32, state.pointer.2 as f32),
-        outputs,
-    );
+
+    if let Some(ref mag) = state.magnifier {
+        if mag.monitor_idx == monitor_idx {
+            draw_magnifier(
+                &mut canvas,
+                source,
+                (mag.pos.0 as f32, mag.pos.1 as f32),
+                outputs,
+            );
+        }
+    }
 
     (canvas.take(), w, h)
 }
