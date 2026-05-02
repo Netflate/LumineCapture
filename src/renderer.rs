@@ -1,4 +1,4 @@
-use crate::types::{MagnifierState, OutputInfo};
+use crate::types::{MagnifierState};
 use tiny_skia::{Color, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform};
 
 const ZOOM: f32 = 4.5;
@@ -12,20 +12,32 @@ pub fn render_frame(
     selection: &Option<Rect>,
     selection_dirty: bool, 
     magnifier: &Option<MagnifierState>,
-    outputs: &[OutputInfo],
     is_mag_monitor: bool,
 ) {
     if selection_dirty {
         dimmed.data_mut().copy_from_slice(base.data());
         draw_dimming(dimmed, selection, base.width(), base.height());
     }
-    else { canvas.data_mut().copy_from_slice(dimmed.data());}
+    canvas.data_mut().copy_from_slice(dimmed.data());
+    if let Some(sel) = selection {
+        draw_selection_border(canvas, sel);
+    }
 
     if is_mag_monitor {
         if let Some(mag) = magnifier {
-            draw_magnifier(canvas, base, (mag.pos.0 as f32, mag.pos.1 as f32), outputs);
+            draw_magnifier(canvas, base, (mag.pos.0 as f32, mag.pos.1 as f32));
         }
     }
+}
+
+fn draw_selection_border(canvas: &mut Pixmap, sel: &Rect) {
+    let mut paint = Paint::default();
+    paint.set_color(Color::WHITE);
+    paint.anti_alias = false;
+    let path = PathBuilder::from_rect(*sel);
+    let mut stroke = Stroke::default();
+    stroke.width = 1.0;
+    canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
 }
 
 fn draw_dimming(canvas: &mut Pixmap, selection: &Option<Rect>, w: u32, h: u32) {
@@ -57,9 +69,9 @@ fn draw_dimming(canvas: &mut Pixmap, selection: &Option<Rect>, w: u32, h: u32) {
     }
 }
 
-fn draw_magnifier(canvas: &mut Pixmap, source: &Pixmap, cursor: (f32, f32), outputs: &[OutputInfo]) {
-    let screen_w = source.width();
-    let screen_h = source.height();
+fn draw_magnifier(canvas: &mut Pixmap, source: &Pixmap, cursor: (f32, f32)) {
+    let screen_w = source.width() as f32;
+    let screen_h = source.height() as f32;
 
     let sample_size = (MAG_SIZE as f32 / ZOOM) as i32;
     let src_x = (cursor.0 as i32 - sample_size / 2).max(0).min(screen_w as i32 - sample_size) as u32;
@@ -75,8 +87,7 @@ fn draw_magnifier(canvas: &mut Pixmap, source: &Pixmap, cursor: (f32, f32), outp
         None,
     );
 
-    let current_monitor = find_monitor(cursor, outputs);
-    let (mag_x, mag_y) = magnifier_position(cursor, current_monitor);
+    let (mag_x, mag_y) = magnifier_position(cursor, (0.0, 0.0, screen_w, screen_h));
 
     let magnifier_transform = Transform::from_row(ZOOM, 0.0, 0.0, ZOOM, mag_x, mag_y);
     canvas.draw_pixmap(
@@ -98,17 +109,6 @@ fn draw_magnifier(canvas: &mut Pixmap, source: &Pixmap, cursor: (f32, f32), outp
     canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
 }
 
-fn find_monitor(cursor: (f32, f32), outputs: &[OutputInfo]) -> (f32, f32, f32, f32) {
-    outputs.iter()
-        .find(|o| {
-            cursor.0 >= o.x as f32
-                && cursor.0 < (o.x + o.width) as f32
-                && cursor.1 >= o.y as f32
-                && cursor.1 < (o.y + o.height) as f32
-        })
-        .map(|o| (o.x as f32, o.y as f32, o.width as f32, o.height as f32))
-        .unwrap_or((0.0, 0.0, 99999.0, 99999.0)) 
-}
 
 fn magnifier_position(cursor: (f32, f32), monitor: (f32, f32, f32, f32)) -> (f32, f32) {
     let mag = MAG_SIZE as f32;

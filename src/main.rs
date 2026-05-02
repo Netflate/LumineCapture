@@ -2,7 +2,7 @@ mod app;
 pub mod backend;
 pub mod types;
 pub mod renderer;
-
+pub mod utils;
 
 #[tokio::main]
 

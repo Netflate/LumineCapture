@@ -3,7 +3,7 @@ use wayland_client::protocol::wl_seat::Capability;
 use std::collections::VecDeque;
 
 use crate::backend::wayland::utils::surface::{SurfaceData};
-use crate::types::{OverlayEvent, OutputInfo};
+use crate::types::{OverlayEvent, OutputInfo, MouseButton};
 
 use wayland_protocols::wp:: {
     fractional_scale::v1::client::{wp_fractional_scale_manager_v1, wp_fractional_scale_v1},
@@ -302,6 +302,16 @@ impl Dispatch<wl_pointer::WlPointer, ()> for OverlayState {
                         y: surface_y,
                     });
                 }
+            }
+            wl_pointer::Event::Button {button, state: button_state, ..} => {
+                let pressed = button_state == wayland_client::WEnum::Value(wl_pointer::ButtonState::Pressed);
+                let mb = match button {
+                    0x110 => MouseButton::Left,
+                    0x111 => MouseButton::Right,
+                    0x112 => MouseButton::Middle,
+                    _ => return,  
+                };
+                state.events.push_back(OverlayEvent::PointerButton {button: mb, pressed} );
             }
             _ => {}
         }

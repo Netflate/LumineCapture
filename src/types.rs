@@ -16,23 +16,38 @@ pub struct OutputInfo {
     pub width: i32,
     pub height: i32,
 }
+#[derive(Debug, Clone)]
+pub enum MouseButton {
+    Left,
+    Right, 
+    Middle,
+}
 
+
+
+pub enum MouseState {
+    Up,
+    Down(MouseButton),
+}
 
 pub struct EditorState {
     pub base: Vec<Pixmap>,           // doesn't change, original screenshots
     pub canvas: Vec<Pixmap>,
     pub dimmed: Vec<Pixmap>,
-    pub selection: Option<Rect>, 
+    pub selection: Option<Rect>,
+    pub placements : Vec<Placement>, 
+    pub drag_start: Option<(f64, f64)>,
     pub mode: EditMode,               
     pub pointer: (usize, f64, f64),
-    pub mouse_down: bool,
     pub magnifier: Option<MagnifierState> ,
+    pub mouse_down_left : bool,
 }
-
+#[derive(Debug)]
 pub struct MagnifierState {
     pub monitor_idx:usize,
     pub pos : (f64, f64),    
 }
+#[derive(PartialEq)]
 pub enum EditMode {
     Selection,
 }
@@ -70,10 +85,10 @@ pub struct CaptureResult {
 }
 
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum OverlayEvent {
     PointerMove { monitor_idx: usize, x: f64, y: f64},
-    // MouseDownLeft,
-    // MouseUpLeft,
+    PointerButton {button: MouseButton, pressed : bool},
+    //MouseUpLeft,
     EscapePressed,
 }

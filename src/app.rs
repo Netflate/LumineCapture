@@ -1,7 +1,9 @@
 use crate::backend::{initialize_capture, initialize_overlay};
-use crate::types::{EditMode, EditorState, OverlayEvent, Placement, MagnifierState};
+use crate::types::{EditMode, EditorState, OverlayEvent, Placement, MagnifierState, MouseButton};
 use tiny_skia::{Pixmap, PixmapPaint, Transform};
 use crate::renderer;
+use crate::utils::{make_rect, global_selection_to_local};
+
 
 pub async fn make_screenshot (
     wayland_conn: Option<wayland_client::Connection>,
@@ -88,16 +90,6 @@ pub async fn make_screenshot (
         .map(|p| Pixmap::new(p.width(), p.height()).unwrap())
         .collect();
 
-    let mut editor_state = EditorState {
-        base: base_pixmaps,
-        canvas: canvas,
-        dimmed : dimmed,
-        mode: EditMode::Selection,
-        selection: None,
-        pointer: (0, 0.0, 0.0),
-        mouse_down: false,
-        magnifier: None,
-    };
     
     let placements: Vec<Placement> = screenshots.frames.iter()
     .map(|stream| Placement {
@@ -106,12 +98,24 @@ pub async fn make_screenshot (
     })
     .collect();
 
+    let mut editor_state = EditorState {
+        base: base_pixmaps,
+        canvas: canvas,
+        dimmed : dimmed,
+        mode: EditMode::Selection,
+        selection: None,
+        placements : placements,
+        drag_start: None,
+        pointer: (0, 0.0, 0.0),
+        magnifier: None,
+        mouse_down_left: false,
+    };
 
-    println!("after saving base screenshot {}ms", t0.elapsed().as_millis());                
-    let outputs = overlay.present(&placements)?.to_vec();
-    // Initial paint: draw and upload a frame for each monitor once
-    for monitor_idx in 0..editor_state.base.len() {
-        editor_state.pointer.0 = monitor_idx;
+println!("after saving base screenshot {}ms", t0.elapsed().as_millis());                
+let outputs = overlay.present(&editor_state.placements)?.to_vec();
+// Initial paint: draw and upload a frame for each monitor once
+for monitor_idx in 0..editor_state.base.len() {
+    editor_state.pointer.0 = monitor_idx;
         renderer::render_frame(
             &mut editor_state.canvas[monitor_idx],
             &editor_state.base[monitor_idx],
@@ -119,7 +123,6 @@ pub async fn make_screenshot (
             &editor_state.selection,
             true,
             &editor_state.magnifier,
-            &outputs,
             false, 
         );
         overlay.update_frame(monitor_idx, editor_state.canvas[monitor_idx].data())?;
@@ -127,33 +130,96 @@ pub async fn make_screenshot (
     println!("after initialising overlay and showing it {}ms", t0.elapsed().as_millis());                
 
     let mut dirty_mask : u32 = 0 ;
-        
+    let mut selection_dirty = false;
+
     loop {
         let ev = overlay.next_event()?;
         match ev {
             OverlayEvent::EscapePressed => break,
             OverlayEvent::PointerMove { monitor_idx, x, y } => {
-                editor_state.pointer = (monitor_idx, x, y);
+                let global_x = editor_state.placements[monitor_idx].position.0 as f64 + x;
+                let global_y = editor_state.placements[monitor_idx].position.1 as f64 + y;
 
+                let (current_monitor_idx, local_x, local_y) = editor_state
+                    .placements
+                    .iter()
+                    .enumerate()
+                    .find_map(|(idx, placement)| {
+                        let (px, py) = placement.position;
+                        let (w, h) = placement.size;
+                        let inside = global_x >= px as f64
+                            && global_x < (px + w) as f64
+                            && global_y >= py as f64
+                            && global_y < (py + h) as f64;
+                        if inside {
+                            Some((
+                                idx,
+                                global_x - px as f64,
+                                global_y - py as f64,
+                            ))
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or((monitor_idx, x, y));
+
+                editor_state.pointer = (current_monitor_idx, local_x, local_y);
+
+                // |Magnifier part| //
                 if let Some(ref mag) = editor_state.magnifier {
-                    if mag.monitor_idx != monitor_idx {
+                    if mag.monitor_idx != current_monitor_idx {
                         dirty_mask |= 1 << mag.monitor_idx;
                     }
                 }
                 match editor_state.magnifier {
                     None => {
                         editor_state.magnifier = Some(MagnifierState {
-                            monitor_idx,
-                            pos: (x, y),
+                            monitor_idx: current_monitor_idx,
+                            pos: (local_x, local_y),
                         });
                     }
                     Some(ref mut mag) => {
-                        mag.monitor_idx = monitor_idx;
-                        mag.pos = (x, y);
+                        // Pointer is grabbed by the start surface while dragging; remap by global
+                        // position so magnifier follows the cursor across monitors.
+                        mag.monitor_idx = current_monitor_idx;
+                        mag.pos = (local_x, local_y);
+                    }
+                }
+                // end mag part
+
+                //-- |Selection part| --//
+                if editor_state.mouse_down_left {
+                    if editor_state.mode == EditMode::Selection {
+                        if let Some(start) = editor_state.drag_start {
+                            editor_state.selection = make_rect(start, (global_x, global_y));
+                            selection_dirty = true;
+
+                            for j in 0..editor_state.base.len() {
+                                dirty_mask |= 1 << j;
+                            }
+                        }
                     }
                 }
 
-                dirty_mask |= 1 << monitor_idx;
+
+                dirty_mask |= 1 << current_monitor_idx;
+            }
+            
+            OverlayEvent::PointerButton { button, pressed } => {
+                match button {
+                    MouseButton::Left => {
+                        editor_state.mouse_down_left = pressed;
+                        if pressed {
+                            editor_state.drag_start = Some((
+                                editor_state.placements[editor_state.pointer.0].position.0 as f64 + editor_state.pointer.1,
+                                editor_state.placements[editor_state.pointer.0].position.1 as f64 + editor_state.pointer.2,
+                            ));
+                        } else {
+                            editor_state.drag_start = None;
+                        }
+                    }
+                    _ => {}
+                }
             }
         }
 
@@ -163,24 +229,31 @@ pub async fn make_screenshot (
                     let t0 = std::time::Instant::now();
                     
                     let is_mag_monitor = editor_state.magnifier
-                    .as_ref()
-                    .map_or(false, |m| m.monitor_idx == i);
+                        .as_ref()
+                        .map_or(false, |m| m.monitor_idx == i);
                 
-                renderer::render_frame(
-                    &mut editor_state.canvas[i],
-                    &editor_state.base[i],
-                    &mut editor_state.dimmed[i],
-                    &editor_state.selection,
-                    false,
-                    &editor_state.magnifier,
-                    &outputs,
-                    is_mag_monitor,
-                );
-                println!("render {}: {}ms", i, t0.elapsed().as_millis());
-                overlay.update_frame(i, editor_state.canvas[i].data())?;
-                println!("render + output {}: {}ms", i, t0.elapsed().as_millis());
+                    let local_sel = editor_state.selection.as_ref()
+                        .and_then(|s| global_selection_to_local(s, &editor_state.placements[i]));
+
+                    renderer::render_frame(
+                        &mut editor_state.canvas[i],
+                        &editor_state.base[i],
+                        &mut editor_state.dimmed[i],
+                        &local_sel,
+                        selection_dirty,
+                        &editor_state.magnifier,
+                        is_mag_monitor,
+                    );
+
+                    println!("render {}: {}ms", i, t0.elapsed().as_millis());
+                    overlay.update_frame(i, editor_state.canvas[i].data())?;
+                    println!("render + output {}: {}ms", i, t0.elapsed().as_millis());
+
+                    println!("rendering monitor {}: is_mag={}, mag={:?}, sel_dirty={}",i, is_mag_monitor, editor_state.magnifier, selection_dirty);
+
+                }
             }
-        }
+            selection_dirty = false;
             dirty_mask = 0;
         }
     }
