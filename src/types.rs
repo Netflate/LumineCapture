@@ -30,6 +30,23 @@ pub enum MouseState {
     Down(MouseButton),
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PointerState {
+    pub monitor_idx: usize,
+    pub local: (f64, f64),
+    pub global: (f64, f64),
+}
+
+impl PointerState {
+    pub fn new(monitor_idx: usize, local: (f64, f64), global: (f64, f64)) -> Self {
+        Self {
+            monitor_idx,
+            local,
+            global,
+        }
+    }
+}
+
 pub struct EditorState {
     pub base: Vec<Pixmap>,           // doesn't change, original screenshots
     pub canvas: Vec<Pixmap>,
@@ -38,7 +55,7 @@ pub struct EditorState {
     pub placements : Vec<Placement>, 
     pub drag_start: Option<(f64, f64)>,
     pub mode: EditMode,               
-    pub pointer: (usize, f64, f64),
+    pub pointer: PointerState,
     pub magnifier: Option<MagnifierState> ,
     pub mouse_down_left : bool,
 }

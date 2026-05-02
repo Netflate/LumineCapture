@@ -30,3 +30,23 @@ pub fn global_selection_to_local(
 
     Rect::from_ltrb(ix - mx, iy - my, ix2 - mx, iy2 - my)
 }
+
+pub fn global_point_to_local(
+    placements: &[Placement],
+    global: (f64, f64),
+    fallback_idx: usize,
+    fallback_local: (f64, f64),
+) -> (usize, f64, f64) {
+    let (gx, gy) = global;
+    placements
+        .iter()
+        .enumerate()
+        .find_map(|(idx, p)| {
+            let (px, py) = p.position;
+            let (w, h) = p.size;
+            let inside = gx >= px as f64 && gx < (px + w) as f64
+                && gy >= py as f64 && gy < (py + h) as f64;
+            inside.then(|| (idx, gx - px as f64, gy - py as f64))
+        })
+        .unwrap_or((fallback_idx, fallback_local.0, fallback_local.1))
+}
