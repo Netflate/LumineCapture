@@ -4,7 +4,7 @@ use crate::backend::wayland::utils::shm::{create_shm_buffer};
 use crate::backend::ScreenOverlay;
 use crate::backend::wayland::utils::state::{OverlayRunTime, OverlayState};
 
-use crate::types::{OverlayEvent, Placement, OutputInfo};
+use crate::types::{DamageRect, OverlayEvent, Placement, OutputInfo};
 
 
 // use wayland_cursor::CursorTheme;
@@ -187,18 +187,28 @@ impl ScreenOverlay for KdeOverlay {
 
         Ok(&rt.state.outputs)
     }
-    fn update_frame(&mut self, monitor_idx: usize, pixels: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+    fn update_frame(&mut self, monitor_idx: usize, pixels: &[u8], damage: Option<DamageRect>) -> Result<(), Box<dyn std::error::Error>> {
         let rt = self.runtime.as_mut().ok_or("runtime missing")?;
         let sd = rt.state.surfaces.get_mut(&monitor_idx).ok_or("surface not found")?;
-        eprintln!("update_frame: monitor={} visibility={:?}", monitor_idx, sd.visibility);
-
         if matches!(sd.visibility, SurfaceVisibility::Hidden) {
             return Ok(());
         }
 
-        sd.shm_buffer.write_pixels(&pixels);
-        sd.surface.attach(Some(&sd.shm_buffer.buffer), 0, 0);
-        sd.surface.damage_buffer(0, 0, sd.width as i32, sd.height as i32);
+        if let Some((x, y, w, h)) = damage {
+            if x == 0 && y == 0 && w == sd.width && h == sd.height {
+                sd.shm_buffer.write_pixels(&pixels);
+                sd.surface.attach(Some(&sd.shm_buffer.buffer), 0, 0);
+                sd.surface.damage_buffer(0, 0, sd.width as i32, sd.height as i32);
+            } else {
+                sd.shm_buffer.write_pixels_rect(&pixels, sd.width, (x, y, w, h));
+                sd.surface.attach(Some(&sd.shm_buffer.buffer), 0, 0);
+                sd.surface.damage_buffer(x as i32, y as i32, w as i32, h as i32);
+            }
+        } else {
+            sd.shm_buffer.write_pixels(&pixels);
+            sd.surface.attach(Some(&sd.shm_buffer.buffer), 0, 0);
+            sd.surface.damage_buffer(0, 0, sd.width as i32, sd.height as i32);
+        }
         sd.surface.commit();
         
 

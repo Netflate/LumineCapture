@@ -5,11 +5,22 @@ use crate::utils::make_rect;
 
 
 
+pub fn init_dimming(
+    dimmed: &mut Pixmap,
+    base: &Pixmap,
+    selection: &Option<Rect>,
+) {
+    dimmed.data_mut().copy_from_slice(base.data());
+    draw_dimming(dimmed, selection, base.width(), base.height());
+}
+
 pub fn render_frame(
     canvas: &mut Pixmap,
     base: &Pixmap,          // only for magnifier 
     dimmed: &mut Pixmap,            
     selection: &Option<Rect>,
+    prev_selection: &Option<Rect>,
+    dirty_rect: Option<&Rect>,
     selection_edges: Option<&SelectionEdges>,
     handle_points: &[(f32, f32)],
     selection_dirty: bool, 
@@ -17,10 +28,13 @@ pub fn render_frame(
     is_mag_monitor: bool,
 ) {
     if selection_dirty {
-        dimmed.data_mut().copy_from_slice(base.data());
-        draw_dimming(dimmed, selection, base.width(), base.height());
+        update_dimming_delta(dimmed, base, prev_selection, selection);
     }
-    canvas.data_mut().copy_from_slice(dimmed.data());
+    if let Some(dirty) = dirty_rect {
+        blit_rect(dimmed, canvas, dirty);
+    } else {
+        canvas.data_mut().copy_from_slice(dimmed.data());
+    }
     if let Some(sel) = selection {
         draw_selection_border(canvas, sel, selection_edges);
         if !handle_points.is_empty() {
@@ -100,6 +114,81 @@ fn draw_dimming(canvas: &mut Pixmap, selection: &Option<Rect>, w: u32, h: u32) {
             }
         }
     }
+}
+
+fn update_dimming_delta(
+    dimmed: &mut Pixmap,
+    base: &Pixmap,
+    prev: &Option<Rect>,
+    next: &Option<Rect>,
+) {
+    if let Some(old) = prev {
+        dim_rect(dimmed, old);
+    }
+    if let Some(cur) = next {
+        blit_rect(base, dimmed, cur);
+    }
+}
+
+fn dim_rect(canvas: &mut Pixmap, rect: &Rect) {
+    let (w, h) = (canvas.width(), canvas.height());
+    let Some((x, y, rw, rh)) = rect_bounds(rect, w, h) else {
+        return;
+    };
+
+    let Some(r) = Rect::from_xywh(x as f32, y as f32, rw as f32, rh as f32) else {
+        return;
+    };
+
+    let mut paint = Paint::default();
+    paint.set_color(Color::from_rgba8(0, 0, 0, 140));
+    let path = PathBuilder::from_rect(r);
+    canvas.fill_path(&path, &paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
+}
+
+fn blit_rect(src: &Pixmap, dst: &mut Pixmap, rect: &Rect) {
+    let (w, h) = (dst.width(), dst.height());
+    let Some((x, y, rw, rh)) = rect_bounds(rect, w, h) else {
+        return;
+    };
+
+    let row_bytes = (rw * 4) as usize;
+    let src_stride = (src.width() * 4) as usize;
+    let dst_stride = (dst.width() * 4) as usize;
+
+    let src_data = src.data();
+    let dst_data = dst.data_mut();
+
+    for row in 0..rh {
+        let sy = (y + row) as usize;
+        let sx = x as usize;
+        let src_off = sy * src_stride + sx * 4;
+
+        let dy = sy;
+        let dx = sx;
+        let dst_off = dy * dst_stride + dx * 4;
+
+        dst_data[dst_off..dst_off + row_bytes]
+            .copy_from_slice(&src_data[src_off..src_off + row_bytes]);
+    }
+}
+
+pub fn rect_bounds(rect: &Rect, width: u32, height: u32) -> Option<(u32, u32, u32, u32)> {
+    let x0 = rect.left().floor().max(0.0) as i32;
+    let y0 = rect.top().floor().max(0.0) as i32;
+    let x1 = rect.right().ceil().min(width as f32) as i32;
+    let y1 = rect.bottom().ceil().min(height as f32) as i32;
+
+    if x1 <= x0 || y1 <= y0 {
+        return None;
+    }
+
+    Some((x0 as u32, y0 as u32, (x1 - x0) as u32, (y1 - y0) as u32))
+}
+
+pub fn magnifier_rect(cursor: (f32, f32), monitor_w: f32, monitor_h: f32) -> Rect {
+    let (mag_x, mag_y) = magnifier_position(cursor, (0.0, 0.0, monitor_w, monitor_h));
+    Rect::from_xywh(mag_x, mag_y, MAG_SIZE as f32, MAG_SIZE as f32).unwrap()
 }
 
 fn draw_magnifier(canvas: &mut Pixmap, source: &Pixmap, cursor: (f32, f32)) {

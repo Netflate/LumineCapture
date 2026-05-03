@@ -48,4 +48,25 @@ impl ShmBuffer {
     pub fn write_pixels(&mut self, pixels : &[u8]) {
         self.mmap[..pixels.len()].copy_from_slice(pixels);
     }
+
+    pub fn write_pixels_rect(&mut self, pixels: &[u8], width: u32, rect: (u32, u32, u32, u32)) {
+        let (x, y, w, h) = rect;
+        if w == 0 || h == 0 {
+            return;
+        }
+
+        let stride = (width * 4) as usize;
+        let row_bytes = (w * 4) as usize;
+        let src = pixels;
+        let dst = &mut self.mmap;
+
+        for row in 0..h {
+            let sy = (y + row) as usize;
+            let sx = x as usize;
+            let off = sy * stride + sx * 4;
+
+            dst[off..off + row_bytes]
+                .copy_from_slice(&src[off..off + row_bytes]);
+        }
+    }
 }

@@ -17,6 +17,8 @@ pub const MAG_SIZE: u32 = 160;
 pub const MAG_OFFSET: f32 = 24.0;
 pub const HANDLE_RADIUS: f64 = 8.0; // pixels around selection border 
 
+pub type DamageRect = (u32, u32, u32, u32);
+
 
 
 pub enum Annotation {
@@ -49,6 +51,7 @@ pub enum MouseState {
 
 pub struct SelectionState {
     pub zone: Option<Rect>,
+    pub prev_zone: Option<Rect>,
     pub active_handle: SelectionHandle,
     pub drag_origin: Option<(f64, f64)>,   
     pub selection_at_drag_start: Option<Rect>,
@@ -58,6 +61,7 @@ impl Default for SelectionState {
     fn default() -> Self {
         Self {
             zone: None,
+            prev_zone: None,
             active_handle: SelectionHandle::None,
             drag_origin: None,
             selection_at_drag_start: None,
@@ -101,6 +105,7 @@ pub struct EditorState {
     pub mode: EditMode,               
     pub pointer: PointerState,
     pub magnifier: Option<MagnifierState> ,
+    pub prev_magnifier: Option<MagnifierState>,
     pub mouse_down_left : bool,
     pub selection: SelectionState,
     

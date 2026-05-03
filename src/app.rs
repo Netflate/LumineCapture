@@ -1,5 +1,5 @@
 use crate::backend::{ScreenOverlay, initialize_capture, initialize_overlay};
-use crate::types::{EditMode, EditorState, MagnifierState, MonitorFrame, MouseButton, OverlayEvent, Placement, PointerState, SelectionEdges, SelectionHandle, SelectionState};
+use crate::types::{DamageRect, EditMode, EditorState, MagnifierState, MonitorFrame, MouseButton, OverlayEvent, Placement, PointerState, SelectionEdges, SelectionHandle, SelectionState, HANDLE_RADIUS};
 use tiny_skia::{Pixmap, PixmapPaint, Transform, Rect};
 use crate::renderer::{self, apply_handle_drag};
 use crate::utils::{make_rect, global_selection_to_local, global_point_to_local, hit_test_selection, point_in_monitor, selection_edges_for_monitor, selection_handle_points};
@@ -30,6 +30,7 @@ pub async fn make_screenshot (
         drag_start: None,
         pointer: PointerState::default(),
         magnifier: None,
+        prev_magnifier: None,
         mouse_down_left: false,
     };
 
@@ -92,23 +93,36 @@ pub async fn make_screenshot (
 
         if dirty_mask != 0 {
             for i in 0..outputs.len() {
-                if is_dirty(dirty_mask, i) {
-                    let t0 = std::time::Instant::now();
-                    
+                if is_dirty(dirty_mask, i) {                    
                     let is_mag_monitor = editor_state.magnifier
                         .as_ref()
                         .map_or(false, |m| m.monitor_idx == i);
 
-                    let (local_sel, edges, handles) = selection_render_info(
+                    let (local_sel, prev_local, edges, handles) = selection_render_info(
                         &editor_state.selection.zone,
+                        &editor_state.selection.prev_zone,
                         &editor_state.placements[i],
                     );
+                    let dirty_rect = monitor_dirty_rect(
+                        selection_dirty,
+                        &local_sel,
+                        &prev_local,
+                        &editor_state.placements[i],
+                        &editor_state.magnifier,
+                        &editor_state.prev_magnifier,
+                        i,
+                    );
+                    let damage: Option<DamageRect> = dirty_rect
+                        .as_ref()
+                        .and_then(|r| renderer::rect_bounds(r, editor_state.base[i].width(), editor_state.base[i].height()));
 
                     renderer::render_frame(
                         &mut editor_state.canvas[i],
                         &editor_state.base[i],
                         &mut editor_state.dimmed[i],
                         &local_sel,
+                        &prev_local,
+                        dirty_rect.as_ref(),
                         edges.as_ref(),
                         &handles,
                         selection_dirty,
@@ -116,11 +130,7 @@ pub async fn make_screenshot (
                         is_mag_monitor,
                     );
 
-                    println!("render {}: {}ms", i, t0.elapsed().as_millis());
-                    overlay.update_frame(i, editor_state.canvas[i].data())?;
-                    println!("render + output {}: {}ms", i, t0.elapsed().as_millis());
-
-                    println!("rendering monitor {}: is_mag={}, mag={:?}, sel_dirty={}",i, is_mag_monitor, editor_state.magnifier, selection_dirty);
+                    overlay.update_frame(i, editor_state.canvas[i].data(), damage)?;
 
                 }
             }
@@ -234,22 +244,30 @@ fn initial_paint(
 ) -> Result<(), Box<dyn std::error::Error>>
 {
     for monitor_idx in 0..editor_state.base.len() {
-        let (local_sel, edges, handles) = selection_render_info(
+        let (local_sel, prev_local, edges, handles) = selection_render_info(
             &editor_state.selection.zone,
+            &editor_state.selection.prev_zone,
             &editor_state.placements[monitor_idx],
+        );
+        renderer::init_dimming(
+            &mut editor_state.dimmed[monitor_idx],
+            &editor_state.base[monitor_idx],
+            &local_sel,
         );
         renderer::render_frame(
             &mut editor_state.canvas[monitor_idx],
             &editor_state.base[monitor_idx],
             &mut editor_state.dimmed[monitor_idx],
             &local_sel,
+            &prev_local,
+            None,
             edges.as_ref(),
             &handles,
-            true,
+            false,
             &editor_state.magnifier,
             false, 
         );
-        overlay.update_frame(monitor_idx, editor_state.canvas[monitor_idx].data())?;
+        overlay.update_frame(monitor_idx, editor_state.canvas[monitor_idx].data(), None)?;
     }
     Ok(())
 }
@@ -301,6 +319,12 @@ fn update_magnifier(
         if mag.monitor_idx != monitor_idx {
             mark_dirty(dirty_mask, mag.monitor_idx);
         }
+        editor_state.prev_magnifier = Some(MagnifierState {
+            monitor_idx: mag.monitor_idx,
+            pos: mag.pos,
+        });
+    } else {
+        editor_state.prev_magnifier = None;
     }
 
     editor_state.magnifier = Some(MagnifierState {
@@ -309,49 +333,11 @@ fn update_magnifier(
     });
 }
 
-fn update_selection(
-    editor_state: &mut EditorState,
-    global: (f64, f64),
-    selection_dirty: &mut bool,
-    dirty_mask: &mut u32,
-) {
-    if editor_state.mouse_down_left && editor_state.selection.active_handle != SelectionHandle::None {
-        if let (Some(drag_origin), Some(sel_start)) = (
-            editor_state.selection.drag_origin,
-            editor_state.selection.selection_at_drag_start.as_ref(),
-        ) {
-            let delta = (global.0 - drag_origin.0, global.1 - drag_origin.1);
-            editor_state.selection.zone = apply_handle_drag(
-                sel_start,
-                editor_state.selection.active_handle,
-                delta,
-            );
-            *selection_dirty = true;
-            mark_all_dirty(dirty_mask, editor_state.base.len());
-        }
-        return;
-    }
-
-    if !editor_state.mouse_down_left || editor_state.mode != EditMode::Selection {
-        return;
-    }
-
-    if let Some(start) = editor_state.drag_start {
-        editor_state.selection.zone = make_rect(start, global);
-        *selection_dirty = true;
-        mark_all_dirty(dirty_mask, editor_state.base.len());
-    }
-}
 
 fn mark_dirty(mask: &mut u32, idx: usize) {
     *mask |= 1 << idx;
 }
 
-fn mark_all_dirty(mask: &mut u32, count: usize) {
-    for idx in 0..count {
-        mark_dirty(mask, idx);
-    }
-}
 
 fn is_dirty(mask: u32, idx: usize) -> bool {
     (mask & (1 << idx)) != 0
@@ -359,9 +345,13 @@ fn is_dirty(mask: u32, idx: usize) -> bool {
 
 fn selection_render_info(
     selection: &Option<Rect>,
+    prev_selection: &Option<Rect>,
     placement: &Placement,
-) -> (Option<Rect>, Option<SelectionEdges>, Vec<(f32, f32)>) {
+) -> (Option<Rect>, Option<Rect>, Option<SelectionEdges>, Vec<(f32, f32)>) {
     let local_sel = selection
+        .as_ref()
+        .and_then(|sel| global_selection_to_local(sel, placement));
+    let prev_local = prev_selection
         .as_ref()
         .and_then(|sel| global_selection_to_local(sel, placement));
 
@@ -378,7 +368,70 @@ fn selection_render_info(
         }
     }
 
-    (local_sel, edges, handles)
+    (local_sel, prev_local, edges, handles)
+}
+
+fn monitor_dirty_rect(
+    selection_dirty: bool,
+    local_sel: &Option<Rect>,
+    prev_local: &Option<Rect>,
+    placement: &Placement,
+    magnifier: &Option<MagnifierState>,
+    prev_magnifier: &Option<MagnifierState>,
+    monitor_idx: usize,
+) -> Option<Rect> {
+    let mut dirty: Option<Rect> = None;
+    let selection_pad = (HANDLE_RADIUS as f32).max(2.0);
+
+    if selection_dirty {
+        if let Some(r) = local_sel.as_ref().and_then(|sel| expand_rect(sel, selection_pad)) {
+            dirty = union_rect(dirty, Some(r));
+        }
+        if let Some(r) = prev_local.as_ref().and_then(|sel| expand_rect(sel, selection_pad)) {
+            dirty = union_rect(dirty, Some(r));
+        }
+    }
+
+    let (mw, mh) = (placement.size.0 as f32, placement.size.1 as f32);
+    if mw > 0.0 && mh > 0.0 {
+        let mag_pad = 2.0;
+        if let Some(mag) = magnifier.as_ref().filter(|m| m.monitor_idx == monitor_idx) {
+            let rect = renderer::magnifier_rect((mag.pos.0 as f32, mag.pos.1 as f32), mw, mh);
+            if let Some(r) = expand_rect(&rect, mag_pad) {
+                dirty = union_rect(dirty, Some(r));
+            }
+        }
+        if let Some(mag) = prev_magnifier.as_ref().filter(|m| m.monitor_idx == monitor_idx) {
+            let rect = renderer::magnifier_rect((mag.pos.0 as f32, mag.pos.1 as f32), mw, mh);
+            if let Some(r) = expand_rect(&rect, mag_pad) {
+                dirty = union_rect(dirty, Some(r));
+            }
+        }
+    }
+
+    dirty
+}
+
+fn expand_rect(rect: &Rect, pad: f32) -> Option<Rect> {
+    Rect::from_ltrb(
+        rect.left() - pad,
+        rect.top() - pad,
+        rect.right() + pad,
+        rect.bottom() + pad,
+    )
+}
+
+fn union_rect(a: Option<Rect>, b: Option<Rect>) -> Option<Rect> {
+    match (a, b) {
+        (None, None) => None,
+        (Some(r), None) | (None, Some(r)) => Some(r),
+        (Some(r1), Some(r2)) => Rect::from_ltrb(
+            r1.left().min(r2.left()),
+            r1.top().min(r2.top()),
+            r1.right().max(r2.right()),
+            r1.bottom().max(r2.bottom()),
+        ),
+    }
 }
 
 
@@ -388,4 +441,77 @@ impl SelectionState {
         self.drag_origin = origin;
         self.selection_at_drag_start = zone;
     }
+}
+
+
+fn update_selection(
+    editor_state: &mut EditorState,
+    global: (f64, f64),
+    selection_dirty: &mut bool,
+    dirty_mask: &mut u32,
+) {
+    let old_sel = editor_state.selection.zone;
+
+    if editor_state.mouse_down_left && editor_state.selection.active_handle != SelectionHandle::None {
+        if let (Some(drag_origin), Some(sel_start)) = (
+            editor_state.selection.drag_origin,
+            editor_state.selection.selection_at_drag_start.as_ref(),
+        ) {
+            let delta = (global.0 - drag_origin.0, global.1 - drag_origin.1);
+            editor_state.selection.zone = apply_handle_drag(
+                sel_start,
+                editor_state.selection.active_handle,
+                delta,
+            );
+            editor_state.selection.prev_zone = old_sel;
+            apply_selection_dirty(old_sel, editor_state.selection.zone, &editor_state.placements, dirty_mask, selection_dirty);
+        }
+        return;
+    }
+
+    if !editor_state.mouse_down_left || editor_state.mode != EditMode::Selection {
+        return;
+    }
+
+    if let Some(start) = editor_state.drag_start {
+        editor_state.selection.zone = make_rect(start, global);
+        editor_state.selection.prev_zone = old_sel;
+        apply_selection_dirty(old_sel, editor_state.selection.zone, &editor_state.placements, dirty_mask, selection_dirty);
+    }
+}
+
+fn apply_selection_dirty(
+    old_sel: Option<Rect>,
+    new_sel: Option<Rect>,
+    placements: &[Placement],
+    dirty_mask: &mut u32,
+    selection_dirty: &mut bool,
+) {
+    *selection_dirty = true;
+    if let Some(sel) = old_sel {
+        *dirty_mask |= monitors_for_selection(&sel, placements);
+    }
+    if let Some(sel) = new_sel {
+        *dirty_mask |= monitors_for_selection(&sel, placements);
+    }
+}
+
+fn monitors_for_selection(selection: &Rect, placements: &[Placement]) -> u32 {
+    let mut mask = 0u32;
+    for (i, p) in placements.iter().enumerate() {
+        let mx = p.position.0 as f32;
+        let my = p.position.1 as f32;
+        let mw = p.size.0 as f32;
+        let mh = p.size.1 as f32;
+
+        let overlaps = selection.left()   < mx + mw
+                    && selection.right()  > mx
+                    && selection.top()    < my + mh
+                    && selection.bottom() > my;
+
+        if overlaps {
+            mask |= 1 << i;
+        }
+    }
+    mask
 }

@@ -120,5 +120,3 @@ pub fn hit_test_selection(sel: &Rect, pos: (f64, f64)) -> SelectionHandle {
         }
     }
 }
-
-
