@@ -1,4 +1,4 @@
-use crate::backend::wayland::utils::surface::{SurfaceData};
+use crate::backend::wayland::utils::surface::{SurfaceData, SurfaceVisibility};
 use crate::backend::wayland::utils::shm::{create_shm_buffer};
 
 use crate::backend::ScreenOverlay;
@@ -72,19 +72,17 @@ impl Dispatch<OrgKdePlasmaVirtualDesktop, String> for OverlayState {
         _: &QueueHandle<Self>,
     ) {
         match event {
-            org_kde_plasma_virtual_desktop::Event::Deactivated {} => {
-                if state.kde.as_mut().unwrap().current_desktop.as_deref() == Some(desktop_id) {
-                    for sd in state.surfaces.values() {
-                        sd.set_hidden();
-                    }
-                }
-            }
-
             org_kde_plasma_virtual_desktop::Event::Activated {} => {
-                if state.kde.as_mut().unwrap().current_desktop.is_none() {
-                    state.kde.as_mut().unwrap().current_desktop = Some(desktop_id.clone());
-                } else if state.kde.as_mut().unwrap().current_desktop.as_deref() == Some(desktop_id) {
-                    for sd in state.surfaces.values() {
+                let kde = state.kde.as_mut().unwrap();
+                if kde.current_desktop.is_none() {
+                    kde.current_desktop = Some(desktop_id.clone());
+                } else if kde.current_desktop.as_deref() != Some(desktop_id) {
+                    for sd in state.surfaces.values_mut() {
+                        sd.set_hidden();
+                        state.pending_flush = true;
+                    }
+                } else {
+                    for sd in state.surfaces.values_mut() {
                         sd.set_visible();
                     }
                 }
@@ -183,6 +181,7 @@ impl ScreenOverlay for KdeOverlay {
                 width: w,
                 height: h,
                 configured: false,
+                visibility: SurfaceVisibility::Visible,
             });
         }
 
@@ -190,8 +189,13 @@ impl ScreenOverlay for KdeOverlay {
     }
     fn update_frame(&mut self, monitor_idx: usize, pixels: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
         let rt = self.runtime.as_mut().ok_or("runtime missing")?;
-
         let sd = rt.state.surfaces.get_mut(&monitor_idx).ok_or("surface not found")?;
+        eprintln!("update_frame: monitor={} visibility={:?}", monitor_idx, sd.visibility);
+
+        if matches!(sd.visibility, SurfaceVisibility::Hidden) {
+            return Ok(());
+        }
+
         sd.shm_buffer.write_pixels(&pixels);
         sd.surface.attach(Some(&sd.shm_buffer.buffer), 0, 0);
         sd.surface.damage_buffer(0, 0, sd.width as i32, sd.height as i32);
@@ -207,12 +211,14 @@ impl ScreenOverlay for KdeOverlay {
         let rt = self.runtime.as_mut().ok_or("runtime missing")?;
 
         loop {
-            rt.event_queue.dispatch_pending(&mut rt.state)?;
-
-            if rt.state.events.is_empty() {
-                rt.event_queue.blocking_dispatch(&mut rt.state)?;
+            if let Some(guard) = rt.event_queue.prepare_read() {
+                let _ = guard.read(); 
             }
-
+            rt.event_queue.dispatch_pending(&mut rt.state)?;
+            if rt.state.pending_flush {
+                rt.state.pending_flush = false;
+                rt.event_queue.flush()?;
+            }
             if let Some(ev) = rt.state.events.pop_front() {
                 // there is no need in all of pointeEvents, only the last one getting send 
                 // otherwise there will be huge mouse delay
@@ -227,6 +233,7 @@ impl ScreenOverlay for KdeOverlay {
                 // if its not mouse sending immediately
                 return Ok(ev);
             }
+            rt.event_queue.blocking_dispatch(&mut rt.state)?;
         }
     }
 

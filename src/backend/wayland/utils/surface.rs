@@ -19,8 +19,10 @@ pub struct SurfaceData {
     pub width: u32,
     pub height: u32,
     pub configured: bool,
+    pub visibility : SurfaceVisibility,
 }
 
+#[derive(Debug)]
 pub enum SurfaceVisibility {
     Visible, 
     Hidden,
@@ -34,11 +36,13 @@ struct SurfaceVisibilityConfig<'a> {
 }
 
 impl SurfaceData {
-    pub fn set_visible (&self) {
+    pub fn set_visible (&mut self) {
         self.apply_visibility(SurfaceVisibility::Visible);
+        self.visibility = SurfaceVisibility::Visible;
     }
-    pub fn set_hidden (&self) {
+    pub fn set_hidden (&mut self) {
         self.apply_visibility(SurfaceVisibility::Hidden);
+        self.visibility = SurfaceVisibility::Hidden;
     }
 
     fn apply_visibility(&self, visibility: SurfaceVisibility) {

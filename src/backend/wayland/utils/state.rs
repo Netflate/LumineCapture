@@ -53,6 +53,7 @@ impl OverlayRunTime {
             viewporter: None,
             pointer_surface_idx: None,
             scale: 0.0,
+            pending_flush: false,
             kde: Some(KdeState {
                 virtual_desktop_manager: None,
                 current_desktop: None,
@@ -92,12 +93,13 @@ pub struct OverlayState {
     pub frac: Option<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1>,
     pub frac_scale: Option<wp_fractional_scale_v1::WpFractionalScaleV1>,
     pub viewporter: Option<wp_viewporter::WpViewporter>,
+
     // runtime
     pub surfaces: HashMap<usize, SurfaceData>,
     pub events: VecDeque<OverlayEvent>,
     pub pointer_surface_idx: Option<usize>,
     pub scale: f64,
-
+    pub pending_flush: bool,
     // gnome/kde
     pub kde :Option<KdeState>,
 }

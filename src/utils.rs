@@ -1,5 +1,5 @@
 use tiny_skia::Rect;
-use crate::types::Placement;
+use crate::types::{Placement, SelectionEdges, SelectionHandle, HANDLE_RADIUS};
 
 pub fn make_rect(a: (f64, f64), b: (f64, f64)) -> Option<Rect> {
     let x = a.0.min(b.0) as f32;
@@ -50,3 +50,75 @@ pub fn global_point_to_local(
         })
         .unwrap_or((fallback_idx, fallback_local.0, fallback_local.1))
 }
+
+pub fn selection_edges_for_monitor(sel: &Rect, placement: &Placement) -> SelectionEdges {
+    let (mx, my) = (placement.position.0 as f32, placement.position.1 as f32);
+    let (mw, mh) = (placement.size.0 as f32, placement.size.1 as f32);
+    let limit_x = mx + mw;
+    let limit_y = my + mh;
+
+    SelectionEdges {
+        left: sel.left() >= mx && sel.left() < limit_x,
+        right: sel.right() > mx && sel.right() <= limit_x,
+        top: sel.top() >= my && sel.top() < limit_y,
+        bottom: sel.bottom() > my && sel.bottom() <= limit_y,
+    }
+}
+
+pub fn point_in_monitor(p: (f32, f32), placement: &Placement) -> bool {
+    let (x, y) = p;
+    let mx = placement.position.0 as f32;
+    let my = placement.position.1 as f32;
+    let mw = placement.size.0 as f32;
+    let mh = placement.size.1 as f32;
+
+    x >= mx && x < mx + mw && y >= my && y < my + mh
+}
+
+pub fn selection_handle_points(sel: &Rect) -> [(f32, f32); 8] {
+    [
+        (sel.left(), sel.top()),
+        ((sel.left() + sel.right()) / 2.0, sel.top()),
+        (sel.right(), sel.top()),
+        (sel.left(), (sel.top() + sel.bottom()) / 2.0),
+        (sel.right(), (sel.top() + sel.bottom()) / 2.0),
+        (sel.left(), sel.bottom()),
+        ((sel.left() + sel.right()) / 2.0, sel.bottom()),
+        (sel.right(), sel.bottom()),
+    ]
+}
+
+pub fn hit_test_selection(sel: &Rect, pos: (f64, f64)) -> SelectionHandle {
+    let (x, y) = pos;
+    let (l, r, t, b) = (
+        sel.left() as f64, sel.right() as f64,
+        sel.top() as f64, sel.bottom() as f64,
+    );
+    let mid_x = (l + r) / 2.0;
+    let mid_y = (t + b) / 2.0;
+
+    let near = |a: f64, b: f64| (a - b).abs() < HANDLE_RADIUS;
+    let on_left   = near(x, l);
+    let on_right  = near(x, r);
+    let on_top    = near(y, t);
+    let on_bottom = near(y, b);
+    let on_mid_x  = near(x, mid_x);
+    let on_mid_y  = near(y, mid_y);
+
+    match (on_left || on_right, on_top || on_bottom) {
+        _ if on_left  && on_top    => SelectionHandle::TopLeft,
+        _ if on_right && on_top    => SelectionHandle::TopRight,
+        _ if on_left  && on_bottom => SelectionHandle::BottomLeft,
+        _ if on_right && on_bottom => SelectionHandle::BottomRight,
+        _ if on_mid_x && on_top    => SelectionHandle::Top,
+        _ if on_mid_x && on_bottom => SelectionHandle::Bottom,
+        _ if on_left  && on_mid_y  => SelectionHandle::Left,
+        _ if on_right && on_mid_y  => SelectionHandle::Right,
+        _ => {
+            let inside = x >= l && x <= r && y >= t && y <= b;
+            if inside { SelectionHandle::Move } else { SelectionHandle::None }
+        }
+    }
+}
+
+

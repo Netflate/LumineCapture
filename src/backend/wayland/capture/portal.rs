@@ -1,13 +1,9 @@
-// Current implementation relies on XDG Desktop Portals
-// While it should work, theoretically, on x11, it is optimized and tested for Wayland (KDE/Sway)
-// and if x11 full support will be ever added, its really necessary to use direct screenshot tools and not these slow portal+pipewire
-
-// TODO: Implement token validation logic. If the restore_token is expired or invalid, clear the cache and reprompt the user for stream selection
-
 pub struct PortalMethod;
 
 use crate::backend::wayland::capture::stream;
 use std::os::fd::AsFd;
+use std::path::PathBuf;
+use std::fs;
 
 use crate::backend::CaptureMethod;
 use crate::types::{CaptureResult, StreamInfo, MonitorFrame};
@@ -17,6 +13,17 @@ use ashpd::desktop::{
 };
 use async_trait::async_trait;
 
+fn get_token_path() -> PathBuf {
+    let mut path = dirs::config_dir().expect("Could not find config directory");
+    path.push("LumineCapture");
+    
+    if let Err(e) = fs::create_dir_all(&path) {
+        eprintln!("Can't create directory {}: {}", path.display(), e);
+    }
+    
+    path.push("token");
+    path
+}
 
 #[async_trait]
 impl CaptureMethod for PortalMethod {
@@ -24,13 +31,11 @@ impl CaptureMethod for PortalMethod {
         let proxy = Screencast::new().await?;
         let session = proxy.create_session(Default::default()).await?;
 
-        std::fs::create_dir_all("/home/Netflate/.config/LumineCapture/")
-            .unwrap_or_else(|e| eprintln!("can't create directory: {}", e));
-
-        let path = "/home/Netflate/.config/LumineCapture/token"; // TOFIX: hard coded  
-
-        let token_string = std::fs::read_to_string(path).ok();
+        let token_path = get_token_path();
+        
+        let token_string = fs::read_to_string(&token_path).ok();
         let token = token_string.as_deref();
+
         proxy
             .select_sources(
                 &session,
@@ -48,6 +53,10 @@ impl CaptureMethod for PortalMethod {
             .await?
             .response()?;
 
+        if let Some(new_token) = response.restore_token() {
+            fs::write(&token_path, new_token)?;
+        }
+
         let streams_data: Vec<StreamInfo> = response
             .streams()
             .iter()
@@ -57,12 +66,6 @@ impl CaptureMethod for PortalMethod {
                 position: s.position(),
             })
             .collect();
-
-        if token.is_none() {
-            if let Some(rt) = response.restore_token() {
-                std::fs::write(path, rt)?;
-            }
-        }
 
         let fd = proxy
             .open_pipe_wire_remote(&session, Default::default())

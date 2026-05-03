@@ -2,6 +2,23 @@ use tiny_skia::{Rect, Color, Pixmap};
 use wayland_client::{
     protocol::{wl_output},
 };
+
+pub struct SelectionEdges {
+    pub left : bool, 
+    pub right : bool, 
+    pub top: bool,
+    pub bottom: bool,
+}
+
+
+
+pub const ZOOM: f32 = 4.5;
+pub const MAG_SIZE: u32 = 160;
+pub const MAG_OFFSET: f32 = 24.0;
+pub const HANDLE_RADIUS: f64 = 8.0; // pixels around selection border 
+
+
+
 pub enum Annotation {
     Arrow { from: (f32,f32), to: (f32,f32), color: Color },
     Rect  { rect: Rect, color: Color },
@@ -30,12 +47,40 @@ pub enum MouseState {
     Down(MouseButton),
 }
 
+pub struct SelectionState {
+    pub zone: Option<Rect>,
+    pub active_handle: SelectionHandle,
+    pub drag_origin: Option<(f64, f64)>,   
+    pub selection_at_drag_start: Option<Rect>,
+}
+
+impl Default for SelectionState {
+    fn default() -> Self {
+        Self {
+            zone: None,
+            active_handle: SelectionHandle::None,
+            drag_origin: None,
+            selection_at_drag_start: None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PointerState {
     pub monitor_idx: usize,
     pub local: (f64, f64),
     pub global: (f64, f64),
 }
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum SelectionHandle {
+    TopLeft, Top, TopRight,
+    Left,          Right,
+    BottomLeft, Bottom, BottomRight,
+    Move,   
+    None,   
+}
+
 
 impl PointerState {
     pub fn new(monitor_idx: usize, local: (f64, f64), global: (f64, f64)) -> Self {
@@ -51,13 +96,14 @@ pub struct EditorState {
     pub base: Vec<Pixmap>,           // doesn't change, original screenshots
     pub canvas: Vec<Pixmap>,
     pub dimmed: Vec<Pixmap>,
-    pub selection: Option<Rect>,
     pub placements : Vec<Placement>, 
     pub drag_start: Option<(f64, f64)>,
     pub mode: EditMode,               
     pub pointer: PointerState,
     pub magnifier: Option<MagnifierState> ,
     pub mouse_down_left : bool,
+    pub selection: SelectionState,
+    
 }
 #[derive(Debug)]
 pub struct MagnifierState {

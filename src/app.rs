@@ -1,8 +1,8 @@
 use crate::backend::{ScreenOverlay, initialize_capture, initialize_overlay};
-use crate::types::{EditMode, EditorState, MagnifierState, MonitorFrame, MouseButton, OverlayEvent, Placement, PointerState};
-use tiny_skia::{Pixmap, PixmapPaint, Transform};
-use crate::renderer;
-use crate::utils::{make_rect, global_selection_to_local, global_point_to_local};
+use crate::types::{EditMode, EditorState, MagnifierState, MonitorFrame, MouseButton, OverlayEvent, Placement, PointerState, SelectionEdges, SelectionHandle, SelectionState};
+use tiny_skia::{Pixmap, PixmapPaint, Transform, Rect};
+use crate::renderer::{self, apply_handle_drag};
+use crate::utils::{make_rect, global_selection_to_local, global_point_to_local, hit_test_selection, point_in_monitor, selection_edges_for_monitor, selection_handle_points};
 
 pub async fn make_screenshot (
     wayland_conn: Option<wayland_client::Connection>,
@@ -25,7 +25,7 @@ pub async fn make_screenshot (
         canvas: canvas,
         dimmed : dimmed,
         mode: EditMode::Selection,
-        selection: None,
+        selection: SelectionState::default(),
         placements : placements,
         drag_start: None,
         pointer: PointerState::default(),
@@ -63,9 +63,26 @@ pub async fn make_screenshot (
                     MouseButton::Left => {
                         editor_state.mouse_down_left = pressed;
                         if pressed {
-                            editor_state.drag_start = Some(editor_state.pointer.global);
+                            let handle = editor_state.selection.zone.as_ref()
+                                .map(|sel| hit_test_selection(sel, editor_state.pointer.global))
+                                .unwrap_or(SelectionHandle::None);
+
+                            if handle != SelectionHandle::None {
+                                if let Some(sel) = editor_state.selection.zone.as_ref() {
+                                    editor_state.selection.set_drag(
+                                        handle,
+                                        Some(editor_state.pointer.global),
+                                        Some(*sel),
+                                    );
+                                    editor_state.drag_start = None;
+                                }
+                            } else {
+                                editor_state.selection.set_drag(SelectionHandle::None, None, None);
+                                editor_state.drag_start = Some(editor_state.pointer.global);
+                            }
                         } else {
                             editor_state.drag_start = None;
+                            editor_state.selection.set_drag(SelectionHandle::None, None, None);
                         }
                     }
                     _ => {}
@@ -81,15 +98,19 @@ pub async fn make_screenshot (
                     let is_mag_monitor = editor_state.magnifier
                         .as_ref()
                         .map_or(false, |m| m.monitor_idx == i);
-                
-                    let local_sel = editor_state.selection.as_ref()
-                        .and_then(|s| global_selection_to_local(s, &editor_state.placements[i]));
+
+                    let (local_sel, edges, handles) = selection_render_info(
+                        &editor_state.selection.zone,
+                        &editor_state.placements[i],
+                    );
 
                     renderer::render_frame(
                         &mut editor_state.canvas[i],
                         &editor_state.base[i],
                         &mut editor_state.dimmed[i],
                         &local_sel,
+                        edges.as_ref(),
+                        &handles,
                         selection_dirty,
                         &editor_state.magnifier,
                         is_mag_monitor,
@@ -213,11 +234,17 @@ fn initial_paint(
 ) -> Result<(), Box<dyn std::error::Error>>
 {
     for monitor_idx in 0..editor_state.base.len() {
+        let (local_sel, edges, handles) = selection_render_info(
+            &editor_state.selection.zone,
+            &editor_state.placements[monitor_idx],
+        );
         renderer::render_frame(
             &mut editor_state.canvas[monitor_idx],
             &editor_state.base[monitor_idx],
             &mut editor_state.dimmed[monitor_idx],
-            &editor_state.selection,
+            &local_sel,
+            edges.as_ref(),
+            &handles,
             true,
             &editor_state.magnifier,
             false, 
@@ -288,12 +315,29 @@ fn update_selection(
     selection_dirty: &mut bool,
     dirty_mask: &mut u32,
 ) {
+    if editor_state.mouse_down_left && editor_state.selection.active_handle != SelectionHandle::None {
+        if let (Some(drag_origin), Some(sel_start)) = (
+            editor_state.selection.drag_origin,
+            editor_state.selection.selection_at_drag_start.as_ref(),
+        ) {
+            let delta = (global.0 - drag_origin.0, global.1 - drag_origin.1);
+            editor_state.selection.zone = apply_handle_drag(
+                sel_start,
+                editor_state.selection.active_handle,
+                delta,
+            );
+            *selection_dirty = true;
+            mark_all_dirty(dirty_mask, editor_state.base.len());
+        }
+        return;
+    }
+
     if !editor_state.mouse_down_left || editor_state.mode != EditMode::Selection {
         return;
     }
 
     if let Some(start) = editor_state.drag_start {
-        editor_state.selection = make_rect(start, global);
+        editor_state.selection.zone = make_rect(start, global);
         *selection_dirty = true;
         mark_all_dirty(dirty_mask, editor_state.base.len());
     }
@@ -311,4 +355,37 @@ fn mark_all_dirty(mask: &mut u32, count: usize) {
 
 fn is_dirty(mask: u32, idx: usize) -> bool {
     (mask & (1 << idx)) != 0
+}
+
+fn selection_render_info(
+    selection: &Option<Rect>,
+    placement: &Placement,
+) -> (Option<Rect>, Option<SelectionEdges>, Vec<(f32, f32)>) {
+    let local_sel = selection
+        .as_ref()
+        .and_then(|sel| global_selection_to_local(sel, placement));
+
+    let mut edges = None;
+    let mut handles = Vec::new();
+
+    if let (Some(sel), Some(_)) = (selection.as_ref(), local_sel.as_ref()) {
+        edges = Some(selection_edges_for_monitor(sel, placement));
+        let (mx, my) = (placement.position.0 as f32, placement.position.1 as f32);
+        for (hx, hy) in selection_handle_points(sel) {
+            if point_in_monitor((hx, hy), placement) {
+                handles.push((hx - mx, hy - my));
+            }
+        }
+    }
+
+    (local_sel, edges, handles)
+}
+
+
+impl SelectionState {
+    fn set_drag(&mut self, handle: SelectionHandle, origin: Option<(f64, f64)>, zone: Option<Rect>) {
+        self.active_handle = handle;
+        self.drag_origin = origin;
+        self.selection_at_drag_start = zone;
+    }
 }
