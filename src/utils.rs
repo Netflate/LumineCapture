@@ -92,31 +92,54 @@ pub fn hit_test_selection(sel: &Rect, pos: (f64, f64)) -> SelectionHandle {
     let (x, y) = pos;
     let (l, r, t, b) = (
         sel.left() as f64, sel.right() as f64,
-        sel.top() as f64, sel.bottom() as f64,
+        sel.top() as f64,  sel.bottom() as f64,
     );
     let mid_x = (l + r) / 2.0;
     let mid_y = (t + b) / 2.0;
 
     let near = |a: f64, b: f64| (a - b).abs() < HANDLE_RADIUS;
+
     let on_left   = near(x, l);
     let on_right  = near(x, r);
     let on_top    = near(y, t);
     let on_bottom = near(y, b);
-    let on_mid_x  = near(x, mid_x);
-    let on_mid_y  = near(y, mid_y);
 
-    match (on_left || on_right, on_top || on_bottom) {
-        _ if on_left  && on_top    => SelectionHandle::TopLeft,
-        _ if on_right && on_top    => SelectionHandle::TopRight,
-        _ if on_left  && on_bottom => SelectionHandle::BottomLeft,
-        _ if on_right && on_bottom => SelectionHandle::BottomRight,
-        _ if on_mid_x && on_top    => SelectionHandle::Top,
-        _ if on_mid_x && on_bottom => SelectionHandle::Bottom,
-        _ if on_left  && on_mid_y  => SelectionHandle::Left,
-        _ if on_right && on_mid_y  => SelectionHandle::Right,
-        _ => {
-            let inside = x >= l && x <= r && y >= t && y <= b;
-            if inside { SelectionHandle::Move } else { SelectionHandle::None }
+    let on_h_edge = on_top || on_bottom;
+    let on_v_edge = on_left || on_right;
+    let on_border = on_h_edge || on_v_edge;
+
+    let inside = x >= l - HANDLE_RADIUS && x <= r + HANDLE_RADIUS
+              && y >= t - HANDLE_RADIUS && y <= b + HANDLE_RADIUS;
+
+    if !inside {
+        return SelectionHandle::None;
+    }
+
+    if !on_border {
+        return SelectionHandle::Move;
+    }
+
+    let closer_to_left  = (x - l).abs() < (x - mid_x).abs();
+    let closer_to_right = (x - r).abs() < (x - mid_x).abs();
+    let closer_to_top   = (y - t).abs() < (y - mid_y).abs();
+    let closer_to_bottom= (y - b).abs() < (y - mid_y).abs();
+
+    let corner_x = closer_to_left || closer_to_right;
+    let corner_y = closer_to_top  || closer_to_bottom;
+
+    match (corner_x, corner_y) {
+        (true, true) => match (closer_to_left, closer_to_top) {
+            (true,  true)  => SelectionHandle::TopLeft,
+            (false, true)  => SelectionHandle::TopRight,
+            (true,  false) => SelectionHandle::BottomLeft,
+            (false, false) => SelectionHandle::BottomRight,
+        },
+        (true, false) => {
+            if closer_to_left { SelectionHandle::Left } else { SelectionHandle::Right }
         }
+        (false, true) => {
+            if closer_to_top { SelectionHandle::Top } else { SelectionHandle::Bottom }
+        }
+        (false, false) => SelectionHandle::Move, 
     }
 }

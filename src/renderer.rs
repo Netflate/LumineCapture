@@ -1,4 +1,4 @@
-use crate::types::{MagnifierState, SelectionEdges, SelectionHandle, HANDLE_RADIUS, MAG_OFFSET, MAG_SIZE, ZOOM};
+use crate::types::{MagnifierState, SelectionEdges, SelectionHandle, MAG_OFFSET, MAG_SIZE, ZOOM};
 use tiny_skia::{Color, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform};
 use crate::utils::make_rect;
 
@@ -22,7 +22,6 @@ pub fn render_frame(
     prev_selection: &Option<Rect>,
     dirty_rect: Option<&Rect>,
     selection_edges: Option<&SelectionEdges>,
-    handle_points: &[(f32, f32)],
     selection_dirty: bool, 
     magnifier: &Option<MagnifierState>,
     is_mag_monitor: bool,
@@ -37,9 +36,6 @@ pub fn render_frame(
     }
     if let Some(sel) = selection {
         draw_selection_border(canvas, sel, selection_edges);
-        if !handle_points.is_empty() {
-            draw_handles(canvas, handle_points);
-        }
     }
 
     if is_mag_monitor {
@@ -56,36 +52,76 @@ fn draw_selection_border(
 ) {
     let mut paint = Paint::default();
     paint.set_color(Color::WHITE);
-    paint.anti_alias = false;
+    paint.anti_alias = true;
     let mut stroke = Stroke::default();
-    stroke.width = 1.0;
+    stroke.width = 2.0;
 
     if let Some(edges) = edges {
-        let mut pb = PathBuilder::new();
-        if edges.top {
-            pb.move_to(sel.left(), sel.top());
-            pb.line_to(sel.right(), sel.top());
-        }
-        if edges.right {
-            pb.move_to(sel.right(), sel.top());
-            pb.line_to(sel.right(), sel.bottom());
-        }
-        if edges.bottom {
-            pb.move_to(sel.left(), sel.bottom());
-            pb.line_to(sel.right(), sel.bottom());
-        }
-        if edges.left {
-            pb.move_to(sel.left(), sel.top());
-            pb.line_to(sel.left(), sel.bottom());
-        }
-        if let Some(path) = pb.finish() {
+        let half = stroke.width / 2.0;
+        let outer = Rect::from_ltrb(
+            sel.left() - half,
+            sel.top() - half,
+            sel.right() + half,
+            sel.bottom() + half,
+        ).unwrap_or(*sel);
+        
+        if let Some(path) = rounded_rect_path(&outer, 8.0, edges.top, edges.right, edges.bottom, edges.left) {
             canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
         }
-    } else {
-        let path = PathBuilder::from_rect(*sel);
-        canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
     }
 }
+
+fn rounded_rect_path(
+    rect: &Rect,
+    r: f32,
+    top: bool,
+    right: bool,
+    bottom: bool,
+    left: bool,
+) -> Option<tiny_skia::Path> {
+    let r = r.min(rect.width() / 2.0).min(rect.height() / 2.0);
+    let (l, t, ri, b) = (rect.left(), rect.top(), rect.right(), rect.bottom());
+    const K: f32 = 0.5523;
+
+    let tl = if top && left   { r } else { 0.0 };
+    let tr = if top && right  { r } else { 0.0 };
+    let br = if bottom && right { r } else { 0.0 };
+    let bl = if bottom && left  { r } else { 0.0 };
+
+    let mut pb = PathBuilder::new();
+
+    if top {
+        pb.move_to(l + tl, t);
+        pb.line_to(ri - tr, t);
+    }
+    if top && right {
+        pb.cubic_to(ri - tr * K, t, ri, t + tr * K, ri, t + tr);
+    }
+    if right {
+        pb.move_to(ri, t + tr);
+        pb.line_to(ri, b - br);
+    }
+    if bottom && right {
+        pb.cubic_to(ri, b - br * K, ri - br * K, b, ri - br, b);
+    }
+    if bottom {
+        pb.move_to(ri - br, b);
+        pb.line_to(l + bl, b);
+    }
+    if bottom && left {
+        pb.cubic_to(l + bl * K, b, l, b - bl * K, l, b - bl);
+    }
+    if left {
+        pb.move_to(l, b - bl);
+        pb.line_to(l, t + tl);
+    }
+    if top && left {
+        pb.cubic_to(l, t + tl * K, l + tl * K, t, l + tl, t);
+    }
+
+    pb.finish()
+}
+
 
 fn draw_dimming(canvas: &mut Pixmap, selection: &Option<Rect>, w: u32, h: u32) {
     let mut paint = Paint::default();
@@ -284,20 +320,4 @@ pub fn apply_handle_drag(
     )
 }
 
-fn draw_handles(canvas: &mut Pixmap, handles: &[(f32, f32)]) {
-    for (hx, hy) in handles {
-        draw_handle_dot(canvas, *hx, *hy);
-    }
-}
 
-fn draw_handle_dot(canvas: &mut Pixmap, x: f32, y: f32) {
-    let size = HANDLE_RADIUS as f32;
-    let half = size / 2.0;
-    let rect = Rect::from_xywh(x - half, y - half, size, size);
-    if let Some(r) = rect {
-        let mut paint = Paint::default();
-        paint.set_color(Color::WHITE);
-        let path = PathBuilder::from_rect(r);
-        canvas.fill_path(&path, &paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
-    }
-}

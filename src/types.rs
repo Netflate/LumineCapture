@@ -1,4 +1,5 @@
 use tiny_skia::{Rect, Color, Pixmap};
+use std::time::{Instant, Duration};
 use wayland_client::{
     protocol::{wl_output},
 };
@@ -16,6 +17,7 @@ pub const ZOOM: f32 = 4.5;
 pub const MAG_SIZE: u32 = 160;
 pub const MAG_OFFSET: f32 = 24.0;
 pub const HANDLE_RADIUS: f64 = 8.0; // pixels around selection border 
+pub const MAG_FRAME_INTERVAL: Duration = Duration::from_millis(16); // magnifier fps - 60
 
 pub type DamageRect = (u32, u32, u32, u32);
 
@@ -106,6 +108,7 @@ pub struct EditorState {
     pub pointer: PointerState,
     pub magnifier: Option<MagnifierState> ,
     pub prev_magnifier: Option<MagnifierState>,
+    pub last_mag_update: Option<Instant>,
     pub mouse_down_left : bool,
     pub selection: SelectionState,
     

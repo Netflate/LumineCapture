@@ -1,8 +1,10 @@
 use crate::backend::{ScreenOverlay, initialize_capture, initialize_overlay};
-use crate::types::{DamageRect, EditMode, EditorState, MagnifierState, MonitorFrame, MouseButton, OverlayEvent, Placement, PointerState, SelectionEdges, SelectionHandle, SelectionState, HANDLE_RADIUS};
+use crate::types::{DamageRect, EditMode, EditorState, MagnifierState, MonitorFrame, MouseButton, OverlayEvent, Placement, PointerState, SelectionEdges, SelectionHandle, SelectionState, HANDLE_RADIUS, MAG_FRAME_INTERVAL};
 use tiny_skia::{Pixmap, PixmapPaint, Transform, Rect};
 use crate::renderer::{self, apply_handle_drag};
 use crate::utils::{make_rect, global_selection_to_local, global_point_to_local, hit_test_selection, point_in_monitor, selection_edges_for_monitor, selection_handle_points};
+use std::time::{Instant};
+
 
 pub async fn make_screenshot (
     wayland_conn: Option<wayland_client::Connection>,
@@ -31,6 +33,7 @@ pub async fn make_screenshot (
         pointer: PointerState::default(),
         magnifier: None,
         prev_magnifier: None,
+        last_mag_update: None,
         mouse_down_left: false,
     };
 
@@ -98,7 +101,7 @@ pub async fn make_screenshot (
                         .as_ref()
                         .map_or(false, |m| m.monitor_idx == i);
 
-                    let (local_sel, prev_local, edges, handles) = selection_render_info(
+                    let (local_sel, prev_local, edges) = selection_render_info(
                         &editor_state.selection.zone,
                         &editor_state.selection.prev_zone,
                         &editor_state.placements[i],
@@ -124,7 +127,6 @@ pub async fn make_screenshot (
                         &prev_local,
                         dirty_rect.as_ref(),
                         edges.as_ref(),
-                        &handles,
                         selection_dirty,
                         &editor_state.magnifier,
                         is_mag_monitor,
@@ -244,7 +246,7 @@ fn initial_paint(
 ) -> Result<(), Box<dyn std::error::Error>>
 {
     for monitor_idx in 0..editor_state.base.len() {
-        let (local_sel, prev_local, edges, handles) = selection_render_info(
+        let (local_sel, prev_local, edges) = selection_render_info(
             &editor_state.selection.zone,
             &editor_state.selection.prev_zone,
             &editor_state.placements[monitor_idx],
@@ -262,7 +264,6 @@ fn initial_paint(
             &prev_local,
             None,
             edges.as_ref(),
-            &handles,
             false,
             &editor_state.magnifier,
             false, 
@@ -297,7 +298,6 @@ fn handle_pointer_move(
     update_pointer(editor_state, current_monitor_idx, (local_x, local_y), global);
     update_magnifier(editor_state, current_monitor_idx, (local_x, local_y), dirty_mask);
     update_selection(editor_state, global, selection_dirty, dirty_mask);
-    mark_dirty(dirty_mask, current_monitor_idx);
 }
 
 fn update_pointer(
@@ -315,6 +315,14 @@ fn update_magnifier(
     local: (f64, f64),
     dirty_mask: &mut u32,
 ) {
+    let now = Instant::now();
+    if let Some(last) = editor_state.last_mag_update {
+        if now.duration_since(last) < MAG_FRAME_INTERVAL {
+            return;
+        }
+    }
+    editor_state.last_mag_update = Some(now);
+
     if let Some(mag) = editor_state.magnifier.as_ref() {
         if mag.monitor_idx != monitor_idx {
             mark_dirty(dirty_mask, mag.monitor_idx);
@@ -331,6 +339,8 @@ fn update_magnifier(
         monitor_idx,
         pos: local,
     });
+
+    mark_dirty(dirty_mask, monitor_idx);
 }
 
 
@@ -347,7 +357,7 @@ fn selection_render_info(
     selection: &Option<Rect>,
     prev_selection: &Option<Rect>,
     placement: &Placement,
-) -> (Option<Rect>, Option<Rect>, Option<SelectionEdges>, Vec<(f32, f32)>) {
+) -> (Option<Rect>, Option<Rect>, Option<SelectionEdges>) {
     let local_sel = selection
         .as_ref()
         .and_then(|sel| global_selection_to_local(sel, placement));
@@ -368,7 +378,7 @@ fn selection_render_info(
         }
     }
 
-    (local_sel, prev_local, edges, handles)
+    (local_sel, prev_local, edges)
 }
 
 fn monitor_dirty_rect(
@@ -381,7 +391,7 @@ fn monitor_dirty_rect(
     monitor_idx: usize,
 ) -> Option<Rect> {
     let mut dirty: Option<Rect> = None;
-    let selection_pad = (HANDLE_RADIUS as f32).max(2.0);
+    let selection_pad = (HANDLE_RADIUS as f32).max(4.0);
 
     if selection_dirty {
         if let Some(r) = local_sel.as_ref().and_then(|sel| expand_rect(sel, selection_pad)) {
