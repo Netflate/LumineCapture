@@ -13,8 +13,9 @@ pub struct SelectionEdges {
 
 
 
-pub const ZOOM: f32 = 4.5;
-pub const MAG_SIZE: u32 = 160;
+pub const ZOOM: f32 = 10.0;
+pub const MAG_CELLS: u32 = 21;  // must be uneven
+pub const MAG_SIZE: u32 = (MAG_CELLS as f32 * ZOOM) as u32;  
 pub const MAG_OFFSET: f32 = 24.0;
 pub const HANDLE_RADIUS: f64 = 8.0; // pixels around selection border 
 pub const MAG_FRAME_INTERVAL: Duration = Duration::from_millis(16); // magnifier fps - 60
