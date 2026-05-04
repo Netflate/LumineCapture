@@ -1,5 +1,7 @@
 use tiny_skia::Rect;
+use tiny_skia::Pixmap;
 use crate::types::{Placement, SelectionEdges, SelectionHandle, HANDLE_RADIUS};
+use std::path::PathBuf;
 
 pub fn make_rect(a: (f64, f64), b: (f64, f64)) -> Option<Rect> {
     let x = a.0.min(b.0) as f32;
@@ -142,4 +144,48 @@ pub fn hit_test_selection(sel: &Rect, pos: (f64, f64)) -> SelectionHandle {
         }
         (false, false) => SelectionHandle::Move, 
     }
+}
+
+
+
+pub fn encode_png(pixmap: &Pixmap) -> Vec<u8> {
+    use image::codecs::png::{PngEncoder, CompressionType, FilterType};
+    use image::ImageEncoder;
+
+    let mut png_bytes = Vec::new();
+    let mut rgba = pixmap.data().to_vec();
+    for px in rgba.chunks_exact_mut(4) {
+        px.swap(0, 2);
+    }
+    let encoder = PngEncoder::new_with_quality(
+        &mut png_bytes,
+        CompressionType::Fast,
+        FilterType::Adaptive,
+    );
+    encoder.write_image(
+        &rgba,
+        pixmap.width(),
+        pixmap.height(),
+        image::ExtendedColorType::Rgba8,
+    ).unwrap();
+
+    png_bytes
+}
+
+pub fn save_to_file(png_data: &[u8]) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let now = chrono::Local::now();
+
+    let dir = dirs::picture_dir()
+        .unwrap_or_else(|| PathBuf::from("~/Pictures"))             // hardcoded TOFIX
+        .join("screenshots")
+        .join(now.format("%Y-%m").to_string());
+    
+    std::fs::create_dir_all(&dir)?;
+
+    let filename = now.format("%Y-%m-%d_%H-%M.png").to_string();    // hardcoded TOFIX
+    let path = dir.join(filename);
+
+    std::fs::write(&path, png_data)?;
+    Ok(path)
+
 }

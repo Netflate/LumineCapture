@@ -52,9 +52,11 @@ impl Dispatch<wl_registry::WlRegistry, ()> for ClipboardState {
         match event {
             wl_registry::Event::Global { name, interface, version } => {
                 if interface == wl_seat::WlSeat::interface().name {
-                    state.seat = Some(registry.bind(name, version, qh, ()));
+                    let ver = version.min(wl_seat::WlSeat::interface().version);
+                    state.seat = Some(registry.bind(name, ver, qh, ()));
                 } else if interface == ExtDataControlManagerV1::interface().name {
-                    state.manager = Some(registry.bind(name, version, qh, ()));
+                    let ver = version.min(ExtDataControlManagerV1::interface().version);
+                    state.manager = Some(registry.bind(name, ver, qh, ()));
                 }
             }
             _ => {}
@@ -111,14 +113,30 @@ impl Dispatch<ExtDataControlSourceV1, ()> for ClipboardState {
 
 pub fn copy_image_to_clipboard(
     png_data: Vec<u8>,
-    wayland_connection: &wayland_client::Connection,
+    _wayland_connection: &wayland_client::Connection,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let conn = wayland_connection;
+    unsafe {
+        match nix::unistd::fork()? {
+            nix::unistd::ForkResult::Parent { .. } => return Ok(()),
+            nix::unistd::ForkResult::Child => {
+                // load all fd beisdes stdin/stdout/stderr
+                // to aboid heritage of overlay socket
+                // otherwise overlay will permamently freeze, even after the program exits.
+                let max_fd = nix::unistd::sysconf(nix::unistd::SysconfVar::OPEN_MAX)
+                    .unwrap_or(Some(1024))
+                    .unwrap_or(1024);
+                for fd in 3..max_fd {
+                    let _ = nix::unistd::close(fd as i32);
+                }
+            }
+        }
+    }
+
+    let conn = Connection::connect_to_env()?;
     let mut event_queue = conn.new_event_queue();
     let qh = event_queue.handle();
 
-    let display = conn.display();
-    display.get_registry(&qh, ());
+    conn.display().get_registry(&qh, ());
 
     let mut state = ClipboardState {
         seat: None,
@@ -142,16 +160,11 @@ pub fn copy_image_to_clipboard(
     device.set_selection(Some(&source));
     state.device = Some(device);
 
-    unsafe {
-        match nix::unistd::fork()? {
-            nix::unistd::ForkResult::Parent { .. } => return Ok(()),
-            nix::unistd::ForkResult::Child => {}
-        }
-    }
+    event_queue.roundtrip(&mut state)?;
 
     while !state.cancelled {
         event_queue.blocking_dispatch(&mut state)?;
     }
 
-    Ok(())
+    std::process::exit(0);
 }

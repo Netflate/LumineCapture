@@ -1,8 +1,8 @@
-use crate::backend::{ScreenOverlay, initialize_capture, initialize_overlay};
+use crate::backend::{ScreenOverlay, initialize_capture, initialize_clipboard, initialize_overlay};
 use crate::types::{DamageRect, EditMode, EditorState, MagnifierState, MonitorFrame, MouseButton, OverlayEvent, Placement, PointerState, SelectionEdges, SelectionHandle, SelectionState, HANDLE_RADIUS, MAG_FRAME_INTERVAL};
 use tiny_skia::{Pixmap, PixmapPaint, Transform, Rect};
 use crate::renderer::{self, apply_handle_drag};
-use crate::utils::{make_rect, global_selection_to_local, global_point_to_local, hit_test_selection, point_in_monitor, selection_edges_for_monitor, selection_handle_points};
+use crate::utils::{make_rect, global_selection_to_local, global_point_to_local, hit_test_selection, point_in_monitor, selection_edges_for_monitor, selection_handle_points, encode_png, save_to_file};
 use std::time::{Instant};
 
 
@@ -13,14 +13,24 @@ pub async fn make_screenshot (
     
     let conn = wayland_conn.unwrap();
     let capture = initialize_capture();
-    let mut overlay = initialize_overlay(conn);
+    let mut overlay = initialize_overlay(conn.clone());
     let screenshots = capture.capture_frame().await?;
+    let clipboard = initialize_clipboard(conn);
+    
     println!("after capturing {}ms", t0.elapsed().as_millis());               
     
-
+    
     let base_pixmaps: Vec<Pixmap> = build_base_pixmap(&screenshots.frames);
+    println!("after initialising base_pixmaps, which are original frames in Vec<Pixmap> {}ms", t0.elapsed().as_millis());                
     let (canvas, dimmed) = build_layers(&base_pixmaps);
+    println!("after initialising dimmed canvas, same size dimmed frames {}ms", t0.elapsed().as_millis());                
     let placements = build_placements(&screenshots.frames); 
+
+
+    drop(screenshots); 
+    // 4 may 2026 : ~75mb memory usage while screenshoting on kde linux with 2 hd monitors
+    // not ideal, could be resolved with rendering in shm itself 
+
 
     let mut editor_state = EditorState {
         base: base_pixmaps,
@@ -47,6 +57,8 @@ pub async fn make_screenshot (
     let mut dirty_mask : u32 = 0 ;
     let mut selection_dirty = false;
 
+    let mut save_to_clipboard = false;
+    let _save_as_file = true;                    // hardcoded
     loop {
         let ev = overlay.next_event()?;
         match ev {
@@ -91,6 +103,11 @@ pub async fn make_screenshot (
                     }
                     _ => {}
                 }
+            }
+            OverlayEvent::SaveToClipboard => {
+                drop(overlay);
+                save_to_clipboard = true;
+                break
             }
         }
 
@@ -140,6 +157,15 @@ pub async fn make_screenshot (
             dirty_mask = 0;
         }
     }
+    if save_to_clipboard {
+        let final_result = render_final(&editor_state);
+        // it doesn't make sense, but while this program in wip 
+        // it will have one option - save to clipboard AND file
+
+        let _path = save_to_file(&final_result);
+        clipboard.copy_image_to_clipboard(final_result)?;   
+    }
+
     Ok(())
 }
 
@@ -234,7 +260,10 @@ fn build_placements(frames: &Vec<MonitorFrame>) -> Vec<Placement> {
     frames.iter()
     .map(|stream| Placement {
         position: stream.info.position.unwrap_or((0, 0)),
-        size: stream.info.size.unwrap_or((0, 0)),
+        size: stream
+            .info
+            .size
+            .unwrap_or((stream.pw_width as i32, stream.pw_height as i32)),
     })
     .collect()
 }
@@ -525,3 +554,46 @@ fn monitors_for_selection(selection: &Rect, placements: &[Placement]) -> u32 {
     }
     mask
 }
+
+
+fn render_final(editor_state: &EditorState) -> Vec<u8> {
+    let sel = match editor_state.selection.zone {
+        Some(s) => s,
+        None => return vec![],
+    };
+
+    // choosing monitors within the selection zone 
+    let mask = monitors_for_selection(&sel, &editor_state.placements);
+
+    let sel_left = sel.left().floor() as i32;
+    let sel_top = sel.top().floor() as i32;
+    let sel_right = sel.right().ceil() as i32;
+    let sel_bottom = sel.bottom().ceil() as i32;
+    let sel_w = (sel_right - sel_left).max(0) as u32;
+    let sel_h = (sel_bottom - sel_top).max(0) as u32;
+    if sel_w == 0 || sel_h == 0 {
+        return vec![];
+    }
+
+    let mut out = Pixmap::new(sel_w, sel_h).unwrap();
+
+    for (i, placement) in editor_state.placements.iter().enumerate() {
+        if (mask & (1 << i)) == 0 { continue; }
+
+        let dst_x = placement.position.0 - sel_left;
+        let dst_y = placement.position.1 - sel_top;
+
+        out.draw_pixmap(
+            dst_x,
+            dst_y,
+            editor_state.base[i].as_ref(),
+            &PixmapPaint::default(),
+            Transform::identity(),
+            None,
+        );
+    }
+
+    encode_png(&out)
+}
+
+

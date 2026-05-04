@@ -163,4 +163,5 @@ pub enum OverlayEvent {
     PointerButton {button: MouseButton, pressed : bool},
     //MouseUpLeft,
     EscapePressed,
+    SaveToClipboard,
 }

@@ -15,19 +15,42 @@ use wayland_protocols_wlr::layer_shell::v1::client::{
     zwlr_layer_surface_v1::{self, ZwlrLayerSurfaceV1},
 };
 use wayland_client::{
-    Connection, Dispatch, QueueHandle, EventQueue,
+    Connection, Dispatch, QueueHandle, EventQueue, Proxy,
     protocol::{
         wl_buffer, wl_compositor, wl_keyboard, wl_output, wl_region, wl_registry, wl_seat, wl_shm, wl_pointer,
         wl_shm_pool, wl_surface,
     },
 };
-
+use wayland_cursor::CursorTheme;
 
 
 use crate::backend::wayland::overlay::kde_state::KdeState;
+pub struct OverlayState {
+    // global
+    pub compositor: Option<wl_compositor::WlCompositor>,
+    pub layer_shell: Option<ZwlrLayerShellV1>,
+    pub shm: Option<wl_shm::WlShm>,
+    pub outputs: Vec<OutputInfo>,
+    pub seat: Option<wl_seat::WlSeat>,
+    pub frac: Option<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1>,
+    pub frac_scale: Option<wp_fractional_scale_v1::WpFractionalScaleV1>,
+    pub viewporter: Option<wp_viewporter::WpViewporter>,
 
-
-
+    pub cursor_surface: Option<wl_surface::WlSurface>,
+    pub cursor_theme: Option<CursorTheme>,
+    pub cursor_hotspot: (i32, i32),
+    pub pointer_enter_serial: u32,
+    // runtime
+    pub surfaces: HashMap<usize, SurfaceData>,
+    pub events: VecDeque<OverlayEvent>,
+    pub pointer_surface_idx: Option<usize>,
+    pub scale: f64,
+    pub pending_flush: bool,
+    // gnome/kde
+    pub kde :Option<KdeState>,
+    //others 
+    ctrl_held : bool,
+}
 
 pub struct OverlayRunTime {
     pub event_queue: EventQueue<OverlayState>, 
@@ -59,6 +82,11 @@ impl OverlayRunTime {
                 current_desktop: None,
                 pending_desktop_ids: Vec::new(),
             }),
+            ctrl_held: false,
+            pointer_enter_serial: 0,
+            cursor_surface: None,
+            cursor_theme: None,
+            cursor_hotspot: (0, 0),
         };
 
         event_queue.roundtrip(&mut state)?;
@@ -75,6 +103,32 @@ impl OverlayRunTime {
         event_queue.roundtrip(&mut state)?;
         event_queue.roundtrip(&mut state)?;
 
+        // setting visual cursor
+        if let (Some(compositor), Some(shm)) = (&state.compositor, &state.shm) {
+            let size = 24u32;
+            if let Ok(mut theme) = CursorTheme::load(conn, shm.clone(), size) {
+                let cursor = if let Some(cursor) = theme.get_cursor("crosshair") {
+                    Some(cursor)
+                } else if let Some(cursor) = theme.get_cursor("cross") {
+                    Some(cursor)
+                } else {
+                    theme.get_cursor("default")
+                };
+
+                if let Some(cursor) = cursor {
+                    let img = &cursor[0];
+                    let (hx, hy) = img.hotspot();
+                    let surface = compositor.create_surface(&qh, ());
+                    surface.attach(Some(img), 0, 0);
+                    surface.commit();
+                    state.cursor_surface = Some(surface);
+                    state.cursor_hotspot = (hx as i32, hy as i32);
+                }
+
+                // Keep the theme alive so the cursor buffers stay valid.
+                state.cursor_theme = Some(theme);
+            }
+        }
         state.compositor.as_ref().ok_or("no wl_compositor")?;
         state.layer_shell.as_ref().ok_or("no zwlr_layer_shell_v1")?;
         state.shm.as_ref().ok_or("no wl_shm")?;
@@ -82,32 +136,6 @@ impl OverlayRunTime {
         Ok(Self { event_queue, state })
     }
 }
-
-pub struct OverlayState {
-    // global
-    pub compositor: Option<wl_compositor::WlCompositor>,
-    pub layer_shell: Option<ZwlrLayerShellV1>,
-    pub shm: Option<wl_shm::WlShm>,
-    pub outputs: Vec<OutputInfo>,
-    pub seat: Option<wl_seat::WlSeat>,
-    pub frac: Option<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1>,
-    pub frac_scale: Option<wp_fractional_scale_v1::WpFractionalScaleV1>,
-    pub viewporter: Option<wp_viewporter::WpViewporter>,
-
-    // runtime
-    pub surfaces: HashMap<usize, SurfaceData>,
-    pub events: VecDeque<OverlayEvent>,
-    pub pointer_surface_idx: Option<usize>,
-    pub scale: f64,
-    pub pending_flush: bool,
-    // gnome/kde
-    pub kde :Option<KdeState>,
-}
-
-
-
-
-
 
 impl Dispatch<wl_registry::WlRegistry, ()> for OverlayState {
     fn event(
@@ -126,33 +154,40 @@ impl Dispatch<wl_registry::WlRegistry, ()> for OverlayState {
         {
             match interface.as_str() {
                 "wl_compositor" => {
-                    state.compositor = Some(registry.bind(name, version, qh, ()));
+                    let ver = version.min(wl_compositor::WlCompositor::interface().version);
+                    state.compositor = Some(registry.bind(name, ver, qh, ()));
                 }
                 "wl_shm" => {
-                    state.shm = Some(registry.bind(name, version, qh, ()));
+                    let ver = version.min(wl_shm::WlShm::interface().version);
+                    state.shm = Some(registry.bind(name, ver, qh, ()));
                 }
                 "wl_output" => {
-                    let output = registry.bind(name, version, qh, ());
-                    state.outputs.push(OutputInfo {
+                    let ver = version.min(wl_output::WlOutput::interface().version);
+                    let output = registry.bind(name, ver, qh, ());
+                    state.outputs.push(OutputInfo { 
                         output,
-                        x: 0,
-                        y: 0,
-                        width: 0,
-                        height: 0,
+                        x: 0, 
+                        y: 0, 
+                        width: 0, 
+                        height: 0 
                     });
                 }
                 "zwlr_layer_shell_v1" => {
-                    state.layer_shell = Some(registry.bind(name, version, qh, ()));
+                    let ver = version.min(zwlr_layer_shell_v1::ZwlrLayerShellV1::interface().version);
+                    state.layer_shell = Some(registry.bind(name, ver, qh, ()));
                 }
                 "wl_seat" => {
-                    state.seat = Some(registry.bind(name, version, qh, ()));
+                    let ver = version.min(wl_seat::WlSeat::interface().version);
+                    state.seat = Some(registry.bind(name, ver, qh, ()));
                 }
                 "wp_fractional_scale_manager_v1" => {
-                    state.frac = Some(registry.bind(name, version, qh, ()));
+                    let ver = version.min(wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1::interface().version);
+                    state.frac = Some(registry.bind(name, ver, qh, ()));
                 }
                 "wp_viewporter" => {
-                    state.viewporter = Some(registry.bind(name, version, qh, ()));
-                }
+                    let ver: u32 = version.min(wp_viewporter::WpViewporter::interface().version);
+                    state.viewporter = Some(registry.bind(name, ver, qh, ()));
+                } 
                 "org_kde_plasma_virtual_desktop_management" => {
                     let ver = version.min(2);
                     state.kde.as_mut().unwrap().virtual_desktop_manager = Some(registry.bind(name, ver, qh, ()));
@@ -256,6 +291,7 @@ impl Dispatch<wl_seat::WlSeat, ()> for OverlayState {
     }
 }
 
+
 impl Dispatch<wl_keyboard::WlKeyboard, ()> for OverlayState {
     fn event(
         state: &mut Self,
@@ -265,33 +301,56 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for OverlayState {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let wl_keyboard::Event::Key {
-            key,
-            state: key_state,
-            ..
-        } = event
-        {
-            if key == 1 && key_state == wayland_client::WEnum::Value(wl_keyboard::KeyState::Pressed)
-            {
-                state.events.push_back(OverlayEvent::EscapePressed);
+        match event {
+            wl_keyboard::Event::Key { key, state: key_state, .. } => {
+                let pressed = key_state == wayland_client::WEnum::Value(wl_keyboard::KeyState::Pressed);
+                //let released = key_state == wayland_client::WEnum::Value(wl_keyboard::KeyState::Released);
+
+                if key == 1 && pressed {
+                    state.events.push_back(OverlayEvent::EscapePressed);
+                }
+
+                if (key == 46) && pressed && state.ctrl_held {
+                    state.events.push_back(OverlayEvent::SaveToClipboard);
+                }
             }
+            wl_keyboard::Event::Modifiers { mods_depressed, .. } => {
+                // hardcoded, should use xkbcommon
+                state.ctrl_held = (mods_depressed & 4) != 0;
+            }
+            _ => {}
         }
     }
 }
+
 impl Dispatch<wl_pointer::WlPointer, ()> for OverlayState {
     fn event(
         state: &mut Self,
-        _: &wl_pointer::WlPointer,
+        ptr: &wl_pointer::WlPointer,
         event: wl_pointer::Event,
         _: &(),
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
         match event {
-            wl_pointer::Event::Enter { surface, .. } => {
+            wl_pointer::Event::Enter { surface, surface_x, surface_y, serial, .. } => {
+                state.pointer_enter_serial = serial;
                 state.pointer_surface_idx = state.surfaces.iter()
                     .find(|(_, sd)| sd.surface == surface)
                     .map(|(id, _)| *id);
+
+                if let Some(cs) = &state.cursor_surface {
+                    let (hx, hy) = state.cursor_hotspot;
+                    ptr.set_cursor(serial, Some(cs), hx, hy);
+                }
+
+                if let Some(monitor_idx) = state.pointer_surface_idx {
+                    state.events.push_back(OverlayEvent::PointerMove {
+                        monitor_idx,
+                        x: surface_x,
+                        y: surface_y,
+                    });
+                }
             }
             wl_pointer::Event::Leave { .. } => {
                 state.pointer_surface_idx = None;
@@ -315,6 +374,7 @@ impl Dispatch<wl_pointer::WlPointer, ()> for OverlayState {
                 };
                 state.events.push_back(OverlayEvent::PointerButton {button: mb, pressed} );
             }
+
             _ => {}
         }
     }
