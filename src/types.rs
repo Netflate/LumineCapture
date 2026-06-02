@@ -21,9 +21,9 @@ pub const HANDLE_RADIUS: f64 = 8.0; // pixels around selection border
 pub const MAG_FRAME_INTERVAL: Duration = Duration::from_millis(16); // magnifier fps - 60
 
 //toolbar
-pub const TOOLBAR_HEIGHT: u32 = 40;
-pub const TOOLBAR_OFFSET_TOP: u32 = 20;
-pub const TOOLBAR_WIDTH : u32 = 300; // very temporary, should be removed in the next commit
+pub const TOOLBAR_HEIGHT: f32 = 40.0;
+pub const TOOLBAR_OFFSET: f32 = 20.0;
+pub const TOOLBAR_WIDTH : f32 = 300.0; // very temporary, should be removed in the next commit
                                        // width will be simply fill-content 
 
 
@@ -178,16 +178,14 @@ pub enum OverlayEvent {
 
 // toolbar
 pub struct ToolbarState { 
-    pub position: (u32, u32), 
-    pub size : (u32, u32),
+    pub position: (f32, f32), 
+    pub size : (f32, f32),
     pub transparent : bool,
-    //pub current_side : ToolbarPosition, maybe? 
+    pub current_side : ToolbarSide,
     pub monitor_idx : usize, 
 }
 
-pub enum ToolbarPosition {
+pub enum ToolbarSide {
     Top, 
-    Right,
     Bottom,
-    Left,
 }

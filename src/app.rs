@@ -1,5 +1,5 @@
 use crate::backend::{ScreenOverlay, initialize_capture, initialize_clipboard, initialize_overlay};
-use crate::types::{DamageRect, EditMode, EditorState, MagnifierState, MonitorFrame, MouseButton, OverlayEvent, Placement, PointerState, SelectionEdges, SelectionHandle, SelectionState, ToolbarState, HANDLE_RADIUS, MAG_FRAME_INTERVAL, TOOLBAR_HEIGHT, TOOLBAR_OFFSET_TOP, TOOLBAR_WIDTH};
+use crate::types::{DamageRect, EditMode, EditorState, MagnifierState, MonitorFrame, MouseButton, OverlayEvent, Placement, PointerState, SelectionEdges, SelectionHandle, SelectionState, ToolbarState, ToolbarSide, HANDLE_RADIUS, MAG_FRAME_INTERVAL, TOOLBAR_HEIGHT, TOOLBAR_OFFSET, TOOLBAR_WIDTH};
 use tiny_skia::{Pixmap, PixmapPaint, Transform, Rect};
 use crate::renderer::{self, apply_handle_drag};
 use crate::utils::{make_rect, global_selection_to_local, global_point_to_local, hit_test_selection, point_in_monitor, selection_edges_for_monitor, selection_handle_points, encode_png, save_to_file};
@@ -140,6 +140,7 @@ pub async fn make_screenshot (
                         selection_dirty,
                         &editor_state.magnifier,
                         is_mag_monitor,
+                        &editor_state.toolbar,
                     );
 
                     overlay.update_frame(i, editor_state.canvas[i].data(), damage)?;
@@ -289,9 +290,11 @@ fn initial_paint(
             false,
             &editor_state.magnifier,
             false, 
+            &editor_state.toolbar,
         );
         overlay.update_frame(monitor_idx, editor_state.canvas[monitor_idx].data(), None)?;
     }
+
     Ok(())
 }
 
@@ -596,7 +599,14 @@ impl EditorState {
             add_mag_dirty(&self.magnifier);
             add_mag_dirty(&self.prev_magnifier);
         }
-
+        if let Some(tb) = &self.toolbar {
+            if tb.monitor_idx == monitor_idx {
+                if let Some(r) = Rect::from_xywh(tb.position.0, tb.position.1, TOOLBAR_WIDTH, TOOLBAR_HEIGHT) {
+                    dirty = union_rect(dirty, Some(r));
+                }
+            }
+        }
+        
         dirty
     }
 }
@@ -606,26 +616,62 @@ impl EditorState {
 
 // Toolbar stuff 
 fn update_toolbar(
-    editor_state: &mut EditorState,
-    dirty_mask: &mut u32,
-) {
-    let monitor_idx = editor_state.pointer.monitor_idx;
-    let screen_w =  (&editor_state.base[monitor_idx]).width();
-
-    let local_x = (screen_w - TOOLBAR_WIDTH ) / 2;
-    let local_y = TOOLBAR_OFFSET_TOP;
+    editor_state: &mut EditorState, 
+    dirty_mask: &mut u32) 
+{
+    let (side, monitor_idx, pos_x, pos_y) = toolbar_placement(editor_state);
 
     if let Some(ref old_tb) = editor_state.toolbar {
-        if old_tb.monitor_idx != monitor_idx || old_tb.position  != (local_x, local_y) {
+        if old_tb.monitor_idx != monitor_idx || old_tb.position != (pos_x, pos_y) {
             mark_dirty(dirty_mask, old_tb.monitor_idx);
         }
     }
 
-    editor_state.toolbar = Some(ToolbarState {
-        position: (local_x, local_y),
-        size: (TOOLBAR_WIDTH, TOOLBAR_HEIGHT),
-        transparent: false,
-        monitor_idx,
-    });
+    mark_dirty(dirty_mask, monitor_idx);
 
+    editor_state.toolbar = Some(ToolbarState {
+        position: (pos_x, pos_y),
+        size: (TOOLBAR_WIDTH,TOOLBAR_WIDTH),
+        monitor_idx,
+        current_side: side,
+        transparent: false,
+    });
+}
+
+
+
+fn toolbar_placement(editor_state: &EditorState) -> (ToolbarSide, usize, f32, f32) {
+    let monitor_idx = editor_state.pointer.monitor_idx;
+    let placement = &editor_state.placements[monitor_idx];
+    let mon_w = placement.size.0 as f32;
+    let mon_h = placement.size.1 as f32;
+
+
+    let x = (mon_w - TOOLBAR_WIDTH) / 2.0;
+
+    let local_sel = editor_state.selection.zone
+        .as_ref()
+        .and_then(|sel| global_selection_to_local(sel, placement));
+
+    let top_rect    = (x, TOOLBAR_OFFSET,              x + TOOLBAR_WIDTH, TOOLBAR_OFFSET + TOOLBAR_HEIGHT);
+    let bottom_rect = (x, mon_h - TOOLBAR_OFFSET - TOOLBAR_HEIGHT, x + TOOLBAR_WIDTH, mon_h - TOOLBAR_OFFSET);
+
+    let overlaps = |tb: (f32, f32, f32, f32), sel: &Rect| -> bool {
+        tb.0 < sel.right() && tb.2 > sel.left() &&
+        tb.1 < sel.bottom() && tb.3 > sel.top()
+    };
+
+    match local_sel {
+        None => (ToolbarSide::Top, monitor_idx, x, TOOLBAR_OFFSET),
+        Some(sel) => {
+            if !overlaps(top_rect, &sel) {
+                (ToolbarSide::Top, monitor_idx, x, TOOLBAR_OFFSET)
+            } else if !overlaps(bottom_rect, &sel) {
+                (ToolbarSide::Bottom, monitor_idx, x, mon_h - TOOLBAR_OFFSET - TOOLBAR_HEIGHT)
+            } else {
+                // оба перекрыты — сверху всё равно
+                (ToolbarSide::Top, monitor_idx, x, TOOLBAR_OFFSET)
+            }
+        }
+    }
 }

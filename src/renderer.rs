@@ -1,4 +1,4 @@
-use crate::types::{MagnifierState, SelectionEdges, SelectionHandle, MAG_OFFSET, MAG_SIZE, ZOOM, MAG_CELLS};
+use crate::types::{MagnifierState, SelectionEdges, SelectionHandle, ToolbarState, MAG_OFFSET, MAG_SIZE, ZOOM, MAG_CELLS, TOOLBAR_HEIGHT, TOOLBAR_WIDTH};
 use tiny_skia::{Color, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform};
 use crate::utils::make_rect;
 
@@ -6,7 +6,8 @@ use crate::utils::make_rect;
 
 
 
-
+// this function absolutely stinks
+// it will be refactored to take RenderRequest struct (read-only) instead 
 pub fn render_frame(
     canvas: &mut Pixmap,
     base: &Pixmap,          // only for magnifier 
@@ -18,6 +19,8 @@ pub fn render_frame(
     selection_dirty: bool, 
     magnifier: &Option<MagnifierState>,
     is_mag_monitor: bool,
+    toolbar : &Option<ToolbarState>,
+
 ) {
     if selection_dirty {
         update_dimming_delta(dimmed, base, prev_selection, selection);
@@ -27,6 +30,7 @@ pub fn render_frame(
     } else {
         canvas.data_mut().copy_from_slice(dimmed.data());
     }
+
     if let Some(sel) = selection {
         draw_selection_border(canvas, sel, selection_edges);
     }
@@ -35,6 +39,10 @@ pub fn render_frame(
         if let Some(mag) = magnifier {
             draw_magnifier(canvas, base, (mag.pos.0 as f32, mag.pos.1 as f32));
         }
+    }
+
+    if let Some(tb) = toolbar {
+        draw_toolbar(canvas, tb);
     }
 }
 
@@ -390,4 +398,16 @@ fn overlay_crosshair(zoomed: &mut Pixmap) {
 ///  TOOLBAR SECTION ///
 //********************/
 
-fn draw_toolbar(canvas: &mut Pixmap) {}
+fn draw_toolbar(canvas: &mut Pixmap, toolbar: &ToolbarState) {
+    let (x, y) = (toolbar.position.0, toolbar.position.1);
+    let (w, h) = (TOOLBAR_WIDTH, TOOLBAR_HEIGHT);
+
+    let Some(rect) = Rect::from_xywh(x, y, w, h) else { return };
+    let Some(path) = rounded_rect_path(&rect, 8.0, true, true, true, true) else { return };
+
+    let mut paint = Paint::default();
+    paint.set_color(Color::from_rgba8(30, 30, 30, 220));
+    paint.anti_alias = true;
+
+    canvas.fill_path(&path, &paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
+}
