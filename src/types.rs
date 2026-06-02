@@ -20,6 +20,14 @@ pub const MAG_OFFSET: f32 = 24.0;
 pub const HANDLE_RADIUS: f64 = 8.0; // pixels around selection border 
 pub const MAG_FRAME_INTERVAL: Duration = Duration::from_millis(16); // magnifier fps - 60
 
+//toolbar
+pub const TOOLBAR_HEIGHT: u32 = 40;
+pub const TOOLBAR_OFFSET_TOP: u32 = 20;
+pub const TOOLBAR_WIDTH : u32 = 300; // very temporary, should be removed in the next commit
+                                       // width will be simply fill-content 
+
+
+
 pub type DamageRect = (u32, u32, u32, u32);
 
 
@@ -112,8 +120,9 @@ pub struct EditorState {
     pub last_mag_update: Option<Instant>,
     pub mouse_down_left : bool,
     pub selection: SelectionState,
-    
+    pub toolbar : Option<ToolbarState>,
 }
+
 #[derive(Debug)]
 pub struct MagnifierState {
     pub monitor_idx:usize,
@@ -164,4 +173,21 @@ pub enum OverlayEvent {
     //MouseUpLeft,
     EscapePressed,
     SaveToClipboard,
+}
+
+
+// toolbar
+pub struct ToolbarState { 
+    pub position: (u32, u32), 
+    pub size : (u32, u32),
+    pub transparent : bool,
+    //pub current_side : ToolbarPosition, maybe? 
+    pub monitor_idx : usize, 
+}
+
+pub enum ToolbarPosition {
+    Top, 
+    Right,
+    Bottom,
+    Left,
 }

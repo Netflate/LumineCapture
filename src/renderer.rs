@@ -384,3 +384,10 @@ fn overlay_crosshair(zoomed: &mut Pixmap) {
         zoomed.fill_path(&PathBuilder::from_rect(r), &paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
     }
 }
+
+
+//********************/
+///  TOOLBAR SECTION ///
+//********************/
+
+fn draw_toolbar(canvas: &mut Pixmap) {}
