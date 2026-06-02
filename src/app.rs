@@ -606,7 +606,7 @@ impl EditorState {
                 }
             }
         }
-        
+
         dirty
     }
 }
@@ -669,7 +669,6 @@ fn toolbar_placement(editor_state: &EditorState) -> (ToolbarSide, usize, f32, f3
             } else if !overlaps(bottom_rect, &sel) {
                 (ToolbarSide::Bottom, monitor_idx, x, mon_h - TOOLBAR_OFFSET - TOOLBAR_HEIGHT)
             } else {
-                // оба перекрыты — сверху всё равно
                 (ToolbarSide::Top, monitor_idx, x, TOOLBAR_OFFSET)
             }
         }
