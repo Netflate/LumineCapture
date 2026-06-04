@@ -87,53 +87,59 @@ fn draw_selection_border(
 fn rounded_rect_path(
     rect: &Rect,
     r: f32,
-    top: bool,
-    right: bool,
-    bottom: bool,
-    left: bool,
+    top_left: bool,
+    top_right: bool,
+    bottom_right: bool,
+    bottom_left: bool,
 ) -> Option<tiny_skia::Path> {
     let r = r.min(rect.width() / 2.0).min(rect.height() / 2.0);
+    
     let (l, t, ri, b) = (rect.left(), rect.top(), rect.right(), rect.bottom());
-    const K: f32 = 0.5523;
+    const K: f32 = 0.5523; 
 
-    let tl = if top && left   { r } else { 0.0 };
-    let tr = if top && right  { r } else { 0.0 };
-    let br = if bottom && right { r } else { 0.0 };
-    let bl = if bottom && left  { r } else { 0.0 };
+    let r_tl = if top_left     { r } else { 0.0 };
+    let r_tr = if top_right    { r } else { 0.0 };
+    let r_br = if bottom_right { r } else { 0.0 };
+    let r_bl = if bottom_left  { r } else { 0.0 };
 
     let mut pb = PathBuilder::new();
 
-    if top {
-        pb.move_to(l + tl, t);
-        pb.line_to(ri - tr, t);
+    pb.move_to(l + r_tl, t);
+    pb.line_to(ri - r_tr, t);
+
+    if top_right {
+        pb.cubic_to(ri - r_tr * K, t, ri, t + r_tr * K, ri, t + r_tr);
+    } else {
+        pb.line_to(ri, t); 
     }
-    if top && right {
-        pb.cubic_to(ri - tr * K, t, ri, t + tr * K, ri, t + tr);
+
+    pb.line_to(ri, b - r_br);
+
+    if bottom_right {
+        pb.cubic_to(ri, b - r_br * K, ri - r_br * K, b, ri - r_br, b);
+    } else {
+        pb.line_to(ri, b);
     }
-    if right {
-        pb.move_to(ri, t + tr);
-        pb.line_to(ri, b - br);
+
+    pb.line_to(l + r_bl, b);
+
+    if bottom_left {
+        pb.cubic_to(l + r_bl * K, b, l, b - r_bl * K, l, b - r_bl);
+    } else {
+        pb.line_to(l, b);
     }
-    if bottom && right {
-        pb.cubic_to(ri, b - br * K, ri - br * K, b, ri - br, b);
-    }
-    if bottom {
-        pb.move_to(ri - br, b);
-        pb.line_to(l + bl, b);
-    }
-    if bottom && left {
-        pb.cubic_to(l + bl * K, b, l, b - bl * K, l, b - bl);
-    }
-    if left {
-        pb.move_to(l, b - bl);
-        pb.line_to(l, t + tl);
-    }
-    if top && left {
-        pb.cubic_to(l, t + tl * K, l + tl * K, t, l + tl, t);
+
+    pb.line_to(l, t + r_tl);
+
+    if top_left {
+        pb.cubic_to(l, t + r_tl * K, l + r_tl * K, t, l + r_tl, t);
+    } else {
+        pb.line_to(l, t);
     }
 
     pb.finish()
 }
+
 
 
 fn draw_dimming(canvas: &mut Pixmap, selection: &Option<Rect>, w: u32, h: u32) {
@@ -403,6 +409,7 @@ fn draw_toolbar(canvas: &mut Pixmap, toolbar: &ToolbarState) {
     let (w, h) = (TOOLBAR_WIDTH, TOOLBAR_HEIGHT);
 
     let Some(rect) = Rect::from_xywh(x, y, w, h) else { return };
+    
     let Some(path) = rounded_rect_path(&rect, 8.0, true, true, true, true) else { return };
 
     let mut paint = Paint::default();
