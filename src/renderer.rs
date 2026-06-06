@@ -20,7 +20,7 @@ pub fn render_frame(
     selection_dirty: bool, 
     magnifier: &Option<MagnifierState>,
     is_mag_monitor: bool,
-    toolbar : &Option<Toolbar>,
+    toolbar : Option<&Toolbar>,
 
 ) {
     if selection_dirty {

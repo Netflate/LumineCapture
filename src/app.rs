@@ -46,7 +46,7 @@ pub async fn make_screenshot (
         prev_magnifier: None,
         last_mag_update: None,
         mouse_down_left: false,
-        toolbar: None, 
+        toolbar: Toolbar::new(), 
     };
 
     println!("after saving base screenshot {}ms", t0.elapsed().as_millis());                
@@ -130,6 +130,12 @@ pub async fn make_screenshot (
                         .as_ref()
                         .and_then(|r| renderer::rect_bounds(r, editor_state.base[i].width(), editor_state.base[i].height()));
 
+                    let toolbar = if i == editor_state.toolbar.monitor_idx {
+                        Some(&editor_state.toolbar)
+                    } else {
+                        None
+                    };
+
                     renderer::render_frame(
                         &mut editor_state.canvas[i],
                         &editor_state.base[i],
@@ -141,7 +147,7 @@ pub async fn make_screenshot (
                         selection_dirty,
                         &editor_state.magnifier,
                         is_mag_monitor,
-                        &editor_state.toolbar,
+                        toolbar,
                     );
 
                     overlay.update_frame(i, editor_state.canvas[i].data(), damage)?;
@@ -291,7 +297,7 @@ fn initial_paint(
             false,
             &editor_state.magnifier,
             false, 
-            &editor_state.toolbar,
+            None,
         );
         overlay.update_frame(monitor_idx, editor_state.canvas[monitor_idx].data(), None)?;
     }
@@ -600,13 +606,25 @@ impl EditorState {
             add_mag_dirty(&self.magnifier);
             add_mag_dirty(&self.prev_magnifier);
         }
-        if let Some(tb) = &self.toolbar {
-            if tb.monitor_idx == monitor_idx {
-                if let Some(r) = Rect::from_xywh(tb.position.0, tb.position.1, tb.size.0, TOOLBAR_HEIGHT) {
-                    dirty = union_rect(dirty, Some(r));
-                }
+
+    let tb = &self.toolbar;
+    if tb.monitor_idx == monitor_idx {
+        if let Some(r) = Rect::from_xywh(tb.position.0, tb.position.1, tb.size.0, TOOLBAR_HEIGHT) {
+            dirty = union_rect(dirty, Some(r));
+        }
+        // if toolbar position (side) changed
+        if tb.prev_monitor_idx == monitor_idx && tb.prev_position != tb.position {
+            if let Some(r) = Rect::from_xywh(tb.prev_position.0, tb.prev_position.1, tb.size.0, TOOLBAR_HEIGHT) {
+                dirty = union_rect(dirty, Some(r));
             }
         }
+    }
+    // if toolbar monitor changed
+    if tb.prev_monitor_idx == monitor_idx && tb.prev_monitor_idx != tb.monitor_idx {
+        if let Some(r) = Rect::from_xywh(tb.prev_position.0, tb.prev_position.1, tb.size.0, TOOLBAR_HEIGHT) {
+            dirty = union_rect(dirty, Some(r));
+        }
+    }
 
         dirty
     }
@@ -618,23 +636,25 @@ impl EditorState {
 // Toolbar stuff 
 fn update_toolbar(
     editor_state: &mut EditorState, 
-    dirty_mask: &mut u32) 
-{
+    dirty_mask: &mut u32
+) {
     let (side, monitor_idx, pos_x, pos_y) = toolbar_placement(editor_state);
+    let tb = &mut editor_state.toolbar;
 
-    if let Some(ref old_tb) = editor_state.toolbar {
-        if old_tb.monitor_idx != monitor_idx || old_tb.position != (pos_x, pos_y) {
-            mark_dirty(dirty_mask, old_tb.monitor_idx);
+    if tb.monitor_idx != monitor_idx || tb.position != (pos_x, pos_y) {
+        tb.prev_position = tb.position;
+        tb.prev_monitor_idx = tb.monitor_idx;
+        
+        
+        mark_dirty(dirty_mask, tb.monitor_idx);
+        if tb.monitor_idx != monitor_idx {
+            mark_dirty(dirty_mask, monitor_idx);
         }
+        
+        tb.position = (pos_x, pos_y);
+        tb.current_side = side;
+        tb.monitor_idx = monitor_idx;
     }
-
-    mark_dirty(dirty_mask, monitor_idx);
-
-    editor_state.toolbar = Some(Toolbar::new(
-        (pos_x, pos_y), 
-        Some(true), 
-        Some(side), 
-        monitor_idx,));
 }
 
 
@@ -644,16 +664,13 @@ fn toolbar_placement(editor_state: &EditorState) -> (ToolbarSide, usize, f32, f3
     let mon_w = placement.size.0 as f32;
     let mon_h = placement.size.1 as f32;
 
-    let toolbar = editor_state.toolbar
-        .as_ref()
-        .expect("Toolbar must exist during placement calculation"); 
+    let tb = &editor_state.toolbar;
+    let tb_width: f32 = tb.size.0; 
 
-    let toolbar_width = toolbar.size.0; 
+    let x = (mon_w - tb_width) / 2.0;
 
-    let x = (mon_w - toolbar_width) / 2.0;
-
-    let top_rect    = (x, TOOLBAR_OFFSET, x + toolbar_width, TOOLBAR_OFFSET + TOOLBAR_HEIGHT);
-    let bottom_rect = (x, mon_h - TOOLBAR_OFFSET - TOOLBAR_HEIGHT, x + toolbar_width, mon_h - TOOLBAR_OFFSET);
+    let top_rect    = (x, TOOLBAR_OFFSET, x + tb_width, TOOLBAR_OFFSET + TOOLBAR_HEIGHT);
+    let bottom_rect = (x, mon_h - TOOLBAR_OFFSET - TOOLBAR_HEIGHT, x + tb_width, mon_h - TOOLBAR_OFFSET);
 
     let overlaps = |tb: (f32, f32, f32, f32), sel: &Rect| -> bool {
         tb.0 < sel.right() && tb.2 > sel.left() &&

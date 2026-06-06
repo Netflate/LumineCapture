@@ -113,7 +113,7 @@ pub struct EditorState {
     pub last_mag_update: Option<Instant>,
     pub mouse_down_left : bool,
     pub selection: SelectionState,
-    pub toolbar : Option<Toolbar>,
+    pub toolbar : Toolbar,
 }
 
 #[derive(Debug)]

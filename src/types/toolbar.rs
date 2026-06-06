@@ -28,22 +28,23 @@ pub struct Toolbar {
     pub transparent: bool,
     pub current_side: ToolbarSide,
     pub monitor_idx: usize, 
+
+    pub prev_position: (f32, f32),
+    pub prev_monitor_idx: usize,
 }
 
 impl Toolbar {
-    pub fn new(
-        position: (f32, f32), 
-        transparent: Option<bool>, 
-        current_side: Option<ToolbarSide>, 
-        monitor_idx: usize
-    ) -> Self {            
+    pub fn new() -> Self {            
         let mut toolbar = Self { 
             items: TOOLBAR_ITEMS,
-            position,
             size: (0.0, TOOLBAR_HEIGHT), 
-            transparent: transparent.unwrap_or(false),
-            current_side: current_side.unwrap_or(ToolbarSide::Top), 
-            monitor_idx,
+            transparent: false,
+            current_side: ToolbarSide::Top, 
+            monitor_idx: 0,
+            position: (0.0,0.0),
+
+            prev_position: (0.0,0.0),
+            prev_monitor_idx: 0,
         };
 
         toolbar.size.0 = toolbar.toolbar_width() as f32;
@@ -51,6 +52,7 @@ impl Toolbar {
         
         toolbar
     }
+
     
     pub fn toolbar_width(&self) -> u32 {
         let mut total_width = 8; 
