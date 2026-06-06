@@ -1,8 +1,14 @@
-use tiny_skia::{Rect, Color, Pixmap};
+pub mod toolbar;
+use crate::types::toolbar::{Toolbar};
+
+
+use tiny_skia::{Rect, Pixmap};
 use std::time::{Instant, Duration};
 use wayland_client::{
     protocol::{wl_output},
 };
+
+
 
 pub struct SelectionEdges {
     pub left : bool, 
@@ -20,23 +26,10 @@ pub const MAG_OFFSET: f32 = 24.0;
 pub const HANDLE_RADIUS: f64 = 8.0; // pixels around selection border 
 pub const MAG_FRAME_INTERVAL: Duration = Duration::from_millis(16); // magnifier fps - 60
 
-//toolbar
-pub const TOOLBAR_HEIGHT: f32 = 40.0;
-pub const TOOLBAR_OFFSET: f32 = 20.0;
-pub const TOOLBAR_WIDTH : f32 = 300.0; // very temporary, should be removed in the next commit
-                                       // width will be simply fill-content 
-
 
 
 pub type DamageRect = (u32, u32, u32, u32);
 
-
-
-pub enum Annotation {
-    Arrow { from: (f32,f32), to: (f32,f32), color: Color },
-    Rect  { rect: Rect, color: Color },
-    Text  { pos: (f32,f32), content: String },              // Toadd text fonts, or for now system's default font 
-}
 
 #[derive(Clone)]
 pub struct OutputInfo {
@@ -120,7 +113,7 @@ pub struct EditorState {
     pub last_mag_update: Option<Instant>,
     pub mouse_down_left : bool,
     pub selection: SelectionState,
-    pub toolbar : Option<ToolbarState>,
+    pub toolbar : Option<Toolbar>,
 }
 
 #[derive(Debug)]
@@ -176,16 +169,3 @@ pub enum OverlayEvent {
 }
 
 
-// toolbar
-pub struct ToolbarState { 
-    pub position: (f32, f32), 
-    pub size : (f32, f32),
-    pub transparent : bool,
-    pub current_side : ToolbarSide,
-    pub monitor_idx : usize, 
-}
-
-pub enum ToolbarSide {
-    Top, 
-    Bottom,
-}

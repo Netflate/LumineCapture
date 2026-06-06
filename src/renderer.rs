@@ -1,4 +1,5 @@
-use crate::types::{MagnifierState, SelectionEdges, SelectionHandle, ToolbarState, MAG_OFFSET, MAG_SIZE, ZOOM, MAG_CELLS, TOOLBAR_HEIGHT, TOOLBAR_WIDTH};
+use crate::types::{MagnifierState, SelectionEdges, SelectionHandle, MAG_OFFSET, MAG_SIZE, ZOOM, MAG_CELLS};
+use crate::types::toolbar::{Toolbar};
 use tiny_skia::{Color, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform};
 use crate::utils::make_rect;
 
@@ -19,7 +20,7 @@ pub fn render_frame(
     selection_dirty: bool, 
     magnifier: &Option<MagnifierState>,
     is_mag_monitor: bool,
-    toolbar : &Option<ToolbarState>,
+    toolbar : &Option<Toolbar>,
 
 ) {
     if selection_dirty {
@@ -401,12 +402,12 @@ fn overlay_crosshair(zoomed: &mut Pixmap) {
 
 
 //********************/
-///  TOOLBAR SECTION ///
+//  TOOLBAR SECTION  //
 //********************/
 
-fn draw_toolbar(canvas: &mut Pixmap, toolbar: &ToolbarState) {
+fn draw_toolbar(canvas: &mut Pixmap, toolbar: &Toolbar) {
     let (x, y) = (toolbar.position.0, toolbar.position.1);
-    let (w, h) = (TOOLBAR_WIDTH, TOOLBAR_HEIGHT);
+    let (w, h) = toolbar.size; 
 
     let Some(rect) = Rect::from_xywh(x, y, w, h) else { return };
     
@@ -418,3 +419,4 @@ fn draw_toolbar(canvas: &mut Pixmap, toolbar: &ToolbarState) {
 
     canvas.fill_path(&path, &paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
 }
+

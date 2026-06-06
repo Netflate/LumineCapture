@@ -1,5 +1,6 @@
 use crate::backend::{ScreenOverlay, initialize_capture, initialize_clipboard, initialize_overlay};
-use crate::types::{DamageRect, EditMode, EditorState, MagnifierState, MonitorFrame, MouseButton, OverlayEvent, Placement, PointerState, SelectionEdges, SelectionHandle, SelectionState, ToolbarState, ToolbarSide, HANDLE_RADIUS, MAG_FRAME_INTERVAL, TOOLBAR_HEIGHT, TOOLBAR_OFFSET, TOOLBAR_WIDTH};
+use crate::types::{DamageRect, EditMode, EditorState, MagnifierState, MonitorFrame, MouseButton, OverlayEvent, Placement, PointerState, SelectionEdges, SelectionHandle, SelectionState, HANDLE_RADIUS, MAG_FRAME_INTERVAL};
+use crate::types::toolbar::{Toolbar, ToolbarSide, TOOLBAR_HEIGHT, TOOLBAR_OFFSET};
 use tiny_skia::{Pixmap, PixmapPaint, Transform, Rect};
 use crate::renderer::{self, apply_handle_drag};
 use crate::utils::{make_rect, global_selection_to_local, global_point_to_local, hit_test_selection, point_in_monitor, selection_edges_for_monitor, selection_handle_points, encode_png, save_to_file};
@@ -601,7 +602,7 @@ impl EditorState {
         }
         if let Some(tb) = &self.toolbar {
             if tb.monitor_idx == monitor_idx {
-                if let Some(r) = Rect::from_xywh(tb.position.0, tb.position.1, TOOLBAR_WIDTH, TOOLBAR_HEIGHT) {
+                if let Some(r) = Rect::from_xywh(tb.position.0, tb.position.1, tb.size.0, TOOLBAR_HEIGHT) {
                     dirty = union_rect(dirty, Some(r));
                 }
             }
@@ -629,15 +630,12 @@ fn update_toolbar(
 
     mark_dirty(dirty_mask, monitor_idx);
 
-    editor_state.toolbar = Some(ToolbarState {
-        position: (pos_x, pos_y),
-        size: (TOOLBAR_WIDTH,TOOLBAR_WIDTH),
-        monitor_idx,
-        current_side: side,
-        transparent: false,
-    });
+    editor_state.toolbar = Some(Toolbar::new(
+        (pos_x, pos_y), 
+        Some(true), 
+        Some(side), 
+        monitor_idx,));
 }
-
 
 
 fn toolbar_placement(editor_state: &EditorState) -> (ToolbarSide, usize, f32, f32) {
@@ -646,31 +644,34 @@ fn toolbar_placement(editor_state: &EditorState) -> (ToolbarSide, usize, f32, f3
     let mon_w = placement.size.0 as f32;
     let mon_h = placement.size.1 as f32;
 
-
-    let x = (mon_w - TOOLBAR_WIDTH) / 2.0;
-
-    let local_sel = editor_state.selection.zone
+    let toolbar = editor_state.toolbar
         .as_ref()
-        .and_then(|sel| global_selection_to_local(sel, placement));
+        .expect("Toolbar must exist during placement calculation"); 
 
-    let top_rect    = (x, TOOLBAR_OFFSET,              x + TOOLBAR_WIDTH, TOOLBAR_OFFSET + TOOLBAR_HEIGHT);
-    let bottom_rect = (x, mon_h - TOOLBAR_OFFSET - TOOLBAR_HEIGHT, x + TOOLBAR_WIDTH, mon_h - TOOLBAR_OFFSET);
+    let toolbar_width = toolbar.size.0; 
+
+    let x = (mon_w - toolbar_width) / 2.0;
+
+    let top_rect    = (x, TOOLBAR_OFFSET, x + toolbar_width, TOOLBAR_OFFSET + TOOLBAR_HEIGHT);
+    let bottom_rect = (x, mon_h - TOOLBAR_OFFSET - TOOLBAR_HEIGHT, x + toolbar_width, mon_h - TOOLBAR_OFFSET);
 
     let overlaps = |tb: (f32, f32, f32, f32), sel: &Rect| -> bool {
         tb.0 < sel.right() && tb.2 > sel.left() &&
         tb.1 < sel.bottom() && tb.3 > sel.top()
     };
 
+    let local_sel = editor_state.selection.zone
+        .as_ref()
+        .and_then(|sel| global_selection_to_local(sel, placement));
+
     match local_sel {
-        None => (ToolbarSide::Top, monitor_idx, x, TOOLBAR_OFFSET),
-        Some(sel) => {
-            if !overlaps(top_rect, &sel) {
-                (ToolbarSide::Top, monitor_idx, x, TOOLBAR_OFFSET)
-            } else if !overlaps(bottom_rect, &sel) {
+        Some(sel) if overlaps(top_rect, &sel) => {
+            if !overlaps(bottom_rect, &sel) {
                 (ToolbarSide::Bottom, monitor_idx, x, mon_h - TOOLBAR_OFFSET - TOOLBAR_HEIGHT)
             } else {
                 (ToolbarSide::Top, monitor_idx, x, TOOLBAR_OFFSET)
             }
         }
+        _ => (ToolbarSide::Top, monitor_idx, x, TOOLBAR_OFFSET),
     }
 }
