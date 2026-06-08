@@ -1,5 +1,8 @@
 pub mod toolbar;
-use crate::types::toolbar::{Toolbar};
+pub mod icons;
+
+use crate::types::toolbar::{Toolbar, Tool};
+use usvg::Tree;
 
 
 use tiny_skia::{Rect, Pixmap};
@@ -7,8 +10,7 @@ use std::time::{Instant, Duration};
 use wayland_client::{
     protocol::{wl_output},
 };
-
-
+use std::collections::HashMap;
 
 pub struct SelectionEdges {
     pub left : bool, 
@@ -114,6 +116,7 @@ pub struct EditorState {
     pub mouse_down_left : bool,
     pub selection: SelectionState,
     pub toolbar : Toolbar,
+    pub icon_cache : HashMap<Tool, Tree>,
 }
 
 #[derive(Debug)]

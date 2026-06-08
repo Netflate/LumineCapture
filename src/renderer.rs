@@ -1,7 +1,10 @@
 use crate::types::{MagnifierState, SelectionEdges, SelectionHandle, MAG_OFFSET, MAG_SIZE, ZOOM, MAG_CELLS};
-use crate::types::toolbar::{Toolbar};
+use crate::types::toolbar::{Toolbar, Tool, ToolbarSide};
 use tiny_skia::{Color, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform};
 use crate::utils::make_rect;
+use std::collections::HashMap;
+use usvg::Tree;
+
 
 
 
@@ -21,6 +24,7 @@ pub fn render_frame(
     magnifier: &Option<MagnifierState>,
     is_mag_monitor: bool,
     toolbar : Option<&Toolbar>,
+    icons_cache : &HashMap<Tool, Tree>
 
 ) {
     if selection_dirty {
@@ -43,7 +47,7 @@ pub fn render_frame(
     }
 
     if let Some(tb) = toolbar {
-        draw_toolbar(canvas, tb);
+        draw_toolbar(canvas, tb, icons_cache);
     }
 }
 
@@ -405,18 +409,28 @@ fn overlay_crosshair(zoomed: &mut Pixmap) {
 //  TOOLBAR SECTION  //
 //********************/
 
-fn draw_toolbar(canvas: &mut Pixmap, toolbar: &Toolbar) {
+fn draw_toolbar(canvas: &mut Pixmap, toolbar: &Toolbar, icons_cache : &HashMap<Tool, Tree>) {
     let (x, y) = (toolbar.position.0, toolbar.position.1);
     let (w, h) = toolbar.size; 
 
     let Some(rect) = Rect::from_xywh(x, y, w, h) else { return };
     
-    let Some(path) = rounded_rect_path(&rect, 8.0, true, true, true, true) else { return };
+    let (top_left, top_right, bot_left, bot_right) = match toolbar.current_side {
+        ToolbarSide::Top => (false, false, true, true),
+        _ => (false, false, true, true), 
+    };
+
+    let Some(path) = rounded_rect_path(&rect, 8.0, top_left, top_right, bot_left, bot_right) else { 
+        return; 
+    };
 
     let mut paint = Paint::default();
     paint.set_color(Color::from_rgba8(30, 30, 30, 220));
     paint.anti_alias = true;
 
     canvas.fill_path(&path, &paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
+
+    // icons
+
 }
 

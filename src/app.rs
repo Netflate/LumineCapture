@@ -1,17 +1,21 @@
 use crate::backend::{ScreenOverlay, initialize_capture, initialize_clipboard, initialize_overlay};
 use crate::types::{DamageRect, EditMode, EditorState, MagnifierState, MonitorFrame, MouseButton, OverlayEvent, Placement, PointerState, SelectionEdges, SelectionHandle, SelectionState, HANDLE_RADIUS, MAG_FRAME_INTERVAL};
-use crate::types::toolbar::{Toolbar, ToolbarSide, TOOLBAR_HEIGHT, TOOLBAR_OFFSET};
+use crate::types::toolbar::{Toolbar, ToolbarSide, Tool, TOOLBAR_HEIGHT, TOOLBAR_OFFSET};
 use tiny_skia::{Pixmap, PixmapPaint, Transform, Rect};
 use crate::renderer::{self, apply_handle_drag};
 use crate::utils::{make_rect, global_selection_to_local, global_point_to_local, hit_test_selection, point_in_monitor, selection_edges_for_monitor, selection_handle_points, encode_png, save_to_file};
 use std::time::{Instant};
-
+use std::collections::HashMap;
+use strum::IntoEnumIterator;
+use usvg::Tree;
+use crate::types::icons;
 
 pub async fn make_screenshot (
     wayland_conn: Option<wayland_client::Connection>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let t0 = std::time::Instant::now();                               
-    
+    let icons_handle = std::thread::spawn(load_icons_cache);
+
     let conn = wayland_conn.unwrap();
     let capture = initialize_capture();
     let mut overlay = initialize_overlay(conn.clone());
@@ -32,7 +36,7 @@ pub async fn make_screenshot (
     // 4 may 2026 : ~75mb memory usage while screenshoting on kde linux with 2 hd monitors
     // not ideal, could be resolved with rendering in shm itself 
 
-
+    let icon_cache = icons_handle.join().expect("Failed to join icons thread");
     let mut editor_state = EditorState {
         base: base_pixmaps,
         canvas: canvas,
@@ -47,8 +51,9 @@ pub async fn make_screenshot (
         last_mag_update: None,
         mouse_down_left: false,
         toolbar: Toolbar::new(), 
+        icon_cache,
     };
-
+    
     println!("after saving base screenshot {}ms", t0.elapsed().as_millis());                
     let outputs = overlay.present(&editor_state.placements)?.to_vec();
     
@@ -148,6 +153,8 @@ pub async fn make_screenshot (
                         &editor_state.magnifier,
                         is_mag_monitor,
                         toolbar,
+                        &editor_state.icon_cache,
+
                     );
 
                     overlay.update_frame(i, editor_state.canvas[i].data(), damage)?;
@@ -298,6 +305,8 @@ fn initial_paint(
             &editor_state.magnifier,
             false, 
             None,
+            &editor_state.icon_cache,
+
         );
         overlay.update_frame(monitor_idx, editor_state.canvas[monitor_idx].data(), None)?;
     }
@@ -691,4 +700,24 @@ fn toolbar_placement(editor_state: &EditorState) -> (ToolbarSide, usize, f32, f3
         }
         _ => (ToolbarSide::Top, monitor_idx, x, TOOLBAR_OFFSET),
     }
+}
+
+
+
+fn load_icons_cache() -> HashMap<Tool, Tree> {
+    let t0 = std::time::Instant::now();
+    let mut cache = HashMap::new();
+    let opt = usvg::Options::default();
+
+    for tool in Tool::iter() {
+        let svg_str = icons::get_svg(&tool);
+        
+        let tree = Tree::from_str(svg_str, &opt)
+            .expect("Critical: Failed to parse embedded SVG icon");
+        
+        cache.insert(tool, tree);
+    }
+    println!("(Background thread) : svg parsed in {}ms ", t0.elapsed().as_millis());
+
+    cache
 }

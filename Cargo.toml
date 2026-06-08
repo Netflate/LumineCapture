@@ -28,3 +28,7 @@ memmap2 = "0.9"
 async-trait = "0.1"
 tiny-skia = "0.12.0"
 chrono = { version = "0.4", features = ["clock"] }
+
+strum = { version = "0.28", features = ["derive"] }
+usvg = "0.47.0" 
+resvg = "0.47.0"

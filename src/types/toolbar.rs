@@ -1,8 +1,9 @@
+use strum::EnumIter;
 // ==========================================
 // 1. UI Layout Constants 
 // ==========================================
 pub const TOOLBAR_HEIGHT: f32 = 40.0;
-pub const TOOLBAR_OFFSET: f32 = 20.0;
+pub const TOOLBAR_OFFSET: f32 = 0.0;
 
 // Toolbar tools list
 pub const TOOLBAR_ITEMS: &[ToolbarItem] = &[
@@ -67,7 +68,7 @@ impl Toolbar {
 // ==========================================
 // 3. UI Elements Definition
 // ==========================================
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumIter)]
 pub enum Tool {
     Selection, 
     Rectangle, 
@@ -99,4 +100,6 @@ impl ToolbarItem {
             ToolbarItem::Seperator => 6,
         }
     }
+
+
 }
