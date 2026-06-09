@@ -1,10 +1,10 @@
 use crate::types::{MagnifierState, SelectionEdges, SelectionHandle, MAG_OFFSET, MAG_SIZE, ZOOM, MAG_CELLS};
-use crate::types::toolbar::{Toolbar, Tool, ToolbarSide};
+use crate::types::toolbar::{Toolbar, Tool, ToolbarSide, ToolbarItem, TOOLBAR_PADDING};
 use tiny_skia::{Color, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform};
 use crate::utils::make_rect;
 use std::collections::HashMap;
 use usvg::Tree;
-
+use crate::types::icons::get_svg;
 
 
 
@@ -46,7 +46,7 @@ pub fn render_frame(
         }
     }
 
-    if let Some(tb) = toolbar {
+    if let Some(tb) = toolbar && tb.dirty  {
         draw_toolbar(canvas, tb, icons_cache);
     }
 }
@@ -417,7 +417,7 @@ fn draw_toolbar(canvas: &mut Pixmap, toolbar: &Toolbar, icons_cache : &HashMap<T
     
     let (top_left, top_right, bot_left, bot_right) = match toolbar.current_side {
         ToolbarSide::Top => (false, false, true, true),
-        _ => (false, false, true, true), 
+        _ => (true, true, false, false), 
     };
 
     let Some(path) = rounded_rect_path(&rect, 8.0, top_left, top_right, bot_left, bot_right) else { 
@@ -425,12 +425,61 @@ fn draw_toolbar(canvas: &mut Pixmap, toolbar: &Toolbar, icons_cache : &HashMap<T
     };
 
     let mut paint = Paint::default();
-    paint.set_color(Color::from_rgba8(30, 30, 30, 220));
+    paint.set_color(Color::from_rgba8(255, 255, 255, 255));
     paint.anti_alias = true;
 
-    canvas.fill_path(&path, &paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
+    canvas.fill_path(&path, &  paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
 
     // icons
+    let mut current_x = rect.left() + TOOLBAR_PADDING;
+    
+    for item in toolbar.items {
+        match item {
+            ToolbarItem::ToolButton(tool) => {
+                let cell_size = item.size(); // height = width 
+                if let Some(rtree) = icons_cache.get(tool) {
+                    let (_, icon_size ) = get_svg(&tool);
+
+                    let padding = (cell_size - icon_size) / 2.0;
+
+                    let icon_x = current_x + padding;
+                    let icon_y = rect.top() + padding; // todo: get rid of using rect 
+                    println!("rectnagle height : {}, icon_y : {}, padding: {}, rect top {}", h, icon_y, padding, rect.top());
+
+                    let scale_x = icon_size / rtree.size().width();
+                    let scale_y = icon_size  / rtree.size().height();
+
+                    let transform = Transform::from_translate(icon_x, icon_y)
+                        .pre_scale(scale_x, scale_y);
+
+                    resvg::render(rtree, transform, &mut canvas.as_mut());
+                }
+
+                current_x += item.size() + item.trailing_padding() ;
+
+            }
+
+            ToolbarItem::Seperator => {
+                current_x += item.trailing_padding() ;
+                let sep_w = item.size() ;          
+                let sep_h = 20.0;                         
+                
+                let sep_y = rect.top() + (toolbar.size.1 - sep_h) / 2.0; 
+
+                if let Some(sep_rect) = Rect::from_xywh(current_x, sep_y, sep_w, sep_h) {
+                    let mut sep_paint = Paint::default();
+                    sep_paint.set_color(Color::from_rgba8(70, 70, 70, 255)); 
+                    sep_paint.anti_alias = true;
+
+                    canvas.fill_rect(sep_rect, &sep_paint, Transform::identity(), None);
+                }
+
+                current_x += item.size() + item.trailing_padding() ;
+            }
+        }
+    }
+
+
 
 }
 

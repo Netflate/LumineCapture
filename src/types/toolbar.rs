@@ -2,15 +2,19 @@ use strum::EnumIter;
 // ==========================================
 // 1. UI Layout Constants 
 // ==========================================
-pub const TOOLBAR_HEIGHT: f32 = 40.0;
+pub const TOOLBAR_HEIGHT: f32 = 36.0;
 pub const TOOLBAR_OFFSET: f32 = 0.0;
+pub const TOOLBAR_PADDING: f32 = 8.0; // left & right 
 
+pub const BUTTON_CELL_SIZE: f32 = 36.0;
 // Toolbar tools list
 pub const TOOLBAR_ITEMS: &[ToolbarItem] = &[
     ToolbarItem::ToolButton(Tool::Selection),
     ToolbarItem::ToolButton(Tool::Arrow),
     ToolbarItem::ToolButton(Tool::Rectangle),
     ToolbarItem::ToolButton(Tool::Circle),
+    ToolbarItem::Seperator,
+    ToolbarItem::ToolButton(Tool::Text),
 ];
 
 // ==========================================
@@ -32,6 +36,8 @@ pub struct Toolbar {
 
     pub prev_position: (f32, f32),
     pub prev_monitor_idx: usize,
+
+    pub dirty : bool,
 }
 
 impl Toolbar {
@@ -46,20 +52,22 @@ impl Toolbar {
 
             prev_position: (0.0,0.0),
             prev_monitor_idx: 0,
+
+            dirty : false,
         };
 
         toolbar.size.0 = toolbar.toolbar_width() as f32;
         toolbar.size.1 = TOOLBAR_HEIGHT;
-        
+                
         toolbar
     }
 
     
-    pub fn toolbar_width(&self) -> u32 {
-        let mut total_width = 8; 
+    pub fn toolbar_width(&self) -> f32 {
+        let mut total_width= TOOLBAR_PADDING * 2.0; 
 
         for item in self.items {
-            total_width += item.width() + item.trailing_padding();
+            total_width += item.size() + item.trailing_padding();
         }
         total_width
     }
@@ -84,20 +92,19 @@ pub enum ToolbarItem {
 }
 
 impl ToolbarItem {
-    pub fn width(&self) -> u32 { 
-        const ICON_SIZE: u32 = 28;
-        const SEPARATOR_SIZE: u32 = 2;
+    pub fn size(&self) -> f32 { 
+        const SEPARATOR_SIZE: f32 = 2.0;
 
         match self {
-            ToolbarItem::ToolButton(_) => ICON_SIZE,
+            ToolbarItem::ToolButton(_) => BUTTON_CELL_SIZE,
             ToolbarItem::Seperator => SEPARATOR_SIZE,
         }
     }
 
-    pub fn trailing_padding(&self) -> u32 {
+    pub fn trailing_padding(&self) -> f32 {
         match self {
-            ToolbarItem::ToolButton(_) => 8,
-            ToolbarItem::Seperator => 6,
+            ToolbarItem::ToolButton(_) => 0.0,
+            ToolbarItem::Seperator => 6.0,
         }
     }
 

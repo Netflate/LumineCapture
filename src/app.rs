@@ -3,7 +3,7 @@ use crate::types::{DamageRect, EditMode, EditorState, MagnifierState, MonitorFra
 use crate::types::toolbar::{Toolbar, ToolbarSide, Tool, TOOLBAR_HEIGHT, TOOLBAR_OFFSET};
 use tiny_skia::{Pixmap, PixmapPaint, Transform, Rect};
 use crate::renderer::{self, apply_handle_drag};
-use crate::utils::{make_rect, global_selection_to_local, global_point_to_local, hit_test_selection, point_in_monitor, selection_edges_for_monitor, selection_handle_points, encode_png, save_to_file};
+use crate::utils::{make_rect, global_selection_to_local, global_point_to_local, hit_test_selection, selection_edges_for_monitor, encode_png, save_to_file};
 use std::time::{Instant};
 use std::collections::HashMap;
 use strum::IntoEnumIterator;
@@ -135,7 +135,21 @@ pub async fn make_screenshot (
                         .as_ref()
                         .and_then(|r| renderer::rect_bounds(r, editor_state.base[i].width(), editor_state.base[i].height()));
 
-                    let toolbar = if i == editor_state.toolbar.monitor_idx {
+                    if i == editor_state.toolbar.monitor_idx && !editor_state.toolbar.dirty {
+                        if let Some(dirty) = dirty_rect.as_ref() {
+                            let tb = &editor_state.toolbar;
+                            let tb_rect = Rect::from_xywh(tb.position.0, tb.position.1, tb.size.0, TOOLBAR_HEIGHT);
+                            if let Some(tb_r) = tb_rect {
+                                let intersects = dirty.left() < tb_r.right() && dirty.right() > tb_r.left()
+                                    && dirty.top() < tb_r.bottom() && dirty.bottom() > tb_r.top();
+                                if intersects {
+                                    editor_state.toolbar.dirty = true;
+                                }
+                            }
+                        }
+                    }
+
+                    let toolbar = if i == editor_state.toolbar.monitor_idx && editor_state.toolbar.dirty {
                         Some(&editor_state.toolbar)
                     } else {
                         None
@@ -162,6 +176,7 @@ pub async fn make_screenshot (
                 }
             }
             selection_dirty = false;
+            editor_state.toolbar.dirty = false;
             dirty_mask = 0;
         }
     }
@@ -408,16 +423,16 @@ fn selection_render_info(
         .and_then(|sel| global_selection_to_local(sel, placement));
 
     let mut edges = None;
-    let mut handles = Vec::new();
+    // let mut handles = Vec::new();
 
     if let (Some(sel), Some(_)) = (selection.as_ref(), local_sel.as_ref()) {
         edges = Some(selection_edges_for_monitor(sel, placement));
-        let (mx, my) = (placement.position.0 as f32, placement.position.1 as f32);
-        for (hx, hy) in selection_handle_points(sel) {
-            if point_in_monitor((hx, hy), placement) {
-                handles.push((hx - mx, hy - my));
-            }
-        }
+        // let (mx, my) = (placement.position.0 as f32, placement.position.1 as f32);
+        // for (hx, hy) in selection_handle_points(sel) {
+        //     if point_in_monitor((hx, hy), placement) {
+        //         handles.push((hx - mx, hy - my));
+        //     }
+        // }
     }
 
     (local_sel, prev_local, edges)
@@ -617,24 +632,25 @@ impl EditorState {
         }
 
     let tb = &self.toolbar;
-    if tb.monitor_idx == monitor_idx {
-        if let Some(r) = Rect::from_xywh(tb.position.0, tb.position.1, tb.size.0, TOOLBAR_HEIGHT) {
-            dirty = union_rect(dirty, Some(r));
+    if tb.dirty {
+        if tb.monitor_idx == monitor_idx {
+            if let Some(r) = Rect::from_xywh(tb.position.0, tb.position.1, tb.size.0, TOOLBAR_HEIGHT) {
+                dirty = union_rect(dirty, Some(r));
+            }
+            // if toolbar position (side) changed
+            if tb.prev_monitor_idx == monitor_idx && tb.prev_position != tb.position {
+                if let Some(r) = Rect::from_xywh(tb.prev_position.0, tb.prev_position.1, tb.size.0, TOOLBAR_HEIGHT) {
+                    dirty = union_rect(dirty, Some(r));
+                }
+            }
         }
-        // if toolbar position (side) changed
-        if tb.prev_monitor_idx == monitor_idx && tb.prev_position != tb.position {
+        // if toolbar monitor changed
+        if tb.prev_monitor_idx == monitor_idx && tb.prev_monitor_idx != tb.monitor_idx {
             if let Some(r) = Rect::from_xywh(tb.prev_position.0, tb.prev_position.1, tb.size.0, TOOLBAR_HEIGHT) {
                 dirty = union_rect(dirty, Some(r));
             }
         }
     }
-    // if toolbar monitor changed
-    if tb.prev_monitor_idx == monitor_idx && tb.prev_monitor_idx != tb.monitor_idx {
-        if let Some(r) = Rect::from_xywh(tb.prev_position.0, tb.prev_position.1, tb.size.0, TOOLBAR_HEIGHT) {
-            dirty = union_rect(dirty, Some(r));
-        }
-    }
-
         dirty
     }
 }
@@ -647,10 +663,15 @@ fn update_toolbar(
     editor_state: &mut EditorState, 
     dirty_mask: &mut u32
 ) {
-    let (side, monitor_idx, pos_x, pos_y) = toolbar_placement(editor_state);
+    
+    // temporary function 
+    let (side, monitor_idx, pos_x, pos_y, dirty) = toolbar_placement(&editor_state); 
     let tb = &mut editor_state.toolbar;
+    tb.dirty = dirty;
 
     if tb.monitor_idx != monitor_idx || tb.position != (pos_x, pos_y) {
+        tb.dirty = true;
+        
         tb.prev_position = tb.position;
         tb.prev_monitor_idx = tb.monitor_idx;
         
@@ -666,12 +687,15 @@ fn update_toolbar(
     }
 }
 
-
-fn toolbar_placement(editor_state: &EditorState) -> (ToolbarSide, usize, f32, f32) {
+// making toolbar jump from side to side when selection is really annoying, it will be removed
+// this function only checks if the selection interferes with the toolbar to make it transparent
+// todo 
+fn toolbar_placement(editor_state: &EditorState) -> (ToolbarSide, usize, f32, f32, bool) {
     let monitor_idx = editor_state.pointer.monitor_idx;
     let placement = &editor_state.placements[monitor_idx];
     let mon_w = placement.size.0 as f32;
     let mon_h = placement.size.1 as f32;
+
 
     let tb = &editor_state.toolbar;
     let tb_width: f32 = tb.size.0; 
@@ -693,12 +717,12 @@ fn toolbar_placement(editor_state: &EditorState) -> (ToolbarSide, usize, f32, f3
     match local_sel {
         Some(sel) if overlaps(top_rect, &sel) => {
             if !overlaps(bottom_rect, &sel) {
-                (ToolbarSide::Bottom, monitor_idx, x, mon_h - TOOLBAR_OFFSET - TOOLBAR_HEIGHT)
+                (ToolbarSide::Bottom, monitor_idx, x, mon_h - TOOLBAR_OFFSET - TOOLBAR_HEIGHT, overlaps(top_rect, &sel))
             } else {
-                (ToolbarSide::Top, monitor_idx, x, TOOLBAR_OFFSET)
+                (ToolbarSide::Top, monitor_idx, x, TOOLBAR_OFFSET, overlaps(top_rect, &sel))
             }
         }
-        _ => (ToolbarSide::Top, monitor_idx, x, TOOLBAR_OFFSET),
+        _ => (ToolbarSide::Top, monitor_idx, x, TOOLBAR_OFFSET, false),
     }
 }
 
@@ -710,7 +734,7 @@ fn load_icons_cache() -> HashMap<Tool, Tree> {
     let opt = usvg::Options::default();
 
     for tool in Tool::iter() {
-        let svg_str = icons::get_svg(&tool);
+        let (svg_str, _) = icons::get_svg(&tool);
         
         let tree = Tree::from_str(svg_str, &opt)
             .expect("Critical: Failed to parse embedded SVG icon");
