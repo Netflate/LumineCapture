@@ -1,6 +1,6 @@
 use crate::types::{MagnifierState, SelectionEdges, SelectionHandle, MAG_OFFSET, MAG_SIZE, ZOOM, MAG_CELLS};
 use crate::types::toolbar::{Toolbar, Tool, ToolbarSide, ToolbarItem, TOOLBAR_PADDING};
-use tiny_skia::{Color, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform};
+use tiny_skia::{Color, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform, BlendMode, FilterQuality};
 use crate::utils::make_rect;
 use std::collections::HashMap;
 use usvg::Tree;
@@ -23,7 +23,7 @@ pub fn render_frame(
     selection_dirty: bool, 
     magnifier: &Option<MagnifierState>,
     is_mag_monitor: bool,
-    toolbar : Option<&Toolbar>,
+    toolbar : Option<&mut Toolbar>,
     icons_cache : &HashMap<Tool, Tree>
 
 ) {
@@ -409,47 +409,90 @@ fn overlay_crosshair(zoomed: &mut Pixmap) {
 //  TOOLBAR SECTION  //
 //********************/
 
-fn draw_toolbar(canvas: &mut Pixmap, toolbar: &Toolbar, icons_cache : &HashMap<Tool, Tree>) {
+fn draw_toolbar(
+    canvas: &mut Pixmap,
+    toolbar: &mut Toolbar,
+    icons_cache: &HashMap<Tool, Tree>,
+) {
     let (x, y) = (toolbar.position.0, toolbar.position.1);
-    let (w, h) = toolbar.size; 
+    let (w, h) = toolbar.size;
+    let pw = w.ceil() as u32;
+    let ph = h.ceil() as u32;
 
-    let Some(rect) = Rect::from_xywh(x, y, w, h) else { return };
-    
+    let needs_resize = toolbar.toolbar_pixmap
+        .as_ref()
+        .map_or(true, |p| p.width() != pw || p.height() != ph);
+
+    if needs_resize {
+        toolbar.toolbar_pixmap = Pixmap::new(pw, ph);
+        toolbar.dirty = true;
+    }
+
+    let Some(mut toolbar_pixmap) = toolbar.toolbar_pixmap.take() else { return };
+
+    if toolbar.dirty {
+        toolbar_pixmap.fill(tiny_skia::Color::TRANSPARENT);
+        draw_toolbar_content(&mut toolbar_pixmap, toolbar, icons_cache);
+        toolbar.dirty = false;
+    }
+
+    canvas.draw_pixmap(
+        x as i32,
+        y as i32,
+        toolbar_pixmap.as_ref(),
+        &PixmapPaint {
+            opacity: toolbar.opacity,
+            blend_mode: BlendMode::SourceOver,
+            quality: FilterQuality::Nearest,
+        },
+        Transform::identity(),
+        None,
+    );
+
+    toolbar.toolbar_pixmap = Some(toolbar_pixmap);
+}
+
+fn draw_toolbar_content(
+    canvas: &mut Pixmap,
+    toolbar: &Toolbar,
+    icons_cache: &HashMap<Tool, Tree>,
+) {
+    let (w, h) = toolbar.size;
+    let Some(rect) = Rect::from_xywh(0.0, 0.0, w, h) else { return };
+
     let (top_left, top_right, bot_left, bot_right) = match toolbar.current_side {
         ToolbarSide::Top => (false, false, true, true),
-        _ => (true, true, false, false), 
+        _ => (true, true, false, false),
     };
-
-    let Some(path) = rounded_rect_path(&rect, 8.0, top_left, top_right, bot_left, bot_right) else { 
-        return; 
+    let Some(path) = rounded_rect_path(&rect, 8.0, top_left, top_right, bot_left, bot_right) else {
+        return;
     };
 
     let mut paint = Paint::default();
     paint.set_color(Color::from_rgba8(255, 255, 255, 255));
     paint.anti_alias = true;
-
-    canvas.fill_path(&path, &  paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
+    canvas.fill_path(&path, &paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
 
     let mut current_x = rect.left() + TOOLBAR_PADDING;
-
     for (index, item) in toolbar.items.iter().enumerate() {
-        let cell_size = item.size(); 
-
+        let cell_size = item.size();
         match item {
             ToolbarItem::ToolButton(tool) => {
                 if let Some(rtree) = icons_cache.get(tool) {
                     let (_, icon_size) = get_svg(tool);
                     let padding = (cell_size - icon_size) / 2.0;
                     let icon_x = current_x + padding;
-                    let icon_y = rect.top() + padding;  
+                    let icon_y = rect.top() + padding;
 
                     if toolbar.selected == Some(index) || toolbar.hovered == Some(index) {
-                        if let Some(cell_rect) = Rect::from_xywh(current_x, rect.top(), cell_size, cell_size) {
+                        if let Some(cell_rect) =
+                            Rect::from_xywh(current_x, rect.top(), cell_size, cell_size)
+                        {
                             let mut cell_paint = Paint::default();
                             let color = if toolbar.selected == Some(index) {
-                                Color::from_rgba8(200, 200, 200, 255)  
+                                Color::from_rgba8(200, 200, 200, 255)
                             } else {
-                                Color::from_rgba8(230, 230, 230, 255)  
+                                Color::from_rgba8(230, 230, 230, 255)
                             };
                             cell_paint.set_color(color);
                             cell_paint.anti_alias = true;
@@ -465,22 +508,18 @@ fn draw_toolbar(canvas: &mut Pixmap, toolbar: &Toolbar, icons_cache : &HashMap<T
                 }
             }
             ToolbarItem::Seperator => {
-                let sep_w = 2.0;          
-                let sep_h = 20.0;                         
-                
+                let sep_w = 2.0;
+                let sep_h = 20.0;
                 let sep_x = current_x + (cell_size - sep_w) / 2.0;
-                let sep_y = rect.top() + (toolbar.size.1 - sep_h) / 2.0; 
-
+                let sep_y = rect.top() + (h - sep_h) / 2.0;
                 if let Some(sep_rect) = Rect::from_xywh(sep_x, sep_y, sep_w, sep_h) {
                     let mut sep_paint = Paint::default();
-                    sep_paint.set_color(Color::from_rgba8(70, 70, 70, 255)); 
+                    sep_paint.set_color(Color::from_rgba8(70, 70, 70, 255));
                     sep_paint.anti_alias = true;
-
                     canvas.fill_rect(sep_rect, &sep_paint, Transform::identity(), None);
                 }
             }
         }
-
         current_x += cell_size + item.trailing_padding();
     }
 }

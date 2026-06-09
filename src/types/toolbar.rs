@@ -1,4 +1,5 @@
 use strum::EnumIter;
+use tiny_skia::Pixmap;
 // ==========================================
 // 1. UI Layout Constants 
 // ==========================================
@@ -30,10 +31,12 @@ pub enum ToolbarSide {
 }
 
 pub struct Toolbar { 
+    pub toolbar_pixmap: Option<Pixmap>, // to change it's opacity (svg icons fault)
+
     pub items: &'static [ToolbarItem],
     pub position: (f32, f32), 
     pub size: (f32, f32),
-    pub transparent: bool,
+    pub opacity: f32,
     pub current_side: ToolbarSide,
     pub monitor_idx: usize, 
 
@@ -49,9 +52,10 @@ pub struct Toolbar {
 impl Toolbar {
     pub fn new() -> Self {            
         let mut toolbar = Self { 
+            toolbar_pixmap: None,
             items: TOOLBAR_ITEMS,
             size: (0.0, TOOLBAR_HEIGHT), 
-            transparent: false,
+            opacity: 0.05,
             current_side: ToolbarSide::Top, 
             monitor_idx: 0,
             position: (0.0,0.0),

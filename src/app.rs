@@ -123,7 +123,7 @@ pub async fn make_screenshot (
                     }
 
                     let toolbar = if i == editor_state.toolbar.monitor_idx && editor_state.toolbar.dirty {
-                        Some(&editor_state.toolbar)
+                        Some(&mut editor_state.toolbar)
                     } else {
                         None
                     };
