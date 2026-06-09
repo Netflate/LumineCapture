@@ -7,6 +7,8 @@ pub const TOOLBAR_OFFSET: f32 = 0.0;
 pub const TOOLBAR_PADDING: f32 = 8.0; // left & right 
 
 pub const BUTTON_CELL_SIZE: f32 = 36.0;
+const SEPARATOR_CELL_SIZE: f32 = 20.0;
+
 // Toolbar tools list
 pub const TOOLBAR_ITEMS: &[ToolbarItem] = &[
     ToolbarItem::ToolButton(Tool::Selection),
@@ -14,6 +16,7 @@ pub const TOOLBAR_ITEMS: &[ToolbarItem] = &[
     ToolbarItem::ToolButton(Tool::Rectangle),
     ToolbarItem::ToolButton(Tool::Circle),
     ToolbarItem::Seperator,
+    ToolbarItem::ToolButton(Tool::Rectangle),
     ToolbarItem::ToolButton(Tool::Text),
 ];
 
@@ -38,6 +41,9 @@ pub struct Toolbar {
     pub prev_monitor_idx: usize,
 
     pub dirty : bool,
+
+    pub selected : Option<usize>,
+    pub hovered : Option<usize>,
 }
 
 impl Toolbar {
@@ -54,6 +60,8 @@ impl Toolbar {
             prev_monitor_idx: 0,
 
             dirty : false,
+            selected : None, 
+            hovered: None,
         };
 
         toolbar.size.0 = toolbar.toolbar_width() as f32;
@@ -93,18 +101,16 @@ pub enum ToolbarItem {
 
 impl ToolbarItem {
     pub fn size(&self) -> f32 { 
-        const SEPARATOR_SIZE: f32 = 2.0;
-
         match self {
             ToolbarItem::ToolButton(_) => BUTTON_CELL_SIZE,
-            ToolbarItem::Seperator => SEPARATOR_SIZE,
+            ToolbarItem::Seperator => SEPARATOR_CELL_SIZE,
         }
     }
 
     pub fn trailing_padding(&self) -> f32 {
         match self {
             ToolbarItem::ToolButton(_) => 0.0,
-            ToolbarItem::Seperator => 6.0,
+            ToolbarItem::Seperator => 0.0,
         }
     }
 

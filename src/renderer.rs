@@ -430,56 +430,57 @@ fn draw_toolbar(canvas: &mut Pixmap, toolbar: &Toolbar, icons_cache : &HashMap<T
 
     canvas.fill_path(&path, &  paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
 
-    // icons
     let mut current_x = rect.left() + TOOLBAR_PADDING;
-    
-    for item in toolbar.items {
+
+    for (index, item) in toolbar.items.iter().enumerate() {
+        let cell_size = item.size(); 
+
         match item {
             ToolbarItem::ToolButton(tool) => {
-                let cell_size = item.size(); // height = width 
                 if let Some(rtree) = icons_cache.get(tool) {
-                    let (_, icon_size ) = get_svg(&tool);
-
+                    let (_, icon_size) = get_svg(tool);
                     let padding = (cell_size - icon_size) / 2.0;
-
                     let icon_x = current_x + padding;
-                    let icon_y = rect.top() + padding; // todo: get rid of using rect 
-                    println!("rectnagle height : {}, icon_y : {}, padding: {}, rect top {}", h, icon_y, padding, rect.top());
+                    let icon_y = rect.top() + padding;  
+
+                    if toolbar.selected == Some(index) || toolbar.hovered == Some(index) {
+                        if let Some(cell_rect) = Rect::from_xywh(current_x, rect.top(), cell_size, cell_size) {
+                            let mut cell_paint = Paint::default();
+                            let color = if toolbar.selected == Some(index) {
+                                Color::from_rgba8(200, 200, 200, 255)  
+                            } else {
+                                Color::from_rgba8(230, 230, 230, 255)  
+                            };
+                            cell_paint.set_color(color);
+                            cell_paint.anti_alias = true;
+                            canvas.fill_rect(cell_rect, &cell_paint, Transform::identity(), None);
+                        }
+                    }
 
                     let scale_x = icon_size / rtree.size().width();
-                    let scale_y = icon_size  / rtree.size().height();
-
+                    let scale_y = icon_size / rtree.size().height();
                     let transform = Transform::from_translate(icon_x, icon_y)
                         .pre_scale(scale_x, scale_y);
-
                     resvg::render(rtree, transform, &mut canvas.as_mut());
                 }
-
-                current_x += item.size() + item.trailing_padding() ;
-
             }
-
             ToolbarItem::Seperator => {
-                current_x += item.trailing_padding() ;
-                let sep_w = item.size() ;          
+                let sep_w = 2.0;          
                 let sep_h = 20.0;                         
                 
+                let sep_x = current_x + (cell_size - sep_w) / 2.0;
                 let sep_y = rect.top() + (toolbar.size.1 - sep_h) / 2.0; 
 
-                if let Some(sep_rect) = Rect::from_xywh(current_x, sep_y, sep_w, sep_h) {
+                if let Some(sep_rect) = Rect::from_xywh(sep_x, sep_y, sep_w, sep_h) {
                     let mut sep_paint = Paint::default();
                     sep_paint.set_color(Color::from_rgba8(70, 70, 70, 255)); 
                     sep_paint.anti_alias = true;
 
                     canvas.fill_rect(sep_rect, &sep_paint, Transform::identity(), None);
                 }
-
-                current_x += item.size() + item.trailing_padding() ;
             }
         }
+
+        current_x += cell_size + item.trailing_padding();
     }
-
-
-
 }
-

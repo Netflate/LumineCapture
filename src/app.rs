@@ -1,6 +1,6 @@
 use crate::backend::{ScreenOverlay, initialize_capture, initialize_clipboard, initialize_overlay};
 use crate::types::{DamageRect, EditMode, EditorState, MagnifierState, MonitorFrame, MouseButton, OverlayEvent, Placement, PointerState, SelectionEdges, SelectionHandle, SelectionState, HANDLE_RADIUS, MAG_FRAME_INTERVAL};
-use crate::types::toolbar::{Toolbar, ToolbarSide, Tool, TOOLBAR_HEIGHT, TOOLBAR_OFFSET};
+use crate::types::toolbar::{Toolbar, ToolbarSide, Tool, ToolbarItem, TOOLBAR_HEIGHT, TOOLBAR_OFFSET, TOOLBAR_PADDING};
 use tiny_skia::{Pixmap, PixmapPaint, Transform, Rect};
 use crate::renderer::{self, apply_handle_drag};
 use crate::utils::{make_rect, global_selection_to_local, global_point_to_local, hit_test_selection, selection_edges_for_monitor, encode_png, save_to_file};
@@ -82,34 +82,7 @@ pub async fn make_screenshot (
             }
             
             OverlayEvent::PointerButton { button, pressed } => {
-                match button {
-                    MouseButton::Left => {
-                        editor_state.mouse_down_left = pressed;
-                        if pressed {
-                            let handle = editor_state.selection.zone.as_ref()
-                                .map(|sel| hit_test_selection(sel, editor_state.pointer.global))
-                                .unwrap_or(SelectionHandle::None);
-
-                            if handle != SelectionHandle::None {
-                                if let Some(sel) = editor_state.selection.zone.as_ref() {
-                                    editor_state.selection.set_drag(
-                                        handle,
-                                        Some(editor_state.pointer.global),
-                                        Some(*sel),
-                                    );
-                                    editor_state.drag_start = None;
-                                }
-                            } else {
-                                editor_state.selection.set_drag(SelectionHandle::None, None, None);
-                                editor_state.drag_start = Some(editor_state.pointer.global);
-                            }
-                        } else {
-                            editor_state.drag_start = None;
-                            editor_state.selection.set_drag(SelectionHandle::None, None, None);
-                        }
-                    }
-                    _ => {}
-                }
+                handle_pointer_button(&mut editor_state, button, pressed, &mut dirty_mask);
             }
             OverlayEvent::SaveToClipboard => {
                 drop(overlay);
@@ -637,6 +610,7 @@ impl EditorState {
             if let Some(r) = Rect::from_xywh(tb.position.0, tb.position.1, tb.size.0, TOOLBAR_HEIGHT) {
                 dirty = union_rect(dirty, Some(r));
             }
+
             // if toolbar position (side) changed
             if tb.prev_monitor_idx == monitor_idx && tb.prev_position != tb.position {
                 if let Some(r) = Rect::from_xywh(tb.prev_position.0, tb.prev_position.1, tb.size.0, TOOLBAR_HEIGHT) {
@@ -652,6 +626,53 @@ impl EditorState {
         }
     }
         dirty
+    }
+}
+
+
+fn handle_pointer_button(
+    editor_state: &mut EditorState,
+    button: MouseButton,
+    pressed: bool,
+    dirty_mask: &mut u32,
+) {
+    match button {
+        MouseButton::Left => {
+            editor_state.mouse_down_left = pressed;
+            if pressed {
+                // toolbar hit test
+                let tb_button = toolbar_hit_test(&editor_state.toolbar, editor_state.pointer.local);
+                if tb_button.is_some() {
+                    editor_state.toolbar.selected = tb_button;
+                    mark_dirty(dirty_mask, editor_state.toolbar.monitor_idx);
+                    editor_state.toolbar.dirty = true;
+                    return;
+                }
+
+                // selection hit test
+                let handle = editor_state.selection.zone.as_ref()
+                    .map(|sel| hit_test_selection(sel, editor_state.pointer.global))
+                    .unwrap_or(SelectionHandle::None);
+
+                if handle != SelectionHandle::None {
+                    if let Some(sel) = editor_state.selection.zone.as_ref() {
+                        editor_state.selection.set_drag(
+                            handle,
+                            Some(editor_state.pointer.global),
+                            Some(*sel),
+                        );
+                        editor_state.drag_start = None;
+                    }
+                } else {
+                    editor_state.selection.set_drag(SelectionHandle::None, None, None);
+                    editor_state.drag_start = Some(editor_state.pointer.global);
+                }
+            } else {
+                editor_state.drag_start = None;
+                editor_state.selection.set_drag(SelectionHandle::None, None, None);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -684,6 +705,14 @@ fn update_toolbar(
         tb.position = (pos_x, pos_y);
         tb.current_side = side;
         tb.monitor_idx = monitor_idx;
+    }
+
+    let button = toolbar_hit_test(tb, editor_state.pointer.local);
+    if button != tb.hovered {
+        tb.hovered = button; 
+        tb.dirty = true;    
+
+        mark_dirty(dirty_mask, tb.monitor_idx);
     }
 }
 
@@ -744,4 +773,33 @@ fn load_icons_cache() -> HashMap<Tool, Tree> {
     println!("(Background thread) : svg parsed in {}ms ", t0.elapsed().as_millis());
 
     cache
+}
+
+
+pub fn toolbar_hit_test(toolbar: &Toolbar, local: (f64, f64)) -> Option<usize> {
+    let (px, py) = (local.0 as f32, local.1 as f32);
+    let (tb_x, tb_y) = toolbar.position;
+    let (_, tb_h) = toolbar.size;
+
+    if py < tb_y || py > tb_y + tb_h {
+        return None;
+    }
+
+    let mut current_x = tb_x + TOOLBAR_PADDING;
+
+    for (idx, item) in toolbar.items.iter().enumerate() {
+        let item_w = item.size();
+        let item_right = current_x + item_w;
+
+        if px >= current_x && px <= item_right {
+            return match item {
+                ToolbarItem::ToolButton(_) => Some(idx),
+                ToolbarItem::Seperator => None, 
+            };
+        }
+
+        current_x += item_w + item.trailing_padding();
+    }
+
+    None
 }
