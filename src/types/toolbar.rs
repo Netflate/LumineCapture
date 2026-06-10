@@ -1,5 +1,5 @@
-use strum::EnumIter;
 use tiny_skia::Pixmap;
+use crate::tools::Tool;
 // ==========================================
 // 1. UI Layout Constants 
 // ==========================================
@@ -83,20 +83,21 @@ impl Toolbar {
         }
         total_width
     }
-}
+
+    pub fn get_selected_tool(&self) -> Option<&Tool> {
+        self.selected.and_then ( 
+            |idx| self.items.get(idx)).and_then(|item| {
+                match item {
+                    ToolbarItem::ToolButton(tool) => Some(tool),
+                    ToolbarItem::Seperator => None,
+                }
+            })
+        }
+    }
 
 // ==========================================
 // 3. UI Elements Definition
 // ==========================================
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumIter)]
-pub enum Tool {
-    Selection, 
-    Rectangle, 
-    Arrow, 
-    Circle,
-    Text,
-}
-
 #[derive(Debug, Clone, Copy)]
 pub enum ToolbarItem {
     ToolButton(Tool),

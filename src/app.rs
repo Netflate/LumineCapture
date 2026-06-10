@@ -1,12 +1,13 @@
 use crate::backend::{ScreenOverlay, initialize_capture, initialize_clipboard, initialize_overlay};
 use crate::types::{DamageRect, EditMode, EditorState, MagnifierState, MonitorFrame, MouseButton, OverlayEvent, Placement, PointerState, SelectionEdges, SelectionHandle, SelectionState, HANDLE_RADIUS, MAG_FRAME_INTERVAL};
-use crate::types::toolbar::{Toolbar, ToolbarSide, Tool, ToolbarItem, TOOLBAR_HEIGHT, TOOLBAR_OFFSET, TOOLBAR_PADDING};
+use crate::types::toolbar::{Toolbar, ToolbarSide, ToolbarItem, TOOLBAR_HEIGHT, TOOLBAR_OFFSET, TOOLBAR_PADDING};
 use tiny_skia::{Pixmap, PixmapPaint, Transform, Rect};
 use crate::renderer::{self, apply_handle_drag};
 use crate::utils::{make_rect, global_selection_to_local, global_point_to_local, hit_test_selection, selection_edges_for_monitor, encode_png, save_to_file};
 use std::time::{Instant};
 use std::collections::HashMap;
 use strum::IntoEnumIterator;
+use crate::tools::Tool;
 use usvg::Tree;
 use crate::types::icons;
 

@@ -1,7 +1,8 @@
 pub mod toolbar;
 pub mod icons;
 
-use crate::types::toolbar::{Toolbar, Tool};
+use crate::types::toolbar::Toolbar;
+use crate::tools::Tool;
 use usvg::Tree;
 
 

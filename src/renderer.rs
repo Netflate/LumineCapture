@@ -1,6 +1,7 @@
 use crate::types::{MagnifierState, SelectionEdges, SelectionHandle, MAG_OFFSET, MAG_SIZE, ZOOM, MAG_CELLS};
-use crate::types::toolbar::{Toolbar, Tool, ToolbarSide, ToolbarItem, TOOLBAR_PADDING};
+use crate::types::toolbar::{Toolbar, ToolbarSide, ToolbarItem, TOOLBAR_PADDING};
 use tiny_skia::{Color, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform, BlendMode, FilterQuality};
+use crate::tools::Tool;
 use crate::utils::make_rect;
 use std::collections::HashMap;
 use usvg::Tree;

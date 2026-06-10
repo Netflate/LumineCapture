@@ -1,4 +1,6 @@
-use super::toolbar::{Tool, BUTTON_CELL_SIZE};
+use crate::types::toolbar::BUTTON_CELL_SIZE;
+use crate::tools::Tool;
+
 
 pub const SELECTION: &str = include_str!("../../assets/icons/selection.svg");
 pub const ARROW:     &str = include_str!("../../assets/icons/arrow.svg");
