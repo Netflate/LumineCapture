@@ -1,13 +1,14 @@
 use crate::backend::{ScreenOverlay, initialize_capture, initialize_clipboard, initialize_overlay};
-use crate::types::{DamageRect, EditMode, EditorState, MagnifierState, MonitorFrame, MouseButton, OverlayEvent, Placement, PointerState, SelectionEdges, SelectionHandle, SelectionState, HANDLE_RADIUS, MAG_FRAME_INTERVAL};
+use crate::types::{DamageRect, EditorState, MagnifierState, MonitorFrame, MouseButton, OverlayEvent, Placement, PointerState, SelectionEdges, SelectionState, HANDLE_RADIUS, MAG_FRAME_INTERVAL};
 use crate::types::toolbar::{Toolbar, ToolbarSide, ToolbarItem, TOOLBAR_HEIGHT, TOOLBAR_OFFSET, TOOLBAR_PADDING};
 use tiny_skia::{Pixmap, PixmapPaint, Transform, Rect};
-use crate::renderer::{self, apply_handle_drag};
-use crate::utils::{make_rect, global_selection_to_local, global_point_to_local, hit_test_selection, selection_edges_for_monitor, encode_png, save_to_file};
+use crate::renderer::{self};
+use crate::utils::{global_point_to_local, encode_png, save_to_file};
 use std::time::{Instant};
 use std::collections::HashMap;
 use strum::IntoEnumIterator;
-use crate::tools::Tool;
+use crate::tools::{dispatch_button, dispatch_move, Tool};
+use crate::tools::selection::{global_selection_to_local, monitors_for_selection, selection_edges_for_monitor};
 use usvg::Tree;
 use crate::types::icons;
 
@@ -42,7 +43,7 @@ pub async fn make_screenshot (
         base: base_pixmaps,
         canvas: canvas,
         dimmed : dimmed,
-        mode: EditMode::Selection,
+        active_tool: Tool::Selection,
         selection: SelectionState::default(),
         placements : placements,
         drag_start: None,
@@ -325,7 +326,7 @@ fn handle_pointer_move(
 
 
     update_magnifier(editor_state, dirty_mask);
-    update_selection(editor_state, global, selection_dirty, dirty_mask);
+    dispatch_move(editor_state.active_tool, editor_state, global, selection_dirty, dirty_mask);
     update_toolbar(editor_state, dirty_mask);
 }
 
@@ -432,88 +433,6 @@ fn union_rect(a: Option<Rect>, b: Option<Rect>) -> Option<Rect> {
             r1.bottom().max(r2.bottom()),
         ),
     }
-}
-
-
-impl SelectionState {
-    fn set_drag(&mut self, handle: SelectionHandle, origin: Option<(f64, f64)>, zone: Option<Rect>) {
-        self.active_handle = handle;
-        self.drag_origin = origin;
-        self.selection_at_drag_start = zone;
-    }
-}
-
-
-fn update_selection(
-    editor_state: &mut EditorState,
-    global: (f64, f64),
-    selection_dirty: &mut bool,
-    dirty_mask: &mut u32,
-) {
-    let old_sel = editor_state.selection.zone;
-
-    if editor_state.mouse_down_left && editor_state.selection.active_handle != SelectionHandle::None {
-        if let (Some(drag_origin), Some(sel_start)) = (
-            editor_state.selection.drag_origin,
-            editor_state.selection.selection_at_drag_start.as_ref(),
-        ) {
-            let delta = (global.0 - drag_origin.0, global.1 - drag_origin.1);
-            editor_state.selection.zone = apply_handle_drag(
-                sel_start,
-                editor_state.selection.active_handle,
-                delta,
-            );
-            editor_state.selection.prev_zone = old_sel;
-            apply_selection_dirty(old_sel, editor_state.selection.zone, &editor_state.placements, dirty_mask, selection_dirty);
-        }
-        return;
-    }
-
-    if !editor_state.mouse_down_left || editor_state.mode != EditMode::Selection {
-        return;
-    }
-
-    if let Some(start) = editor_state.drag_start {
-        editor_state.selection.zone = make_rect(start, global);
-        editor_state.selection.prev_zone = old_sel;
-        apply_selection_dirty(old_sel, editor_state.selection.zone, &editor_state.placements, dirty_mask, selection_dirty);
-    }
-}
-
-fn apply_selection_dirty(
-    old_sel: Option<Rect>,
-    new_sel: Option<Rect>,
-    placements: &[Placement],
-    dirty_mask: &mut u32,
-    selection_dirty: &mut bool,
-) {
-    *selection_dirty = true;
-    if let Some(sel) = old_sel {
-        *dirty_mask |= monitors_for_selection(&sel, placements);
-    }
-    if let Some(sel) = new_sel {
-        *dirty_mask |= monitors_for_selection(&sel, placements);
-    }
-}
-
-fn monitors_for_selection(selection: &Rect, placements: &[Placement]) -> u32 {
-    let mut mask = 0u32;
-    for (i, p) in placements.iter().enumerate() {
-        let mx = p.position.0 as f32;
-        let my = p.position.1 as f32;
-        let mw = p.size.0 as f32;
-        let mh = p.size.1 as f32;
-
-        let overlaps = selection.left()   < mx + mw
-                    && selection.right()  > mx
-                    && selection.top()    < my + mh
-                    && selection.bottom() > my;
-
-        if overlaps {
-            mask |= 1 << i;
-        }
-    }
-    mask
 }
 
 
@@ -637,44 +556,20 @@ fn handle_pointer_button(
     pressed: bool,
     dirty_mask: &mut u32,
 ) {
-    match button {
-        MouseButton::Left => {
-            editor_state.mouse_down_left = pressed;
-            if pressed {
-                // toolbar hit test
-                let tb_button = toolbar_hit_test(&editor_state.toolbar, editor_state.pointer.local);
-                if tb_button.is_some() {
-                    editor_state.toolbar.selected = tb_button;
-                    mark_dirty(dirty_mask, editor_state.toolbar.monitor_idx);
-                    editor_state.toolbar.dirty = true;
-                    return;
-                }
+    if matches!(button, MouseButton::Left) && pressed {
+        if let Some(tb_button) = toolbar_hit_test(&editor_state.toolbar, editor_state.pointer.local) {
+            editor_state.toolbar.selected = Some(tb_button);
+            editor_state.toolbar.dirty = true;
+            mark_dirty(dirty_mask, editor_state.toolbar.monitor_idx);
 
-                // selection hit test
-                let handle = editor_state.selection.zone.as_ref()
-                    .map(|sel| hit_test_selection(sel, editor_state.pointer.global))
-                    .unwrap_or(SelectionHandle::None);
-
-                if handle != SelectionHandle::None {
-                    if let Some(sel) = editor_state.selection.zone.as_ref() {
-                        editor_state.selection.set_drag(
-                            handle,
-                            Some(editor_state.pointer.global),
-                            Some(*sel),
-                        );
-                        editor_state.drag_start = None;
-                    }
-                } else {
-                    editor_state.selection.set_drag(SelectionHandle::None, None, None);
-                    editor_state.drag_start = Some(editor_state.pointer.global);
-                }
-            } else {
-                editor_state.drag_start = None;
-                editor_state.selection.set_drag(SelectionHandle::None, None, None);
+            if let Some(ToolbarItem::ToolButton(tool)) = editor_state.toolbar.items.get(tb_button) {
+                editor_state.active_tool = *tool;
             }
+            return;
         }
-        _ => {}
     }
+
+    dispatch_button(editor_state.active_tool, editor_state, button, pressed, dirty_mask);
 }
 
 

@@ -42,7 +42,7 @@ pub struct OutputInfo {
     pub width: i32,
     pub height: i32,
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum MouseButton {
     Left,
     Right, 
@@ -73,6 +73,14 @@ impl Default for SelectionState {
             drag_origin: None,
             selection_at_drag_start: None,
         }
+    }
+}
+
+impl SelectionState {
+    pub fn set_drag(&mut self, handle: SelectionHandle, origin: Option<(f64, f64)>, zone: Option<Rect>) {
+        self.active_handle = handle;
+        self.drag_origin = origin;
+        self.selection_at_drag_start = zone;
     }
 }
 
@@ -109,7 +117,7 @@ pub struct EditorState {
     pub dimmed: Vec<Pixmap>,
     pub placements : Vec<Placement>, 
     pub drag_start: Option<(f64, f64)>,
-    pub mode: EditMode,               
+    pub active_tool: Tool,               
     pub pointer: PointerState,
     pub magnifier: Option<MagnifierState> ,
     pub prev_magnifier: Option<MagnifierState>,
@@ -125,11 +133,6 @@ pub struct MagnifierState {
     pub monitor_idx:usize,
     pub pos : (f64, f64),    
 }
-#[derive(PartialEq)]
-pub enum EditMode {
-    Selection,
-}
-
 
 #[derive(Debug, Clone)]
 
