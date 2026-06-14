@@ -15,7 +15,7 @@ pub trait CaptureMethod {
 pub trait ScreenOverlay {
 	fn present(&mut self, placements: &[Placement]) -> Result<&[OutputInfo], Box<dyn std::error::Error>>; 
 	fn update_frame(&mut self, monitor_idx: usize, pixels: &[u8], damage: Option<DamageRect>) -> Result<(), Box<dyn std::error::Error>>;
-	fn next_event(&mut self) -> Result<OverlayEvent, Box<dyn std::error::Error>>;
+	fn next_event(&mut self, timeout_ms: i32) -> Result<OverlayEvent, Box<dyn std::error::Error>>;
 	fn ensure_runtime(&mut self) ->Result<(), Box<dyn std::error::Error>>;
 	//fn show_overlay(&self); todo
 	//fn update_pixels(&self); todo

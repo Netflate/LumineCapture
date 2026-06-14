@@ -69,7 +69,7 @@ pub async fn make_screenshot (
     let mut save_to_clipboard = false;
     let _save_as_file = true;                    // hardcoded
     loop {
-        let ev = overlay.next_event()?;
+        let ev = overlay.next_event(-1)?;
         match ev {
             OverlayEvent::EscapePressed => break,
             OverlayEvent::PointerMove { monitor_idx, x, y } => {

@@ -6,6 +6,8 @@ use crate::backend::wayland::utils::state::{OverlayRunTime, OverlayState};
 
 use crate::types::{DamageRect, OverlayEvent, Placement, OutputInfo};
 
+use std::os::unix::io::AsFd;
+use rustix::event::{poll, PollFd, PollFlags};
 
 // use wayland_cursor::CursorTheme;
 
@@ -216,7 +218,7 @@ impl ScreenOverlay for KdeOverlay {
         Ok(())
     }
 
-    fn next_event(&mut self) -> Result<OverlayEvent, Box<dyn std::error::Error>> {
+    fn next_event(&mut self, timeout_ms: i32) -> Result<OverlayEvent, Box<dyn std::error::Error>> {
         self.ensure_runtime()?;
         let rt = self.runtime.as_mut().ok_or("runtime missing")?;
 

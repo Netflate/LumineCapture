@@ -55,7 +55,7 @@ impl Toolbar {
             toolbar_pixmap: None,
             items: TOOLBAR_ITEMS,
             size: (0.0, TOOLBAR_HEIGHT), 
-            opacity: 0.05,
+            opacity: 1.0,
             current_side: ToolbarSide::Top, 
             monitor_idx: 0,
             position: (0.0,0.0),
@@ -94,6 +94,8 @@ impl Toolbar {
             })
         }
     }
+
+    
 
 // ==========================================
 // 3. UI Elements Definition
