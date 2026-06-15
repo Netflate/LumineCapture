@@ -7,7 +7,10 @@ use crate::backend::wayland::utils::state::{OverlayRunTime, OverlayState};
 use crate::types::{DamageRect, OverlayEvent, Placement, OutputInfo};
 
 use std::os::unix::io::AsFd;
-use rustix::event::{poll, PollFd, PollFlags};
+use rustix::{
+    event::{poll, PollFd, PollFlags},
+    time::Timespec,
+};
 
 // use wayland_cursor::CursorTheme;
 
@@ -245,7 +248,23 @@ impl ScreenOverlay for KdeOverlay {
                 // if its not mouse sending immediately
                 return Ok(ev);
             }
-            rt.event_queue.blocking_dispatch(&mut rt.state)?;
+            let fd = rt.event_queue.as_fd();
+            let mut fds = [PollFd::new(&fd, PollFlags::IN)];
+            let timeout = if timeout_ms < 0 {
+                None
+            } else {
+                Some(Timespec {
+                    tv_sec: (timeout_ms / 1000) as i64,
+                    tv_nsec: ((timeout_ms % 1000) * 1_000_000) as i64,
+                })
+            };
+
+            poll(&mut fds, timeout.as_ref())?;
+
+            if !fds[0].revents().contains(PollFlags::IN) {
+                return Ok(OverlayEvent::Tick);
+            }
+
         }
     }
 

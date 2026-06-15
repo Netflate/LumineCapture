@@ -1,6 +1,6 @@
 use crate::backend::{ScreenOverlay, initialize_capture, initialize_clipboard, initialize_overlay};
 use crate::types::{DamageRect, EditorState, MagnifierState, MonitorFrame, MouseButton, OverlayEvent, Placement, PointerState, SelectionEdges, SelectionState, HANDLE_RADIUS, MAG_FRAME_INTERVAL};
-use crate::types::toolbar::{Toolbar, ToolbarSide, ToolbarItem, TOOLBAR_HEIGHT, TOOLBAR_OFFSET, TOOLBAR_PADDING};
+use crate::types::toolbar::{TOOLBAR_HEIGHT, TOOLBAR_OFFSET, TOOLBAR_PADDING, Toolbar, ToolbarAnimation, ToolbarItem, ToolbarSide};
 use tiny_skia::{Pixmap, PixmapPaint, Transform, Rect};
 use crate::renderer::{self};
 use crate::utils::{global_point_to_local, encode_png, save_to_file};
@@ -66,11 +66,17 @@ pub async fn make_screenshot (
     let mut dirty_mask : u32 = 0 ;
     let mut selection_dirty = false;
 
+    // todo: Remove hardcoded settings, will be saved later in a config-like structure 
     let mut save_to_clipboard = false;
-    let _save_as_file = true;                    // hardcoded
+    let _save_as_file = true;                     
     loop {
-        let ev = overlay.next_event(-1)?;
+        // rendering happens only if x event happens
+        // if we have some kind of animation we need to force rendering every 16 ms 
+        // to create a 60 fps animation
+        let timeout = if editor_state.toolbar.anim.is_some() {16} else {-1};
+        let ev = overlay.next_event(timeout)?;
         match ev {
+            OverlayEvent::Tick => {}
             OverlayEvent::EscapePressed => break,
             OverlayEvent::PointerMove { monitor_idx, x, y } => {
                 handle_pointer_move(
@@ -92,6 +98,8 @@ pub async fn make_screenshot (
                 break
             }
         }
+
+        tick_toolbar_anim(&mut editor_state, &mut dirty_mask);
 
         if dirty_mask != 0 {
             for i in 0..outputs.len() {
@@ -527,7 +535,7 @@ impl EditorState {
     let tb = &self.toolbar;
     if tb.dirty {
         if tb.monitor_idx == monitor_idx {
-            if let Some(r) = Rect::from_xywh(tb.position.0, tb.position.1, tb.size.0, TOOLBAR_HEIGHT) {
+            if let Some(r) = Rect::from_xywh(tb.position.0, tb.render_y, tb.size.0, TOOLBAR_HEIGHT) {
                 dirty = union_rect(dirty, Some(r));
             }
 
@@ -540,7 +548,7 @@ impl EditorState {
         }
         // if toolbar monitor changed
         if tb.prev_monitor_idx == monitor_idx && tb.prev_monitor_idx != tb.monitor_idx {
-            if let Some(r) = Rect::from_xywh(tb.prev_position.0, tb.prev_position.1, tb.size.0, TOOLBAR_HEIGHT) {
+            if let Some(r) = Rect::from_xywh(tb.prev_position.0, tb.render_y, tb.size.0, TOOLBAR_HEIGHT) {
                 dirty = union_rect(dirty, Some(r));
             }
         }
@@ -582,22 +590,31 @@ fn update_toolbar(
 ) {
     
     // temporary function 
-    let (side, monitor_idx, pos_x, pos_y, dirty) = toolbar_placement(&editor_state); 
+    let (side, monitor_idx, pos_x, pos_y, dirty, mon_h) = toolbar_placement(&editor_state); 
     let tb = &mut editor_state.toolbar;
     tb.dirty = dirty;
 
     if tb.monitor_idx != monitor_idx || tb.position != (pos_x, pos_y) {
-        tb.dirty = true;
-        
+        let from_y = match side {
+            ToolbarSide::Top    => -TOOLBAR_HEIGHT,          
+            ToolbarSide::Bottom => mon_h,                    
+        };
+
+        tb.anim = Some(ToolbarAnimation {
+            start: Instant::now(),
+            duration_ms: 200,
+            from_y,
+            to_y: pos_y,
+        });
+        tb.render_y = from_y;
+
         tb.prev_position = tb.position;
         tb.prev_monitor_idx = tb.monitor_idx;
-        
-        
         mark_dirty(dirty_mask, tb.monitor_idx);
         if tb.monitor_idx != monitor_idx {
             mark_dirty(dirty_mask, monitor_idx);
         }
-        
+        tb.dirty = true;
         tb.position = (pos_x, pos_y);
         tb.current_side = side;
         tb.monitor_idx = monitor_idx;
@@ -615,7 +632,7 @@ fn update_toolbar(
 // making toolbar jump from side to side when selection is really annoying, it will be removed
 // this function only checks if the selection interferes with the toolbar to make it transparent
 // todo 
-fn toolbar_placement(editor_state: &EditorState) -> (ToolbarSide, usize, f32, f32, bool) {
+fn toolbar_placement(editor_state: &EditorState) -> (ToolbarSide, usize, f32, f32, bool, f32) {
     let monitor_idx = editor_state.pointer.monitor_idx;
     let placement = &editor_state.placements[monitor_idx];
     let mon_w = placement.size.0 as f32;
@@ -642,12 +659,12 @@ fn toolbar_placement(editor_state: &EditorState) -> (ToolbarSide, usize, f32, f3
     match local_sel {
         Some(sel) if overlaps(top_rect, &sel) => {
             if !overlaps(bottom_rect, &sel) {
-                (ToolbarSide::Bottom, monitor_idx, x, mon_h - TOOLBAR_OFFSET - TOOLBAR_HEIGHT, overlaps(top_rect, &sel))
+                (ToolbarSide::Bottom, monitor_idx, x, mon_h - TOOLBAR_OFFSET - TOOLBAR_HEIGHT, overlaps(top_rect, &sel), mon_h)
             } else {
-                (ToolbarSide::Top, monitor_idx, x, TOOLBAR_OFFSET, overlaps(top_rect, &sel))
+                (ToolbarSide::Top, monitor_idx, x, TOOLBAR_OFFSET, overlaps(top_rect, &sel), mon_h)
             }
         }
-        _ => (ToolbarSide::Top, monitor_idx, x, TOOLBAR_OFFSET, false),
+        _ => (ToolbarSide::Top, monitor_idx, x, TOOLBAR_OFFSET, false, mon_h),
     }
 }
 
@@ -699,3 +716,22 @@ pub fn toolbar_hit_test(toolbar: &Toolbar, local: (f64, f64)) -> Option<usize> {
 
     None
 }
+
+
+fn tick_toolbar_anim(editor_state: &mut EditorState, dirty_mask: &mut u32) {
+    let tb = &mut editor_state.toolbar;
+    let Some(anim) = &tb.anim else { return };
+
+    let t = (anim.start.elapsed().as_millis() as f32 / anim.duration_ms as f32).clamp(0.0, 1.0);
+    let t_eased = 1.0 - (1.0 - t).powi(3); // ease-out cubic
+
+    tb.render_y = anim.from_y + (anim.to_y - anim.from_y) * t_eased;
+    tb.dirty = true;
+    mark_dirty(dirty_mask, tb.monitor_idx);
+
+    if t >= 1.0 {
+        tb.render_y = anim.to_y;
+        tb.anim = None;
+    }
+}
+

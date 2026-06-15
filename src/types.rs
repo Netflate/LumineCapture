@@ -173,6 +173,7 @@ pub enum OverlayEvent {
     //MouseUpLeft,
     EscapePressed,
     SaveToClipboard,
+    Tick,
 }
 
 

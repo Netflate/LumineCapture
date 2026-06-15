@@ -1,4 +1,5 @@
 use tiny_skia::Pixmap;
+use std::time::Instant;
 use crate::tools::Tool;
 // ==========================================
 // 1. UI Layout Constants 
@@ -47,6 +48,9 @@ pub struct Toolbar {
 
     pub selected : Option<usize>,
     pub hovered : Option<usize>,
+
+    pub anim : Option<ToolbarAnimation>,
+    pub render_y: f32, // visual y for render 
 }
 
 impl Toolbar {
@@ -66,6 +70,9 @@ impl Toolbar {
             dirty : false,
             selected : None, 
             hovered: None,
+
+            anim: None,
+            render_y: 0.0, 
         };
 
         toolbar.size.0 = toolbar.toolbar_width() as f32;
@@ -122,4 +129,11 @@ impl ToolbarItem {
     }
 
 
+}
+// animation
+pub struct ToolbarAnimation {
+    pub start: Instant,
+    pub duration_ms : u64, 
+    pub from_y: f32,
+    pub to_y: f32,
 }

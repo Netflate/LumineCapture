@@ -415,7 +415,7 @@ fn draw_toolbar(
     toolbar: &mut Toolbar,
     icons_cache: &HashMap<Tool, Tree>,
 ) {
-    let (x, y) = (toolbar.position.0, toolbar.position.1);
+    let (x, y) = (toolbar.position.0, toolbar.render_y);
     let (w, h) = toolbar.size;
     let pw = w.ceil() as u32;
     let ph = h.ceil() as u32;
