@@ -1,7 +1,6 @@
 use crate::types::{MagnifierState, SelectionEdges, SelectionHandle, MAG_OFFSET, MAG_SIZE, ZOOM, MAG_CELLS};
-use crate::types::toolbar::{Toolbar, ToolbarSide, ToolbarItem, TOOLBAR_PADDING};
+use crate::types::toolbar::{Toolbar, ToolbarButton, ToolbarSide, ToolbarItem, TOOLBAR_PADDING};
 use tiny_skia::{Color, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform, BlendMode, FilterQuality};
-use crate::tools::Tool;
 use crate::utils::make_rect;
 use std::collections::HashMap;
 use usvg::Tree;
@@ -25,7 +24,7 @@ pub fn render_frame(
     magnifier: &Option<MagnifierState>,
     is_mag_monitor: bool,
     toolbar : Option<&mut Toolbar>,
-    icons_cache : &HashMap<Tool, Tree>
+    icons_cache : &HashMap<ToolbarButton, Tree>
 
 ) {
     if selection_dirty {
@@ -413,7 +412,7 @@ fn overlay_crosshair(zoomed: &mut Pixmap) {
 fn draw_toolbar(
     canvas: &mut Pixmap,
     toolbar: &mut Toolbar,
-    icons_cache: &HashMap<Tool, Tree>,
+    icons_cache: &HashMap<ToolbarButton, Tree>,
 ) {
     let (x, y) = (toolbar.position.0, toolbar.render_y);
     let (w, h) = toolbar.size;
@@ -434,7 +433,6 @@ fn draw_toolbar(
     if toolbar.dirty {
         toolbar_pixmap.fill(tiny_skia::Color::TRANSPARENT);
         draw_toolbar_content(&mut toolbar_pixmap, toolbar, icons_cache);
-        toolbar.dirty = false;
     }
 
     canvas.draw_pixmap(
@@ -456,7 +454,7 @@ fn draw_toolbar(
 fn draw_toolbar_content(
     canvas: &mut Pixmap,
     toolbar: &Toolbar,
-    icons_cache: &HashMap<Tool, Tree>,
+    icons_cache: &HashMap<ToolbarButton, Tree>,
 ) {
     let (w, h) = toolbar.size;
     let Some(rect) = Rect::from_xywh(0.0, 0.0, w, h) else { return };
@@ -478,9 +476,9 @@ fn draw_toolbar_content(
     for (index, item) in toolbar.items.iter().enumerate() {
         let cell_size = item.size();
         match item {
-            ToolbarItem::ToolButton(tool) => {
-                if let Some(rtree) = icons_cache.get(tool) {
-                    let (_, icon_size) = get_svg(tool);
+            ToolbarItem::Button(button) => {
+                if let Some(rtree) = icons_cache.get(button) {
+                    let (_, icon_size) = get_svg(button);
                     let padding = (cell_size - icon_size) / 2.0;
                     let icon_x = current_x + padding;
                     let icon_y = rect.top() + padding;

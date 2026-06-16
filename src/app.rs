@@ -1,12 +1,11 @@
 use crate::backend::{ScreenOverlay, initialize_capture, initialize_clipboard, initialize_overlay};
 use crate::types::{DamageRect, EditorState, MagnifierState, MonitorFrame, MouseButton, OverlayEvent, Placement, PointerState, SelectionEdges, SelectionState, HANDLE_RADIUS, MAG_FRAME_INTERVAL};
-use crate::types::toolbar::{TOOLBAR_HEIGHT, TOOLBAR_OFFSET, TOOLBAR_PADDING, Toolbar, ToolbarAnimation, ToolbarItem, ToolbarSide};
+use crate::types::toolbar::{TOOLBAR_HEIGHT, TOOLBAR_OFFSET, TOOLBAR_PADDING, Toolbar, ToolbarAnimation, ToolbarAction, ToolbarButton, ToolbarItem, ToolbarSide};
 use tiny_skia::{Pixmap, PixmapPaint, Transform, Rect};
 use crate::renderer::{self};
 use crate::utils::{global_point_to_local, encode_png, save_to_file};
 use std::time::{Instant};
 use std::collections::HashMap;
-use strum::IntoEnumIterator;
 use crate::tools::{dispatch_button, dispatch_move, Tool};
 use crate::tools::selection::{global_selection_to_local, monitors_for_selection, selection_edges_for_monitor};
 use usvg::Tree;
@@ -43,7 +42,8 @@ pub async fn make_screenshot (
         base: base_pixmaps,
         canvas: canvas,
         dimmed : dimmed,
-        active_tool: Tool::Selection,
+        selected_tool: Tool::Selection,
+        tool_active: false,
         selection: SelectionState::default(),
         placements : placements,
         drag_start: None,
@@ -73,7 +73,13 @@ pub async fn make_screenshot (
         // rendering happens only if x event happens
         // if we have some kind of animation we need to force rendering every 16 ms 
         // to create a 60 fps animation
-        let timeout = if editor_state.toolbar.anim.is_some() {16} else {-1};
+        let opacity_animating = {
+            let tb = &editor_state.toolbar;
+            let target_opacity = if tb.interferes {0.1} else {1.0};
+            (tb.opacity - target_opacity).abs() > 0.001
+        };
+        let timeout = if editor_state.toolbar.anim.is_some() || opacity_animating { 16 } else { -1 };
+
         let ev = overlay.next_event(timeout)?;
         match ev {
             OverlayEvent::Tick => {}
@@ -334,7 +340,7 @@ fn handle_pointer_move(
 
 
     update_magnifier(editor_state, dirty_mask);
-    dispatch_move(editor_state.active_tool, editor_state, global, selection_dirty, dirty_mask);
+    dispatch_move(editor_state.selected_tool, editor_state, global, selection_dirty, dirty_mask);
     update_toolbar(editor_state, dirty_mask);
 }
 
@@ -548,7 +554,7 @@ impl EditorState {
         }
         // if toolbar monitor changed
         if tb.prev_monitor_idx == monitor_idx && tb.prev_monitor_idx != tb.monitor_idx {
-            if let Some(r) = Rect::from_xywh(tb.prev_position.0, tb.render_y, tb.size.0, TOOLBAR_HEIGHT) {
+            if let Some(r) = Rect::from_xywh(tb.prev_position.0, tb.prev_position.1, tb.size.0, TOOLBAR_HEIGHT) {
                 dirty = union_rect(dirty, Some(r));
             }
         }
@@ -566,40 +572,66 @@ fn handle_pointer_button(
 ) {
     if matches!(button, MouseButton::Left) && pressed {
         if let Some(tb_button) = toolbar_hit_test(&editor_state.toolbar, editor_state.pointer.local) {
-            editor_state.toolbar.selected = Some(tb_button);
             editor_state.toolbar.dirty = true;
             mark_dirty(dirty_mask, editor_state.toolbar.monitor_idx);
 
-            if let Some(ToolbarItem::ToolButton(tool)) = editor_state.toolbar.items.get(tb_button) {
-                editor_state.active_tool = *tool;
+            if let Some(ToolbarItem::Button(button)) = editor_state.toolbar.items.get(tb_button) {
+                match button {
+                    ToolbarButton::Tool(tool) => {
+                        editor_state.selected_tool = *tool;
+                        editor_state.toolbar.selected = Some(tb_button);
+                    }
+                    ToolbarButton::Action(ToolbarAction::SideChange) => {
+                        editor_state.toolbar.current_side = match editor_state.toolbar.current_side {
+                            ToolbarSide::Top => ToolbarSide::Bottom,
+                            ToolbarSide::Bottom => ToolbarSide::Top,
+                        };
+                    }
+                }
+                editor_state.toolbar.dirty = true;
+                update_toolbar(editor_state, dirty_mask);
             }
             return;
         }
     }
 
-    dispatch_button(editor_state.active_tool, editor_state, button, pressed, dirty_mask);
+    dispatch_button(editor_state.selected_tool, editor_state, button, pressed, dirty_mask);
+    
+    if matches!(button, MouseButton::Left) && !pressed {
+        update_toolbar(editor_state, dirty_mask);
+    }
 }
 
 
-
-
-// Toolbar stuff 
+// Toolbar section 
 fn update_toolbar(
     editor_state: &mut EditorState, 
     dirty_mask: &mut u32
 ) {
-    
-    // temporary function 
-    let (side, monitor_idx, pos_x, pos_y, dirty, mon_h) = toolbar_placement(&editor_state); 
+    let monitor_idx = editor_state.pointer.monitor_idx;
+    let placement = &editor_state.placements[monitor_idx];
+    let (pos_x, pos_y) = toolbar_position(
+        editor_state.toolbar.current_side, 
+        placement, 
+        editor_state.toolbar.toolbar_width()
+    );
+    let from_y = match editor_state.toolbar.current_side {
+        ToolbarSide::Top    => -TOOLBAR_HEIGHT,
+        ToolbarSide::Bottom => placement.size.1 as f32,
+    };
+    let interferes = toolbar_interferes(editor_state);
+
+
+    let pointer_local = editor_state.pointer.local;
+
     let tb = &mut editor_state.toolbar;
-    tb.dirty = dirty;
+    if tb.interferes != interferes {
+        tb.dirty = true;
+        mark_dirty(dirty_mask, tb.monitor_idx);
+    }
+    tb.interferes = interferes;
 
     if tb.monitor_idx != monitor_idx || tb.position != (pos_x, pos_y) {
-        let from_y = match side {
-            ToolbarSide::Top    => -TOOLBAR_HEIGHT,          
-            ToolbarSide::Bottom => mon_h,                    
-        };
-
         tb.anim = Some(ToolbarAnimation {
             start: Instant::now(),
             duration_ms: 200,
@@ -607,7 +639,6 @@ fn update_toolbar(
             to_y: pos_y,
         });
         tb.render_y = from_y;
-
         tb.prev_position = tb.position;
         tb.prev_monitor_idx = tb.monitor_idx;
         mark_dirty(dirty_mask, tb.monitor_idx);
@@ -616,72 +647,65 @@ fn update_toolbar(
         }
         tb.dirty = true;
         tb.position = (pos_x, pos_y);
-        tb.current_side = side;
         tb.monitor_idx = monitor_idx;
     }
 
-    let button = toolbar_hit_test(tb, editor_state.pointer.local);
+    let button = toolbar_hit_test(tb, pointer_local);
     if button != tb.hovered {
-        tb.hovered = button; 
-        tb.dirty = true;    
-
+        tb.hovered = button;
+        tb.dirty = true;
         mark_dirty(dirty_mask, tb.monitor_idx);
     }
 }
 
-// making toolbar jump from side to side when selection is really annoying, it will be removed
-// this function only checks if the selection interferes with the toolbar to make it transparent
-// todo 
-fn toolbar_placement(editor_state: &EditorState) -> (ToolbarSide, usize, f32, f32, bool, f32) {
+fn toolbar_interferes(editor_state: &EditorState) -> bool {
     let monitor_idx = editor_state.pointer.monitor_idx;
     let placement = &editor_state.placements[monitor_idx];
     let mon_w = placement.size.0 as f32;
     let mon_h = placement.size.1 as f32;
-
-
     let tb = &editor_state.toolbar;
-    let tb_width: f32 = tb.size.0; 
-
+    let tb_width = tb.size.0;
     let x = (mon_w - tb_width) / 2.0;
 
-    let top_rect    = (x, TOOLBAR_OFFSET, x + tb_width, TOOLBAR_OFFSET + TOOLBAR_HEIGHT);
-    let bottom_rect = (x, mon_h - TOOLBAR_OFFSET - TOOLBAR_HEIGHT, x + tb_width, mon_h - TOOLBAR_OFFSET);
-
-    let overlaps = |tb: (f32, f32, f32, f32), sel: &Rect| -> bool {
-        tb.0 < sel.right() && tb.2 > sel.left() &&
-        tb.1 < sel.bottom() && tb.3 > sel.top()
+    let active_rect = match tb.current_side {
+        ToolbarSide::Top    => (x, TOOLBAR_OFFSET, x + tb_width, TOOLBAR_OFFSET + TOOLBAR_HEIGHT),
+        ToolbarSide::Bottom => (x, mon_h - TOOLBAR_OFFSET - TOOLBAR_HEIGHT, x + tb_width, mon_h - TOOLBAR_OFFSET),
     };
 
-    let local_sel = editor_state.selection.zone
+    let Some(sel) = editor_state.selection.zone
         .as_ref()
-        .and_then(|sel| global_selection_to_local(sel, placement));
+        .and_then(|sel| global_selection_to_local(sel, placement))
+    else { return false };
 
-    match local_sel {
-        Some(sel) if overlaps(top_rect, &sel) => {
-            if !overlaps(bottom_rect, &sel) {
-                (ToolbarSide::Bottom, monitor_idx, x, mon_h - TOOLBAR_OFFSET - TOOLBAR_HEIGHT, overlaps(top_rect, &sel), mon_h)
-            } else {
-                (ToolbarSide::Top, monitor_idx, x, TOOLBAR_OFFSET, overlaps(top_rect, &sel), mon_h)
-            }
-        }
-        _ => (ToolbarSide::Top, monitor_idx, x, TOOLBAR_OFFSET, false, mon_h),
-    }
+    active_rect.0 < sel.right()  && active_rect.2 > sel.left() &&
+    active_rect.1 < sel.bottom() && active_rect.3 > sel.top()  && 
+    editor_state.tool_active                                      // if selection isn't active toolbar won't be transparent 
 }
 
+fn toolbar_position(side: ToolbarSide, placement: &Placement, tb_width: f32) -> (f32, f32) {
+    let mon_w = placement.size.0 as f32;
+    let mon_h = placement.size.1 as f32;
+    let x = (mon_w - tb_width) / 2.0;
+    let y = match side {
+        ToolbarSide::Top    => TOOLBAR_OFFSET,
+        ToolbarSide::Bottom => mon_h - TOOLBAR_OFFSET - TOOLBAR_HEIGHT,
+    };
+    (x, y)
+}
 
-
-fn load_icons_cache() -> HashMap<Tool, Tree> {
+fn load_icons_cache() -> HashMap<ToolbarButton, Tree> {
     let t0 = std::time::Instant::now();
     let mut cache = HashMap::new();
     let opt = usvg::Options::default();
 
-    for tool in Tool::iter() {
-        let (svg_str, _) = icons::get_svg(&tool);
+    for item in crate::types::toolbar::TOOLBAR_ITEMS {
+        let ToolbarItem::Button(button) = item else { continue };
+        let (svg_str, _) = icons::get_svg(button);
         
         let tree = Tree::from_str(svg_str, &opt)
             .expect("Critical: Failed to parse embedded SVG icon");
         
-        cache.insert(tool, tree);
+        cache.insert(*button, tree);
     }
     println!("(Background thread) : svg parsed in {}ms ", t0.elapsed().as_millis());
 
@@ -706,7 +730,7 @@ pub fn toolbar_hit_test(toolbar: &Toolbar, local: (f64, f64)) -> Option<usize> {
 
         if px >= current_x && px <= item_right {
             return match item {
-                ToolbarItem::ToolButton(_) => Some(idx),
+                ToolbarItem::Button(_) => Some(idx),
                 ToolbarItem::Seperator => None, 
             };
         }
@@ -720,10 +744,32 @@ pub fn toolbar_hit_test(toolbar: &Toolbar, local: (f64, f64)) -> Option<usize> {
 
 fn tick_toolbar_anim(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     let tb = &mut editor_state.toolbar;
+    
+    // smooth opacity animation 
+    let now = Instant::now();
+    let dt = tb.last_tick
+        .map(|t| now.duration_since(t).as_secs_f32())
+        .unwrap_or(0.016);
+    tb.last_tick = Some(now);
+
+    let opacity_per_sec = 5.0; 
+    let target_opacity = if tb.interferes { 0.1 } else { 1.0 };
+    if (tb.opacity - target_opacity).abs() > 0.001 {
+        let delta = opacity_per_sec * dt;
+        if tb.opacity < target_opacity {
+            tb.opacity = (tb.opacity + delta).min(target_opacity);
+        } else {
+            tb.opacity = (tb.opacity - delta).max(target_opacity);
+        }
+        tb.dirty = true;
+        mark_dirty(dirty_mask, tb.monitor_idx);
+    }
+
+    // ease out animation
     let Some(anim) = &tb.anim else { return };
 
     let t = (anim.start.elapsed().as_millis() as f32 / anim.duration_ms as f32).clamp(0.0, 1.0);
-    let t_eased = 1.0 - (1.0 - t).powi(3); // ease-out cubic
+    let t_eased = 1.0 - (1.0 - t).powi(3); 
 
     tb.render_y = anim.from_y + (anim.to_y - anim.from_y) * t_eased;
     tb.dirty = true;

@@ -2,6 +2,7 @@ pub mod toolbar;
 pub mod icons;
 
 use crate::types::toolbar::Toolbar;
+use crate::types::toolbar::ToolbarButton;
 use crate::tools::Tool;
 use usvg::Tree;
 
@@ -117,7 +118,8 @@ pub struct EditorState {
     pub dimmed: Vec<Pixmap>,
     pub placements : Vec<Placement>, 
     pub drag_start: Option<(f64, f64)>,
-    pub active_tool: Tool,               
+    pub selected_tool: Tool,               
+    pub tool_active: bool,
     pub pointer: PointerState,
     pub magnifier: Option<MagnifierState> ,
     pub prev_magnifier: Option<MagnifierState>,
@@ -125,7 +127,7 @@ pub struct EditorState {
     pub mouse_down_left : bool,
     pub selection: SelectionState,
     pub toolbar : Toolbar,
-    pub icon_cache : HashMap<Tool, Tree>,
+    pub icon_cache : HashMap<ToolbarButton, Tree>,
 }
 
 #[derive(Debug)]

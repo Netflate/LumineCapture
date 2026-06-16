@@ -127,6 +127,7 @@ impl ToolBehavior for SelectionTool {
 
         state.mouse_down_left = pressed;
         if pressed {
+            state.tool_active = true;
             let handle = state.selection.zone.as_ref()
                 .map(|sel| hit_test_selection(sel, state.pointer.global))
                 .unwrap_or(SelectionHandle::None);
@@ -141,6 +142,8 @@ impl ToolBehavior for SelectionTool {
                 state.drag_start = Some(state.pointer.global);
             }
         } else {
+            state.tool_active = false;
+
             state.drag_start = None;
             state.selection.set_drag(SelectionHandle::None, None, None);
         }
@@ -150,7 +153,7 @@ impl ToolBehavior for SelectionTool {
                selection_dirty: &mut bool, dirty_mask: &mut u32) {
         let old_sel = state.selection.zone;
 
-        // handle drag (resize/move existing selection)
+        // handle drag (resizon_movee/move existing selection)
         if state.mouse_down_left && state.selection.active_handle != SelectionHandle::None {
             if let (Some(origin), Some(sel_start)) = (
                 state.selection.drag_origin,
@@ -176,7 +179,6 @@ impl ToolBehavior for SelectionTool {
     }
 }
 
-// приватный хелпер, нужен только здесь
 fn apply_selection_dirty(
     old_sel: Option<Rect>,
     new_sel: Option<Rect>,

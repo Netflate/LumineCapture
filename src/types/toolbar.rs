@@ -13,13 +13,13 @@ const SEPARATOR_CELL_SIZE: f32 = 20.0;
 
 // Toolbar tools list
 pub const TOOLBAR_ITEMS: &[ToolbarItem] = &[
-    ToolbarItem::ToolButton(Tool::Selection),
-    ToolbarItem::ToolButton(Tool::Arrow),
-    ToolbarItem::ToolButton(Tool::Rectangle),
-    ToolbarItem::ToolButton(Tool::Circle),
+    ToolbarItem::Button(ToolbarButton::Tool(Tool::Selection)),
+    ToolbarItem::Button(ToolbarButton::Tool(Tool::Arrow)),
+    ToolbarItem::Button(ToolbarButton::Tool(Tool::Rectangle)),
+    ToolbarItem::Button(ToolbarButton::Tool(Tool::Circle)),
+    ToolbarItem::Button(ToolbarButton::Tool(Tool::Text)),
     ToolbarItem::Seperator,
-    ToolbarItem::ToolButton(Tool::Rectangle),
-    ToolbarItem::ToolButton(Tool::Text),
+    ToolbarItem::Button(ToolbarButton::Action(ToolbarAction::SideChange)),
 ];
 
 // ==========================================
@@ -50,7 +50,9 @@ pub struct Toolbar {
     pub hovered : Option<usize>,
 
     pub anim : Option<ToolbarAnimation>,
-    pub render_y: f32, // visual y for render 
+    pub render_y: f32,                   // visual y for render 
+    pub interferes : bool,
+    pub last_tick: Option<Instant>,
 }
 
 impl Toolbar {
@@ -73,6 +75,9 @@ impl Toolbar {
 
             anim: None,
             render_y: 0.0, 
+            interferes: false,
+            last_tick: None,
+
         };
 
         toolbar.size.0 = toolbar.toolbar_width() as f32;
@@ -95,8 +100,9 @@ impl Toolbar {
         self.selected.and_then ( 
             |idx| self.items.get(idx)).and_then(|item| {
                 match item {
-                    ToolbarItem::ToolButton(tool) => Some(tool),
+                    ToolbarItem::Button(ToolbarButton::Tool(tool)) => Some(tool),
                     ToolbarItem::Seperator => None,
+                    _ => None,
                 }
             })
         }
@@ -107,23 +113,34 @@ impl Toolbar {
 // ==========================================
 // 3. UI Elements Definition
 // ==========================================
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ToolbarAction {
+    SideChange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ToolbarButton {
+    Tool(Tool),
+    Action(ToolbarAction),
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum ToolbarItem {
-    ToolButton(Tool),
+    Button(ToolbarButton),
     Seperator, 
 }
 
 impl ToolbarItem {
     pub fn size(&self) -> f32 { 
         match self {
-            ToolbarItem::ToolButton(_) => BUTTON_CELL_SIZE,
+            ToolbarItem::Button(_) => BUTTON_CELL_SIZE,
             ToolbarItem::Seperator => SEPARATOR_CELL_SIZE,
         }
     }
 
     pub fn trailing_padding(&self) -> f32 {
         match self {
-            ToolbarItem::ToolButton(_) => 0.0,
+            ToolbarItem::Button(_) => 0.0,
             ToolbarItem::Seperator => 0.0,
         }
     }
