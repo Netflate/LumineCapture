@@ -19,11 +19,11 @@ pub async fn make_screenshot (
 
     let conn = wayland_conn.unwrap();
     let capture = initialize_capture();
-    let mut overlay = initialize_overlay(conn.clone());
     let screenshots = capture.capture_frame().await?;
-    let clipboard = initialize_clipboard(conn);
     
     println!("after capturing {}ms", t0.elapsed().as_millis());               
+    let mut overlay = initialize_overlay(conn.clone());
+    let clipboard = initialize_clipboard(conn);
     
     
     let base_pixmaps: Vec<Pixmap> = build_base_pixmap(&screenshots.frames);
