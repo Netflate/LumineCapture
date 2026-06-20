@@ -51,6 +51,7 @@ pub fn dispatch_move(tool: Tool, state: &mut EditorState, global: (f64, f64),
                      selection_dirty: &mut bool, dirty_mask: &mut u32) {
     match tool {
         Tool::Selection => SelectionTool.on_move(state, global, selection_dirty, dirty_mask),
+        Tool::Arrow => ArrowTool.on_move(state, global, selection_dirty, dirty_mask),
         _ => {}
     }
 }
@@ -58,6 +59,7 @@ pub fn dispatch_move(tool: Tool, state: &mut EditorState, global: (f64, f64),
 pub fn dispatch_button(tool: Tool, state: &mut EditorState, button: MouseButton, pressed: bool, dirty_mask: &mut u32) {
     match tool {
         Tool::Selection => SelectionTool.on_button(state, button, pressed, dirty_mask),
+        Tool::Arrow => ArrowTool.on_button(state, button, pressed, dirty_mask),
         _ => {}
     }
 }

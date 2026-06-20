@@ -10,6 +10,8 @@ use crate::tools::{dispatch_button, dispatch_move, Tool};
 use crate::tools::selection::{global_selection_to_local, monitors_for_selection, selection_edges_for_monitor};
 use usvg::Tree;
 use crate::types::icons;
+use crate::types::annotations::{Annotation, AnnotationShape};
+
 
 pub async fn make_screenshot (
     wayland_conn: Option<wayland_client::Connection>,
@@ -54,6 +56,10 @@ pub async fn make_screenshot (
         mouse_down_left: false,
         toolbar: Toolbar::new(), 
         icon_cache,
+
+        annotations: Vec::new(),
+        pending: None,
+        next_id: 0,
     };
     
     println!("after saving base screenshot {}ms", t0.elapsed().as_millis());                
@@ -144,21 +150,36 @@ pub async fn make_screenshot (
                         None
                     };
 
-                    renderer::render_frame(
-                        &mut editor_state.canvas[i],
-                        &editor_state.base[i],
-                        &mut editor_state.dimmed[i],
-                        &local_sel,
-                        &prev_local,
-                        dirty_rect.as_ref(),
-                        edges.as_ref(),
+                    let offset = (
+                        editor_state.placements[i].position.0 as f32,
+                        editor_state.placements[i].position.1 as f32,
+                    );
+                    let local_annotations: Vec<Annotation> = editor_state.annotations
+                        .iter()
+                        .map(|a| annotation_to_local(a, offset))
+                        .collect();
+                    let local_pending = editor_state.pending
+                        .as_ref()
+                        .map(|a| annotation_to_local(a, offset));
+
+
+                    renderer::render_frame(&mut renderer::RenderRequest {
+                        canvas: &mut editor_state.canvas[i],
+                        base: &editor_state.base[i],
+                        dimmed: &mut editor_state.dimmed[i],
+                        selection: local_sel.as_ref(),
+                        prev_selection: prev_local.as_ref(),
+                        dirty_rect: dirty_rect.as_ref(),
+                        selection_edges: edges.as_ref(),
                         selection_dirty,
-                        &editor_state.magnifier,
+                        magnifier: editor_state.magnifier.as_ref(),
                         is_mag_monitor,
                         toolbar,
-                        &editor_state.icon_cache,
+                        icons_cache: &editor_state.icon_cache,
 
-                    );
+                        annotations: &local_annotations,
+                        pending: local_pending.as_ref(),
+                    });
 
                     overlay.update_frame(i, editor_state.canvas[i].data(), damage)?;
 
@@ -297,21 +318,23 @@ fn initial_paint(
             &editor_state.base[monitor_idx],
             &local_sel,
         );
-        renderer::render_frame(
-            &mut editor_state.canvas[monitor_idx],
-            &editor_state.base[monitor_idx],
-            &mut editor_state.dimmed[monitor_idx],
-            &local_sel,
-            &prev_local,
-            None,
-            edges.as_ref(),
-            false,
-            &editor_state.magnifier,
-            false, 
-            None,
-            &editor_state.icon_cache,
+        renderer::render_frame(&mut renderer::RenderRequest {
+            canvas: &mut editor_state.canvas[monitor_idx],
+            base: &editor_state.base[monitor_idx],
+            dimmed: &mut editor_state.dimmed[monitor_idx],
+            selection: local_sel.as_ref(),
+            prev_selection: prev_local.as_ref(),
+            dirty_rect: None,
+            selection_edges: edges.as_ref(),
+            selection_dirty: false,
+            magnifier: editor_state.magnifier.as_ref(),
+            is_mag_monitor: false,
+            toolbar: None,
+            icons_cache: &editor_state.icon_cache,
 
-        );
+            annotations: &editor_state.annotations,
+            pending: None,
+        });
         overlay.update_frame(monitor_idx, editor_state.canvas[monitor_idx].data(), None)?;
     }
 
@@ -390,7 +413,7 @@ fn update_magnifier(
 }
 
 
-fn mark_dirty(mask: &mut u32, idx: usize) {
+pub fn mark_dirty(mask: &mut u32, idx: usize) {
     *mask |= 1 << idx;
 }
 
@@ -781,3 +804,23 @@ fn tick_toolbar_anim(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     }
 }
 
+// annotations
+// annotations.rs
+pub fn annotation_to_local(ann: &Annotation, offset: (f32, f32)) -> Annotation {
+    let mut local = ann.clone();
+    local.shape = match &ann.shape {
+        AnnotationShape::Arrow { start, end } => AnnotationShape::Arrow {
+            start: (start.0 - offset.0, start.1 - offset.1),
+            end:   (end.0   - offset.0, end.1   - offset.1),
+        },
+        AnnotationShape::Rect { rect } => AnnotationShape::Rect {
+            rect: Rect::from_ltrb(
+                rect.left()   - offset.0,
+                rect.top()    - offset.1,
+                rect.right()  - offset.0,
+                rect.bottom() - offset.1,
+            ).unwrap_or(*rect),
+        },
+    };
+    local
+}

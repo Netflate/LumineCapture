@@ -1,10 +1,23 @@
+// ============================================================================
+// PENDING REFACTOR
+//
+// This file has grown too large and is currently being split into smaller
+// sub-modules to improve architecture maintainability and readability.
+//
+// Existing types in this file will be gradually moved to their own modules 
+// in types folder
+// ============================================================================
+
 pub mod toolbar;
 pub mod icons;
+pub mod annotations;
 
 use crate::types::toolbar::Toolbar;
 use crate::types::toolbar::ToolbarButton;
 use crate::tools::Tool;
 use usvg::Tree;
+use crate::types::annotations::{Annotation};
+
 
 
 use tiny_skia::{Rect, Pixmap};
@@ -128,6 +141,10 @@ pub struct EditorState {
     pub selection: SelectionState,
     pub toolbar : Toolbar,
     pub icon_cache : HashMap<ToolbarButton, Tree>,
+    
+    pub annotations: Vec<Annotation>,
+    pub pending: Option<Annotation>,
+    pub next_id: u64,
 }
 
 #[derive(Debug)]

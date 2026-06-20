@@ -5,49 +5,60 @@ use crate::utils::make_rect;
 use std::collections::HashMap;
 use usvg::Tree;
 use crate::types::icons::get_svg;
+use crate::types::annotations::{Annotation, AnnotationShape};
 
 
+pub struct RenderRequest<'a> {
+    // basic layers
+    pub canvas: &'a mut Pixmap,
+    pub base: &'a Pixmap,          
+    pub dimmed: &'a mut Pixmap,            
+    // selection + magnifier + toolbar
+    pub selection: Option<&'a Rect>,    
+    pub prev_selection: Option<&'a Rect>,
+    pub dirty_rect: Option<&'a Rect>,
+    pub selection_edges: Option<&'a SelectionEdges>,
+    pub selection_dirty: bool, 
+    pub magnifier: Option<&'a MagnifierState>,
+    pub is_mag_monitor: bool,
+    pub toolbar : Option<&'a mut Toolbar>,
+    pub icons_cache : &'a HashMap<ToolbarButton, Tree>,
+    // annotations
+    pub annotations: &'a [Annotation],
+    pub pending: Option<&'a Annotation>,
+}
 
 
-
-// this function absolutely stinks
-// it will be refactored to take RenderRequest struct (read-only) instead 
-pub fn render_frame(
-    canvas: &mut Pixmap,
-    base: &Pixmap,          // only for magnifier 
-    dimmed: &mut Pixmap,            
-    selection: &Option<Rect>,
-    prev_selection: &Option<Rect>,
-    dirty_rect: Option<&Rect>,
-    selection_edges: Option<&SelectionEdges>,
-    selection_dirty: bool, 
-    magnifier: &Option<MagnifierState>,
-    is_mag_monitor: bool,
-    toolbar : Option<&mut Toolbar>,
-    icons_cache : &HashMap<ToolbarButton, Tree>
-
-) {
-    if selection_dirty {
-        update_dimming_delta(dimmed, base, prev_selection, selection);
+pub fn render_frame(req: &mut RenderRequest) {
+    if req.selection_dirty {
+        update_dimming_delta(req.dimmed, req.base, req.prev_selection, req.selection);
     }
-    if let Some(dirty) = dirty_rect {
-        blit_rect(dimmed, canvas, dirty);
+    if let Some(dirty) = req.dirty_rect {
+        blit_rect(req.dimmed, req.canvas, dirty);
     } else {
-        canvas.data_mut().copy_from_slice(dimmed.data());
+        req.canvas.data_mut().copy_from_slice(req.dimmed.data());
     }
 
-    if let Some(sel) = selection {
-        draw_selection_border(canvas, sel, selection_edges);
+    if let Some(sel) = req.selection {
+        draw_selection_border(req.canvas, sel, req.selection_edges);
     }
 
-    if is_mag_monitor {
-        if let Some(mag) = magnifier {
-            draw_magnifier(canvas, base, (mag.pos.0 as f32, mag.pos.1 as f32));
+    for ann in req.annotations {
+        draw_annotation(req.canvas, ann);
+    }
+    if let Some(ann) = req.pending {
+        draw_annotation(req.canvas, ann);
+    }
+
+
+    if req.is_mag_monitor {
+        if let Some(mag) = req.magnifier {
+            draw_magnifier(req.canvas, req.base, (mag.pos.0 as f32, mag.pos.1 as f32));
         }
     }
 
-    if let Some(tb) = toolbar && tb.dirty  {
-        draw_toolbar(canvas, tb, icons_cache);
+    if let Some(tb) = req.toolbar.as_mut() && tb.dirty  {
+        draw_toolbar(req.canvas, tb, req.icons_cache);
     }
 }
 
@@ -179,8 +190,8 @@ fn draw_dimming(canvas: &mut Pixmap, selection: &Option<Rect>, w: u32, h: u32) {
 fn update_dimming_delta(
     dimmed: &mut Pixmap,
     base: &Pixmap,
-    prev: &Option<Rect>,
-    next: &Option<Rect>,
+    prev: Option<&Rect>,
+    next: Option<&Rect>,
 ) {
     if let Some(old) = prev {
         dim_rect(dimmed, old);
@@ -521,4 +532,68 @@ fn draw_toolbar_content(
         }
         current_x += cell_size + item.trailing_padding();
     }
+}
+// annotations
+pub fn draw_annotation(canvas: &mut Pixmap, ann: &Annotation) {
+    match &ann.shape {
+        AnnotationShape::Arrow { start, end } => {
+            draw_arrow(canvas, *start, *end, ann.color, ann.stroke_width);
+        }
+        AnnotationShape::Rect { rect } => {
+            draw_rect(canvas, rect, ann.color, ann.stroke_width);
+        }
+    }
+}
+
+fn draw_arrow(canvas: &mut Pixmap, start: (f32, f32), end: (f32, f32), color: Color, stroke_width: f32) {
+    let mut paint = Paint::default();
+    paint.set_color(color);
+    paint.anti_alias = true;
+
+    let mut stroke = Stroke::default();
+    stroke.width = stroke_width;
+
+    let mut pb = PathBuilder::new();
+    pb.move_to(start.0, start.1);
+    pb.line_to(end.0, end.1);
+    if let Some(path) = pb.finish() {
+        canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+    }
+
+    let dx = end.0 - start.0;
+    let dy = end.1 - start.1;
+    let len = (dx * dx + dy * dy).sqrt();
+    if len < 1.0 { return; }
+
+    let ux = dx / len;
+    let uy = dy / len;
+    let head_len = (stroke_width * 4.0).max(12.0);
+    let head_width = head_len * 0.5;
+    let px = -uy;
+    let py =  ux;
+
+    let tip   = end;
+    let base1 = (end.0 - ux * head_len + px * head_width, end.1 - uy * head_len + py * head_width);
+    let base2 = (end.0 - ux * head_len - px * head_width, end.1 - uy * head_len - py * head_width);
+
+    let mut pb = PathBuilder::new();
+    pb.move_to(tip.0, tip.1);
+    pb.line_to(base1.0, base1.1);
+    pb.line_to(base2.0, base2.1);
+    pb.close();
+    if let Some(path) = pb.finish() {
+        canvas.fill_path(&path, &paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
+    }
+}
+
+fn draw_rect(canvas: &mut Pixmap, rect: &Rect, color: Color, stroke_width: f32) {
+    let mut paint = Paint::default();
+    paint.set_color(color);
+    paint.anti_alias = true;
+
+    let mut stroke = Stroke::default();
+    stroke.width = stroke_width;
+
+    let path = PathBuilder::from_rect(*rect);
+    canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
 }
