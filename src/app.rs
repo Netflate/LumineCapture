@@ -10,8 +10,7 @@ use crate::tools::{dispatch_button, dispatch_move, Tool};
 use crate::tools::selection::{global_selection_to_local, selection_edges_for_monitor};
 use usvg::Tree;
 use crate::types::icons;
-use crate::types::annotations::{Annotation, annotation_to_local};
-use crate::types::annotations::annotation_bounding_box;
+use crate::types::annotations::Annotation;
 
 
 pub async fn make_screenshot (
@@ -158,11 +157,11 @@ pub async fn make_screenshot (
                     );
                     let local_annotations: Vec<Annotation> = editor_state.annotations
                         .iter()
-                        .map(|a| annotation_to_local(a, offset))
+                        .map(|a| a.to_local(offset))
                         .collect();
                     let local_pending = editor_state.pending
                         .as_ref()
-                        .map(|a| annotation_to_local(a, offset));
+                        .map(|a| a.to_local(offset));
 
 
                     renderer::render_frame(&mut renderer::RenderRequest {
@@ -187,9 +186,10 @@ pub async fn make_screenshot (
 
                 }
             }
-            selection_dirty = false;
+            selection_dirty = false;         
             editor_state.toolbar.dirty = false;
             dirty_mask = 0;
+            editor_state.prev_pending = editor_state.pending.clone();
         }
     }
     if save_to_clipboard {
@@ -481,7 +481,7 @@ fn render_final(editor_state: &EditorState) -> Vec<u8> {
         None => return vec![],
     };
 
-    // choosing monitors within the selection zone 
+    // based on selection choosing monitors for render
     let mask = get_overlapping_monitors(&sel, &editor_state.placements);
 
     let sel_left = sel.left().floor() as i32;
@@ -495,7 +495,6 @@ fn render_final(editor_state: &EditorState) -> Vec<u8> {
     }
 
     let mut out = Pixmap::new(sel_w, sel_h).unwrap();
-
     for (i, placement) in editor_state.placements.iter().enumerate() {
         if (mask & (1 << i)) == 0 { continue; }
 
@@ -511,11 +510,18 @@ fn render_final(editor_state: &EditorState) -> Vec<u8> {
             None,
         );
     }
+    // re-drawing annotations
+    // maybe in the future it would be better to make a separate layer 
+    // instead of redrawing them
+    // or for some specific perfomance eating tools as blur
+    let offset = (sel_left as f32, sel_top as f32);
+    for ann in &editor_state.annotations {
+        let local = ann.to_local(offset);
+        renderer::draw_annotation(&mut out, &local);
+    }
 
     encode_png(&out)
 }
-
-
 
 
 impl EditorState {
@@ -589,7 +595,7 @@ impl EditorState {
     let pad = 4.0;
 
     let mut add_ann_dirty = |ann: &Annotation| {
-        if let Some(bbox) = annotation_bounding_box(ann) {
+        if let Some(bbox) = ann.bounding_box() {
             if let Some(local) = Rect::from_ltrb(
                 bbox.left()   - offset.0,
                 bbox.top()    - offset.1,

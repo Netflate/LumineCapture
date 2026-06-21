@@ -539,11 +539,19 @@ pub fn draw_annotation(canvas: &mut Pixmap, ann: &Annotation) {
         AnnotationShape::Arrow { start, end } => {
             draw_arrow(canvas, *start, *end, ann.color, ann.stroke_width);
         }
-        AnnotationShape::Rect { rect } => {
-            draw_rect(canvas, rect, ann.color, ann.stroke_width);
+        AnnotationShape::Rectangle { start, end } => {
+            if let Some(rect) = normalized_rect(*start, *end) {
+                draw_rect(canvas, &rect, ann.color, ann.stroke_width);
+            }
+        }
+        AnnotationShape::Circle { start, end } => {
+            if let Some(rect) = normalized_rect(*start, *end) {
+                draw_circle(canvas, &rect, ann.color, ann.stroke_width);
+            }
         }
     }
 }
+
 
 fn draw_arrow(canvas: &mut Pixmap, start: (f32, f32), end: (f32, f32), color: Color, stroke_width: f32) {
     let mut paint = Paint::default();
@@ -590,10 +598,45 @@ fn draw_rect(canvas: &mut Pixmap, rect: &Rect, color: Color, stroke_width: f32) 
     let mut paint = Paint::default();
     paint.set_color(color);
     paint.anti_alias = true;
+    let mut stroke = Stroke::default();
+    stroke.width = stroke_width;
+    let path = PathBuilder::from_rect(*rect);
+    canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+}
 
+fn draw_circle(canvas: &mut Pixmap, rect: &Rect, color: Color, stroke_width: f32) {
+    let mut paint = Paint::default();
+    paint.set_color(color);
+    paint.anti_alias = true;
     let mut stroke = Stroke::default();
     stroke.width = stroke_width;
 
-    let path = PathBuilder::from_rect(*rect);
-    canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+    let cx = (rect.left() + rect.right()) / 2.0;
+    let cy = (rect.top() + rect.bottom()) / 2.0;
+    let rx = rect.width() / 2.0;
+    let ry = rect.height() / 2.0;
+
+    if let Some(path) = oval_path(cx, cy, rx, ry) {
+        canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+    }
+}
+
+fn oval_path(cx: f32, cy: f32, rx: f32, ry: f32) -> Option<tiny_skia::Path> {
+    const K: f32 = 0.5523;
+    let mut pb = PathBuilder::new();
+    pb.move_to(cx, cy - ry);
+    pb.cubic_to(cx + rx * K, cy - ry, cx + rx, cy - ry * K, cx + rx, cy);
+    pb.cubic_to(cx + rx, cy + ry * K, cx + rx * K, cy + ry, cx, cy + ry);
+    pb.cubic_to(cx - rx * K, cy + ry, cx - rx, cy + ry * K, cx - rx, cy);
+    pb.cubic_to(cx - rx, cy - ry * K, cx - rx * K, cy - ry, cx, cy - ry);
+    pb.close();
+    pb.finish()
+}
+
+
+fn normalized_rect(start: (f32, f32), end: (f32, f32)) -> Option<Rect> {
+    Rect::from_ltrb(
+        start.0.min(end.0), start.1.min(end.1),
+        start.0.max(end.0), start.1.max(end.1),
+    )
 }

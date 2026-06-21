@@ -144,8 +144,8 @@ pub struct EditorState {
     
     pub annotations: Vec<Annotation>,
     pub pending: Option<Annotation>,
-    pub next_id: u64,
     pub prev_pending: Option<Annotation>,
+    pub next_id: u64,
 }
 
 #[derive(Debug)]
