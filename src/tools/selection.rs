@@ -1,6 +1,6 @@
 use crate::tools::ToolBehavior;
 use crate::types::{EditorState, MouseButton, Placement, SelectionEdges, SelectionHandle, HANDLE_RADIUS};
-use crate::utils::make_rect;
+use crate::utils::{make_rect, get_overlapping_monitors};
 use crate::renderer::apply_handle_drag;
 use tiny_skia::Rect;
 
@@ -149,8 +149,7 @@ impl ToolBehavior for SelectionTool {
         }
     }
 
-    fn on_move(&self, state: &mut EditorState, global: (f64, f64), 
-               selection_dirty: &mut bool, dirty_mask: &mut u32) {
+    fn on_move(&self, state: &mut EditorState, global: (f64, f64), selection_dirty: &mut bool, dirty_mask: &mut u32) {
         let old_sel = state.selection.zone;
 
         // handle drag (resizon_movee/move existing selection)
@@ -187,20 +186,6 @@ fn apply_selection_dirty(
     selection_dirty: &mut bool,
 ) {
     *selection_dirty = true;
-    if let Some(sel) = old_sel { *dirty_mask |= monitors_for_selection(&sel, placements); }
-    if let Some(sel) = new_sel { *dirty_mask |= monitors_for_selection(&sel, placements); }
-}
-
-pub fn monitors_for_selection(selection: &Rect, placements: &[crate::types::Placement]) -> u32 {
-    let mut mask = 0u32;
-    for (i, p) in placements.iter().enumerate() {
-        let mx = p.position.0 as f32;
-        let my = p.position.1 as f32;
-        let overlaps = selection.left()  < mx + p.size.0 as f32
-                    && selection.right() > mx
-                    && selection.top()   < my + p.size.1 as f32
-                    && selection.bottom()> my;
-        if overlaps { mask |= 1 << i; }
-    }
-    mask
+    if let Some(sel) = old_sel { *dirty_mask |= get_overlapping_monitors(&sel, placements); }
+    if let Some(sel) = new_sel { *dirty_mask |= get_overlapping_monitors(&sel, placements); }
 }

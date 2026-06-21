@@ -75,3 +75,18 @@ pub fn save_to_file(png_data: &[u8]) -> Result<PathBuf, Box<dyn std::error::Erro
     Ok(path)
 
 }
+
+// to render necessary monitors 
+pub fn get_overlapping_monitors(selection: &Rect, placements: &[crate::types::Placement]) -> u32 {
+    let mut mask = 0u32;
+    for (i, p) in placements.iter().enumerate() {
+        let mx = p.position.0 as f32;
+        let my = p.position.1 as f32;
+        let overlaps = selection.left()  < mx + p.size.0 as f32
+                    && selection.right() > mx
+                    && selection.top()   < my + p.size.1 as f32
+                    && selection.bottom()> my;
+        if overlaps { mask |= 1 << i; }
+    }
+    mask
+}

@@ -3,14 +3,15 @@ use crate::types::{DamageRect, EditorState, MagnifierState, MonitorFrame, MouseB
 use crate::types::toolbar::{TOOLBAR_HEIGHT, TOOLBAR_OFFSET, TOOLBAR_PADDING, Toolbar, ToolbarAnimation, ToolbarAction, ToolbarButton, ToolbarItem, ToolbarSide};
 use tiny_skia::{Pixmap, PixmapPaint, Transform, Rect};
 use crate::renderer::{self};
-use crate::utils::{global_point_to_local, encode_png, save_to_file};
+use crate::utils::{global_point_to_local, encode_png, save_to_file, get_overlapping_monitors};
 use std::time::{Instant};
 use std::collections::HashMap;
 use crate::tools::{dispatch_button, dispatch_move, Tool};
-use crate::tools::selection::{global_selection_to_local, monitors_for_selection, selection_edges_for_monitor};
+use crate::tools::selection::{global_selection_to_local, selection_edges_for_monitor};
 use usvg::Tree;
 use crate::types::icons;
-use crate::types::annotations::{Annotation, AnnotationShape};
+use crate::types::annotations::{Annotation, annotation_to_local};
+use crate::types::annotations::annotation_bounding_box;
 
 
 pub async fn make_screenshot (
@@ -60,6 +61,7 @@ pub async fn make_screenshot (
         annotations: Vec::new(),
         pending: None,
         next_id: 0,
+        prev_pending: None,
     };
     
     println!("after saving base screenshot {}ms", t0.elapsed().as_millis());                
@@ -480,7 +482,7 @@ fn render_final(editor_state: &EditorState) -> Vec<u8> {
     };
 
     // choosing monitors within the selection zone 
-    let mask = monitors_for_selection(&sel, &editor_state.placements);
+    let mask = get_overlapping_monitors(&sel, &editor_state.placements);
 
     let sel_left = sel.left().floor() as i32;
     let sel_top = sel.top().floor() as i32;
@@ -517,50 +519,50 @@ fn render_final(editor_state: &EditorState) -> Vec<u8> {
 
 
 impl EditorState {
-    pub fn monitor_dirty_rect(
-        &self,
-        monitor_idx: usize,
-        selection_dirty: bool,
-    ) -> Option<Rect> {
-        let mut dirty: Option<Rect> = None;
-        let placement = &self.placements[monitor_idx];
+    // for maximal optimization we render only a specific zone of the screen 
+    // instead of entire screen 
+    // entire function take what have changed, and add to dirty rectangle what need to be deleted
+    // and what need to be added 
+    pub fn monitor_dirty_rect(&self,monitor_idx: usize,selection_dirty: bool) -> Option<Rect> {
+    // Selection part 
+    let mut dirty: Option<Rect> = None;
+    let placement = &self.placements[monitor_idx];
+    if selection_dirty {
+        let selection_pad = (HANDLE_RADIUS as f32).max(4.0);
         
-        if selection_dirty {
-            let selection_pad = (HANDLE_RADIUS as f32).max(4.0);
+        let local_sel = self.selection.zone
+            .as_ref()
+            .and_then(|sel| global_selection_to_local(sel, placement));
             
-            let local_sel = self.selection.zone
-                .as_ref()
-                .and_then(|sel| global_selection_to_local(sel, placement));
-                
-            let prev_local = self.selection.prev_zone
-                .as_ref()
-                .and_then(|sel| global_selection_to_local(sel, placement));
+        let prev_local = self.selection.prev_zone
+            .as_ref()
+            .and_then(|sel| global_selection_to_local(sel, placement));
 
-            if let Some(r) = local_sel.as_ref().and_then(|sel| expand_rect(sel, selection_pad)) {
-                dirty = union_rect(dirty, Some(r));
-            }
-            if let Some(r) = prev_local.as_ref().and_then(|sel| expand_rect(sel, selection_pad)) {
-                dirty = union_rect(dirty, Some(r));
-            }
+        if let Some(r) = local_sel.as_ref().and_then(|sel| expand_rect(sel, selection_pad)) {
+            dirty = union_rect(dirty, Some(r));
         }
-
-        let (mw, mh) = (placement.size.0 as f32, placement.size.1 as f32);
-        if mw > 0.0 && mh > 0.0 {
-            let mag_pad = 2.0;
-            
-            let mut add_mag_dirty = |mag_state: &Option<MagnifierState>| {
-                if let Some(mag) = mag_state.as_ref().filter(|m| m.monitor_idx == monitor_idx) {
-                    let rect = renderer::magnifier_rect((mag.pos.0 as f32, mag.pos.1 as f32), mw, mh);
-                    if let Some(r) = expand_rect(&rect, mag_pad) {
-                        dirty = union_rect(dirty, Some(r));
-                    }
+        if let Some(r) = prev_local.as_ref().and_then(|sel| expand_rect(sel, selection_pad)) {
+            dirty = union_rect(dirty, Some(r));
+        }
+    }
+    // Magnifier part 
+    let (mw, mh) = (placement.size.0 as f32, placement.size.1 as f32);
+    if mw > 0.0 && mh > 0.0 {
+        let mag_pad = 2.0;
+        
+        let mut add_mag_dirty = |mag_state: &Option<MagnifierState>| {
+            if let Some(mag) = mag_state.as_ref().filter(|m| m.monitor_idx == monitor_idx) {
+                let rect = renderer::magnifier_rect((mag.pos.0 as f32, mag.pos.1 as f32), mw, mh);
+                if let Some(r) = expand_rect(&rect, mag_pad) {
+                    dirty = union_rect(dirty, Some(r));
                 }
-            };
+            }
+        };
 
-            add_mag_dirty(&self.magnifier);
-            add_mag_dirty(&self.prev_magnifier);
-        }
-
+        add_mag_dirty(&self.magnifier);
+        add_mag_dirty(&self.prev_magnifier);
+    }
+    // Toolbar
     let tb = &self.toolbar;
     if tb.dirty {
         if tb.monitor_idx == monitor_idx {
@@ -582,7 +584,32 @@ impl EditorState {
             }
         }
     }
-        dirty
+    // Annotations
+    let offset = (placement.position.0 as f32, placement.position.1 as f32);
+    let pad = 4.0;
+
+    let mut add_ann_dirty = |ann: &Annotation| {
+        if let Some(bbox) = annotation_bounding_box(ann) {
+            if let Some(local) = Rect::from_ltrb(
+                bbox.left()   - offset.0,
+                bbox.top()    - offset.1,
+                bbox.right()  - offset.0,
+                bbox.bottom() - offset.1,
+            ) {
+                if let Some(r) = expand_rect(&local, pad) {
+                    dirty = union_rect(dirty, Some(r));
+                }
+            }
+        }
+    };
+
+    if let Some(ann) = &self.pending {
+        add_ann_dirty(ann);
+    }
+    if let Some(ann) = &self.prev_pending {
+        add_ann_dirty(ann);
+    }
+    dirty
     }
 }
 
@@ -804,23 +831,3 @@ fn tick_toolbar_anim(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     }
 }
 
-// annotations
-// annotations.rs
-pub fn annotation_to_local(ann: &Annotation, offset: (f32, f32)) -> Annotation {
-    let mut local = ann.clone();
-    local.shape = match &ann.shape {
-        AnnotationShape::Arrow { start, end } => AnnotationShape::Arrow {
-            start: (start.0 - offset.0, start.1 - offset.1),
-            end:   (end.0   - offset.0, end.1   - offset.1),
-        },
-        AnnotationShape::Rect { rect } => AnnotationShape::Rect {
-            rect: Rect::from_ltrb(
-                rect.left()   - offset.0,
-                rect.top()    - offset.1,
-                rect.right()  - offset.0,
-                rect.bottom() - offset.1,
-            ).unwrap_or(*rect),
-        },
-    };
-    local
-}
