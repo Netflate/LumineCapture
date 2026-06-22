@@ -549,6 +549,12 @@ pub fn draw_annotation(canvas: &mut Pixmap, ann: &Annotation) {
                 draw_circle(canvas, &rect, ann.color, ann.stroke_width);
             }
         }
+        AnnotationShape::Line { start, end } => {
+            draw_line(canvas, *start, *end, ann.color, ann.stroke_width);
+        }
+        AnnotationShape::Pen { points } => {
+            draw_pen(canvas, points, ann.color, ann.stroke_width);
+        }
     }
 }
 
@@ -617,6 +623,43 @@ fn draw_circle(canvas: &mut Pixmap, rect: &Rect, color: Color, stroke_width: f32
     let ry = rect.height() / 2.0;
 
     if let Some(path) = oval_path(cx, cy, rx, ry) {
+        canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+    }
+}
+
+fn draw_line(canvas: &mut Pixmap, start: (f32, f32), end: (f32, f32), color: Color, stroke_width: f32) {
+    let mut paint = Paint::default();
+    paint.set_color(color);
+    paint.anti_alias = true;
+
+    let mut stroke = Stroke::default();
+    stroke.width = stroke_width;
+
+    let mut pb = PathBuilder::new();
+    pb.move_to(start.0, start.1);
+    pb.line_to(end.0, end.1);
+    
+    if let Some(path) = pb.finish() {
+        canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+    }
+}
+
+fn draw_pen(canvas: &mut Pixmap, points: &[(f32, f32)], color: Color, stroke_width: f32) {
+    if points.len() < 2 { return; }
+    let mut paint = Paint::default();
+    paint.set_color(color);
+    paint.anti_alias = true;
+    let mut stroke = Stroke::default();
+    stroke.width = stroke_width;
+    stroke.line_cap = tiny_skia::LineCap::Round;
+    stroke.line_join = tiny_skia::LineJoin::Round;
+
+    let mut pb = PathBuilder::new();
+    pb.move_to(points[0].0, points[0].1);
+    for p in &points[1..] {
+        pb.line_to(p.0, p.1);
+    }
+    if let Some(path) = pb.finish() {
         canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
     }
 }

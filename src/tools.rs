@@ -1,9 +1,11 @@
 pub mod selection;
 pub mod simple_shapes;
+pub mod pen;
 pub mod text;
 
 use strum::EnumIter;
 
+use crate::tools::pen::PenTool;
 use crate::tools::selection::SelectionTool;
 use crate::tools::simple_shapes::SimpleShapeTool;
 use crate::tools::text::TextTool;
@@ -22,6 +24,8 @@ pub enum Tool {
     Rectangle,
     Arrow,
     Circle,
+    Pen,
+    Line,
     Text,
 }
 
@@ -39,10 +43,13 @@ pub trait ToolBehavior {
     );
 }
 
-// tools/mod.rs
 pub fn get_tool(tool: Tool) -> Box<dyn ToolBehavior> {
     match tool {
         Tool::Selection => Box::new(SelectionTool),
+        Tool::Text => Box::new(TextTool),
+        Tool::Pen => Box::new(PenTool),
+
+        
         Tool::Rectangle => Box::new(SimpleShapeTool {
             make_shape: |start, end| AnnotationShape::Rectangle { start, end },
             color: Color::from_rgba8(255, 0, 0, 255),
@@ -53,9 +60,13 @@ pub fn get_tool(tool: Tool) -> Box<dyn ToolBehavior> {
             color: Color::from_rgba8(255, 0, 0, 255),
             stroke_width: 2.0,
         }),
-        Tool::Text => Box::new(TextTool),
         Tool::Circle => Box::new(SimpleShapeTool {
             make_shape: |start, end| AnnotationShape::Circle { start, end },
+            color: Color::from_rgba8(255, 0, 0, 255),
+            stroke_width: 2.0,
+        }),
+        Tool::Line => Box::new(SimpleShapeTool {
+            make_shape: |start, end| AnnotationShape::Line { start, end },
             color: Color::from_rgba8(255, 0, 0, 255),
             stroke_width: 2.0,
         }),
