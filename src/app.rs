@@ -61,6 +61,9 @@ pub async fn make_screenshot (
         pending: None,
         next_id: 0,
         prev_pending: None,
+        undo_stack: Vec::new(),
+        redo_stack: Vec::new(),
+        damage_rects: Vec::new(),
     };
     
     println!("after saving base screenshot {}ms", t0.elapsed().as_millis());                
@@ -101,10 +104,17 @@ pub async fn make_screenshot (
                     &mut selection_dirty,
                 );
             }
-            
             OverlayEvent::PointerButton { button, pressed } => {
                 handle_pointer_button(&mut editor_state, button, pressed, &mut dirty_mask);
             }
+            OverlayEvent::Undo => {
+                editor_state.undo(&mut dirty_mask);
+            }
+            OverlayEvent::Redo => {
+                editor_state.redo(&mut dirty_mask);
+            }
+
+
             OverlayEvent::SaveToClipboard => {
                 drop(overlay);
                 save_to_clipboard = true;
@@ -530,72 +540,72 @@ impl EditorState {
     // entire function take what have changed, and add to dirty rectangle what need to be deleted
     // and what need to be added 
     pub fn monitor_dirty_rect(&self,monitor_idx: usize,selection_dirty: bool) -> Option<Rect> {
-    // Selection part 
-    let mut dirty: Option<Rect> = None;
-    let placement = &self.placements[monitor_idx];
-    if selection_dirty {
-        let selection_pad = (HANDLE_RADIUS as f32).max(4.0);
-        
-        let local_sel = self.selection.zone
-            .as_ref()
-            .and_then(|sel| global_selection_to_local(sel, placement));
+        // Selection part 
+        let mut dirty: Option<Rect> = None;
+        let placement = &self.placements[monitor_idx];
+        if selection_dirty {
+            let selection_pad = (HANDLE_RADIUS as f32).max(4.0);
             
-        let prev_local = self.selection.prev_zone
-            .as_ref()
-            .and_then(|sel| global_selection_to_local(sel, placement));
+            let local_sel = self.selection.zone
+                .as_ref()
+                .and_then(|sel| global_selection_to_local(sel, placement));
+                
+            let prev_local = self.selection.prev_zone
+                .as_ref()
+                .and_then(|sel| global_selection_to_local(sel, placement));
 
-        if let Some(r) = local_sel.as_ref().and_then(|sel| expand_rect(sel, selection_pad)) {
-            dirty = union_rect(dirty, Some(r));
-        }
-        if let Some(r) = prev_local.as_ref().and_then(|sel| expand_rect(sel, selection_pad)) {
-            dirty = union_rect(dirty, Some(r));
-        }
-    }
-    // Magnifier part 
-    let (mw, mh) = (placement.size.0 as f32, placement.size.1 as f32);
-    if mw > 0.0 && mh > 0.0 {
-        let mag_pad = 2.0;
-        
-        let mut add_mag_dirty = |mag_state: &Option<MagnifierState>| {
-            if let Some(mag) = mag_state.as_ref().filter(|m| m.monitor_idx == monitor_idx) {
-                let rect = renderer::magnifier_rect((mag.pos.0 as f32, mag.pos.1 as f32), mw, mh);
-                if let Some(r) = expand_rect(&rect, mag_pad) {
-                    dirty = union_rect(dirty, Some(r));
-                }
-            }
-        };
-
-        add_mag_dirty(&self.magnifier);
-        add_mag_dirty(&self.prev_magnifier);
-    }
-    // Toolbar
-    let tb = &self.toolbar;
-    if tb.dirty {
-        if tb.monitor_idx == monitor_idx {
-            if let Some(r) = Rect::from_xywh(tb.position.0, tb.render_y, tb.size.0, TOOLBAR_HEIGHT) {
+            if let Some(r) = local_sel.as_ref().and_then(|sel| expand_rect(sel, selection_pad)) {
                 dirty = union_rect(dirty, Some(r));
             }
+            if let Some(r) = prev_local.as_ref().and_then(|sel| expand_rect(sel, selection_pad)) {
+                dirty = union_rect(dirty, Some(r));
+            }
+        }
+        // Magnifier part 
+        let (mw, mh) = (placement.size.0 as f32, placement.size.1 as f32);
+        if mw > 0.0 && mh > 0.0 {
+            let mag_pad = 2.0;
+            
+            let mut add_mag_dirty = |mag_state: &Option<MagnifierState>| {
+                if let Some(mag) = mag_state.as_ref().filter(|m| m.monitor_idx == monitor_idx) {
+                    let rect = renderer::magnifier_rect((mag.pos.0 as f32, mag.pos.1 as f32), mw, mh);
+                    if let Some(r) = expand_rect(&rect, mag_pad) {
+                        dirty = union_rect(dirty, Some(r));
+                    }
+                }
+            };
 
-            // if toolbar position (side) changed
-            if tb.prev_monitor_idx == monitor_idx && tb.prev_position != tb.position {
+            add_mag_dirty(&self.magnifier);
+            add_mag_dirty(&self.prev_magnifier);
+        }
+        // Toolbar
+        let tb = &self.toolbar;
+        if tb.dirty {
+            if tb.monitor_idx == monitor_idx {
+                if let Some(r) = Rect::from_xywh(tb.position.0, tb.render_y, tb.size.0, TOOLBAR_HEIGHT) {
+                    dirty = union_rect(dirty, Some(r));
+                }
+
+                // if toolbar position (side) changed
+                if tb.prev_monitor_idx == monitor_idx && tb.prev_position != tb.position {
+                    if let Some(r) = Rect::from_xywh(tb.prev_position.0, tb.prev_position.1, tb.size.0, TOOLBAR_HEIGHT) {
+                        dirty = union_rect(dirty, Some(r));
+                    }
+                }
+            }
+            // if toolbar monitor changed
+            if tb.prev_monitor_idx == monitor_idx && tb.prev_monitor_idx != tb.monitor_idx {
                 if let Some(r) = Rect::from_xywh(tb.prev_position.0, tb.prev_position.1, tb.size.0, TOOLBAR_HEIGHT) {
                     dirty = union_rect(dirty, Some(r));
                 }
             }
         }
-        // if toolbar monitor changed
-        if tb.prev_monitor_idx == monitor_idx && tb.prev_monitor_idx != tb.monitor_idx {
-            if let Some(r) = Rect::from_xywh(tb.prev_position.0, tb.prev_position.1, tb.size.0, TOOLBAR_HEIGHT) {
-                dirty = union_rect(dirty, Some(r));
-            }
-        }
-    }
-    // Annotations
-    let offset = (placement.position.0 as f32, placement.position.1 as f32);
-    let pad = 4.0;
+        // Annotation (pending & prev_pending)
+        let offset = (placement.position.0 as f32, placement.position.1 as f32);
+        let pad = 4.0;
 
-    let mut add_ann_dirty = |ann: &Annotation| {
-        if let Some(bbox) = ann.bounding_box() {
+        let mut add_ann_dirty = |ann: &Annotation| {
+            let bbox = ann.last_segment_bbox() ;
             if let Some(local) = Rect::from_ltrb(
                 bbox.left()   - offset.0,
                 bbox.top()    - offset.1,
@@ -606,16 +616,56 @@ impl EditorState {
                     dirty = union_rect(dirty, Some(r));
                 }
             }
-        }
-    };
+        };
 
-    if let Some(ann) = &self.pending {
-        add_ann_dirty(ann);
+        if let Some(ann) = &self.pending {
+            add_ann_dirty(ann);
+        }
+        if let Some(ann) = &self.prev_pending {
+            add_ann_dirty(ann);
+        }
+        dirty
     }
-    if let Some(ann) = &self.prev_pending {
-        add_ann_dirty(ann);
+
+
+    pub fn push_undo(&mut self) {
+        self.undo_stack.push(self.annotations.clone());
+        self.redo_stack.clear();
     }
-    dirty
+
+    pub fn undo(&mut self, dirty_mask: &mut u32) {
+        // no point in keepingin redo what wasn't commited
+        if self.pending.is_some() {
+            if let Some(ann) = &self.pending {
+                self.damage_rects.push(ann.bbox); 
+            }
+            self.pending = None;
+            self.prev_pending = None;
+            *dirty_mask = u32::MAX;
+            return;
+        }
+
+        if let Some(prev_state) = self.undo_stack.pop() {
+            let current_state = self.annotations.clone();
+            
+            self.record_history_damage(&current_state, &prev_state);
+            
+            self.redo_stack.push(current_state);
+            self.annotations = prev_state;
+            *dirty_mask = u32::MAX; 
+        }
+    }
+
+    pub fn redo(&mut self, dirty_mask: &mut u32) {
+        if let Some(next_state) = self.redo_stack.pop() {
+            let current_state = self.annotations.clone();
+            
+            self.record_history_damage(&current_state, &next_state);
+            
+            self.undo_stack.push(current_state);
+            self.annotations = next_state;
+            *dirty_mask = u32::MAX;
+        }
     }
 }
 

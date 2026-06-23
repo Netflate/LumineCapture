@@ -50,6 +50,7 @@ pub struct OverlayState {
     pub kde :Option<KdeState>,
     //others 
     ctrl_held : bool,
+    shift_held : bool,
 }
 
 pub struct OverlayRunTime {
@@ -83,6 +84,7 @@ impl OverlayRunTime {
                 pending_desktop_ids: Vec::new(),
             }),
             ctrl_held: false,
+            shift_held: false,
             pointer_enter_serial: 0,
             cursor_surface: None,
             cursor_theme: None,
@@ -304,19 +306,34 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for OverlayState {
         match event {
             wl_keyboard::Event::Key { key, state: key_state, .. } => {
                 let pressed = key_state == wayland_client::WEnum::Value(wl_keyboard::KeyState::Pressed);
-                //let released = key_state == wayland_client::WEnum::Value(wl_keyboard::KeyState::Released);
 
-                if key == 1 && pressed {
-                    state.events.push_back(OverlayEvent::EscapePressed);
-                }
+                if pressed {
+                    if key == 1 {
+                        state.events.push_back(OverlayEvent::EscapePressed);
+                    }
 
-                if (key == 46) && pressed && state.ctrl_held {
-                    state.events.push_back(OverlayEvent::SaveToClipboard);
+                    if key == 46 && state.ctrl_held {
+                        state.events.push_back(OverlayEvent::SaveToClipboard);
+                    }
+
+                    // (Undo / Redo) ctrl + z, or ctrl + shit + z
+                    if key == 44 {
+                        if state.ctrl_held && state.shift_held {
+                            state.events.push_back(OverlayEvent::Redo); 
+                        } else if state.ctrl_held {
+                            state.events.push_back(OverlayEvent::Undo); 
+                        }
+                    }
+
+                    // (Redo) ctrl + y
+                    if key == 21 && state.ctrl_held {
+                        state.events.push_back(OverlayEvent::Redo); 
+                    }
                 }
             }
             wl_keyboard::Event::Modifiers { mods_depressed, .. } => {
-                // hardcoded, should use xkbcommon
                 state.ctrl_held = (mods_depressed & 4) != 0;
+                state.shift_held = (mods_depressed & 1) != 0;
             }
             _ => {}
         }

@@ -142,10 +142,15 @@ pub struct EditorState {
     pub toolbar : Toolbar,
     pub icon_cache : HashMap<ToolbarButton, Tree>,
     
+    // annotations
     pub annotations: Vec<Annotation>,
     pub pending: Option<Annotation>,
     pub prev_pending: Option<Annotation>,
     pub next_id: u64,
+
+    pub undo_stack: Vec<Vec<Annotation>>,
+    pub redo_stack: Vec<Vec<Annotation>>,
+    pub damage_rects: Vec<Rect>
 }
 
 #[derive(Debug)]
@@ -194,6 +199,8 @@ pub enum OverlayEvent {
     EscapePressed,
     SaveToClipboard,
     Tick,
+    Redo, 
+    Undo,
 }
 
 
