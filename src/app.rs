@@ -67,6 +67,8 @@ pub async fn make_screenshot (
     };
     
     println!("after saving base screenshot {}ms", t0.elapsed().as_millis());                
+    overlay.present(&editor_state.placements)?.to_vec();
+
     initial_paint(&mut editor_state, &mut overlay)?;
     println!("after initialising overlay and showing it {}ms", t0.elapsed().as_millis());                
 
@@ -538,28 +540,42 @@ impl EditorState {
     // entire function take what have changed, and add to dirty rectangle what need to be deleted
     // and what need to be added 
     pub fn monitor_dirty_rect(&self,monitor_idx: usize,selection_dirty: bool) -> Option<Rect> {
-        // Selection part 
         let mut dirty: Option<Rect> = None;
         let placement = &self.placements[monitor_idx];
-        if selection_dirty {
-            let selection_pad = (HANDLE_RADIUS as f32).max(4.0);
-            
-            let local_sel = self.selection.zone
-                .as_ref()
-                .and_then(|sel| global_selection_to_local(sel, placement));
-                
-            let prev_local = self.selection.prev_zone
-                .as_ref()
-                .and_then(|sel| global_selection_to_local(sel, placement));
 
-            if let Some(r) = local_sel.as_ref().and_then(|sel| expand_rect(sel, selection_pad)) {
-                dirty = union_rect(dirty, Some(r));
-            }
-            if let Some(r) = prev_local.as_ref().and_then(|sel| expand_rect(sel, selection_pad)) {
-                dirty = union_rect(dirty, Some(r));
-            }
+        dirty = union_rect(dirty, self.calc_selection_dirty(placement, selection_dirty));
+        dirty = union_rect(dirty, self.calc_magnifier_dirty(monitor_idx, placement));
+        dirty = union_rect(dirty, self.calc_toolbar_dirty(monitor_idx));
+        dirty = union_rect(dirty, self.calc_annotations_dirty(placement));
+
+        dirty
+    }
+
+    fn calc_selection_dirty(&self, placement: &Placement, selection_dirty: bool) -> Option<Rect> {
+        if !selection_dirty { return None;}
+        let mut dirty = None;
+        let selection_pad = (HANDLE_RADIUS as f32).max(4.0);
+        
+        let local_sel = self.selection.zone
+            .as_ref()
+            .and_then(|sel| global_selection_to_local(sel, placement));
+            
+        let prev_local = self.selection.prev_zone
+            .as_ref()
+            .and_then(|sel| global_selection_to_local(sel, placement));
+
+        if let Some(r) = local_sel.as_ref().and_then(|sel| expand_rect(sel, selection_pad)) {
+            dirty = union_rect(dirty, Some(r));
         }
-        // Magnifier part 
+        if let Some(r) = prev_local.as_ref().and_then(|sel| expand_rect(sel, selection_pad)) {
+            dirty = union_rect(dirty, Some(r));
+        }
+        dirty
+    }
+
+
+    fn calc_magnifier_dirty(&self, monitor_idx: usize, placement: &Placement) -> Option<Rect> {
+        let mut dirty = None;
         let (mw, mh) = (placement.size.0 as f32, placement.size.1 as f32);
         if mw > 0.0 && mh > 0.0 {
             let mag_pad = 2.0;
@@ -576,8 +592,13 @@ impl EditorState {
             add_mag_dirty(&self.magnifier);
             add_mag_dirty(&self.prev_magnifier);
         }
-        // Toolbar
+        dirty
+    }
+
+    
+    fn calc_toolbar_dirty(&self, monitor_idx: usize) -> Option<Rect> {
         let tb = &self.toolbar;
+        let mut dirty = None;
         if tb.dirty {
             if tb.monitor_idx == monitor_idx {
                 if let Some(r) = Rect::from_xywh(tb.position.0, tb.render_y, tb.size.0, TOOLBAR_HEIGHT) {
@@ -598,7 +619,12 @@ impl EditorState {
                 }
             }
         }
-        // Annotation (pending & prev_pending & dirty rect)
+        dirty
+    }
+
+
+    fn calc_annotations_dirty(&self, placement: &Placement) -> Option<Rect> {
+        let mut dirty = None;
         let offset = (placement.position.0 as f32, placement.position.1 as f32);
         let pad = 4.0;
 
