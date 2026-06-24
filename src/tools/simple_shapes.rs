@@ -18,7 +18,7 @@ impl ToolBehavior for SimpleShapeTool {
                 shape: (self.make_shape)(pos, pos),
                 color: self.color,
                 stroke_width: self.stroke_width,
-                bbox: Rect::from_xywh(0.0, 0.0, 1.0, 1.0).unwrap(), 
+                bbox: Rect::from_xywh(pos.0, pos.1, 1.0, 1.0).unwrap(), 
             };
             ann.update_bbox();
             

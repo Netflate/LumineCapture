@@ -10,7 +10,7 @@ use crate::tools::{dispatch_button, dispatch_move, Tool};
 use crate::tools::selection::{global_selection_to_local, selection_edges_for_monitor};
 use usvg::Tree;
 use crate::types::icons;
-use crate::types::annotations::Annotation;
+use crate::types::annotations::{Annotation, AnnotationShape};
 
 
 pub async fn make_screenshot (
@@ -67,8 +67,6 @@ pub async fn make_screenshot (
     };
     
     println!("after saving base screenshot {}ms", t0.elapsed().as_millis());                
-    let outputs = overlay.present(&editor_state.placements)?.to_vec();
-    
     initial_paint(&mut editor_state, &mut overlay)?;
     println!("after initialising overlay and showing it {}ms", t0.elapsed().as_millis());                
 
@@ -125,7 +123,7 @@ pub async fn make_screenshot (
         tick_toolbar_anim(&mut editor_state, &mut dirty_mask);
 
         if dirty_mask != 0 {
-            for i in 0..outputs.len() {
+            for i in 0..editor_state.base.len() {
                 if is_dirty(dirty_mask, i) {                    
                     let is_mag_monitor = editor_state.magnifier
                         .as_ref()
@@ -600,17 +598,16 @@ impl EditorState {
                 }
             }
         }
-        // Annotation (pending & prev_pending)
+        // Annotation (pending & prev_pending & dirty rect)
         let offset = (placement.position.0 as f32, placement.position.1 as f32);
         let pad = 4.0;
 
-        let mut add_ann_dirty = |ann: &Annotation| {
-            let bbox = ann.last_segment_bbox() ;
+        let mut add_global_rect_dirty = |global_bbox: &Rect| {
             if let Some(local) = Rect::from_ltrb(
-                bbox.left()   - offset.0,
-                bbox.top()    - offset.1,
-                bbox.right()  - offset.0,
-                bbox.bottom() - offset.1,
+                global_bbox.left()   - offset.0,
+                global_bbox.top()    - offset.1,
+                global_bbox.right()  - offset.0,
+                global_bbox.bottom() - offset.1,
             ) {
                 if let Some(r) = expand_rect(&local, pad) {
                     dirty = union_rect(dirty, Some(r));
@@ -619,14 +616,46 @@ impl EditorState {
         };
 
         if let Some(ann) = &self.pending {
-            add_ann_dirty(ann);
+            if !matches!(ann.shape, AnnotationShape::Pen { .. }) {
+                add_global_rect_dirty(&ann.bbox);
+            }
         }
         if let Some(ann) = &self.prev_pending {
-            add_ann_dirty(ann);
+            if !matches!(ann.shape, AnnotationShape::Pen { .. }) {
+                add_global_rect_dirty(&ann.bbox);
+            }
         }
+
+        // undo & redo & pen (to avoid updating its whole bbox)
+        for damage_bbox in &self.damage_rects {
+            add_global_rect_dirty(damage_bbox);
+        }
+
         dirty
     }
 
+
+    pub fn record_history_damage(
+        damage_rects: &mut Vec<Rect>, 
+        state_a: &[Annotation], 
+        state_b: &[Annotation]
+    ) {
+        for ann in state_a {
+            if !state_b.iter().any(|a| a.id == ann.id) {
+                if let Some(expanded) = expand_rect(&ann.bbox, ann.stroke_width * 2.0 + 4.0) {
+                    damage_rects.push(expanded);
+                }
+            }
+        }
+        
+        for ann in state_b {
+            if !state_a.iter().any(|a| a.id == ann.id) {
+                if let Some(expanded) = expand_rect(&ann.bbox, ann.stroke_width * 2.0 + 4.0) {
+                    damage_rects.push(expanded);
+                }
+            }
+        }
+    }
 
     pub fn push_undo(&mut self) {
         self.undo_stack.push(self.annotations.clone());
@@ -634,7 +663,7 @@ impl EditorState {
     }
 
     pub fn undo(&mut self, dirty_mask: &mut u32) {
-        // no point in keepingin redo what wasn't commited
+        // no point in keeping in redo what wasn't commited
         if self.pending.is_some() {
             if let Some(ann) = &self.pending {
                 self.damage_rects.push(ann.bbox); 
@@ -644,31 +673,25 @@ impl EditorState {
             *dirty_mask = u32::MAX;
             return;
         }
-
         if let Some(prev_state) = self.undo_stack.pop() {
-            let current_state = self.annotations.clone();
-            
-            self.record_history_damage(&current_state, &prev_state);
-            
-            self.redo_stack.push(current_state);
+            Self::record_history_damage(&mut self.damage_rects, &self.annotations, &prev_state);
+        
+            self.redo_stack.push(self.annotations.clone());
             self.annotations = prev_state;
-            *dirty_mask = u32::MAX; 
+            *dirty_mask = u32::MAX;
         }
     }
 
     pub fn redo(&mut self, dirty_mask: &mut u32) {
         if let Some(next_state) = self.redo_stack.pop() {
-            let current_state = self.annotations.clone();
-            
-            self.record_history_damage(&current_state, &next_state);
-            
-            self.undo_stack.push(current_state);
+            Self::record_history_damage(&mut self.damage_rects, &self.annotations, &next_state);
+                    
+            self.undo_stack.push(self.annotations.clone());
             self.annotations = next_state;
             *dirty_mask = u32::MAX;
-        }
+}
     }
 }
-
 
 fn handle_pointer_button(
     editor_state: &mut EditorState,

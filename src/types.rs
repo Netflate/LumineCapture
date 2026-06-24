@@ -48,7 +48,7 @@ pub const MAG_FRAME_INTERVAL: Duration = Duration::from_millis(16); // magnifier
 pub type DamageRect = (u32, u32, u32, u32);
 
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct OutputInfo {
     pub output: wl_output::WlOutput,
     pub x: i32,
