@@ -1,6 +1,7 @@
 use crate::tools::ToolBehavior;
-use crate::types::{EditorState, MouseButton};
+use crate::types::MouseButton;
 use crate::types::annotations::{Annotation, AnnotationShape};
+use crate::editor::EditorState;
 use tiny_skia::{Color, Rect};
 
 pub struct SimpleShapeTool {

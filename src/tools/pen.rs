@@ -1,5 +1,6 @@
 use crate::tools::ToolBehavior;
-use crate::types::{EditorState, MouseButton};
+use crate::editor::EditorState;
+use crate::types::MouseButton;
 use crate::types::annotations::{Annotation, AnnotationShape};
 use tiny_skia::{Color, Rect};
 

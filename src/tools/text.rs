@@ -1,5 +1,7 @@
 use crate::tools::ToolBehavior;
-use crate::types::{EditorState, MouseButton};
+use crate::types::{MouseButton};
+use crate::editor::EditorState;
+
 
 pub struct TextTool;
 

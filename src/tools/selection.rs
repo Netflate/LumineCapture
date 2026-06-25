@@ -1,7 +1,8 @@
 use crate::tools::ToolBehavior;
-use crate::types::{EditorState, MouseButton, Placement, SelectionEdges, SelectionHandle, HANDLE_RADIUS};
+use crate::types::{MouseButton, Placement, SelectionEdges, SelectionHandle, HANDLE_RADIUS};
 use crate::utils::{make_rect, get_overlapping_monitors};
 use crate::renderer::apply_handle_drag;
+use crate::editor::EditorState;
 use tiny_skia::Rect;
 
 pub struct SelectionTool;
