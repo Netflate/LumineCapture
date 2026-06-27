@@ -1,4 +1,5 @@
 use tiny_skia::{Rect, Color};
+use crate::types::SelectionHandle;
 
 #[derive(Clone)]
 pub enum AnnotationShape {
@@ -7,6 +8,12 @@ pub enum AnnotationShape {
     Circle    { start: (f32, f32), end: (f32, f32) },
     Line      { start: (f32, f32), end: (f32, f32) },
     Pen       { points: Vec<(f32, f32)> },
+}
+
+pub struct AnnDragState {
+    pub handle: SelectionHandle,   
+    pub start_global: (f64, f64),
+    pub orig: Annotation,          // snapshot
 }
 
 impl AnnotationShape {
@@ -113,11 +120,72 @@ impl Annotation {
             _ => self.bbox,
         }
     }
+    
+    pub fn translate(&self, dx: f32, dy: f32) -> Annotation {
+        let shape = match &self.shape {
+            AnnotationShape::Arrow { start, end } => AnnotationShape::Arrow {
+                start: (start.0 + dx, start.1 + dy),
+                end:   (end.0   + dx, end.1   + dy),
+            },
+            AnnotationShape::Rectangle { start, end } => AnnotationShape::Rectangle {
+                start: (start.0 + dx, start.1 + dy),
+                end:   (end.0   + dx, end.1   + dy),
+            },
+            AnnotationShape::Circle { start, end } => AnnotationShape::Circle {
+                start: (start.0 + dx, start.1 + dy),
+                end:   (end.0   + dx, end.1   + dy),
+            },
+            AnnotationShape::Line { start, end } => AnnotationShape::Line {
+                start: (start.0 + dx, start.1 + dy),
+                end:   (end.0   + dx, end.1   + dy),
+            },
+            AnnotationShape::Pen { points } => AnnotationShape::Pen {
+                points: points.iter().map(|p| (p.0 + dx, p.1 + dy)).collect(),
+            },
+        };
+        let mut result = Annotation { shape, ..self.clone() };
+        result.update_bbox();
+        result
+    }
 
-    // pub fn mark_dirty(&self, placements: &[Placement], dirty_mask: &mut u32) {
-    //     if let Some(bbox) = self.bounding_box() {
-    //         *dirty_mask |= get_overlapping_monitors(&bbox, placements);
-    //     }
-    // }
+    pub fn resize_to_bbox(&self, new_bbox: Rect) -> Annotation {
+        let orig = self.bbox;
+
+        let sx = if orig.width()  > 0.0 { new_bbox.width()  / orig.width()  } else { 1.0 };
+        let sy = if orig.height() > 0.0 { new_bbox.height() / orig.height() } else { 1.0 };
+
+        let remap = |p: (f32, f32)| -> (f32, f32) {
+            (
+                new_bbox.left() + (p.0 - orig.left()) * sx,
+                new_bbox.top()  + (p.1 - orig.top())  * sy,
+            )
+        };
+
+        let shape = match &self.shape {
+            AnnotationShape::Arrow { start, end } => AnnotationShape::Arrow {
+                start: remap(*start),
+                end:   remap(*end),
+            },
+            AnnotationShape::Rectangle { start, end } => AnnotationShape::Rectangle {
+                start: remap(*start),
+                end:   remap(*end),
+            },
+            AnnotationShape::Circle { start, end } => AnnotationShape::Circle {
+                start: remap(*start),
+                end:   remap(*end),
+            },
+            AnnotationShape::Line { start, end } => AnnotationShape::Line {
+                start: remap(*start),
+                end:   remap(*end),
+            },
+            AnnotationShape::Pen { points } => AnnotationShape::Pen {
+                points: points.iter().map(|p| remap(*p)).collect(),
+            },
+        };
+
+        let mut result = Annotation { shape, ..self.clone() };
+        result.update_bbox();
+        result
+    }
 }
 

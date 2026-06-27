@@ -7,7 +7,7 @@ use usvg::Tree;
 use tiny_skia::{Pixmap, Rect};
 
 use crate::tools::Tool;
-use crate::types::{PointerState, Placement, Toolbar, SelectionState, ToolbarButton, Annotation, MagnifierState};
+use crate::types::{PointerState, Placement, Toolbar, SelectionState, ToolbarButton, Annotation, AnnDragState, MagnifierState};
 
 pub struct EditorState {
     pub base: Vec<Pixmap>,          
@@ -25,6 +25,7 @@ pub struct EditorState {
     pub selection: SelectionState,
     pub toolbar : Toolbar,
     pub icon_cache : HashMap<ToolbarButton, Tree>,
+    pub damage_rects: Vec<Rect>,
     
     // annotations
     pub annotations: Vec<Annotation>,
@@ -34,5 +35,8 @@ pub struct EditorState {
 
     pub undo_stack: Vec<Vec<Annotation>>,
     pub redo_stack: Vec<Vec<Annotation>>,
-    pub damage_rects: Vec<Rect>
+
+    pub selected_annotation: Option<usize>,
+    pub ann_drag: Option<AnnDragState>,
+    
 }

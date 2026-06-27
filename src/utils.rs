@@ -1,7 +1,8 @@
 use tiny_skia::Rect;
 use tiny_skia::Pixmap;
-use crate::types::Placement;
 use std::path::PathBuf;
+use crate::types::{Placement, HANDLE_RADIUS, SelectionHandle};
+
 
 pub fn make_rect(a: (f64, f64), b: (f64, f64)) -> Option<Rect> {
     let x = a.0.min(b.0) as f32;
@@ -89,4 +90,75 @@ pub fn get_overlapping_monitors(selection: &Rect, placements: &[crate::types::Pl
         if overlaps { mask |= 1 << i; }
     }
     mask
+}
+
+
+// used in selection.rs and pick.rs
+pub fn rect_handle_points(sel: &Rect) -> [(f32, f32); 8] {
+    [
+        (sel.left(), sel.top()),
+        ((sel.left() + sel.right()) / 2.0, sel.top()),
+        (sel.right(), sel.top()),
+        (sel.left(), (sel.top() + sel.bottom()) / 2.0),
+        (sel.right(), (sel.top() + sel.bottom()) / 2.0),
+        (sel.left(), sel.bottom()),
+        ((sel.left() + sel.right()) / 2.0, sel.bottom()),
+        (sel.right(), sel.bottom()),
+    ]
+}
+
+pub fn hit_test_rect_handle(sel: &Rect, pos: (f64, f64)) -> SelectionHandle {
+    let (x, y) = pos;
+    let (l, r, t, b) = (
+        sel.left() as f64, sel.right() as f64,
+        sel.top() as f64,  sel.bottom() as f64,
+    );
+    let mid_x = (l + r) / 2.0;
+    let mid_y = (t + b) / 2.0;
+
+    let near = |a: f64, b: f64| (a - b).abs() < HANDLE_RADIUS;
+
+    let on_left   = near(x, l);
+    let on_right  = near(x, r);
+    let on_top    = near(y, t);
+    let on_bottom = near(y, b);
+
+    let on_h_edge = on_top || on_bottom;
+    let on_v_edge = on_left || on_right;
+    let on_border = on_h_edge || on_v_edge;
+
+    let inside = x >= l - HANDLE_RADIUS && x <= r + HANDLE_RADIUS
+              && y >= t - HANDLE_RADIUS && y <= b + HANDLE_RADIUS;
+
+    if !inside {
+        return SelectionHandle::None;
+    }
+
+    if !on_border {
+        return SelectionHandle::Move;
+    }
+
+    let closer_to_left  = (x - l).abs() < (x - mid_x).abs();
+    let closer_to_right = (x - r).abs() < (x - mid_x).abs();
+    let closer_to_top   = (y - t).abs() < (y - mid_y).abs();
+    let closer_to_bottom= (y - b).abs() < (y - mid_y).abs();
+
+    let corner_x = closer_to_left || closer_to_right;
+    let corner_y = closer_to_top  || closer_to_bottom;
+
+    match (corner_x, corner_y) {
+        (true, true) => match (closer_to_left, closer_to_top) {
+            (true,  true)  => SelectionHandle::TopLeft,
+            (false, true)  => SelectionHandle::TopRight,
+            (true,  false) => SelectionHandle::BottomLeft,
+            (false, false) => SelectionHandle::BottomRight,
+        },
+        (true, false) => {
+            if closer_to_left { SelectionHandle::Left } else { SelectionHandle::Right }
+        }
+        (false, true) => {
+            if closer_to_top { SelectionHandle::Top } else { SelectionHandle::Bottom }
+        }
+        (false, false) => SelectionHandle::Move,
+    }
 }

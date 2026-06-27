@@ -2,11 +2,13 @@ pub mod selection;
 pub mod simple_shapes;
 pub mod pen;
 pub mod text;
+pub mod pick;
 
 use crate::tools::pen::PenTool;
 use crate::tools::selection::SelectionTool;
 use crate::tools::simple_shapes::SimpleShapeTool; 
 use crate::tools::text::TextTool;
+use crate::tools::pick::PickTool;
 use crate::types::annotations::AnnotationShape;
 use crate::types::{MouseButton};
 use crate::editor::EditorState;
@@ -22,6 +24,7 @@ pub enum Tool {
     Pen,
     Line,
     Text,
+    Pick,
 }
 
 // ==========================================
@@ -50,8 +53,9 @@ pub fn dispatch_move(
 ) {
     match tool {
         Tool::Selection => SelectionTool.on_move(state, global, selection_dirty, dirty_mask),
-        Tool::Text => TextTool.on_move(state, global, selection_dirty, dirty_mask),
-        Tool::Pen => PenTool.on_move(state, global, selection_dirty, dirty_mask),
+        Tool::Pick      => PickTool.on_move(state, global, selection_dirty, dirty_mask),
+        Tool::Text      => TextTool.on_move(state, global, selection_dirty, dirty_mask),
+        Tool::Pen       => PenTool.on_move(state, global, selection_dirty, dirty_mask),
         
         Tool::Rectangle | Tool::Arrow | Tool::Circle | Tool::Line => {
             let tool_impl = SimpleShapeTool {
@@ -79,6 +83,7 @@ pub fn dispatch_button(
 ) {
     match tool {
         Tool::Selection => SelectionTool.on_button(state, button, pressed, dirty_mask),
+        Tool::Pick => PickTool.on_button(state, button, pressed, dirty_mask),
         Tool::Text => TextTool.on_button(state, button, pressed, dirty_mask),
         Tool::Pen => PenTool.on_button(state, button, pressed, dirty_mask),
         

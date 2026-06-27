@@ -13,6 +13,21 @@ use crate::types::icons;
 use crate::types::annotations::Annotation;
 use crate::editor::EditorState;
 
+// small note while wip, to notice if it becamwe slower
+// (Background thread) : svg parsed in 0ms 
+// after capturing 67ms
+// after initialising base_pixmaps, which are original frames in Vec<Pixmap> 72ms
+// after initialising dimmed canvas, same size dimmed frames 72ms
+// after saving base screenshot 73ms
+// after initialising overlay and showing it 114ms
+
+// (Background thread) : svg parsed in 0ms 
+// after capturing 67ms
+// after initialising base_pixmaps, which are original frames in Vec<Pixmap> 72ms
+// after initialising dimmed canvas, same size dimmed frames 72ms
+// after saving base screenshot 73ms
+// after initialising overlay and showing it 114ms
+
 
 // ************************* //
 //      ENTRY POINT          //
@@ -66,6 +81,8 @@ pub async fn make_screenshot(
         undo_stack: Vec::new(),
         redo_stack: Vec::new(),
         damage_rects: Vec::new(),
+        selected_annotation: None,
+        ann_drag: None,
     };
 
     println!("after saving base screenshot {}ms", t0.elapsed().as_millis());

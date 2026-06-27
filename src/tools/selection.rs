@@ -1,6 +1,6 @@
 use crate::tools::ToolBehavior;
-use crate::types::{MouseButton, Placement, SelectionEdges, SelectionHandle, HANDLE_RADIUS};
-use crate::utils::{make_rect, get_overlapping_monitors};
+use crate::types::{MouseButton, Placement, SelectionEdges, SelectionHandle};
+use crate::utils::{make_rect, get_overlapping_monitors, hit_test_rect_handle};
 use crate::renderer::apply_handle_drag;
 use crate::editor::EditorState;
 use tiny_skia::Rect;
@@ -52,74 +52,6 @@ pub fn point_in_monitor(p: (f32, f32), placement: &Placement) -> bool {
     x >= mx && x < mx + mw && y >= my && y < my + mh
 }
 
-pub fn selection_handle_points(sel: &Rect) -> [(f32, f32); 8] {
-    [
-        (sel.left(), sel.top()),
-        ((sel.left() + sel.right()) / 2.0, sel.top()),
-        (sel.right(), sel.top()),
-        (sel.left(), (sel.top() + sel.bottom()) / 2.0),
-        (sel.right(), (sel.top() + sel.bottom()) / 2.0),
-        (sel.left(), sel.bottom()),
-        ((sel.left() + sel.right()) / 2.0, sel.bottom()),
-        (sel.right(), sel.bottom()),
-    ]
-}
-
-pub fn hit_test_selection(sel: &Rect, pos: (f64, f64)) -> SelectionHandle {
-    let (x, y) = pos;
-    let (l, r, t, b) = (
-        sel.left() as f64, sel.right() as f64,
-        sel.top() as f64,  sel.bottom() as f64,
-    );
-    let mid_x = (l + r) / 2.0;
-    let mid_y = (t + b) / 2.0;
-
-    let near = |a: f64, b: f64| (a - b).abs() < HANDLE_RADIUS;
-
-    let on_left   = near(x, l);
-    let on_right  = near(x, r);
-    let on_top    = near(y, t);
-    let on_bottom = near(y, b);
-
-    let on_h_edge = on_top || on_bottom;
-    let on_v_edge = on_left || on_right;
-    let on_border = on_h_edge || on_v_edge;
-
-    let inside = x >= l - HANDLE_RADIUS && x <= r + HANDLE_RADIUS
-              && y >= t - HANDLE_RADIUS && y <= b + HANDLE_RADIUS;
-
-    if !inside {
-        return SelectionHandle::None;
-    }
-
-    if !on_border {
-        return SelectionHandle::Move;
-    }
-
-    let closer_to_left  = (x - l).abs() < (x - mid_x).abs();
-    let closer_to_right = (x - r).abs() < (x - mid_x).abs();
-    let closer_to_top   = (y - t).abs() < (y - mid_y).abs();
-    let closer_to_bottom= (y - b).abs() < (y - mid_y).abs();
-
-    let corner_x = closer_to_left || closer_to_right;
-    let corner_y = closer_to_top  || closer_to_bottom;
-
-    match (corner_x, corner_y) {
-        (true, true) => match (closer_to_left, closer_to_top) {
-            (true,  true)  => SelectionHandle::TopLeft,
-            (false, true)  => SelectionHandle::TopRight,
-            (true,  false) => SelectionHandle::BottomLeft,
-            (false, false) => SelectionHandle::BottomRight,
-        },
-        (true, false) => {
-            if closer_to_left { SelectionHandle::Left } else { SelectionHandle::Right }
-        }
-        (false, true) => {
-            if closer_to_top { SelectionHandle::Top } else { SelectionHandle::Bottom }
-        }
-        (false, false) => SelectionHandle::Move,
-    }
-}
 impl ToolBehavior for SelectionTool {
     fn on_button(&self, state: &mut EditorState, button: MouseButton, pressed: bool, _dirty_mask: &mut u32) {
         if !matches!(button, MouseButton::Left) {
@@ -130,7 +62,7 @@ impl ToolBehavior for SelectionTool {
         if pressed {
             state.tool_active = true;
             let handle = state.selection.zone.as_ref()
-                .map(|sel| hit_test_selection(sel, state.pointer.global))
+                .map(|sel| hit_test_rect_handle(sel, state.pointer.global))
                 .unwrap_or(SelectionHandle::None);
 
             if handle != SelectionHandle::None {

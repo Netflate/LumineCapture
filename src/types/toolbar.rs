@@ -14,6 +14,7 @@ const SEPARATOR_CELL_SIZE: f32 = 20.0;
 // Toolbar tools list
 pub const TOOLBAR_ITEMS: &[ToolbarItem] = &[
     ToolbarItem::Button(ToolbarButton::Tool(Tool::Selection)),
+    ToolbarItem::Button(ToolbarButton::Tool(Tool::Pick)),
     ToolbarItem::Seperator,
     ToolbarItem::Button(ToolbarButton::Tool(Tool::Pen)),
     ToolbarItem::Button(ToolbarButton::Tool(Tool::Line)),
