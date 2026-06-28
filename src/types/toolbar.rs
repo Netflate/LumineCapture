@@ -74,7 +74,7 @@ impl Toolbar {
             prev_monitor_idx: 0,
 
             dirty : false,
-            selected : None, 
+            selected : Some(0), 
             hovered: None,
 
             anim: None,

@@ -19,20 +19,22 @@ impl EditorState {
         }
         if let Some(prev_state) = self.undo_stack.pop() {
             Self::record_history_damage(&mut self.damage_rects, &self.annotations, &prev_state);
-        
             self.redo_stack.push(self.annotations.clone());
             self.annotations = prev_state;
+            self.selected_annotation = None;  
+            self.ann_drag = None;             
             *dirty_mask = u32::MAX;
         }
     }
-
+    
     pub fn redo(&mut self, dirty_mask: &mut u32) {
         if let Some(next_state) = self.redo_stack.pop() {
             Self::record_history_damage(&mut self.damage_rects, &self.annotations, &next_state);
-                    
             self.undo_stack.push(self.annotations.clone());
             self.annotations = next_state;
+            self.selected_annotation = None; 
+            self.ann_drag = None;             
             *dirty_mask = u32::MAX;
-}
+        }
     }
 }
