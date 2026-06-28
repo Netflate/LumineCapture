@@ -1,7 +1,7 @@
 use tiny_skia::Rect;
 use tiny_skia::Pixmap;
 use std::path::PathBuf;
-use crate::types::{Placement, SelectionHandle, SignedRect};
+use crate::types::{Placement, SelectionHandle, SignedRect, HANDLE_PAD};
 
 
 pub fn make_rect(a: (f64, f64), b: (f64, f64)) -> Option<Rect> {
@@ -92,6 +92,7 @@ pub fn get_overlapping_monitors(selection: &Rect, placements: &[crate::types::Pl
     mask
 }
 
+// used for selecting/resizing annotations or selection
 pub fn hit_test_rect_handle(sel: &Rect, pos: (f64, f64)) -> SelectionHandle {
     let (x, y) = pos;
     let (l, r, t, b) = (
@@ -101,39 +102,63 @@ pub fn hit_test_rect_handle(sel: &Rect, pos: (f64, f64)) -> SelectionHandle {
     let w = sel.width() as f64;
     let h = sel.height() as f64;
 
-    let corner_w = (w * 0.30).clamp(8.0, 40.0);
-    let corner_h = (h * 0.30).clamp(8.0, 40.0);
-    let touch = 15.0_f64;
+    let corner_w = (w * 0.30).clamp(8.0, 40.0).min(w * 0.5);
+    let corner_h = (h * 0.30).clamp(8.0, 40.0).min(h * 0.5);
 
-    let in_tl = ((y - t).abs() <= touch && x >= l - touch && x <= l + corner_w) ||
-                ((x - l).abs() <= touch && y >= t - touch && y <= t + corner_h);
-    let in_tr = ((y - t).abs() <= touch && x >= r - corner_w && x <= r + touch) ||
-                ((x - r).abs() <= touch && y >= t - touch && y <= t + corner_h);
-    let in_br = ((y - b).abs() <= touch && x >= r - corner_w && x <= r + touch) ||
-                ((x - r).abs() <= touch && y >= b - corner_h && y <= b + touch);
-    let in_bl = ((y - b).abs() <= touch && x >= l - touch && x <= l + corner_w) ||
-                ((x - l).abs() <= touch && y >= b - corner_h && y <= b + touch);
+    let half_pad = HANDLE_PAD / 2.0;
 
-    let in_top    = (y - t).abs() <= touch && x > l + corner_w && x < r - corner_w;
-    let in_bottom = (y - b).abs() <= touch && x > l + corner_w && x < r - corner_w;
-    let in_left   = (x - l).abs() <= touch && y > t + corner_h && y < b - corner_h;
-    let in_right  = (x - r).abs() <= touch && y > t + corner_h && y < b - corner_h;
+    // Top-Left
+    let in_tl_horizontal = (y - t).abs() <= half_pad && x >= l - half_pad && x <= l + corner_w;
+    let in_tl_vertical   = (x - l).abs() <= half_pad && y >= t - half_pad && y <= t + corner_h;
+    if in_tl_horizontal || in_tl_vertical {
+        return SelectionHandle::TopLeft;
+    }
 
-    if in_tl { return SelectionHandle::TopLeft; }
-    if in_tr { return SelectionHandle::TopRight; }
-    if in_bl { return SelectionHandle::BottomLeft; }
-    if in_br { return SelectionHandle::BottomRight; }
-    if in_top    { return SelectionHandle::Top; }
-    if in_bottom { return SelectionHandle::Bottom; }
-    if in_left   { return SelectionHandle::Left; }
-    if in_right  { return SelectionHandle::Right; }
+    // Top-Right
+    let in_tr_horizontal = (y - t).abs() <= half_pad && x >= r - corner_w && x <= r + half_pad;
+    let in_tr_vertical   = (x - r).abs() <= half_pad && y >= t - half_pad && y <= t + corner_h;
+    if in_tr_horizontal || in_tr_vertical {
+        return SelectionHandle::TopRight;
+    }
 
-    if x >= l && x <= r && y >= t && y <= b {
+    // Bottom-Left
+    let in_bl_horizontal = (y - b).abs() <= half_pad && x >= l - half_pad && x <= l + corner_w;
+    let in_bl_vertical   = (x - l).abs() <= half_pad && y >= b - corner_h && y <= b + half_pad;
+    if in_bl_horizontal || in_bl_vertical {
+        return SelectionHandle::BottomLeft;
+    }
+
+    // Bottom-Right
+    let in_br_horizontal = (y - b).abs() <= half_pad && x >= r - corner_w && x <= r + half_pad;
+    let in_br_vertical   = (x - r).abs() <= half_pad && y >= b - corner_h && y <= b + half_pad;
+    if in_br_horizontal || in_br_vertical {
+        return SelectionHandle::BottomRight;
+    }
+
+    // Top
+    if (y - t).abs() <= half_pad && x > l + corner_w && x < r - corner_w {
+        return SelectionHandle::Top;
+    }
+    // Bottom
+    if (y - b).abs() <= half_pad && x > l + corner_w && x < r - corner_w {
+        return SelectionHandle::Bottom;
+    }
+    // Left
+    if (x - l).abs() <= half_pad && y > t + corner_h && y < b - corner_h {
+        return SelectionHandle::Left;
+    }
+    // Right
+    if (x - r).abs() <= half_pad && y > t + corner_h && y < b - corner_h {
+        return SelectionHandle::Right;
+    }
+
+    if x >= l + half_pad && x <= r - half_pad && y >= t + half_pad && y <= b - half_pad {
         return SelectionHandle::Move;
     }
 
     SelectionHandle::None
 }
+
 
 pub fn apply_handle_drag(
     orig: &Rect,

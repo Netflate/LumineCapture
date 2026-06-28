@@ -46,12 +46,11 @@ impl ToolBehavior for PenTool {
             if let AnnotationShape::Pen { points } = &mut ann.shape {
                 if let Some(&last) = points.last() {
                     
-                    let pad = ann.stroke_width * 2.0 + 2.0;
                     if let Some(segment_bbox) = Rect::from_ltrb(
-                        last.0.min(pos.0) - pad,
-                        last.1.min(pos.1) - pad,
-                        last.0.max(pos.0) + pad,
-                        last.1.max(pos.1) + pad,
+                        last.0.min(pos.0),
+                        last.1.min(pos.1),
+                        last.0.max(pos.0),
+                        last.1.max(pos.1),
                     ) {
                         state.damage_rects.push(segment_bbox); 
                     }

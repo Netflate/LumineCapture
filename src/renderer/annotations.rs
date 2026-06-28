@@ -24,16 +24,7 @@ pub fn draw_annotation(canvas: &mut Pixmap, ann: &Annotation, selected: bool) {
             draw_pen(canvas, points, ann.color, ann.stroke_width);
         }
     }
-    if selected {
-        if let Some(padded) = Rect::from_ltrb(
-            ann.bbox.left()   + HANDLE_PAD,
-            ann.bbox.top()    + HANDLE_PAD,
-            ann.bbox.right()  - HANDLE_PAD,
-            ann.bbox.bottom() - HANDLE_PAD,
-        ) {
-            draw_annotation_handles(canvas, &padded);
-        }
-    }
+    if selected {draw_annotation_handles(canvas, &ann.bbox);}
 }
 
 fn draw_arrow(canvas: &mut Pixmap, start: (f32, f32), end: (f32, f32), color: Color, stroke_width: f32) {
@@ -146,22 +137,29 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect) {
     let mut paint = Paint::default();
     paint.set_color(Color::WHITE);
     paint.anti_alias = true;
+    
     let mut stroke = Stroke::default();
     stroke.width = 3.0;
     stroke.line_cap = tiny_skia::LineCap::Round;
     stroke.line_join = tiny_skia::LineJoin::Round;
 
-    let (l, t, ri, b) = (bbox.left(), bbox.top(), bbox.right(), bbox.bottom());
-    let w = bbox.width();
-    let h = bbox.height();
+    let out_pad = (HANDLE_PAD / 2.0) as f32;
+    
+    let l  = bbox.left() - out_pad;
+    let t  = bbox.top() - out_pad;
+    let ri = bbox.right() + out_pad;
+    let b  = bbox.bottom() + out_pad;
+
+    let w = ri - l;
+    let h = b - t;
     let mid_x = (l + ri) / 2.0;
     let mid_y = (t + b) / 2.0;
 
-    // Mid handles: 30-35% of their side, but less than half
+    // Mid handles
     let mid_hw = (w * 0.32).clamp(8.0_f32.min(w * 0.5), w * 0.5);
     let mid_hh = (h * 0.32).clamp(8.0_f32.min(h * 0.5), h * 0.5);
 
-    // edges: 20% of their side, but less than half 
+    // Edges
     let corner_w = (w * 0.20).clamp(8.0_f32.min(w * 0.5), w * 0.5);
     let corner_h = (h * 0.20).clamp(8.0_f32.min(h * 0.5), h * 0.5);
 

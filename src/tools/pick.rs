@@ -1,8 +1,10 @@
 use crate::tools::ToolBehavior;
-use crate::types::{MouseButton, AnnDragState, SelectionHandle, HANDLE_PAD};
+use crate::types::{MouseButton, AnnDragState, SelectionHandle};
 use crate::editor::{EditorState};
 use crate::utils::{hit_test_rect_handle, apply_handle_drag};
+use crate::types::HANDLE_PAD; 
 use tiny_skia::Rect;
+
 pub struct PickTool;
 
 impl ToolBehavior for PickTool {
@@ -27,7 +29,7 @@ impl ToolBehavior for PickTool {
             // Selecting nothing to unselected selected annotation
             if selected_annotation == None && let Some(old_idx) = state.selected_annotation {
                 let old_ann = &state.annotations[old_idx];
-                state.damage_rects.push(old_ann.bbox);
+                state.damage_rects.push(old_ann.damage_bbox(true));
                 state.selected_annotation = None;
                 state.ann_drag = None;
                 return;
@@ -37,7 +39,7 @@ impl ToolBehavior for PickTool {
             if state.selected_annotation != selected_annotation && let Some(idx) = selected_annotation {
                 if let Some(old_idx) = state.selected_annotation {
                     let old_ann = &state.annotations[old_idx];
-                    state.damage_rects.push(old_ann.bbox); 
+                    state.damage_rects.push(old_ann.damage_bbox(true)); 
                 }
                 state.selected_annotation = selected_annotation;
                 let ann = &state.annotations[idx];
@@ -54,15 +56,16 @@ impl ToolBehavior for PickTool {
             // selecting the same one
             if let Some(idx) = state.selected_annotation && state.selected_annotation == selected_annotation {
                 let ann = &state.annotations[idx];
-                
-                let padded = Rect::from_ltrb(
-                    ann.bbox.left()     + HANDLE_PAD,
-                    ann.bbox.top()       + HANDLE_PAD,
-                    ann.bbox.right()   - HANDLE_PAD,
-                    ann.bbox.bottom() - HANDLE_PAD,
-                ).unwrap(); 
 
-                let handle = hit_test_rect_handle(&padded, state.pointer.global);
+                let out_pad = (HANDLE_PAD / 2.0) as f32;
+                let visual_handle_bbox = Rect::from_ltrb(
+                    ann.bbox.left() - out_pad,
+                    ann.bbox.top() - out_pad,
+                    ann.bbox.right() + out_pad,
+                    ann.bbox.bottom() + out_pad,
+                ).unwrap_or(ann.bbox);
+
+                let handle = hit_test_rect_handle(&visual_handle_bbox, state.pointer.global);
                         
                 state.ann_drag = Some(AnnDragState {
                     handle,
@@ -91,23 +94,41 @@ impl ToolBehavior for PickTool {
             SelectionHandle::Move => orig.translate(total_dx, total_dy),
             SelectionHandle::None => return,
             _ => {
-                let new_bbox = apply_handle_drag(&orig.bbox, handle, (total_dx as f64, total_dy as f64));
-                orig.resize_to_bbox(new_bbox)
+                let out_pad = (HANDLE_PAD / 2.0) as f32;
+                let visual_handle_bbox = Rect::from_ltrb(
+                    orig.bbox.left() - out_pad,
+                    orig.bbox.top() - out_pad,
+                    orig.bbox.right() + out_pad,
+                    orig.bbox.bottom() + out_pad,
+                ).unwrap_or(orig.bbox);
+
+                let new_visual_bbox = apply_handle_drag(&visual_handle_bbox, handle, (total_dx as f64, total_dy as f64));
+                
+                let clean_bbox = crate::types::SignedRect {
+                    left: new_visual_bbox.left + out_pad,
+                    top: new_visual_bbox.top + out_pad,
+                    right: new_visual_bbox.right - out_pad,
+                    bottom: new_visual_bbox.bottom - out_pad,
+                };
+
+                orig.resize_to_bbox(clean_bbox)
             }
         };
 
         let idx = state.selected_annotation.unwrap();
         
-        state.damage_rects.push(state.annotations[idx].bbox);
-        state.damage_rects.push(updated.bbox);
+        state.damage_rects.push(state.annotations[idx].damage_bbox(true));
+        state.damage_rects.push(updated.damage_bbox(true));
         
         state.annotations[idx] = updated;
         *dirty_mask = u32::MAX;
     }
-    
+
     fn on_deactivate(&self, state: &mut EditorState, dirty_mask: &mut u32) {
-        if state.selected_annotation.is_some() {
+        if let Some(idx) = state.selected_annotation {
             *dirty_mask |= u32::MAX;
+
+            state.damage_rects.push(state.annotations[idx].damage_bbox(true));
             state.selected_annotation = None;
             state.ann_drag = None;
         }

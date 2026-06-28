@@ -101,7 +101,6 @@ pub fn dispatch_button(
 
 // for now it only cancels active selection
 pub fn dispatch_deactivate(tool: Tool, state: &mut EditorState, dirty_mask: &mut u32) {
-    println!("{:?}", tool);
     match tool {
         Tool::Pick => PickTool.on_deactivate(state, dirty_mask),
         _ => {}

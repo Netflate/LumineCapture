@@ -1,7 +1,7 @@
 use tiny_skia::{Rect, Color};
 use crate::types::{SelectionHandle, SignedRect};
 
-pub const HANDLE_PAD: f32 = 16.0;
+pub const HANDLE_PAD: f64 = 50.0;
 
 #[derive(Clone)]
 pub enum AnnotationShape {
@@ -83,18 +83,16 @@ impl Annotation {
             AnnotationShape::Rectangle { start, end } |
             AnnotationShape::Circle { start, end } |
             AnnotationShape::Line { start, end } => {
-                let pad = &self.stroke_width * 2.0 + 20.0;
                 
                 self.bbox = Rect::from_ltrb(
-                    start.0.min(end.0)   - pad,
-                    start.1.min(end.1)    - pad,
-                    start.0.max(end.0)  + pad,
-                    start.1.max(end.1) + pad,
+                    start.0.min(end.0)  ,
+                    start.1.min(end.1)   ,
+                    start.0.max(end.0) ,
+                    start.1.max(end.1),
                 ).unwrap();
             }
 
             AnnotationShape::Pen { points } => {
-                let pad = &self.stroke_width * 2.0 + 20.0;
                 
                 let min_x = points.iter().map(|p| p.0).fold(f32::INFINITY, f32::min);
                 let min_y = points.iter().map(|p| p.1).fold(f32::INFINITY, f32::min);
@@ -102,10 +100,10 @@ impl Annotation {
                 let max_y = points.iter().map(|p| p.1).fold(f32::NEG_INFINITY, f32::max);
                 
                 self.bbox = Rect::from_ltrb(
-                    min_x - pad, 
-                    min_y - pad, 
-                    max_x + pad, 
-                    max_y + pad
+                    min_x, 
+                    min_y, 
+                    max_x, 
+                    max_y 
                 ).unwrap();
             }
         }    
@@ -117,12 +115,12 @@ impl Annotation {
             AnnotationShape::Pen { points } if points.len() >= 2 => {
                 let from = points[points.len() - 2];
                 let to   = points[points.len() - 1];
-                let pad  = self.stroke_width * 2.0 + 2.0;
+
                 Rect::from_ltrb(
-                    from.0.min(to.0) - pad,
-                    from.1.min(to.1) - pad,
-                    from.0.max(to.0) + pad,
-                    from.1.max(to.1) + pad,
+                    from.0.min(to.0),
+                    from.1.min(to.1),
+                    from.0.max(to.0),
+                    from.1.max(to.1),
                 ).unwrap()
             }
             _ => self.bbox,
@@ -193,13 +191,28 @@ impl Annotation {
     }
 
     pub fn initial_hit_test(&self, coordinates: (f64, f64)) -> bool {
-        // TODO: sepearate for pen
+        // TODO: separate for pen
         let (x, y) = (coordinates.0 as f32, coordinates.1 as f32);
+        let pad = HANDLE_PAD as f32; 
 
-        x >= self.bbox.left() && 
-        x <= self.bbox.right() && 
-        y >= self.bbox.top() && 
-        y <= self.bbox.bottom()
+        x >= self.bbox.left() - pad && 
+        x <= self.bbox.right() + pad && 
+        y >= self.bbox.top() - pad && 
+        y <= self.bbox.bottom() + pad
+    }
+
+    pub fn damage_bbox(&self, is_selected: bool) -> Rect {
+        if is_selected {
+            let pad = HANDLE_PAD as f32; // if its selected we need to add handlers padding
+            Rect::from_ltrb(
+                self.bbox.left() - pad,
+                self.bbox.top() - pad,
+                self.bbox.right() + pad,
+                self.bbox.bottom() + pad,
+            ).unwrap_or(self.bbox)
+        } else {
+            self.bbox
+        }
     }
 }
 
