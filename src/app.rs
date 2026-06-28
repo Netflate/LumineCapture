@@ -6,7 +6,7 @@ use crate::renderer::{self};
 use crate::utils::{global_point_to_local, encode_png, save_to_file, get_overlapping_monitors};
 use std::time::{Instant};
 use std::collections::HashMap;
-use crate::tools::{dispatch_button, dispatch_move, Tool};
+use crate::tools::{Tool, dispatch_button, dispatch_deactivate, dispatch_move};
 use crate::tools::selection::{global_selection_to_local, selection_edges_for_monitor};
 use usvg::Tree;
 use crate::types::icons;
@@ -197,6 +197,7 @@ pub async fn make_screenshot(
                         icons_cache: &editor_state.icon_cache,
                         annotations: &local_annotations,
                         pending: local_pending.as_ref(),
+                        selected: editor_state.selected_annotation,
                     });
 
                     overlay.update_frame(i, editor_state.canvas[i].data(), damage)?;
@@ -358,6 +359,7 @@ fn initial_paint(
             icons_cache: &editor_state.icon_cache,
             annotations: &editor_state.annotations,
             pending: None,
+            selected: None,
         });
         overlay.update_frame(monitor_idx, editor_state.canvas[monitor_idx].data(), None)?;
     }
@@ -404,6 +406,7 @@ fn handle_pointer_button(
             if let Some(ToolbarItem::Button(button)) = editor_state.toolbar.items.get(tb_button) {
                 match button {
                     ToolbarButton::Tool(tool) => {
+                        dispatch_deactivate(editor_state.selected_tool, editor_state, dirty_mask);
                         editor_state.selected_tool = *tool;
                         editor_state.toolbar.selected = Some(tb_button);
                     }
@@ -681,7 +684,7 @@ fn render_final(editor_state: &EditorState) -> Vec<u8> {
     let offset = (sel_left as f32, sel_top as f32);
     for ann in &editor_state.annotations {
         let local = ann.to_local(offset);
-        renderer::draw_annotation(&mut out, &local);
+        renderer::draw_annotation(&mut out, &local, false);
     }
 
     encode_png(&out)

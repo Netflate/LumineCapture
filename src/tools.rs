@@ -32,13 +32,8 @@ pub enum Tool {
 // ==========================================
 pub trait ToolBehavior {
     fn on_button(&self, state: &mut EditorState, button: MouseButton, pressed: bool, dirty_mask: &mut u32);
-    fn on_move(
-        &self,
-        state: &mut EditorState,
-        global: (f64, f64),
-        selection_dirty: &mut bool,
-        dirty_mask: &mut u32,
-    );
+    fn on_move(&self, state: &mut EditorState, global: (f64, f64), selection_dirty: &mut bool, dirty_mask: &mut u32);
+    fn on_deactivate(&self, _state: &mut EditorState, _dirty_mask: &mut u32) {} 
 }
 
 // ==========================================
@@ -101,5 +96,14 @@ pub fn dispatch_button(
             
             tool_impl.on_button(state, button, pressed, dirty_mask);
         }
+    }
+}
+
+// for now it only cancels active selection
+pub fn dispatch_deactivate(tool: Tool, state: &mut EditorState, dirty_mask: &mut u32) {
+    println!("{:?}", tool);
+    match tool {
+        Tool::Pick => PickTool.on_deactivate(state, dirty_mask),
+        _ => {}
     }
 }

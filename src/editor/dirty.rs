@@ -1,11 +1,11 @@
-use crate::types::{MagnifierState, Placement, HANDLE_RADIUS};
 use crate::types::toolbar::TOOLBAR_HEIGHT;
-use tiny_skia::Rect;
+use crate::types::{MagnifierState, Placement, HANDLE_RADIUS};
 use crate::renderer::{self};
 use crate::tools::selection::{global_selection_to_local};
 use crate::types::annotations::{Annotation, AnnotationShape};
 use crate::editor::EditorState;
 
+use tiny_skia::Rect;
 
 impl EditorState {
     // for maximal optimization we render only a specific zone of the screen 
@@ -124,6 +124,12 @@ impl EditorState {
                 add_global_rect_dirty(&ann.bbox);
             }
         }
+        // selected / moved / resized through Pick tool
+        if let Some(ann) = self.selected_annotation {
+            add_global_rect_dirty(&self.annotations[ann].bbox);
+        }
+
+
 
         // undo & redo & pen (to avoid updating its whole bbox)
         for damage_bbox in &self.damage_rects {

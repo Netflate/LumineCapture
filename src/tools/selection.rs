@@ -1,7 +1,6 @@
 use crate::tools::ToolBehavior;
 use crate::types::{MouseButton, Placement, SelectionEdges, SelectionHandle};
-use crate::utils::{make_rect, get_overlapping_monitors, hit_test_rect_handle};
-use crate::renderer::apply_handle_drag;
+use crate::utils::{make_rect, get_overlapping_monitors, hit_test_rect_handle, apply_handle_drag};
 use crate::editor::EditorState;
 use tiny_skia::Rect;
 
@@ -92,7 +91,7 @@ impl ToolBehavior for SelectionTool {
                 state.selection.selection_at_drag_start,
             ) {
                 let delta = (global.0 - origin.0, global.1 - origin.1);
-                state.selection.zone = apply_handle_drag(&sel_start, state.selection.active_handle, delta);
+                state.selection.zone = apply_handle_drag(&sel_start, state.selection.active_handle, delta).to_rect();
                 state.selection.prev_zone = old_sel;
                 apply_selection_dirty(old_sel, state.selection.zone, &state.placements, dirty_mask, selection_dirty);
             }

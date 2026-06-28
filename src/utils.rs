@@ -1,7 +1,7 @@
 use tiny_skia::Rect;
 use tiny_skia::Pixmap;
 use std::path::PathBuf;
-use crate::types::{Placement, HANDLE_RADIUS, SelectionHandle};
+use crate::types::{Placement, SelectionHandle, SignedRect};
 
 
 pub fn make_rect(a: (f64, f64), b: (f64, f64)) -> Option<Rect> {
@@ -92,73 +92,69 @@ pub fn get_overlapping_monitors(selection: &Rect, placements: &[crate::types::Pl
     mask
 }
 
-
-// used in selection.rs and pick.rs
-pub fn rect_handle_points(sel: &Rect) -> [(f32, f32); 8] {
-    [
-        (sel.left(), sel.top()),
-        ((sel.left() + sel.right()) / 2.0, sel.top()),
-        (sel.right(), sel.top()),
-        (sel.left(), (sel.top() + sel.bottom()) / 2.0),
-        (sel.right(), (sel.top() + sel.bottom()) / 2.0),
-        (sel.left(), sel.bottom()),
-        ((sel.left() + sel.right()) / 2.0, sel.bottom()),
-        (sel.right(), sel.bottom()),
-    ]
-}
-
 pub fn hit_test_rect_handle(sel: &Rect, pos: (f64, f64)) -> SelectionHandle {
     let (x, y) = pos;
     let (l, r, t, b) = (
         sel.left() as f64, sel.right() as f64,
         sel.top() as f64,  sel.bottom() as f64,
     );
-    let mid_x = (l + r) / 2.0;
-    let mid_y = (t + b) / 2.0;
+    let w = sel.width() as f64;
+    let h = sel.height() as f64;
 
-    let near = |a: f64, b: f64| (a - b).abs() < HANDLE_RADIUS;
+    let corner_w = (w * 0.30).clamp(8.0, 40.0);
+    let corner_h = (h * 0.30).clamp(8.0, 40.0);
+    let touch = 15.0_f64;
 
-    let on_left   = near(x, l);
-    let on_right  = near(x, r);
-    let on_top    = near(y, t);
-    let on_bottom = near(y, b);
+    let in_tl = ((y - t).abs() <= touch && x >= l - touch && x <= l + corner_w) ||
+                ((x - l).abs() <= touch && y >= t - touch && y <= t + corner_h);
+    let in_tr = ((y - t).abs() <= touch && x >= r - corner_w && x <= r + touch) ||
+                ((x - r).abs() <= touch && y >= t - touch && y <= t + corner_h);
+    let in_br = ((y - b).abs() <= touch && x >= r - corner_w && x <= r + touch) ||
+                ((x - r).abs() <= touch && y >= b - corner_h && y <= b + touch);
+    let in_bl = ((y - b).abs() <= touch && x >= l - touch && x <= l + corner_w) ||
+                ((x - l).abs() <= touch && y >= b - corner_h && y <= b + touch);
 
-    let on_h_edge = on_top || on_bottom;
-    let on_v_edge = on_left || on_right;
-    let on_border = on_h_edge || on_v_edge;
+    let in_top    = (y - t).abs() <= touch && x > l + corner_w && x < r - corner_w;
+    let in_bottom = (y - b).abs() <= touch && x > l + corner_w && x < r - corner_w;
+    let in_left   = (x - l).abs() <= touch && y > t + corner_h && y < b - corner_h;
+    let in_right  = (x - r).abs() <= touch && y > t + corner_h && y < b - corner_h;
 
-    let inside = x >= l - HANDLE_RADIUS && x <= r + HANDLE_RADIUS
-              && y >= t - HANDLE_RADIUS && y <= b + HANDLE_RADIUS;
+    if in_tl { return SelectionHandle::TopLeft; }
+    if in_tr { return SelectionHandle::TopRight; }
+    if in_bl { return SelectionHandle::BottomLeft; }
+    if in_br { return SelectionHandle::BottomRight; }
+    if in_top    { return SelectionHandle::Top; }
+    if in_bottom { return SelectionHandle::Bottom; }
+    if in_left   { return SelectionHandle::Left; }
+    if in_right  { return SelectionHandle::Right; }
 
-    if !inside {
-        return SelectionHandle::None;
-    }
-
-    if !on_border {
+    if x >= l && x <= r && y >= t && y <= b {
         return SelectionHandle::Move;
     }
 
-    let closer_to_left  = (x - l).abs() < (x - mid_x).abs();
-    let closer_to_right = (x - r).abs() < (x - mid_x).abs();
-    let closer_to_top   = (y - t).abs() < (y - mid_y).abs();
-    let closer_to_bottom= (y - b).abs() < (y - mid_y).abs();
+    SelectionHandle::None
+}
 
-    let corner_x = closer_to_left || closer_to_right;
-    let corner_y = closer_to_top  || closer_to_bottom;
-
-    match (corner_x, corner_y) {
-        (true, true) => match (closer_to_left, closer_to_top) {
-            (true,  true)  => SelectionHandle::TopLeft,
-            (false, true)  => SelectionHandle::TopRight,
-            (true,  false) => SelectionHandle::BottomLeft,
-            (false, false) => SelectionHandle::BottomRight,
-        },
-        (true, false) => {
-            if closer_to_left { SelectionHandle::Left } else { SelectionHandle::Right }
-        }
-        (false, true) => {
-            if closer_to_top { SelectionHandle::Top } else { SelectionHandle::Bottom }
-        }
-        (false, false) => SelectionHandle::Move,
+pub fn apply_handle_drag(
+    orig: &Rect,
+    handle: SelectionHandle,
+    delta: (f64, f64),
+) -> SignedRect {
+    let (dx, dy) = (delta.0 as f32, delta.1 as f32);
+    let (mut l, mut r, mut t, mut b) = (
+        orig.left(), orig.right(), orig.top(), orig.bottom(),
+    );
+    match handle {
+        SelectionHandle::TopLeft     => { l += dx; t += dy; }
+        SelectionHandle::Top         => { t += dy; }
+        SelectionHandle::TopRight    => { r += dx; t += dy; }
+        SelectionHandle::Left        => { l += dx; }
+        SelectionHandle::Right       => { r += dx; }
+        SelectionHandle::BottomLeft  => { l += dx; b += dy; }
+        SelectionHandle::Bottom      => { b += dy; }
+        SelectionHandle::BottomRight => { r += dx; b += dy; }
+        SelectionHandle::Move        => { l += dx; r += dx; t += dy; b += dy; }
+        SelectionHandle::None        => {}
     }
+    SignedRect { left: l, top: t, right: r, bottom: b }
 }

@@ -1,5 +1,7 @@
 use tiny_skia::{Rect, Color};
-use crate::types::SelectionHandle;
+use crate::types::{SelectionHandle, SignedRect};
+
+pub const HANDLE_PAD: f32 = 16.0;
 
 #[derive(Clone)]
 pub enum AnnotationShape {
@@ -66,6 +68,12 @@ impl Annotation {
     pub fn to_local(&self, offset: (f32, f32)) -> Annotation {
         let mut local = self.clone();
         local.shape = self.shape.to_local(offset);
+        local.bbox = Rect::from_ltrb(
+            local.bbox.left()   - offset.0,
+            local.bbox.top()    - offset.1,
+            local.bbox.right()  - offset.0,
+            local.bbox.bottom() - offset.1,
+        ).unwrap_or(local.bbox);
         local
     }
     
@@ -75,18 +83,18 @@ impl Annotation {
             AnnotationShape::Rectangle { start, end } |
             AnnotationShape::Circle { start, end } |
             AnnotationShape::Line { start, end } => {
-                let pad = self.stroke_width * 2.0 + 12.0;
+                let pad = &self.stroke_width * 2.0 + 20.0;
                 
                 self.bbox = Rect::from_ltrb(
-                    start.0.min(end.0) - pad,
-                    start.1.min(end.1) - pad,
-                    start.0.max(end.0) + pad,
+                    start.0.min(end.0)   - pad,
+                    start.1.min(end.1)    - pad,
+                    start.0.max(end.0)  + pad,
                     start.1.max(end.1) + pad,
                 ).unwrap();
             }
 
             AnnotationShape::Pen { points } => {
-                let pad = self.stroke_width * 2.0;
+                let pad = &self.stroke_width * 2.0 + 20.0;
                 
                 let min_x = points.iter().map(|p| p.0).fold(f32::INFINITY, f32::min);
                 let min_y = points.iter().map(|p| p.1).fold(f32::INFINITY, f32::min);
@@ -148,7 +156,7 @@ impl Annotation {
         result
     }
 
-    pub fn resize_to_bbox(&self, new_bbox: Rect) -> Annotation {
+    pub fn resize_to_bbox(&self, new_bbox: SignedRect) -> Annotation {
         let orig = self.bbox;
 
         let sx = if orig.width()  > 0.0 { new_bbox.width()  / orig.width()  } else { 1.0 };
@@ -156,27 +164,23 @@ impl Annotation {
 
         let remap = |p: (f32, f32)| -> (f32, f32) {
             (
-                new_bbox.left() + (p.0 - orig.left()) * sx,
-                new_bbox.top()  + (p.1 - orig.top())  * sy,
+                new_bbox.left + (p.0 - orig.left()) * sx,
+                new_bbox.top  + (p.1 - orig.top())  * sy,
             )
         };
 
         let shape = match &self.shape {
             AnnotationShape::Arrow { start, end } => AnnotationShape::Arrow {
-                start: remap(*start),
-                end:   remap(*end),
+                start: remap(*start), end: remap(*end),
             },
             AnnotationShape::Rectangle { start, end } => AnnotationShape::Rectangle {
-                start: remap(*start),
-                end:   remap(*end),
+                start: remap(*start), end: remap(*end),
             },
             AnnotationShape::Circle { start, end } => AnnotationShape::Circle {
-                start: remap(*start),
-                end:   remap(*end),
+                start: remap(*start), end: remap(*end),
             },
             AnnotationShape::Line { start, end } => AnnotationShape::Line {
-                start: remap(*start),
-                end:   remap(*end),
+                start: remap(*start), end: remap(*end),
             },
             AnnotationShape::Pen { points } => AnnotationShape::Pen {
                 points: points.iter().map(|p| remap(*p)).collect(),
@@ -187,5 +191,18 @@ impl Annotation {
         result.update_bbox();
         result
     }
+
+    pub fn initial_hit_test(&self, coordinates: (f64, f64)) -> bool {
+        // TODO: sepearate for pen
+        let (x, y) = (coordinates.0 as f32, coordinates.1 as f32);
+
+        x >= self.bbox.left() && 
+        x <= self.bbox.right() && 
+        y >= self.bbox.top() && 
+        y <= self.bbox.bottom()
+    }
 }
+
+
+
 
