@@ -29,29 +29,30 @@ impl AnnotationShape {
         }
     }
 
-    fn to_local(&self, offset: (f32, f32)) -> AnnotationShape {
-        match self {
-            AnnotationShape::Arrow { start, end } => AnnotationShape::Arrow {
-                start: (start.0 - offset.0, start.1 - offset.1),
-                end:   (end.0   - offset.0, end.1   - offset.1),
-            },
-            AnnotationShape::Rectangle { start, end } => AnnotationShape::Rectangle {
-                start: (start.0 - offset.0, start.1 - offset.1),
-                end:   (end.0   - offset.0, end.1   - offset.1),
-            },
-            AnnotationShape::Circle { start, end } => AnnotationShape::Circle {
-                start: (start.0 - offset.0, start.1 - offset.1),
-                end:   (end.0   - offset.0, end.1   - offset.1),
-            },
-            AnnotationShape::Line { start, end } => AnnotationShape::Line {
-                start: (start.0 - offset.0, start.1 - offset.1),
-                end:   (end.0   - offset.0, end.1   - offset.1),
-            }, 
-            AnnotationShape::Pen { points } => AnnotationShape::Pen {
-                points: points.iter().map(|p| (p.0 - offset.0, p.1 - offset.1)).collect(),
-            },
-        }
-    }
+    // highly expensive to make an annotation copy over and over again
+    // fn to_local(&self, offset: (f32, f32)) -> AnnotationShape {
+    //     match self {
+    //         AnnotationShape::Arrow { start, end } => AnnotationShape::Arrow {
+    //             start: (start.0 - offset.0, start.1 - offset.1),
+    //             end:   (end.0   - offset.0, end.1   - offset.1),
+    //         },
+    //         AnnotationShape::Rectangle { start, end } => AnnotationShape::Rectangle {
+    //             start: (start.0 - offset.0, start.1 - offset.1),
+    //             end:   (end.0   - offset.0, end.1   - offset.1),
+    //         },
+    //         AnnotationShape::Circle { start, end } => AnnotationShape::Circle {
+    //             start: (start.0 - offset.0, start.1 - offset.1),
+    //             end:   (end.0   - offset.0, end.1   - offset.1),
+    //         },
+    //         AnnotationShape::Line { start, end } => AnnotationShape::Line {
+    //             start: (start.0 - offset.0, start.1 - offset.1),
+    //             end:   (end.0   - offset.0, end.1   - offset.1),
+    //         }, 
+    //         AnnotationShape::Pen { points } => AnnotationShape::Pen {
+    //             points: points.iter().map(|p| (p.0 - offset.0, p.1 - offset.1)).collect(),
+    //         },
+    //     }
+    // }
     
 }
 
@@ -65,17 +66,17 @@ pub struct Annotation {
 }
 
 impl Annotation {
-    pub fn to_local(&self, offset: (f32, f32)) -> Annotation {
-        let mut local = self.clone();
-        local.shape = self.shape.to_local(offset);
-        local.bbox = Rect::from_ltrb(
-            local.bbox.left()   - offset.0,
-            local.bbox.top()    - offset.1,
-            local.bbox.right()  - offset.0,
-            local.bbox.bottom() - offset.1,
-        ).unwrap_or(local.bbox);
-        local
-    }
+    // pub fn to_local(&self, offset: (f32, f32)) -> Annotation {
+    //     let mut local = self.clone();
+    //     local.shape = self.shape.to_local(offset);
+    //     local.bbox = Rect::from_ltrb(
+    //         local.bbox.left()   - offset.0,
+    //         local.bbox.top()    - offset.1,
+    //         local.bbox.right()  - offset.0,
+    //         local.bbox.bottom() - offset.1,
+    //     ).unwrap_or(local.bbox);
+    //     local
+    // }
     
     pub fn update_bbox(&mut self) {
         match &self.shape {

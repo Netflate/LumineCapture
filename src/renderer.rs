@@ -35,6 +35,7 @@ pub struct RenderRequest<'a> {
     pub annotations: &'a [Annotation],
     pub pending: Option<&'a Annotation>,
     pub selected: Option<usize>,
+    pub offset: (f32, f32),
 }
 
 
@@ -53,10 +54,10 @@ pub fn render_frame(req: &mut RenderRequest) {
     }
 
     for (idx, ann) in req.annotations.iter().enumerate() {
-        annotations::draw_annotation(req.canvas, ann, Some(idx) == req.selected);
+        annotations::draw_annotation(req.canvas, ann, req.offset, Some(idx) == req.selected);
     }
     if let Some(ann) = req.pending {
-        annotations::draw_annotation(req.canvas, ann, false);
+        annotations::draw_annotation(req.canvas, ann, req.offset, false);
     }
 
     if req.is_mag_monitor {

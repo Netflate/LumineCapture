@@ -14,7 +14,7 @@ pub struct SimpleShapeTool {
 pub struct PenTool;
 
 impl ToolBehavior for PenTool {
-    fn on_button(&self, state: &mut EditorState, _button: MouseButton, pressed: bool, dirty_mask: &mut u32) {
+    fn on_button(&self, state: &mut EditorState, _button: MouseButton, pressed: bool, _dirty_mask: &mut u32) {
         let pos = (state.pointer.global.0 as f32, state.pointer.global.1 as f32);
         
         if pressed {
@@ -28,18 +28,16 @@ impl ToolBehavior for PenTool {
             ann.update_bbox();
             
             state.pending = Some(ann);
-            *dirty_mask = u32::MAX; 
             
         } else if let Some(ann) = state.pending.take() {
             state.next_id += 1;
             state.push_undo();
             state.annotations.push(ann);
             state.prev_pending = None;
-            *dirty_mask = u32::MAX;
         }
     }
 
-    fn on_move(&self, state: &mut EditorState, _global: (f64, f64), _sel_dirty: &mut bool, dirty_mask: &mut u32) {
+    fn on_move(&self, state: &mut EditorState, _global: (f64, f64), _sel_dirty: &mut bool, _dirty_mask: &mut u32) {
         let pos = (state.pointer.global.0 as f32, state.pointer.global.1 as f32);
         
         if let Some(ann) = state.pending.as_mut() {
@@ -59,7 +57,6 @@ impl ToolBehavior for PenTool {
             }
             
             ann.update_bbox(); 
-            *dirty_mask = u32::MAX;
         }
     }
 }

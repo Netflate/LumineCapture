@@ -10,7 +10,6 @@ use crate::tools::{Tool, dispatch_button, dispatch_deactivate, dispatch_move};
 use crate::tools::selection::{global_selection_to_local, selection_edges_for_monitor};
 use usvg::Tree;
 use crate::types::icons;
-use crate::types::annotations::Annotation;
 use crate::editor::EditorState;
 
 // small note while wip, to notice if it becamwe slower
@@ -174,13 +173,7 @@ pub async fn make_screenshot(
                         editor_state.placements[i].position.0 as f32,
                         editor_state.placements[i].position.1 as f32,
                     );
-                    let local_annotations: Vec<Annotation> = editor_state.annotations
-                        .iter()
-                        .map(|a| a.to_local(offset))
-                        .collect();
-                    let local_pending = editor_state.pending
-                        .as_ref()
-                        .map(|a| a.to_local(offset));
+
 
                     renderer::render_frame(&mut renderer::RenderRequest {
                         canvas: &mut editor_state.canvas[i],
@@ -195,9 +188,10 @@ pub async fn make_screenshot(
                         is_mag_monitor,
                         toolbar,
                         icons_cache: &editor_state.icon_cache,
-                        annotations: &local_annotations,
-                        pending: local_pending.as_ref(),
+                        annotations: &editor_state.annotations,
+                        pending: editor_state.pending.as_ref(),
                         selected: editor_state.selected_annotation,
+                        offset : offset,
                     });
 
                     overlay.update_frame(i, editor_state.canvas[i].data(), damage)?;
@@ -360,6 +354,7 @@ fn initial_paint(
             annotations: &editor_state.annotations,
             pending: None,
             selected: None,
+            offset: (0.0, 0.0), // FIXME: idk if it won't causes any bugs for now
         });
         overlay.update_frame(monitor_idx, editor_state.canvas[monitor_idx].data(), None)?;
     }
@@ -389,6 +384,7 @@ fn handle_pointer_move(
     update_pointer(editor_state, current_monitor_idx, (local_x, local_y), global);
     update_magnifier(editor_state, dirty_mask);
     dispatch_move(editor_state.selected_tool, editor_state, global, selection_dirty, dirty_mask);
+    apply_damage_rects(editor_state, dirty_mask); 
     update_toolbar(editor_state, dirty_mask);
 }
 
@@ -425,6 +421,7 @@ fn handle_pointer_button(
     }
 
     dispatch_button(editor_state.selected_tool, editor_state, button, pressed, dirty_mask);
+    apply_damage_rects(editor_state, dirty_mask); 
 
     if matches!(button, MouseButton::Left) && !pressed {
         update_toolbar(editor_state, dirty_mask);
@@ -683,8 +680,7 @@ fn render_final(editor_state: &EditorState) -> Vec<u8> {
     // or for some specific perfomance eating tools as blur
     let offset = (sel_left as f32, sel_top as f32);
     for ann in &editor_state.annotations {
-        let local = ann.to_local(offset);
-        renderer::draw_annotation(&mut out, &local, false);
+        renderer::draw_annotation(&mut out, ann, offset, false);
     }
 
     encode_png(&out)
@@ -701,4 +697,13 @@ pub fn mark_dirty(mask: &mut u32, idx: usize) {
 
 fn is_dirty(mask: u32, idx: usize) -> bool {
     (mask & (1 << idx)) != 0
+}
+
+// some parts of the code still identify dirty monitors themselves 
+// that will be fixed
+fn apply_damage_rects(editor_state: &mut EditorState, dirty_mask: &mut u32) {
+    for rect in &editor_state.damage_rects {
+        let mask = get_overlapping_monitors(rect, &editor_state.placements);
+        *dirty_mask |= mask;
+    }
 }
