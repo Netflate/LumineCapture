@@ -22,7 +22,9 @@ impl EditorState {
             self.redo_stack.push(self.annotations.clone());
             self.annotations = prev_state;
             self.selected_annotation = None;  
-            self.ann_drag = None;             
+            self.ann_drag = None;    
+            self.annotations_dirty = true;
+         
             *dirty_mask = u32::MAX;
         }
     }
@@ -30,6 +32,8 @@ impl EditorState {
     pub fn redo(&mut self, dirty_mask: &mut u32) {
         if let Some(next_state) = self.redo_stack.pop() {
             Self::record_history_damage(&mut self.damage_rects, &self.annotations, &next_state);
+            
+            self.annotations_dirty = true;
             self.undo_stack.push(self.annotations.clone());
             self.annotations = next_state;
             self.selected_annotation = None; 

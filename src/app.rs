@@ -1,16 +1,17 @@
 use crate::backend::{ScreenOverlay, initialize_capture, initialize_clipboard, initialize_overlay};
-use crate::types::{DamageRect, MagnifierState, MonitorFrame, MouseButton, OverlayEvent, Placement, PointerState, SelectionEdges, SelectionState, MAG_FRAME_INTERVAL};
+use crate::types::{DamageRect, MAG_FRAME_INTERVAL, MagnifierState, MonitorFrame, MouseButton, OverlayEvent, Placement, PointerState, SelectionEdges, SelectionState, annotations};
 use crate::types::toolbar::{TOOLBAR_HEIGHT, TOOLBAR_OFFSET, TOOLBAR_PADDING, Toolbar, ToolbarAnimation, ToolbarAction, ToolbarButton, ToolbarItem, ToolbarSide};
-use tiny_skia::{Pixmap, PixmapPaint, Transform, Rect};
 use crate::renderer::{self};
 use crate::utils::{global_point_to_local, encode_png, save_to_file, get_overlapping_monitors};
+use crate::tools::{Tool, dispatch_button, dispatch_deactivate, dispatch_move, text};
+use crate::tools::selection::{global_selection_to_local, selection_edges_for_monitor};
+use crate::editor::{self, EditorState};
+use crate::types::icons;
+use tiny_skia::{Pixmap, PixmapPaint, Transform, Rect};
 use std::time::{Instant};
 use std::collections::HashMap;
-use crate::tools::{Tool, dispatch_button, dispatch_deactivate, dispatch_move};
-use crate::tools::selection::{global_selection_to_local, selection_edges_for_monitor};
 use usvg::Tree;
-use crate::types::icons;
-use crate::editor::EditorState;
+use cosmic_text::{FontSystem, SwashCache};
 
 // small note while wip, to notice if it becamwe slower
 // (Background thread) : svg parsed in 0ms 
@@ -37,6 +38,9 @@ pub async fn make_screenshot(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let t0 = std::time::Instant::now();
     let icons_handle = std::thread::spawn(load_icons_cache);
+    let text_handle = std::thread::spawn(|| { 
+            (SwashCache::new(), FontSystem::new()) 
+        });
 
     let conn = wayland_conn.unwrap();
     let capture = initialize_capture();
@@ -48,14 +52,17 @@ pub async fn make_screenshot(
 
     let base_pixmaps: Vec<Pixmap> = build_base_pixmap(&screenshots.frames);
     println!("after initialising base_pixmaps, which are original frames in Vec<Pixmap> {}ms", t0.elapsed().as_millis());
-    let (canvas, dimmed) = build_layers(&base_pixmaps);
+    let (canvas, dimmed, annotations_layer) = build_layers(&base_pixmaps);
     println!("after initialising dimmed canvas, same size dimmed frames {}ms", t0.elapsed().as_millis());
     let placements = build_placements(&screenshots.frames);
 
+    let text_buffers: HashMap<u64, cosmic_text::Buffer> = HashMap::new();
+    
     drop(screenshots);
     // 4 may 2026 : ~75mb memory usage while screenshoting on kde linux with 2 hd monitors
     // not ideal, could be resolved with rendering in shm itself
-
+    
+    let (swash_cache, font_system) = text_handle.join().expect("Failed to join text thread");
     let icon_cache = icons_handle.join().expect("Failed to join icons thread");
     let mut editor_state = EditorState {
         base: base_pixmaps,
@@ -82,6 +89,12 @@ pub async fn make_screenshot(
         damage_rects: Vec::new(),
         selected_annotation: None,
         ann_drag: None,
+
+        annotations_layer: annotations_layer,
+        annotations_dirty: false,
+        font_system: font_system,
+        swash_cache: swash_cache,
+        text_buffers: text_buffers,
     };
 
     println!("after saving base screenshot {}ms", t0.elapsed().as_millis());
@@ -133,6 +146,23 @@ pub async fn make_screenshot(
         tick_toolbar_anim(&mut editor_state, &mut dirty_mask);
 
         if dirty_mask != 0 {
+
+            if editor_state.annotations_dirty {
+                for i in 0..editor_state.base.len() {
+                    let offset = (
+                        editor_state.placements[i].position.0 as f32,
+                        editor_state.placements[i].position.1 as f32,
+                    );
+                    renderer::rebuild_annotations_layer(
+                        &mut editor_state.annotations_layer[i],
+                        &editor_state.annotations,
+                        editor_state.pending.as_ref(),
+                        editor_state.selected_annotation,
+                        offset,
+                    );
+                }
+            }
+
             for i in 0..editor_state.base.len() {
                 if is_dirty(dirty_mask, i) {
                     let is_mag_monitor = editor_state.magnifier
@@ -168,13 +198,12 @@ pub async fn make_screenshot(
                     } else {
                         None
                     };
-
+                    
                     let offset = (
                         editor_state.placements[i].position.0 as f32,
                         editor_state.placements[i].position.1 as f32,
                     );
-
-
+                    
                     renderer::render_frame(&mut renderer::RenderRequest {
                         canvas: &mut editor_state.canvas[i],
                         base: &editor_state.base[i],
@@ -188,9 +217,7 @@ pub async fn make_screenshot(
                         is_mag_monitor,
                         toolbar,
                         icons_cache: &editor_state.icon_cache,
-                        annotations: &editor_state.annotations,
-                        pending: editor_state.pending.as_ref(),
-                        selected: editor_state.selected_annotation,
+                        annotations_layer: &editor_state.annotations_layer[i],
                         offset : offset,
                     });
 
@@ -201,6 +228,7 @@ pub async fn make_screenshot(
             editor_state.toolbar.dirty = false;
             dirty_mask = 0;
             editor_state.prev_pending = editor_state.pending.clone();
+            editor_state.annotations_dirty = false;
         }
     }
 
@@ -285,17 +313,22 @@ fn build_base_pixmap(frames: &Vec<MonitorFrame>) -> Vec<Pixmap> {
         .collect()
 }
 
-fn build_layers(base_pixmaps: &[Pixmap]) -> (Vec<Pixmap>, Vec<Pixmap>) {
-    base_pixmaps
-        .iter()
-        .map(|p| {
-            let w = p.width();
-            let h = p.height();
-            let canvas = Pixmap::new(w, h).expect("Failed to create canvas Pixmap");
-            let dimmed = Pixmap::new(w, h).expect("Failed to create dimmed Pixmap");
-            (canvas, dimmed)
-        })
-        .unzip()
+fn build_layers(base_pixmaps: &[Pixmap]) -> (Vec<Pixmap>, Vec<Pixmap>, Vec<Pixmap>) {
+    let len = base_pixmaps.len();
+    let mut canvases = Vec::with_capacity(len);
+    let mut dimmed_layers = Vec::with_capacity(len);
+    let mut annotation_layers = Vec::with_capacity(len);
+
+    for p in base_pixmaps {
+        let w = p.width();
+        let h = p.height();
+        
+        canvases.push(Pixmap::new(w, h).expect("Failed to create canvas"));
+        dimmed_layers.push(Pixmap::new(w, h).expect("Failed to create dimmed"));
+        annotation_layers.push(Pixmap::new(w, h).expect("Failed to create annotations"));
+    }
+
+    (canvases, dimmed_layers, annotation_layers)
 }
 
 fn build_placements(frames: &Vec<MonitorFrame>) -> Vec<Placement> {
@@ -351,9 +384,7 @@ fn initial_paint(
             is_mag_monitor: false,
             toolbar: None,
             icons_cache: &editor_state.icon_cache,
-            annotations: &editor_state.annotations,
-            pending: None,
-            selected: None,
+            annotations_layer: &editor_state.annotations_layer[monitor_idx],
             offset: (0.0, 0.0), // FIXME: idk if it won't causes any bugs for now
         });
         overlay.update_frame(monitor_idx, editor_state.canvas[monitor_idx].data(), None)?;

@@ -8,7 +8,7 @@ use tiny_skia::Rect;
 pub struct PickTool;
 
 impl ToolBehavior for PickTool {
-    fn on_button(&self, state: &mut EditorState, button: MouseButton, pressed: bool, dirty_mask: &mut u32) {
+    fn on_button(&self, state: &mut EditorState, button: MouseButton, pressed: bool, _dirty_mask: &mut u32) {
         if !matches!(button, MouseButton::Left) { return; }
 
         if pressed {
@@ -19,14 +19,12 @@ impl ToolBehavior for PickTool {
                     break;
                 }
             }
-
             // nothing selected, nothing was selected > nothing to do
             if selected_annotation.is_none() && state.selected_annotation.is_none() {
                 return;
             }
-
-            *dirty_mask = u32::MAX;
-
+            
+            state.annotations_dirty = true;
             // select empty space > deselect
             if selected_annotation.is_none() {
                 if let Some(old_idx) = state.selected_annotation {
@@ -99,7 +97,7 @@ impl ToolBehavior for PickTool {
         }
     }
 
-    fn on_move(&self, state: &mut EditorState, global: (f64, f64), _selection_dirty: &mut bool, dirty_mask: &mut u32) {
+    fn on_move(&self, state: &mut EditorState, global: (f64, f64), _selection_dirty: &mut bool, _dirty_mask: &mut u32) {
         let Some(drag) = state.ann_drag.as_ref() else { return };
 
         let total_dx = (global.0 - drag.start_global.0) as f32;
@@ -133,17 +131,17 @@ impl ToolBehavior for PickTool {
         };
 
         let idx = state.selected_annotation.unwrap();
-
+        
+        state.annotations_dirty = true;
         state.damage_rects.push(state.annotations[idx].damage_bbox(true));
         state.damage_rects.push(updated.damage_bbox(true));
 
         state.annotations[idx] = updated;
-        *dirty_mask = u32::MAX;
     }
 
-    fn on_deactivate(&self, state: &mut EditorState, dirty_mask: &mut u32) {
+    fn on_deactivate(&self, state: &mut EditorState, _dirty_mask: &mut u32) {
         if let Some(idx) = state.selected_annotation {
-            *dirty_mask |= u32::MAX;
+            state.annotations_dirty = true;
             state.damage_rects.push(state.annotations[idx].damage_bbox(true));
             state.selected_annotation = None;
             state.ann_drag = None;

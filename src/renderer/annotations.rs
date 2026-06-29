@@ -23,6 +23,7 @@ pub fn draw_annotation(canvas: &mut Pixmap, ann: &Annotation, offset: (f32, f32)
         AnnotationShape::Pen { points } => {
             draw_pen(canvas, points, ann.color, ann.stroke_width, offset);
         }
+        _ => {}
     }
     if selected {draw_annotation_handles(canvas, &ann.bbox, offset);}
 }

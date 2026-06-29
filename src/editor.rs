@@ -5,6 +5,7 @@ use std::time::{Instant};
 use std::collections::HashMap;
 use usvg::Tree;
 use tiny_skia::{Pixmap, Rect};
+use cosmic_text::{FontSystem, SwashCache, Buffer};
 
 use crate::tools::Tool;
 use crate::types::{PointerState, Placement, Toolbar, SelectionState, ToolbarButton, Annotation, AnnDragState, MagnifierState};
@@ -38,5 +39,10 @@ pub struct EditorState {
 
     pub selected_annotation: Option<usize>,
     pub ann_drag: Option<AnnDragState>,
-    
+
+    pub annotations_layer: Vec<Pixmap>,
+    pub annotations_dirty: bool,
+    pub font_system: FontSystem,
+    pub swash_cache: SwashCache,
+    pub text_buffers: HashMap<u64, Buffer>, 
 }

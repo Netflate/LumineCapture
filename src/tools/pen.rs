@@ -51,6 +51,7 @@ impl ToolBehavior for PenTool {
                         last.1.max(pos.1),
                     ) {
                         state.damage_rects.push(segment_bbox); 
+                        state.annotations_dirty = true;
                     }
                 }
                 points.push(pos);

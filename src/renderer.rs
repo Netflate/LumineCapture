@@ -32,17 +32,15 @@ pub struct RenderRequest<'a> {
     pub toolbar : Option<&'a mut Toolbar>,
     pub icons_cache : &'a HashMap<ToolbarButton, Tree>,
     // annotations
-    pub annotations: &'a [Annotation],
-    pub pending: Option<&'a Annotation>,
-    pub selected: Option<usize>,
+    pub annotations_layer: &'a Pixmap, 
     pub offset: (f32, f32),
 }
-
 
 pub fn render_frame(req: &mut RenderRequest) {
     if req.selection_dirty {
         update_dimming_delta(req.dimmed, req.base, req.prev_selection, req.selection);
     }
+
     if let Some(dirty) = req.dirty_rect {
         blit_rect(req.dimmed, req.canvas, dirty);
     } else {
@@ -53,11 +51,16 @@ pub fn render_frame(req: &mut RenderRequest) {
         draw_selection_border(req.canvas, sel, req.selection_edges);
     }
 
-    for (idx, ann) in req.annotations.iter().enumerate() {
-        annotations::draw_annotation(req.canvas, ann, req.offset, Some(idx) == req.selected);
-    }
-    if let Some(ann) = req.pending {
-        annotations::draw_annotation(req.canvas, ann, req.offset, false);
+    if let Some(dirty) = req.dirty_rect {
+        blit_annotations(req.annotations_layer, req.canvas, dirty);
+    } else {
+        req.canvas.draw_pixmap(
+            0, 0,
+            req.annotations_layer.as_ref(),
+            &tiny_skia::PixmapPaint::default(),
+            Transform::identity(),
+            None,
+        );
     }
 
     if req.is_mag_monitor {
@@ -66,7 +69,7 @@ pub fn render_frame(req: &mut RenderRequest) {
         }
     }
 
-    if let Some(tb) = req.toolbar.as_mut() && tb.dirty  {
+    if let Some(tb) = req.toolbar.as_mut() && tb.dirty {
         toolbar::draw_toolbar(req.canvas, tb, req.icons_cache);
     }
 }
@@ -192,5 +195,54 @@ fn blit_rect(src: &Pixmap, dst: &mut Pixmap, rect: &Rect) {
 
         dst_data[dst_off..dst_off + row_bytes]
             .copy_from_slice(&src_data[src_off..src_off + row_bytes]);
+    }
+}
+
+fn blit_annotations(src: &Pixmap, dst: &mut Pixmap, rect: &Rect) {
+    let (w, h) = (dst.width(), dst.height());
+    let Some((x, y, rw, rh)) = rect_bounds(rect, w, h) else { return };
+    let src_stride = (src.width() * 4) as usize;
+    let dst_stride = (dst.width() * 4) as usize;
+    let src_data = src.data();
+    let dst_data = dst.data_mut();
+
+    for row in 0..rh {
+        let sy = (y + row) as usize;
+        let sx = x as usize;
+        let src_off = sy * src_stride + sx * 4;
+        let dst_off = sy * dst_stride + sx * 4;
+
+        for col in 0..rw as usize {
+            let s = &src_data[src_off + col * 4..src_off + col * 4 + 4];
+            let d = &mut dst_data[dst_off + col * 4..dst_off + col * 4 + 4];
+            let sa = s[3] as u32;
+            if sa == 0 { continue; }
+            if sa == 255 {
+                d.copy_from_slice(s);
+                continue;
+            }
+            let inv = 255 - sa;
+            d[0] = ((s[0] as u32 * sa + d[0] as u32 * inv) / 255) as u8;
+            d[1] = ((s[1] as u32 * sa + d[1] as u32 * inv) / 255) as u8;
+            d[2] = ((s[2] as u32 * sa + d[2] as u32 * inv) / 255) as u8;
+            d[3] = (sa + (d[3] as u32 * inv / 255)) as u8;
+        }
+    }
+}
+
+pub fn rebuild_annotations_layer(
+    layer: &mut Pixmap,
+    annotations: &[Annotation],
+    pending: Option<&Annotation>,
+    selected: Option<usize>,
+    offset: (f32, f32),
+) {
+    layer.fill(tiny_skia::Color::TRANSPARENT);
+
+    for (idx, ann) in annotations.iter().enumerate() {
+        draw_annotation(layer, ann, offset, Some(idx) == selected);
+    }
+    if let Some(ann) = pending {
+        draw_annotation(layer, ann, offset, false);
     }
 }

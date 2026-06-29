@@ -4,6 +4,7 @@ pub mod events;
 pub mod icons;
 pub mod magnifier;
 pub mod selection;
+pub mod text;
 pub mod toolbar;
 
 
@@ -14,6 +15,7 @@ pub use icons::*;
 pub use magnifier::*;
 pub use selection::*;
 pub use toolbar::*;
+pub use text::*;
 
 use tiny_skia::Rect;
 #[derive(Clone, Copy, Debug)]

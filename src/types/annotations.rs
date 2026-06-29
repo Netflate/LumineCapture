@@ -10,6 +10,12 @@ pub enum AnnotationShape {
     Circle    { start: (f32, f32), end: (f32, f32) },
     Line      { start: (f32, f32), end: (f32, f32) },
     Pen       { points: Vec<(f32, f32)> },
+    
+    Text      {
+        start: (f32, f32),
+        content: String, 
+        font_size: f32,
+    }
 }
 
 pub struct AnnDragState {
@@ -26,6 +32,7 @@ impl AnnotationShape {
             AnnotationShape::Circle    { start, ..   } => *start,
             AnnotationShape::Line      { start, ..   } => *start,
             AnnotationShape::Pen       { points } => points.first().copied().unwrap_or((0.0, 0.0)),
+            AnnotationShape::Text      { start, ..   } => *start, 
         }
     }
 
@@ -107,6 +114,10 @@ impl Annotation {
                     max_y 
                 ).unwrap();
             }
+            
+            AnnotationShape::Text {..} => {
+                println!("cosmic pls tell me sonion brochacho");
+            }
         }    
     }
 
@@ -149,6 +160,10 @@ impl Annotation {
             AnnotationShape::Pen { points } => AnnotationShape::Pen {
                 points: points.iter().map(|p| (p.0 + dx, p.1 + dy)).collect(),
             },
+            AnnotationShape::Text { .. } => AnnotationShape::Line {
+                start: (0.0 + dx, 0.0 + dy),
+                end:   (0.0 + dx, 0.0   + dy), // mm
+            },
         };
         let mut result = Annotation { shape, ..self.clone() };
         result.update_bbox();
@@ -183,6 +198,10 @@ impl Annotation {
             },
             AnnotationShape::Pen { points } => AnnotationShape::Pen {
                 points: points.iter().map(|p| remap(*p)).collect(),
+            },
+            AnnotationShape::Text { .. } => AnnotationShape::Line {
+                start: (0.0, 0.0),
+                end:   (0.0, 0.0), // mmmmm
             },
         };
 
