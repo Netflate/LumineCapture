@@ -1,7 +1,7 @@
+use crate::editor::EditorState;
 use crate::tools::ToolBehavior;
 use crate::types::MouseButton;
 use crate::types::annotations::{Annotation, AnnotationShape};
-use crate::editor::EditorState;
 use tiny_skia::{Color, Rect};
 
 pub struct SimpleShapeTool {
@@ -11,7 +11,13 @@ pub struct SimpleShapeTool {
 }
 
 impl ToolBehavior for SimpleShapeTool {
-    fn on_button(&self, state: &mut EditorState, _button: MouseButton, pressed: bool,  _dirty_mask: &mut u32) {
+    fn on_button(
+        &self,
+        state: &mut EditorState,
+        _button: MouseButton,
+        pressed: bool,
+        _dirty_mask: &mut u32,
+    ) {
         let pos = (state.pointer.global.0 as f32, state.pointer.global.1 as f32);
         if pressed {
             let mut ann = Annotation {
@@ -19,10 +25,10 @@ impl ToolBehavior for SimpleShapeTool {
                 shape: (self.make_shape)(pos, pos),
                 color: self.color,
                 stroke_width: self.stroke_width,
-                bbox: Rect::from_xywh(pos.0, pos.1, 1.0, 1.0).unwrap(), 
+                bbox: Rect::from_xywh(pos.0, pos.1, 1.0, 1.0).unwrap(),
             };
             ann.update_bbox();
-                        
+
             state.pending = Some(ann.clone());
             state.prev_pending = Some(ann);
         } else if let Some(ann) = state.pending.take() {
@@ -33,16 +39,22 @@ impl ToolBehavior for SimpleShapeTool {
         }
     }
 
-    fn on_move(&self, state: &mut EditorState, _global: (f64, f64), _sel_dirty: &mut bool, _dirty_mask: &mut u32) {
+    fn on_move(
+        &self,
+        state: &mut EditorState,
+        _global: (f64, f64),
+        _sel_dirty: &mut bool,
+        _dirty_mask: &mut u32,
+    ) {
         if let Some(ann) = state.pending.as_mut() {
-            state.damage_rects.push(ann.bbox); 
-            
+            state.damage_rects.push(ann.bbox);
+
             let pos = (state.pointer.global.0 as f32, state.pointer.global.1 as f32);
             let start = ann.shape.start_point();
             ann.shape = (self.make_shape)(start, pos);
-            ann.update_bbox(); 
-            
-            state.damage_rects.push(ann.bbox); 
+            ann.update_bbox();
+
+            state.damage_rects.push(ann.bbox);
             state.annotations_dirty = true;
         }
     }

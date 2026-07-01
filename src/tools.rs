@@ -10,7 +10,7 @@ use crate::tools::simple_shapes::SimpleShapeTool;
 use crate::tools::text::TextTool;
 use crate::tools::pick::PickTool;
 use crate::types::annotations::AnnotationShape;
-use crate::types::{MouseButton};
+use crate::types::{MouseButton, SpecialKey};
 use crate::editor::EditorState;
 // ==========================================
 // 1. Available Tools
@@ -34,6 +34,8 @@ pub trait ToolBehavior {
     fn on_button(&self, state: &mut EditorState, button: MouseButton, pressed: bool, dirty_mask: &mut u32);
     fn on_move(&self, state: &mut EditorState, global: (f64, f64), selection_dirty: &mut bool, dirty_mask: &mut u32);
     fn on_deactivate(&self, _state: &mut EditorState, _dirty_mask: &mut u32) {} 
+    fn on_text(&self, _state: &mut EditorState, _ch: char, _dirty_mask: &mut u32) {}
+    fn on_key(&self, _state: &mut EditorState, _key: SpecialKey, _dirty_mask: &mut u32) {}
 }
 
 // ==========================================
@@ -103,6 +105,21 @@ pub fn dispatch_button(
 pub fn dispatch_deactivate(tool: Tool, state: &mut EditorState, dirty_mask: &mut u32) {
     match tool {
         Tool::Pick => PickTool.on_deactivate(state, dirty_mask),
+        _ => {}
+    }
+}
+
+
+pub fn dispatch_text(tool: Tool, state: &mut EditorState, ch: char, dirty_mask: &mut u32) {
+    match tool {
+        Tool::Text => TextTool.on_text(state, ch, dirty_mask),
+        _ => {}
+    }
+}
+
+pub fn dispatch_key(tool: Tool, state: &mut EditorState, key: SpecialKey, dirty_mask: &mut u32) {
+    match tool {
+        Tool::Text => TextTool.on_key(state, key, dirty_mask),
         _ => {}
     }
 }

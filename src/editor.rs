@@ -8,7 +8,7 @@ use tiny_skia::{Pixmap, Rect};
 use cosmic_text::{FontSystem, SwashCache, Buffer};
 
 use crate::tools::Tool;
-use crate::types::{PointerState, Placement, Toolbar, SelectionState, ToolbarButton, Annotation, AnnDragState, MagnifierState};
+use crate::types::{PointerState, Placement, Toolbar, SelectionState, ToolbarButton, Annotation, AnnDragState, MagnifierState, TextEditState};
 
 pub struct EditorState {
     pub base: Vec<Pixmap>,          
@@ -45,4 +45,5 @@ pub struct EditorState {
     pub font_system: FontSystem,
     pub swash_cache: SwashCache,
     pub text_buffers: HashMap<u64, Buffer>, 
+    pub text_editing: Option<TextEditState>,
 }

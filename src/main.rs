@@ -1,10 +1,10 @@
 mod app;
 pub mod backend;
-pub mod types;
-pub mod renderer;
-pub mod utils;
-pub mod tools;
 pub mod editor;
+pub mod renderer;
+pub mod tools;
+pub mod types;
+pub mod utils;
 
 #[tokio::main]
 

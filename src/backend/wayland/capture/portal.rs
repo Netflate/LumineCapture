@@ -1,12 +1,12 @@
 pub struct PortalMethod;
 
 use crate::backend::wayland::capture::stream;
+use std::fs;
 use std::os::fd::AsFd;
 use std::path::PathBuf;
-use std::fs;
 
 use crate::backend::CaptureMethod;
-use crate::types::{CaptureResult, StreamInfo, MonitorFrame};
+use crate::types::{CaptureResult, MonitorFrame, StreamInfo};
 use ashpd::desktop::{
     PersistMode,
     screencast::{CursorMode, Screencast, SelectSourcesOptions, SourceType as AshpdSourceType},
@@ -16,11 +16,11 @@ use async_trait::async_trait;
 fn get_token_path() -> PathBuf {
     let mut path = dirs::config_dir().expect("Could not find config directory");
     path.push("LumineCapture");
-    
+
     if let Err(e) = fs::create_dir_all(&path) {
         eprintln!("Can't create directory {}: {}", path.display(), e);
     }
-    
+
     path.push("token");
     path
 }
@@ -32,7 +32,7 @@ impl CaptureMethod for PortalMethod {
         let session = proxy.create_session(Default::default()).await?;
 
         let token_path = get_token_path();
-        
+
         let token_string = fs::read_to_string(&token_path).ok();
         let token = token_string.as_deref();
 
@@ -76,7 +76,7 @@ impl CaptureMethod for PortalMethod {
         for stream_info in streams_data {
             let frame = stream::capture_frame(stream_info.node_id, fd.as_fd())
                 .map_err(|e| ashpd::Error::Zbus(ashpd::zbus::Error::Failure(e.to_string())))?;
-            
+
             frames.push(MonitorFrame {
                 pixels: frame.pixels,
                 pw_width: frame.width,
@@ -86,7 +86,7 @@ impl CaptureMethod for PortalMethod {
             });
         }
 
-        session.close().await?; 
+        session.close().await?;
 
         Ok(CaptureResult { frames })
     }

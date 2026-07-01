@@ -1,15 +1,12 @@
-use wayland_client::{
-    QueueHandle, 
-    protocol::{
-        wl_buffer, wl_shm
-    },
-};
 use crate::backend::wayland::utils::state::OverlayState;
 use nix::sys::memfd::{MFdFlags, memfd_create};
+use nix::unistd::ftruncate;
 use std::ffi::CStr;
 use std::os::fd::AsFd;
-use nix::unistd::ftruncate;
-
+use wayland_client::{
+    QueueHandle,
+    protocol::{wl_buffer, wl_shm},
+};
 
 pub struct ShmBuffer {
     pub buffer: wl_buffer::WlBuffer,
@@ -32,20 +29,28 @@ pub fn create_shm_buffer(
     )?;
     ftruncate(&fd, size as i64)?;
     let mmap = unsafe { memmap2::MmapMut::map_mut(&fd)? };
-  
 
     let pool = shm.create_pool(fd.as_fd(), size as i32, qh, ());
-    let buffer = pool.create_buffer(0, width as i32, height as i32, stride as i32,
-        wl_shm::Format::Argb8888, qh, ());
+    let buffer = pool.create_buffer(
+        0,
+        width as i32,
+        height as i32,
+        stride as i32,
+        wl_shm::Format::Argb8888,
+        qh,
+        (),
+    );
     pool.destroy();
 
-    Ok(ShmBuffer { buffer, mmap: mmap, _fd: fd })
+    Ok(ShmBuffer {
+        buffer,
+        mmap: mmap,
+        _fd: fd,
+    })
 }
 
-
-
 impl ShmBuffer {
-    pub fn write_pixels(&mut self, pixels : &[u8]) {
+    pub fn write_pixels(&mut self, pixels: &[u8]) {
         self.mmap[..pixels.len()].copy_from_slice(pixels);
     }
 
@@ -65,8 +70,7 @@ impl ShmBuffer {
             let sx = x as usize;
             let off = sy * stride + sx * 4;
 
-            dst[off..off + row_bytes]
-                .copy_from_slice(&src[off..off + row_bytes]);
+            dst[off..off + row_bytes].copy_from_slice(&src[off..off + row_bytes]);
         }
     }
 }

@@ -1,11 +1,11 @@
 use crate::backend::{ScreenOverlay, initialize_capture, initialize_clipboard, initialize_overlay};
-use crate::types::{DamageRect, MAG_FRAME_INTERVAL, MagnifierState, MonitorFrame, MouseButton, OverlayEvent, Placement, PointerState, SelectionEdges, SelectionState, annotations};
+use crate::types::{DamageRect, MAG_FRAME_INTERVAL, MagnifierState, MonitorFrame, MouseButton, OverlayEvent, Placement, PointerState, SelectionEdges, SelectionState, SpecialKey};
 use crate::types::toolbar::{TOOLBAR_HEIGHT, TOOLBAR_OFFSET, TOOLBAR_PADDING, Toolbar, ToolbarAnimation, ToolbarAction, ToolbarButton, ToolbarItem, ToolbarSide};
 use crate::renderer::{self};
 use crate::utils::{global_point_to_local, encode_png, save_to_file, get_overlapping_monitors};
-use crate::tools::{Tool, dispatch_button, dispatch_deactivate, dispatch_move, text};
+use crate::tools::{Tool, dispatch_button, dispatch_deactivate, dispatch_move, dispatch_key, dispatch_text};
 use crate::tools::selection::{global_selection_to_local, selection_edges_for_monitor};
-use crate::editor::{self, EditorState};
+use crate::editor::EditorState;
 use crate::types::icons;
 use tiny_skia::{Pixmap, PixmapPaint, Transform, Rect};
 use std::time::{Instant};
@@ -95,6 +95,7 @@ pub async fn make_screenshot(
         font_system: font_system,
         swash_cache: swash_cache,
         text_buffers: text_buffers,
+        text_editing: None,
     };
 
     println!("after saving base screenshot {}ms", t0.elapsed().as_millis());
@@ -141,6 +142,12 @@ pub async fn make_screenshot(
                 save_to_clipboard = true;
                 break;
             }
+            OverlayEvent::TextInput(ch) => {
+                handle_text_input(&mut editor_state, ch, &mut dirty_mask);
+            }
+            OverlayEvent::KeyPress(key) => {
+                handle_key_press(&mut editor_state, key, &mut dirty_mask);
+            }
         }
 
         tick_toolbar_anim(&mut editor_state, &mut dirty_mask);
@@ -159,6 +166,9 @@ pub async fn make_screenshot(
                         editor_state.pending.as_ref(),
                         editor_state.selected_annotation,
                         offset,
+                        &mut editor_state.font_system,
+                        &mut editor_state.swash_cache,
+                        &editor_state.text_buffers,
                     );
                 }
             }
@@ -233,7 +243,7 @@ pub async fn make_screenshot(
     }
 
     if save_to_clipboard {
-        let final_result = render_final(&editor_state);
+        let final_result = render_final(&mut editor_state);
         // it doesn't make sense, but while this program in wip
         // it will have one option - save to clipboard AND file
         let _path = save_to_file(&final_result);
@@ -672,7 +682,7 @@ fn selection_render_info(
     (local_sel, prev_local, edges)
 }
 
-fn render_final(editor_state: &EditorState) -> Vec<u8> {
+fn render_final(editor_state: &mut EditorState) -> Vec<u8> {
     let sel = match editor_state.selection.zone {
         Some(s) => s,
         None => return vec![],
@@ -711,7 +721,7 @@ fn render_final(editor_state: &EditorState) -> Vec<u8> {
     // or for some specific perfomance eating tools as blur
     let offset = (sel_left as f32, sel_top as f32);
     for ann in &editor_state.annotations {
-        renderer::draw_annotation(&mut out, ann, offset, false);
+        renderer::draw_annotation(&mut out, ann, offset, false, &mut editor_state.font_system, &mut editor_state.swash_cache, &mut editor_state.text_buffers);
     }
 
     encode_png(&out)
@@ -737,4 +747,15 @@ fn apply_damage_rects(editor_state: &mut EditorState, dirty_mask: &mut u32) {
         let mask = get_overlapping_monitors(rect, &editor_state.placements);
         *dirty_mask |= mask;
     }
+}
+// text 
+
+fn handle_text_input(editor_state: &mut EditorState, ch: char, dirty_mask: &mut u32) {
+    dispatch_text(editor_state.selected_tool, editor_state, ch, dirty_mask);
+    apply_damage_rects(editor_state, dirty_mask); 
+}
+
+fn handle_key_press(editor_state: &mut EditorState, key: SpecialKey, dirty_mask: &mut u32) {
+    dispatch_key(editor_state.selected_tool, editor_state, key, dirty_mask);
+    apply_damage_rects(editor_state, dirty_mask); 
 }

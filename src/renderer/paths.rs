@@ -9,14 +9,14 @@ pub fn rounded_rect_path(
     bottom_left: bool,
 ) -> Option<tiny_skia::Path> {
     let r = r.min(rect.width() / 2.0).min(rect.height() / 2.0);
-    
-    let (l, t, ri, b) = (rect.left(), rect.top(), rect.right(), rect.bottom());
-    const K: f32 = 0.5523; 
 
-    let r_tl = if top_left     { r } else { 0.0 };
-    let r_tr = if top_right    { r } else { 0.0 };
+    let (l, t, ri, b) = (rect.left(), rect.top(), rect.right(), rect.bottom());
+    const K: f32 = 0.5523;
+
+    let r_tl = if top_left { r } else { 0.0 };
+    let r_tr = if top_right { r } else { 0.0 };
     let r_br = if bottom_right { r } else { 0.0 };
-    let r_bl = if bottom_left  { r } else { 0.0 };
+    let r_bl = if bottom_left { r } else { 0.0 };
 
     let mut pb = PathBuilder::new();
 
@@ -26,7 +26,7 @@ pub fn rounded_rect_path(
     if top_right {
         pb.cubic_to(ri - r_tr * K, t, ri, t + r_tr * K, ri, t + r_tr);
     } else {
-        pb.line_to(ri, t); 
+        pb.line_to(ri, t);
     }
 
     pb.line_to(ri, b - r_br);
@@ -70,8 +70,10 @@ pub fn oval_path(cx: f32, cy: f32, rx: f32, ry: f32) -> Option<tiny_skia::Path> 
 
 pub fn normalized_rect(start: (f32, f32), end: (f32, f32)) -> Option<Rect> {
     Rect::from_ltrb(
-        start.0.min(end.0), start.1.min(end.1),
-        start.0.max(end.0), start.1.max(end.1),
+        start.0.min(end.0),
+        start.1.min(end.1),
+        start.0.max(end.0),
+        start.1.max(end.1),
     )
 }
 

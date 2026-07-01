@@ -1,28 +1,28 @@
 use std::collections::HashMap;
-use wayland_client::protocol::wl_seat::Capability;
 use std::collections::VecDeque;
+use wayland_client::protocol::wl_seat::Capability;
 
-use crate::backend::wayland::utils::surface::{SurfaceData};
-use crate::types::{OverlayEvent, OutputInfo, MouseButton};
+use crate::backend::wayland::utils::surface::SurfaceData;
+use crate::types::{MouseButton, OutputInfo, OverlayEvent, SpecialKey};
+use crate::utils::keycode_to_char;
 
-use wayland_protocols::wp:: {
+use wayland_protocols::wp::{
     fractional_scale::v1::client::{wp_fractional_scale_manager_v1, wp_fractional_scale_v1},
     viewporter::client::{wp_viewport, wp_viewporter},
 };
 
+use wayland_client::{
+    Connection, Dispatch, EventQueue, Proxy, QueueHandle,
+    protocol::{
+        wl_buffer, wl_compositor, wl_keyboard, wl_output, wl_pointer, wl_region, wl_registry,
+        wl_seat, wl_shm, wl_shm_pool, wl_surface,
+    },
+};
+use wayland_cursor::CursorTheme;
 use wayland_protocols_wlr::layer_shell::v1::client::{
     zwlr_layer_shell_v1::{self, ZwlrLayerShellV1},
     zwlr_layer_surface_v1::{self, ZwlrLayerSurfaceV1},
 };
-use wayland_client::{
-    Connection, Dispatch, QueueHandle, EventQueue, Proxy,
-    protocol::{
-        wl_buffer, wl_compositor, wl_keyboard, wl_output, wl_region, wl_registry, wl_seat, wl_shm, wl_pointer,
-        wl_shm_pool, wl_surface,
-    },
-};
-use wayland_cursor::CursorTheme;
-
 
 use crate::backend::wayland::overlay::kde_state::KdeState;
 pub struct OverlayState {
@@ -47,14 +47,14 @@ pub struct OverlayState {
     pub scale: f64,
     pub pending_flush: bool,
     // gnome/kde
-    pub kde :Option<KdeState>,
-    //others 
-    ctrl_held : bool,
-    shift_held : bool,
+    pub kde: Option<KdeState>,
+    //others
+    ctrl_held: bool,
+    shift_held: bool,
 }
 
 pub struct OverlayRunTime {
-    pub event_queue: EventQueue<OverlayState>, 
+    pub event_queue: EventQueue<OverlayState>,
     pub state: OverlayState,
 }
 
@@ -96,7 +96,11 @@ impl OverlayRunTime {
 
         // KDE virtual desktops
         let pending = std::mem::take(&mut state.kde.as_mut().unwrap().pending_desktop_ids);
-        if let Some(manager) = state.kde.as_ref().and_then(|k| k.virtual_desktop_manager.as_ref()) {
+        if let Some(manager) = state
+            .kde
+            .as_ref()
+            .and_then(|k| k.virtual_desktop_manager.as_ref())
+        {
             for desktop_id in pending {
                 manager.get_virtual_desktop(desktop_id.clone(), &qh, desktop_id);
             }
@@ -166,16 +170,17 @@ impl Dispatch<wl_registry::WlRegistry, ()> for OverlayState {
                 "wl_output" => {
                     let ver = version.min(wl_output::WlOutput::interface().version);
                     let output = registry.bind(name, ver, qh, ());
-                    state.outputs.push(OutputInfo { 
+                    state.outputs.push(OutputInfo {
                         output,
-                        x: 0, 
-                        y: 0, 
-                        width: 0, 
-                        height: 0 
+                        x: 0,
+                        y: 0,
+                        width: 0,
+                        height: 0,
                     });
                 }
                 "zwlr_layer_shell_v1" => {
-                    let ver = version.min(zwlr_layer_shell_v1::ZwlrLayerShellV1::interface().version);
+                    let ver =
+                        version.min(zwlr_layer_shell_v1::ZwlrLayerShellV1::interface().version);
                     state.layer_shell = Some(registry.bind(name, ver, qh, ()));
                 }
                 "wl_seat" => {
@@ -183,16 +188,20 @@ impl Dispatch<wl_registry::WlRegistry, ()> for OverlayState {
                     state.seat = Some(registry.bind(name, ver, qh, ()));
                 }
                 "wp_fractional_scale_manager_v1" => {
-                    let ver = version.min(wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1::interface().version);
+                    let ver = version.min(
+                        wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1::interface()
+                            .version,
+                    );
                     state.frac = Some(registry.bind(name, ver, qh, ()));
                 }
                 "wp_viewporter" => {
                     let ver: u32 = version.min(wp_viewporter::WpViewporter::interface().version);
                     state.viewporter = Some(registry.bind(name, ver, qh, ()));
-                } 
+                }
                 "org_kde_plasma_virtual_desktop_management" => {
                     let ver = version.min(2);
-                    state.kde.as_mut().unwrap().virtual_desktop_manager = Some(registry.bind(name, ver, qh, ()));
+                    state.kde.as_mut().unwrap().virtual_desktop_manager =
+                        Some(registry.bind(name, ver, qh, ()));
                 }
                 _ => {}
             }
@@ -270,7 +279,6 @@ impl Dispatch<wp_viewport::WpViewport, ()> for OverlayState {
     }
 }
 
-
 impl Dispatch<wl_seat::WlSeat, ()> for OverlayState {
     fn event(
         _state: &mut Self,
@@ -293,7 +301,9 @@ impl Dispatch<wl_seat::WlSeat, ()> for OverlayState {
     }
 }
 
-
+// all of this temporarily poor implemented stuff
+// better one isn't worth it, since i'll rewrite all of this
+// using simthay
 impl Dispatch<wl_keyboard::WlKeyboard, ()> for OverlayState {
     fn event(
         state: &mut Self,
@@ -304,8 +314,13 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for OverlayState {
         _: &QueueHandle<Self>,
     ) {
         match event {
-            wl_keyboard::Event::Key { key, state: key_state, .. } => {
-                let pressed = key_state == wayland_client::WEnum::Value(wl_keyboard::KeyState::Pressed);
+            wl_keyboard::Event::Key {
+                key,
+                state: key_state,
+                ..
+            } => {
+                let pressed =
+                    key_state == wayland_client::WEnum::Value(wl_keyboard::KeyState::Pressed);
 
                 if pressed {
                     if key == 1 {
@@ -319,15 +334,44 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for OverlayState {
                     // (Undo / Redo) ctrl + z, or ctrl + shit + z
                     if key == 44 {
                         if state.ctrl_held && state.shift_held {
-                            state.events.push_back(OverlayEvent::Redo); 
+                            state.events.push_back(OverlayEvent::Redo);
                         } else if state.ctrl_held {
-                            state.events.push_back(OverlayEvent::Undo); 
+                            state.events.push_back(OverlayEvent::Undo);
                         }
                     }
 
                     // (Redo) ctrl + y
                     if key == 21 && state.ctrl_held {
-                        state.events.push_back(OverlayEvent::Redo); 
+                        state.events.push_back(OverlayEvent::Redo);
+                    }
+
+                    if !state.ctrl_held {
+                        match key {
+                            14 => state
+                                .events
+                                .push_back(OverlayEvent::KeyPress(SpecialKey::Backspace)),
+                            28 => state
+                                .events
+                                .push_back(OverlayEvent::KeyPress(SpecialKey::Enter)),
+                            105 => state
+                                .events
+                                .push_back(OverlayEvent::KeyPress(SpecialKey::Left)),
+                            106 => state
+                                .events
+                                .push_back(OverlayEvent::KeyPress(SpecialKey::Right)),
+                            102 => state
+                                .events
+                                .push_back(OverlayEvent::KeyPress(SpecialKey::Home)),
+                            107 => state
+                                .events
+                                .push_back(OverlayEvent::KeyPress(SpecialKey::End)),
+                            _ => {
+                                let ch = keycode_to_char(key, state.shift_held);
+                                if let Some(c) = ch {
+                                    state.events.push_back(OverlayEvent::TextInput(c));
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -350,9 +394,17 @@ impl Dispatch<wl_pointer::WlPointer, ()> for OverlayState {
         _: &QueueHandle<Self>,
     ) {
         match event {
-            wl_pointer::Event::Enter { surface, surface_x, surface_y, serial, .. } => {
+            wl_pointer::Event::Enter {
+                surface,
+                surface_x,
+                surface_y,
+                serial,
+                ..
+            } => {
                 state.pointer_enter_serial = serial;
-                state.pointer_surface_idx = state.surfaces.iter()
+                state.pointer_surface_idx = state
+                    .surfaces
+                    .iter()
                     .find(|(_, sd)| sd.surface == surface)
                     .map(|(id, _)| *id);
 
@@ -372,7 +424,11 @@ impl Dispatch<wl_pointer::WlPointer, ()> for OverlayState {
             wl_pointer::Event::Leave { .. } => {
                 state.pointer_surface_idx = None;
             }
-            wl_pointer::Event::Motion { surface_x, surface_y, .. } => {
+            wl_pointer::Event::Motion {
+                surface_x,
+                surface_y,
+                ..
+            } => {
                 if let Some(monitor_idx) = state.pointer_surface_idx {
                     state.events.push_back(OverlayEvent::PointerMove {
                         monitor_idx,
@@ -381,22 +437,29 @@ impl Dispatch<wl_pointer::WlPointer, ()> for OverlayState {
                     });
                 }
             }
-            wl_pointer::Event::Button {button, state: button_state, ..} => {
-                let pressed = button_state == wayland_client::WEnum::Value(wl_pointer::ButtonState::Pressed);
+            wl_pointer::Event::Button {
+                button,
+                state: button_state,
+                ..
+            } => {
+                let pressed =
+                    button_state == wayland_client::WEnum::Value(wl_pointer::ButtonState::Pressed);
                 let mb = match button {
                     0x110 => MouseButton::Left,
                     0x111 => MouseButton::Right,
                     0x112 => MouseButton::Middle,
-                    _ => return,  
+                    _ => return,
                 };
-                state.events.push_back(OverlayEvent::PointerButton {button: mb, pressed} );
+                state.events.push_back(OverlayEvent::PointerButton {
+                    button: mb,
+                    pressed,
+                });
             }
 
             _ => {}
         }
     }
 }
-
 
 impl Dispatch<wl_compositor::WlCompositor, ()> for OverlayState {
     fn event(
@@ -421,7 +484,6 @@ impl Dispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, ()> fo
     ) {
     }
 }
-
 
 impl Dispatch<wl_shm_pool::WlShmPool, ()> for OverlayState {
     fn event(

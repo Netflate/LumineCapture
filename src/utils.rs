@@ -183,3 +183,58 @@ pub fn apply_handle_drag(
     }
     SignedRect { left: l, top: t, right: r, bottom: b }
 }
+
+// TEMPORARY ! function (up untill switching to simthay)
+pub fn keycode_to_char(key: u32, shift: bool) -> Option<char> {
+    let c = match key {
+        2  => if shift { '!' } else { '1' },
+        3  => if shift { '@' } else { '2' },
+        4  => if shift { '#' } else { '3' },
+        5  => if shift { '$' } else { '4' },
+        6  => if shift { '%' } else { '5' },
+        7  => if shift { '^' } else { '6' },
+        8  => if shift { '&' } else { '7' },
+        9  => if shift { '*' } else { '8' },
+        10 => if shift { '(' } else { '9' },
+        11 => if shift { ')' } else { '0' },
+        12 => if shift { '_' } else { '-' },
+        13 => if shift { '+' } else { '=' },
+        16 => if shift { 'Q' } else { 'q' },
+        17 => if shift { 'W' } else { 'w' },
+        18 => if shift { 'E' } else { 'e' },
+        19 => if shift { 'R' } else { 'r' },
+        20 => if shift { 'T' } else { 't' },
+        21 => if shift { 'Y' } else { 'y' },
+        22 => if shift { 'U' } else { 'u' },
+        23 => if shift { 'I' } else { 'i' },
+        24 => if shift { 'O' } else { 'o' },
+        25 => if shift { 'P' } else { 'p' },
+        26 => if shift { '{' } else { '[' },
+        27 => if shift { '}' } else { ']' },
+        30 => if shift { 'A' } else { 'a' },
+        31 => if shift { 'S' } else { 's' },
+        32 => if shift { 'D' } else { 'd' },
+        33 => if shift { 'F' } else { 'f' },
+        34 => if shift { 'G' } else { 'g' },
+        35 => if shift { 'H' } else { 'h' },
+        36 => if shift { 'J' } else { 'j' },
+        37 => if shift { 'K' } else { 'k' },
+        38 => if shift { 'L' } else { 'l' },
+        39 => if shift { ':' } else { ';' },
+        40 => if shift { '"' } else { '\'' },
+        43 => if shift { '|' } else { '\\' },
+        44 => if shift { 'Z' } else { 'z' },
+        45 => if shift { 'X' } else { 'x' },
+        46 => if shift { 'C' } else { 'c' },
+        47 => if shift { 'V' } else { 'v' },
+        48 => if shift { 'B' } else { 'b' },
+        49 => if shift { 'N' } else { 'n' },
+        50 => if shift { 'M' } else { 'm' },
+        51 => if shift { '<' } else { ',' },
+        52 => if shift { '>' } else { '.' },
+        53 => if shift { '?' } else { '/' },
+        57 => ' ',
+        _ => return None,
+    };
+    Some(c)
+}

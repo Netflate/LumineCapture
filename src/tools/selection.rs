@@ -1,15 +1,12 @@
+use crate::editor::EditorState;
 use crate::tools::ToolBehavior;
 use crate::types::{MouseButton, Placement, SelectionEdges, SelectionHandle};
-use crate::utils::{make_rect, get_overlapping_monitors, hit_test_rect_handle, apply_handle_drag};
-use crate::editor::EditorState;
+use crate::utils::{apply_handle_drag, get_overlapping_monitors, hit_test_rect_handle, make_rect};
 use tiny_skia::Rect;
 
 pub struct SelectionTool;
 
-pub fn global_selection_to_local(
-    selection: &Rect,
-    placement: &Placement,
-) -> Option<Rect> {
+pub fn global_selection_to_local(selection: &Rect, placement: &Placement) -> Option<Rect> {
     let mx = placement.position.0 as f32;
     let my = placement.position.1 as f32;
     let mw = placement.size.0 as f32;
@@ -52,7 +49,13 @@ pub fn point_in_monitor(p: (f32, f32), placement: &Placement) -> bool {
 }
 
 impl ToolBehavior for SelectionTool {
-    fn on_button(&self, state: &mut EditorState, button: MouseButton, pressed: bool, _dirty_mask: &mut u32) {
+    fn on_button(
+        &self,
+        state: &mut EditorState,
+        button: MouseButton,
+        pressed: bool,
+        _dirty_mask: &mut u32,
+    ) {
         if !matches!(button, MouseButton::Left) {
             return;
         }
@@ -60,13 +63,18 @@ impl ToolBehavior for SelectionTool {
         state.mouse_down_left = pressed;
         if pressed {
             state.tool_active = true;
-            let handle = state.selection.zone.as_ref()
+            let handle = state
+                .selection
+                .zone
+                .as_ref()
                 .map(|sel| hit_test_rect_handle(sel, state.pointer.global))
                 .unwrap_or(SelectionHandle::None);
 
             if handle != SelectionHandle::None {
                 if let Some(sel) = state.selection.zone {
-                    state.selection.set_drag(handle, Some(state.pointer.global), Some(sel));
+                    state
+                        .selection
+                        .set_drag(handle, Some(state.pointer.global), Some(sel));
                     state.drag_start = None;
                 }
             } else {
@@ -81,7 +89,13 @@ impl ToolBehavior for SelectionTool {
         }
     }
 
-    fn on_move(&self, state: &mut EditorState, global: (f64, f64), selection_dirty: &mut bool, dirty_mask: &mut u32) {
+    fn on_move(
+        &self,
+        state: &mut EditorState,
+        global: (f64, f64),
+        selection_dirty: &mut bool,
+        dirty_mask: &mut u32,
+    ) {
         let old_sel = state.selection.zone;
 
         // handle drag (resizon_movee/move existing selection)
@@ -91,9 +105,16 @@ impl ToolBehavior for SelectionTool {
                 state.selection.selection_at_drag_start,
             ) {
                 let delta = (global.0 - origin.0, global.1 - origin.1);
-                state.selection.zone = apply_handle_drag(&sel_start, state.selection.active_handle, delta).to_rect();
+                state.selection.zone =
+                    apply_handle_drag(&sel_start, state.selection.active_handle, delta).to_rect();
                 state.selection.prev_zone = old_sel;
-                apply_selection_dirty(old_sel, state.selection.zone, &state.placements, dirty_mask, selection_dirty);
+                apply_selection_dirty(
+                    old_sel,
+                    state.selection.zone,
+                    &state.placements,
+                    dirty_mask,
+                    selection_dirty,
+                );
             }
             return;
         }
@@ -105,7 +126,13 @@ impl ToolBehavior for SelectionTool {
         if let Some(start) = state.drag_start {
             state.selection.zone = make_rect(start, global);
             state.selection.prev_zone = old_sel;
-            apply_selection_dirty(old_sel, state.selection.zone, &state.placements, dirty_mask, selection_dirty);
+            apply_selection_dirty(
+                old_sel,
+                state.selection.zone,
+                &state.placements,
+                dirty_mask,
+                selection_dirty,
+            );
         }
     }
 }
@@ -118,6 +145,10 @@ fn apply_selection_dirty(
     selection_dirty: &mut bool,
 ) {
     *selection_dirty = true;
-    if let Some(sel) = old_sel { *dirty_mask |= get_overlapping_monitors(&sel, placements); }
-    if let Some(sel) = new_sel { *dirty_mask |= get_overlapping_monitors(&sel, placements); }
+    if let Some(sel) = old_sel {
+        *dirty_mask |= get_overlapping_monitors(&sel, placements);
+    }
+    if let Some(sel) = new_sel {
+        *dirty_mask |= get_overlapping_monitors(&sel, placements);
+    }
 }

@@ -1,9 +1,9 @@
-use tiny_skia::{BlendMode, Color, FilterQuality, Paint, Pixmap, PixmapPaint, Rect, Transform};
-use std::collections::HashMap;
-use usvg::Tree;
-use crate::types::toolbar::{Toolbar, ToolbarButton, ToolbarSide, ToolbarItem, TOOLBAR_PADDING};
-use crate::types::icons::get_svg;
 use super::paths::rounded_rect_path;
+use crate::types::icons::get_svg;
+use crate::types::toolbar::{TOOLBAR_PADDING, Toolbar, ToolbarButton, ToolbarItem, ToolbarSide};
+use std::collections::HashMap;
+use tiny_skia::{BlendMode, Color, FilterQuality, Paint, Pixmap, PixmapPaint, Rect, Transform};
+use usvg::Tree;
 
 pub fn draw_toolbar(
     canvas: &mut Pixmap,
@@ -15,7 +15,8 @@ pub fn draw_toolbar(
     let pw = w.ceil() as u32;
     let ph = h.ceil() as u32;
 
-    let needs_resize = toolbar.toolbar_pixmap
+    let needs_resize = toolbar
+        .toolbar_pixmap
         .as_ref()
         .map_or(true, |p| p.width() != pw || p.height() != ph);
 
@@ -24,7 +25,9 @@ pub fn draw_toolbar(
         toolbar.dirty = true;
     }
 
-    let Some(mut toolbar_pixmap) = toolbar.toolbar_pixmap.take() else { return };
+    let Some(mut toolbar_pixmap) = toolbar.toolbar_pixmap.take() else {
+        return;
+    };
 
     if toolbar.dirty {
         toolbar_pixmap.fill(tiny_skia::Color::TRANSPARENT);
@@ -53,7 +56,9 @@ fn draw_toolbar_content(
     icons_cache: &HashMap<ToolbarButton, Tree>,
 ) {
     let (w, h) = toolbar.size;
-    let Some(rect) = Rect::from_xywh(0.0, 0.0, w, h) else { return };
+    let Some(rect) = Rect::from_xywh(0.0, 0.0, w, h) else {
+        return;
+    };
 
     let (top_left, top_right, bot_left, bot_right) = match toolbar.current_side {
         ToolbarSide::Top => (false, false, true, true),
@@ -66,7 +71,13 @@ fn draw_toolbar_content(
     let mut paint = Paint::default();
     paint.set_color(Color::from_rgba8(255, 255, 255, 255));
     paint.anti_alias = true;
-    canvas.fill_path(&path, &paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
+    canvas.fill_path(
+        &path,
+        &paint,
+        tiny_skia::FillRule::Winding,
+        Transform::identity(),
+        None,
+    );
 
     let mut current_x = rect.left() + TOOLBAR_PADDING;
     for (index, item) in toolbar.items.iter().enumerate() {
@@ -97,8 +108,8 @@ fn draw_toolbar_content(
 
                     let scale_x = icon_size / rtree.size().width();
                     let scale_y = icon_size / rtree.size().height();
-                    let transform = Transform::from_translate(icon_x, icon_y)
-                        .pre_scale(scale_x, scale_y);
+                    let transform =
+                        Transform::from_translate(icon_x, icon_y).pre_scale(scale_x, scale_y);
                     resvg::render(rtree, transform, &mut canvas.as_mut());
                 }
             }

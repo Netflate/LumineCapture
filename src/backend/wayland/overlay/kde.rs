@@ -1,21 +1,21 @@
+use crate::backend::wayland::utils::shm::create_shm_buffer;
 use crate::backend::wayland::utils::surface::{SurfaceData, SurfaceVisibility};
-use crate::backend::wayland::utils::shm::{create_shm_buffer};
 
 use crate::backend::ScreenOverlay;
 use crate::backend::wayland::utils::state::{OverlayRunTime, OverlayState};
 
-use crate::types::{DamageRect, OverlayEvent, Placement, OutputInfo};
+use crate::types::{DamageRect, OutputInfo, OverlayEvent, Placement};
 
-use std::os::unix::io::AsFd;
 use rustix::{
-    event::{poll, PollFd, PollFlags},
+    event::{PollFd, PollFlags, poll},
     time::Timespec,
 };
+use std::os::unix::io::AsFd;
 
 // use wayland_cursor::CursorTheme;
 
 use wayland_protocols_wlr::layer_shell::v1::client::{
-    zwlr_layer_shell_v1::{Layer},
+    zwlr_layer_shell_v1::Layer,
     zwlr_layer_surface_v1::{self, Anchor},
 };
 
@@ -24,12 +24,7 @@ use wayland_protocols_plasma::plasma_virtual_desktop::client::{
     org_kde_plasma_virtual_desktop_management::{self, OrgKdePlasmaVirtualDesktopManagement},
 };
 
-use wayland_client::{
-    Connection, Dispatch, QueueHandle, 
-    protocol::wl_output,
-};
-
-
+use wayland_client::{Connection, Dispatch, QueueHandle, protocol::wl_output};
 
 pub struct KdeOverlay {
     pub connection: wayland_client::Connection,
@@ -37,17 +32,13 @@ pub struct KdeOverlay {
 }
 
 impl KdeOverlay {
-    pub fn new(connection : wayland_client::Connection) -> Self {
+    pub fn new(connection: wayland_client::Connection) -> Self {
         Self {
             connection: connection,
             runtime: None,
         }
     }
 }
-
-
-
-
 
 impl Dispatch<OrgKdePlasmaVirtualDesktopManagement, ()> for OverlayState {
     fn event(
@@ -62,7 +53,12 @@ impl Dispatch<OrgKdePlasmaVirtualDesktopManagement, ()> for OverlayState {
             desktop_id, ..
         } = event
         {
-            state.kde.as_mut().unwrap().pending_desktop_ids.push(desktop_id);
+            state
+                .kde
+                .as_mut()
+                .unwrap()
+                .pending_desktop_ids
+                .push(desktop_id);
         }
     }
 }
@@ -97,51 +93,47 @@ impl Dispatch<OrgKdePlasmaVirtualDesktop, String> for OverlayState {
     }
 }
 
-
-
-
-
-
-
-
-
-
-
 impl ScreenOverlay for KdeOverlay {
-    fn present(&mut self, placements: &[Placement]) -> Result<&[OutputInfo], Box<dyn std::error::Error>> {
+    fn present(
+        &mut self,
+        placements: &[Placement],
+    ) -> Result<&[OutputInfo], Box<dyn std::error::Error>> {
         self.ensure_runtime()?;
         let rt = self.runtime.as_mut().ok_or("runtime missing")?;
-        let qh  = rt.event_queue.handle();
+        let qh = rt.event_queue.handle();
 
         let compositor = rt.state.compositor.clone().ok_or("no compositor")?;
         let layer_shell = rt.state.layer_shell.clone().ok_or("no layer_shell")?;
         let shm = rt.state.shm.clone().ok_or("no shm")?;
 
         let outputs_ref = &rt.state.outputs;
-        let found_outputs: Vec<wl_output::WlOutput> = placements.iter().map(|placement| {
-            outputs_ref
-                .iter()
-                .find(|o| o.x == placement.position.0 && o.y == placement.position.1)
-                .or_else(|| {
-                    eprintln!("No screens found with position {:?}, using main screen (0,0)", placement.position);
-                    outputs_ref.first()
-                })
-                .map(|o| o.output.clone())
-                .ok_or("no outputs found")
-        }).collect::<Result<_, _>>()?;
+        let found_outputs: Vec<wl_output::WlOutput> = placements
+            .iter()
+            .map(|placement| {
+                outputs_ref
+                    .iter()
+                    .find(|o| o.x == placement.position.0 && o.y == placement.position.1)
+                    .or_else(|| {
+                        eprintln!(
+                            "No screens found with position {:?}, using main screen (0,0)",
+                            placement.position
+                        );
+                        outputs_ref.first()
+                    })
+                    .map(|o| o.output.clone())
+                    .ok_or("no outputs found")
+            })
+            .collect::<Result<_, _>>()?;
 
-
-        for (i, (placement, output)) in placements.iter().zip(found_outputs.iter()).enumerate() {      
+        for (i, (placement, output)) in placements.iter().zip(found_outputs.iter()).enumerate() {
             let (w, h) = (placement.size.0 as u32, placement.size.1 as u32);
-            
+
             let surface = compositor.create_surface(&qh, ());
 
             if let Some(viewporter) = rt.state.viewporter.clone() {
                 let viewport = viewporter.get_viewport(&surface, &qh, ());
                 viewport.set_destination(w as i32, h as i32);
             }
-
-
 
             let layer_surface = layer_shell.get_layer_surface(
                 &surface,
@@ -160,41 +152,55 @@ impl ScreenOverlay for KdeOverlay {
             layer_surface.set_exclusive_zone(-1);
             surface.commit();
 
-            let frac_scale =  rt.state.frac
+            let frac_scale = rt
+                .state
+                .frac
                 .as_ref()
                 .expect("no fractional scale manager")
                 .get_fractional_scale(&surface, &qh, ());
-             rt.state.frac_scale =Some(frac_scale);
+            rt.state.frac_scale = Some(frac_scale);
 
-            rt.event_queue.roundtrip( &mut rt.state)?;
+            rt.event_queue.roundtrip(&mut rt.state)?;
 
             let shm_buffer = create_shm_buffer(&shm, &qh, w, h)?;
             let transparent_pixels = vec![0u8; (w * h * 4) as usize];
             let mut transparent_buffer = create_shm_buffer(&shm, &qh, w, h)?;
-            transparent_buffer.write_pixels(&transparent_pixels);                                       
+            transparent_buffer.write_pixels(&transparent_pixels);
             let empty_region = compositor.create_region(&qh, ());
 
             surface.damage_buffer(0, 0, w as i32, h as i32);
             surface.commit();
 
-             rt.state.surfaces.insert(i, SurfaceData {
-                surface,
-                layer_surface,
-                shm_buffer,
-                transparent_buffer,
-                empty_region,
-                width: w,
-                height: h,
-                configured: false,
-                visibility: SurfaceVisibility::Visible,
-            });
+            rt.state.surfaces.insert(
+                i,
+                SurfaceData {
+                    surface,
+                    layer_surface,
+                    shm_buffer,
+                    transparent_buffer,
+                    empty_region,
+                    width: w,
+                    height: h,
+                    configured: false,
+                    visibility: SurfaceVisibility::Visible,
+                },
+            );
         }
 
         Ok(&rt.state.outputs)
     }
-    fn update_frame(&mut self, monitor_idx: usize, pixels: &[u8], damage: Option<DamageRect>) -> Result<(), Box<dyn std::error::Error>> {
+    fn update_frame(
+        &mut self,
+        monitor_idx: usize,
+        pixels: &[u8],
+        damage: Option<DamageRect>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let rt = self.runtime.as_mut().ok_or("runtime missing")?;
-        let sd = rt.state.surfaces.get_mut(&monitor_idx).ok_or("surface not found")?;
+        let sd = rt
+            .state
+            .surfaces
+            .get_mut(&monitor_idx)
+            .ok_or("surface not found")?;
         if matches!(sd.visibility, SurfaceVisibility::Hidden) {
             return Ok(());
         }
@@ -203,19 +209,22 @@ impl ScreenOverlay for KdeOverlay {
             if x == 0 && y == 0 && w == sd.width && h == sd.height {
                 sd.shm_buffer.write_pixels(&pixels);
                 sd.surface.attach(Some(&sd.shm_buffer.buffer), 0, 0);
-                sd.surface.damage_buffer(0, 0, sd.width as i32, sd.height as i32);
+                sd.surface
+                    .damage_buffer(0, 0, sd.width as i32, sd.height as i32);
             } else {
-                sd.shm_buffer.write_pixels_rect(&pixels, sd.width, (x, y, w, h));
+                sd.shm_buffer
+                    .write_pixels_rect(&pixels, sd.width, (x, y, w, h));
                 sd.surface.attach(Some(&sd.shm_buffer.buffer), 0, 0);
-                sd.surface.damage_buffer(x as i32, y as i32, w as i32, h as i32);
+                sd.surface
+                    .damage_buffer(x as i32, y as i32, w as i32, h as i32);
             }
         } else {
             sd.shm_buffer.write_pixels(&pixels);
             sd.surface.attach(Some(&sd.shm_buffer.buffer), 0, 0);
-            sd.surface.damage_buffer(0, 0, sd.width as i32, sd.height as i32);
+            sd.surface
+                .damage_buffer(0, 0, sd.width as i32, sd.height as i32);
         }
         sd.surface.commit();
-        
 
         rt.event_queue.flush()?;
         Ok(())
@@ -227,7 +236,7 @@ impl ScreenOverlay for KdeOverlay {
 
         loop {
             if let Some(guard) = rt.event_queue.prepare_read() {
-                let _ = guard.read(); 
+                let _ = guard.read();
             }
             rt.event_queue.dispatch_pending(&mut rt.state)?;
             if rt.state.pending_flush {
@@ -235,7 +244,7 @@ impl ScreenOverlay for KdeOverlay {
                 rt.event_queue.flush()?;
             }
             if let Some(ev) = rt.state.events.pop_front() {
-                // there is no need in all of pointeEvents, only the last one getting send 
+                // there is no need in all of pointeEvents, only the last one getting send
                 // otherwise there will be huge mouse delay
                 if let OverlayEvent::PointerMove { .. } = ev {
                     let mut latest_move = ev;
@@ -244,7 +253,7 @@ impl ScreenOverlay for KdeOverlay {
                     }
                     return Ok(latest_move);
                 }
-                
+
                 // if its not mouse sending immediately
                 return Ok(ev);
             }
@@ -264,7 +273,6 @@ impl ScreenOverlay for KdeOverlay {
             if !fds[0].revents().contains(PollFlags::IN) {
                 return Ok(OverlayEvent::Tick);
             }
-
         }
     }
 
@@ -277,5 +285,4 @@ impl ScreenOverlay for KdeOverlay {
         self.runtime = Some(rt);
         Ok(())
     }
-
 }

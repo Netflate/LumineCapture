@@ -1,21 +1,21 @@
-// FIXME: Raw and EXPERIMENTAL implementation of ext-data-control. 
+// FIXME: Raw and EXPERIMENTAL implementation of ext-data-control.
 // suspicion of Undefined Behavior regarding process forking and wayland proxy lifecycle
 // requires a complete audit of the background worker logic
 
 use crate::backend::ClipboardProvider;
 
+use std::fs::File;
 use std::io::Write;
 use std::os::fd::{FromRawFd, IntoRawFd};
-use std::fs::File;
 
 use wayland_client::{
+    Connection, Dispatch, Proxy, QueueHandle,
     protocol::{wl_registry, wl_seat},
-    Connection, Dispatch, QueueHandle, Proxy,
 };
 use wayland_protocols::ext::data_control::v1::client::{
-    ext_data_control_offer_v1::{self, ExtDataControlOfferV1},
     ext_data_control_device_v1::{self, ExtDataControlDeviceV1},
     ext_data_control_manager_v1::{self, ExtDataControlManagerV1},
+    ext_data_control_offer_v1::{self, ExtDataControlOfferV1},
     ext_data_control_source_v1::{self, ExtDataControlSourceV1},
 };
 
@@ -24,10 +24,7 @@ pub struct ClipboardMethod {
 }
 
 impl ClipboardProvider for ClipboardMethod {
-    fn copy_image_to_clipboard(
-        &self,
-        png_data: Vec<u8>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    fn copy_image_to_clipboard(&self, png_data: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
         copy_image_to_clipboard(png_data, &self.connection)
     }
 }
@@ -50,7 +47,11 @@ impl Dispatch<wl_registry::WlRegistry, ()> for ClipboardState {
         qh: &QueueHandle<Self>,
     ) {
         match event {
-            wl_registry::Event::Global { name, interface, version } => {
+            wl_registry::Event::Global {
+                name,
+                interface,
+                version,
+            } => {
                 if interface == wl_seat::WlSeat::interface().name {
                     let ver = version.min(wl_seat::WlSeat::interface().version);
                     state.seat = Some(registry.bind(name, ver, qh, ()));
@@ -65,20 +66,52 @@ impl Dispatch<wl_registry::WlRegistry, ()> for ClipboardState {
 }
 
 impl Dispatch<ExtDataControlOfferV1, ()> for ClipboardState {
-    fn event(_: &mut Self, _: &ExtDataControlOfferV1, _: ext_data_control_offer_v1::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {}
+    fn event(
+        _: &mut Self,
+        _: &ExtDataControlOfferV1,
+        _: ext_data_control_offer_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
 }
 
 impl Dispatch<wl_seat::WlSeat, ()> for ClipboardState {
-    fn event(_: &mut Self, _: &wl_seat::WlSeat, _: wl_seat::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {}
+    fn event(
+        _: &mut Self,
+        _: &wl_seat::WlSeat,
+        _: wl_seat::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
 }
 
 impl Dispatch<ExtDataControlManagerV1, ()> for ClipboardState {
-    fn event(_: &mut Self, _: &ExtDataControlManagerV1, _: ext_data_control_manager_v1::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {}
+    fn event(
+        _: &mut Self,
+        _: &ExtDataControlManagerV1,
+        _: ext_data_control_manager_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
 }
 
 impl Dispatch<ExtDataControlDeviceV1, ()> for ClipboardState {
-    fn event(_: &mut Self, _: &ExtDataControlDeviceV1, _: ext_data_control_device_v1::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {}
-    
+    fn event(
+        _: &mut Self,
+        _: &ExtDataControlDeviceV1,
+        _: ext_data_control_device_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
+
     wayland_client::event_created_child!(ClipboardState, ExtDataControlDeviceV1, [
         ext_data_control_device_v1::EVT_DATA_OFFER_OPCODE => (ExtDataControlOfferV1, ())
     ]);
@@ -149,7 +182,10 @@ pub fn copy_image_to_clipboard(
     event_queue.roundtrip(&mut state)?;
 
     let seat = state.seat.as_ref().ok_or("no wl_seat")?;
-    let manager = state.manager.as_ref().ok_or("no ext_data_control_manager")?;
+    let manager = state
+        .manager
+        .as_ref()
+        .ok_or("no ext_data_control_manager")?;
 
     let source = manager.create_data_source(&qh, ());
     source.offer("image/png".to_string());

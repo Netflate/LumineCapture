@@ -1,8 +1,21 @@
-use tiny_skia::{Color, Paint, PathBuilder, Pixmap, Rect, Stroke, Transform};
-use crate::types::annotations::{Annotation, AnnotationShape, HANDLE_PAD};
 use super::paths::{normalized_rect, oval_path};
+use crate::types::annotations::{Annotation, AnnotationShape, HANDLE_PAD};
 
-pub fn draw_annotation(canvas: &mut Pixmap, ann: &Annotation, offset: (f32, f32), selected: bool) {
+use cosmic_text::{Buffer, FontSystem, SwashCache, SwashContent};
+use std::collections::HashMap;
+use tiny_skia::{
+    Color, Paint, PathBuilder, Pixmap, PixmapPaint, PremultipliedColorU8, Rect, Stroke, Transform,
+};
+
+pub fn draw_annotation(
+    canvas: &mut Pixmap,
+    ann: &Annotation,
+    offset: (f32, f32),
+    selected: bool,
+    font_system: &mut FontSystem,
+    swash_cache: &mut SwashCache,
+    text_buffers: &HashMap<u64, Buffer>,
+) {
     match &ann.shape {
         AnnotationShape::Arrow { start, end } => {
             draw_arrow(canvas, *start, *end, ann.color, ann.stroke_width, offset);
@@ -23,12 +36,33 @@ pub fn draw_annotation(canvas: &mut Pixmap, ann: &Annotation, offset: (f32, f32)
         AnnotationShape::Pen { points } => {
             draw_pen(canvas, points, ann.color, ann.stroke_width, offset);
         }
-        _ => {}
+        AnnotationShape::Text { start, .. } => {
+            if let Some(buffer) = text_buffers.get(&ann.id) {
+                draw_text_buffer(
+                    canvas,
+                    buffer,
+                    font_system,
+                    swash_cache,
+                    *start,
+                    ann.color,
+                    offset,
+                );
+            }
+        }
     }
-    if selected {draw_annotation_handles(canvas, &ann.bbox, offset);}
+    if selected {
+        draw_annotation_handles(canvas, &ann.bbox, offset);
+    }
 }
 
-fn draw_arrow(canvas: &mut Pixmap, start: (f32, f32), end: (f32, f32), color: Color, stroke_width: f32, offset: (f32, f32)) {
+fn draw_arrow(
+    canvas: &mut Pixmap,
+    start: (f32, f32),
+    end: (f32, f32),
+    color: Color,
+    stroke_width: f32,
+    offset: (f32, f32),
+) {
     let mut paint = Paint::default();
     paint.set_color(color);
     paint.anti_alias = true;
@@ -47,18 +81,26 @@ fn draw_arrow(canvas: &mut Pixmap, start: (f32, f32), end: (f32, f32), color: Co
     let dx = end.0 - start.0;
     let dy = end.1 - start.1;
     let len = (dx * dx + dy * dy).sqrt();
-    if len < 1.0 { return; }
+    if len < 1.0 {
+        return;
+    }
 
     let ux = dx / len;
     let uy = dy / len;
     let head_len = (stroke_width * 4.0).max(12.0);
     let head_width = head_len * 0.5;
     let px = -uy;
-    let py =  ux;
+    let py = ux;
 
-    let tip   = end;
-    let base1 = (end.0 - ux * head_len + px * head_width, end.1 - uy * head_len + py * head_width);
-    let base2 = (end.0 - ux * head_len - px * head_width, end.1 - uy * head_len - py * head_width);
+    let tip = end;
+    let base1 = (
+        end.0 - ux * head_len + px * head_width,
+        end.1 - uy * head_len + py * head_width,
+    );
+    let base2 = (
+        end.0 - ux * head_len - px * head_width,
+        end.1 - uy * head_len - py * head_width,
+    );
 
     let mut pb = PathBuilder::new();
     pb.move_to(tip.0, tip.1);
@@ -70,7 +112,13 @@ fn draw_arrow(canvas: &mut Pixmap, start: (f32, f32), end: (f32, f32), color: Co
     }
 }
 
-fn draw_rect(canvas: &mut Pixmap, rect: &Rect, color: Color, stroke_width: f32, offset: (f32, f32)) {
+fn draw_rect(
+    canvas: &mut Pixmap,
+    rect: &Rect,
+    color: Color,
+    stroke_width: f32,
+    offset: (f32, f32),
+) {
     let mut paint = Paint::default();
     paint.set_color(color);
     paint.anti_alias = true;
@@ -81,7 +129,13 @@ fn draw_rect(canvas: &mut Pixmap, rect: &Rect, color: Color, stroke_width: f32, 
     canvas.stroke_path(&path, &paint, &stroke, transform, None);
 }
 
-fn draw_circle(canvas: &mut Pixmap, rect: &Rect, color: Color, stroke_width: f32, offset: (f32, f32)) {
+fn draw_circle(
+    canvas: &mut Pixmap,
+    rect: &Rect,
+    color: Color,
+    stroke_width: f32,
+    offset: (f32, f32),
+) {
     let mut paint = Paint::default();
     paint.set_color(color);
     paint.anti_alias = true;
@@ -99,7 +153,14 @@ fn draw_circle(canvas: &mut Pixmap, rect: &Rect, color: Color, stroke_width: f32
     }
 }
 
-fn draw_line(canvas: &mut Pixmap, start: (f32, f32), end: (f32, f32), color: Color, stroke_width: f32, offset: (f32, f32)) {
+fn draw_line(
+    canvas: &mut Pixmap,
+    start: (f32, f32),
+    end: (f32, f32),
+    color: Color,
+    stroke_width: f32,
+    offset: (f32, f32),
+) {
     let mut paint = Paint::default();
     paint.set_color(color);
     paint.anti_alias = true;
@@ -111,14 +172,22 @@ fn draw_line(canvas: &mut Pixmap, start: (f32, f32), end: (f32, f32), color: Col
     let mut pb = PathBuilder::new();
     pb.move_to(start.0, start.1);
     pb.line_to(end.0, end.1);
-    
+
     if let Some(path) = pb.finish() {
         canvas.stroke_path(&path, &paint, &stroke, transform, None);
     }
 }
 
-fn draw_pen(canvas: &mut Pixmap, points: &[(f32, f32)], color: Color, stroke_width: f32, offset: (f32, f32)) {
-    if points.len() < 2 { return; }
+fn draw_pen(
+    canvas: &mut Pixmap,
+    points: &[(f32, f32)],
+    color: Color,
+    stroke_width: f32,
+    offset: (f32, f32),
+) {
+    if points.len() < 2 {
+        return;
+    }
     let mut paint = Paint::default();
     paint.set_color(color);
     paint.anti_alias = true;
@@ -142,7 +211,7 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
     let mut paint = Paint::default();
     paint.set_color(Color::WHITE);
     paint.anti_alias = true;
-    
+
     let mut stroke = Stroke::default();
     stroke.width = 3.0;
     stroke.line_cap = tiny_skia::LineCap::Round;
@@ -150,11 +219,11 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
     let transform = Transform::from_translate(-offset.0, -offset.1);
 
     let out_pad = (HANDLE_PAD / 2.0) as f32;
-    
-    let l  = bbox.left() - out_pad;
-    let t  = bbox.top() - out_pad;
+
+    let l = bbox.left() - out_pad;
+    let t = bbox.top() - out_pad;
     let ri = bbox.right() + out_pad;
-    let b  = bbox.bottom() + out_pad;
+    let b = bbox.bottom() + out_pad;
 
     let w = ri - l;
     let h = b - t;
@@ -178,7 +247,9 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
     pb.line_to(l, t + r);
     pb.cubic_to(l, t + r * k, l + r * k, t, l + r, t);
     pb.line_to(l + corner_w, t);
-    if let Some(path) = pb.finish() { canvas.stroke_path(&path, &paint, &stroke, transform, None); }
+    if let Some(path) = pb.finish() {
+        canvas.stroke_path(&path, &paint, &stroke, transform, None);
+    }
 
     // Top-Right
     let mut pb = PathBuilder::new();
@@ -186,7 +257,9 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
     pb.line_to(ri - r, t);
     pb.cubic_to(ri - r * k, t, ri, t + r * k, ri, t + r);
     pb.line_to(ri, t + corner_h);
-    if let Some(path) = pb.finish() { canvas.stroke_path(&path, &paint, &stroke, transform, None); }
+    if let Some(path) = pb.finish() {
+        canvas.stroke_path(&path, &paint, &stroke, transform, None);
+    }
 
     // Bottom-Right
     let mut pb = PathBuilder::new();
@@ -194,7 +267,9 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
     pb.line_to(ri, b - r);
     pb.cubic_to(ri, b - r * k, ri - r * k, b, ri - r, b);
     pb.line_to(ri - corner_w, b);
-    if let Some(path) = pb.finish() { canvas.stroke_path(&path, &paint, &stroke, transform, None); }
+    if let Some(path) = pb.finish() {
+        canvas.stroke_path(&path, &paint, &stroke, transform, None);
+    }
 
     // Bottom-Left
     let mut pb = PathBuilder::new();
@@ -202,29 +277,101 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
     pb.line_to(l + r, b);
     pb.cubic_to(l + r * k, b, l, b - r * k, l, b - r);
     pb.line_to(l, b - corner_h);
-    if let Some(path) = pb.finish() { canvas.stroke_path(&path, &paint, &stroke, transform, None); }
+    if let Some(path) = pb.finish() {
+        canvas.stroke_path(&path, &paint, &stroke, transform, None);
+    }
 
     // Top middle
     let mut pb = PathBuilder::new();
     pb.move_to(mid_x - mid_hw / 2.0, t);
     pb.line_to(mid_x + mid_hw / 2.0, t);
-    if let Some(path) = pb.finish() { canvas.stroke_path(&path, &paint, &stroke, transform, None); }
+    if let Some(path) = pb.finish() {
+        canvas.stroke_path(&path, &paint, &stroke, transform, None);
+    }
 
     // Bottom middle
     let mut pb = PathBuilder::new();
     pb.move_to(mid_x - mid_hw / 2.0, b);
     pb.line_to(mid_x + mid_hw / 2.0, b);
-    if let Some(path) = pb.finish() { canvas.stroke_path(&path, &paint, &stroke, transform, None); }
+    if let Some(path) = pb.finish() {
+        canvas.stroke_path(&path, &paint, &stroke, transform, None);
+    }
 
     // Left middle
     let mut pb = PathBuilder::new();
     pb.move_to(l, mid_y - mid_hh / 2.0);
     pb.line_to(l, mid_y + mid_hh / 2.0);
-    if let Some(path) = pb.finish() { canvas.stroke_path(&path, &paint, &stroke, transform, None); }
+    if let Some(path) = pb.finish() {
+        canvas.stroke_path(&path, &paint, &stroke, transform, None);
+    }
 
     // Right middle
     let mut pb = PathBuilder::new();
     pb.move_to(ri, mid_y - mid_hh / 2.0);
     pb.line_to(ri, mid_y + mid_hh / 2.0);
-    if let Some(path) = pb.finish() { canvas.stroke_path(&path, &paint, &stroke, transform, None); }
+    if let Some(path) = pb.finish() {
+        canvas.stroke_path(&path, &paint, &stroke, transform, None);
+    }
+}
+
+pub fn draw_text_buffer(
+    canvas: &mut Pixmap,
+    buffer: &Buffer,
+    font_system: &mut FontSystem,
+    swash_cache: &mut SwashCache,
+    pos: (f32, f32),
+    color: Color,
+    offset: (f32, f32),
+) {
+    let (x_start, y_start) = pos;
+
+    for run in buffer.layout_runs() {
+        for glyph in run.glyphs.iter() {
+            let physical = glyph.physical((0., 0.), 1.0);
+
+            if let Some(image) = swash_cache.get_image(font_system, physical.cache_key) {
+                let width = image.placement.width as u32;
+                let height = image.placement.height as u32;
+
+                if width == 0 || height == 0 {
+                    continue;
+                }
+
+                let draw_x =
+                    (x_start + physical.x as f32 + image.placement.left as f32 - offset.0) as i32;
+                let draw_y =
+                    (y_start + run.line_y as f32 - image.placement.top as f32 - offset.1) as i32;
+
+                match image.content {
+                    SwashContent::Mask => {
+                        if let Some(mut glyph_pixmap) = Pixmap::new(width, height) {
+                            let pixels = glyph_pixmap.pixels_mut();
+
+                            for (i, mask_alpha) in image.data.iter().enumerate() {
+                                let a_f32 = (*mask_alpha as f32 / 255.0) * color.alpha();
+                                let a_u8 = (a_f32 * 255.0) as u8;
+
+                                let pr = (color.red() * a_f32 * 255.0) as u8;
+                                let pg = (color.green() * a_f32 * 255.0) as u8;
+                                let pb = (color.blue() * a_f32 * 255.0) as u8;
+
+                                pixels[i] = PremultipliedColorU8::from_rgba(pr, pg, pb, a_u8)
+                                    .unwrap_or(PremultipliedColorU8::TRANSPARENT);
+                            }
+
+                            canvas.draw_pixmap(
+                                draw_x,
+                                draw_y,
+                                glyph_pixmap.as_ref(),
+                                &PixmapPaint::default(),
+                                Transform::identity(),
+                                None,
+                            );
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
 }

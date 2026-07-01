@@ -115,9 +115,7 @@ impl Annotation {
                 ).unwrap();
             }
             
-            AnnotationShape::Text {..} => {
-                println!("cosmic pls tell me sonion brochacho");
-            }
+            AnnotationShape::Text {..} => {} // nothing, text will use its own function to update bbox 
         }    
     }
 
@@ -160,13 +158,29 @@ impl Annotation {
             AnnotationShape::Pen { points } => AnnotationShape::Pen {
                 points: points.iter().map(|p| (p.0 + dx, p.1 + dy)).collect(),
             },
-            AnnotationShape::Text { .. } => AnnotationShape::Line {
-                start: (0.0 + dx, 0.0 + dy),
-                end:   (0.0 + dx, 0.0   + dy), // mm
+            AnnotationShape::Text { start, content, font_size } => AnnotationShape::Text {
+                start: (start.0 + dx, start.1 + dy),
+                content: content.clone(),
+                font_size: *font_size,
             },
         };
         let mut result = Annotation { shape, ..self.clone() };
-        result.update_bbox();
+
+        match &result.shape {
+            // NOTE: text bbox size depends on font metrics (not available here)
+            // while for moving, size is unchanged, only coordinates changes
+            // full recalc bbox is done in update_text_bbox(), in tools/text.rs
+            AnnotationShape::Text { .. } => {
+                result.bbox = Rect::from_ltrb(
+                    self.bbox.left()     + dx,
+                    self.bbox.top()       + dy,
+                    self.bbox.right()   + dx,
+                    self.bbox.bottom() + dy,
+                ).unwrap_or(self.bbox);
+            }
+            _ => result.update_bbox(),
+        }
+
         result
     }
 
@@ -199,10 +213,18 @@ impl Annotation {
             AnnotationShape::Pen { points } => AnnotationShape::Pen {
                 points: points.iter().map(|p| remap(*p)).collect(),
             },
-            AnnotationShape::Text { .. } => AnnotationShape::Line {
-                start: (0.0, 0.0),
-                end:   (0.0, 0.0), // mmmmm
-            },
+            AnnotationShape::Text { start, content, font_size } => {
+                // NOTE: bbox after this is stale, must call update_text_bbox() afterwards
+                // because text dimensions require FontSystem
+                // font_size scales by the axis with larger relative change
+                // not the best possible implementation, but meh
+                let scale = sx.abs().max(sy.abs());
+                AnnotationShape::Text {
+                    start: remap(*start),
+                    content: content.clone(),
+                    font_size: (*font_size * scale).clamp(6.0, 200.0),
+                }
+            }
         };
 
         let mut result = Annotation { shape, ..self.clone() };
@@ -223,7 +245,7 @@ impl Annotation {
 
     pub fn damage_bbox(&self, is_selected: bool) -> Rect {
         if is_selected {
-            let pad = HANDLE_PAD as f32; // if its selected we need to add handlers padding
+            let pad = HANDLE_PAD as f32;                // if its selected we need to add handlers padding
             Rect::from_ltrb(
                 self.bbox.left() - pad,
                 self.bbox.top() - pad,
@@ -235,7 +257,3 @@ impl Annotation {
         }
     }
 }
-
-
-
-

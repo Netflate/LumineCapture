@@ -1,8 +1,8 @@
-use tiny_skia::Pixmap;
-use std::time::Instant;
 use crate::tools::Tool;
+use std::time::Instant;
+use tiny_skia::Pixmap;
 // ==========================================
-// 1. UI Layout Constants 
+// 1. UI Layout Constants
 // ==========================================
 pub const TOOLBAR_HEIGHT: f32 = 36.0;
 pub const TOOLBAR_OFFSET: f32 = 0.0;
@@ -31,68 +31,66 @@ pub const TOOLBAR_ITEMS: &[ToolbarItem] = &[
 // ==========================================
 #[derive(Debug, Clone, Copy)]
 pub enum ToolbarSide {
-    Top, 
+    Top,
     Bottom,
 }
 
-pub struct Toolbar { 
+pub struct Toolbar {
     pub toolbar_pixmap: Option<Pixmap>, // to change it's opacity (svg icons fault)
 
     pub items: &'static [ToolbarItem],
-    pub position: (f32, f32), 
+    pub position: (f32, f32),
     pub size: (f32, f32),
     pub opacity: f32,
     pub current_side: ToolbarSide,
-    pub monitor_idx: usize, 
+    pub monitor_idx: usize,
 
     pub prev_position: (f32, f32),
     pub prev_monitor_idx: usize,
 
-    pub dirty : bool,
+    pub dirty: bool,
 
-    pub selected : Option<usize>,
-    pub hovered : Option<usize>,
+    pub selected: Option<usize>,
+    pub hovered: Option<usize>,
 
-    pub anim : Option<ToolbarAnimation>,
-    pub render_y: f32,                   // visual y for render 
-    pub interferes : bool,
+    pub anim: Option<ToolbarAnimation>,
+    pub render_y: f32, // visual y for render
+    pub interferes: bool,
     pub last_tick: Option<Instant>,
 }
 
 impl Toolbar {
-    pub fn new() -> Self {            
-        let mut toolbar = Self { 
+    pub fn new() -> Self {
+        let mut toolbar = Self {
             toolbar_pixmap: None,
             items: TOOLBAR_ITEMS,
-            size: (0.0, TOOLBAR_HEIGHT), 
+            size: (0.0, TOOLBAR_HEIGHT),
             opacity: 1.0,
-            current_side: ToolbarSide::Top, 
+            current_side: ToolbarSide::Top,
             monitor_idx: 0,
-            position: (0.0,0.0),
+            position: (0.0, 0.0),
 
-            prev_position: (0.0,0.0),
+            prev_position: (0.0, 0.0),
             prev_monitor_idx: 0,
 
-            dirty : false,
-            selected : Some(0), 
+            dirty: false,
+            selected: Some(0),
             hovered: None,
 
             anim: None,
-            render_y: 0.0, 
+            render_y: 0.0,
             interferes: false,
             last_tick: None,
-
         };
 
         toolbar.size.0 = toolbar.toolbar_width() as f32;
         toolbar.size.1 = TOOLBAR_HEIGHT;
-                
+
         toolbar
     }
 
-    
     pub fn toolbar_width(&self) -> f32 {
-        let mut total_width= TOOLBAR_PADDING * 2.0; 
+        let mut total_width = TOOLBAR_PADDING * 2.0;
 
         for item in self.items {
             total_width += item.size() + item.trailing_padding();
@@ -101,18 +99,15 @@ impl Toolbar {
     }
 
     pub fn get_selected_tool(&self) -> Option<&Tool> {
-        self.selected.and_then ( 
-            |idx| self.items.get(idx)).and_then(|item| {
-                match item {
-                    ToolbarItem::Button(ToolbarButton::Tool(tool)) => Some(tool),
-                    ToolbarItem::Seperator => None,
-                    _ => None,
-                }
+        self.selected
+            .and_then(|idx| self.items.get(idx))
+            .and_then(|item| match item {
+                ToolbarItem::Button(ToolbarButton::Tool(tool)) => Some(tool),
+                ToolbarItem::Seperator => None,
+                _ => None,
             })
-        }
     }
-
-    
+}
 
 // ==========================================
 // 3. UI Elements Definition
@@ -131,11 +126,11 @@ pub enum ToolbarButton {
 #[derive(Debug, Clone, Copy)]
 pub enum ToolbarItem {
     Button(ToolbarButton),
-    Seperator, 
+    Seperator,
 }
 
 impl ToolbarItem {
-    pub fn size(&self) -> f32 { 
+    pub fn size(&self) -> f32 {
         match self {
             ToolbarItem::Button(_) => BUTTON_CELL_SIZE,
             ToolbarItem::Seperator => SEPARATOR_CELL_SIZE,
@@ -148,13 +143,11 @@ impl ToolbarItem {
             ToolbarItem::Seperator => 0.0,
         }
     }
-
-
 }
 // animation
 pub struct ToolbarAnimation {
     pub start: Instant,
-    pub duration_ms : u64, 
+    pub duration_ms: u64,
     pub from_y: f32,
     pub to_y: f32,
 }

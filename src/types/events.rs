@@ -36,4 +36,16 @@ pub enum OverlayEvent {
     Tick,
     Redo, 
     Undo,
+    TextInput(char),
+    KeyPress(SpecialKey),
+}
+
+#[derive(Debug, Clone)]
+pub enum SpecialKey {
+    Backspace,
+    Enter,
+    Left,
+    Right,
+    Home,
+    End,
 }

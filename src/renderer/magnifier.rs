@@ -1,5 +1,5 @@
+use crate::types::{MAG_CELLS, MAG_OFFSET, MAG_SIZE, ZOOM};
 use tiny_skia::{Color, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform};
-use crate::types::{MAG_OFFSET, MAG_SIZE, ZOOM, MAG_CELLS};
 
 pub fn magnifier_rect(cursor: (f32, f32), monitor_w: f32, monitor_h: f32) -> Rect {
     let (mag_x, mag_y) = magnifier_position(cursor, (0.0, 0.0, monitor_w, monitor_h));
@@ -10,11 +10,15 @@ pub fn draw_magnifier(canvas: &mut Pixmap, source: &Pixmap, cursor: (f32, f32)) 
     let screen_w = source.width() as f32;
     let screen_h = source.height() as f32;
 
-    let sample_size = MAG_CELLS as i32; 
+    let sample_size = MAG_CELLS as i32;
 
-    let half = (MAG_CELLS / 2) as i32;  
-    let src_x = (cursor.0 as i32 - half).max(0).min(screen_w as i32 - sample_size) as u32;
-    let src_y = (cursor.1 as i32 - half).max(0).min(screen_h as i32 - sample_size) as u32;
+    let half = (MAG_CELLS / 2) as i32;
+    let src_x = (cursor.0 as i32 - half)
+        .max(0)
+        .min(screen_w as i32 - sample_size) as u32;
+    let src_y = (cursor.1 as i32 - half)
+        .max(0)
+        .min(screen_h as i32 - sample_size) as u32;
 
     let mut cropped = Pixmap::new(sample_size as u32, sample_size as u32).unwrap();
     cropped.draw_pixmap(
@@ -34,7 +38,8 @@ pub fn draw_magnifier(canvas: &mut Pixmap, source: &Pixmap, cursor: (f32, f32)) 
     let mut zoomed = Pixmap::new(MAG_SIZE, MAG_SIZE).unwrap();
     let magnifier_transform = Transform::from_row(ZOOM, 0.0, 0.0, ZOOM, 0.0, 0.0);
     zoomed.draw_pixmap(
-        0, 0,
+        0,
+        0,
         cropped.as_ref(),
         &PixmapPaint::default(),
         magnifier_transform,
@@ -45,7 +50,12 @@ pub fn draw_magnifier(canvas: &mut Pixmap, source: &Pixmap, cursor: (f32, f32)) 
 
     let mut mask = tiny_skia::Mask::new(canvas.width(), canvas.height()).unwrap();
     if let Some(circle_path) = PathBuilder::from_circle(cx, cy, radius) {
-        mask.fill_path(&circle_path, tiny_skia::FillRule::Winding, true, Transform::identity());
+        mask.fill_path(
+            &circle_path,
+            tiny_skia::FillRule::Winding,
+            true,
+            Transform::identity(),
+        );
     }
 
     canvas.draw_pixmap(
@@ -98,11 +108,23 @@ fn overlay_crosshair(zoomed: &mut Pixmap) {
     for i in 0..MAG_CELLS as i32 + 1 {
         let x = i as f32 * cell;
         if let Some(r) = Rect::from_xywh(x, 0.0, 1.0, h) {
-            zoomed.fill_path(&PathBuilder::from_rect(r), &paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
+            zoomed.fill_path(
+                &PathBuilder::from_rect(r),
+                &paint,
+                tiny_skia::FillRule::Winding,
+                Transform::identity(),
+                None,
+            );
         }
         let y = i as f32 * cell;
         if let Some(r) = Rect::from_xywh(0.0, y, w, 1.0) {
-            zoomed.fill_path(&PathBuilder::from_rect(r), &paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
+            zoomed.fill_path(
+                &PathBuilder::from_rect(r),
+                &paint,
+                tiny_skia::FillRule::Winding,
+                Transform::identity(),
+                None,
+            );
         }
     }
 
@@ -112,9 +134,21 @@ fn overlay_crosshair(zoomed: &mut Pixmap) {
     let col_x = center_idx * cell;
     let row_y = center_idx * cell;
     if let Some(r) = Rect::from_xywh(col_x, 0.0, cell, h) {
-        zoomed.fill_path(&PathBuilder::from_rect(r), &paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
+        zoomed.fill_path(
+            &PathBuilder::from_rect(r),
+            &paint,
+            tiny_skia::FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
     }
     if let Some(r) = Rect::from_xywh(0.0, row_y, w, cell) {
-        zoomed.fill_path(&PathBuilder::from_rect(r), &paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
+        zoomed.fill_path(
+            &PathBuilder::from_rect(r),
+            &paint,
+            tiny_skia::FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
     }
 }

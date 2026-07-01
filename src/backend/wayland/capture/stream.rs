@@ -1,8 +1,8 @@
 use pipewire as pw;
 use pw::{properties::properties, spa};
 use spa::pod::Pod;
-use std::sync::mpsc;
 use std::os::fd::{BorrowedFd, OwnedFd};
+use std::sync::mpsc;
 
 struct UserData {
     format: spa::param::video::VideoInfoRaw,
@@ -21,23 +21,27 @@ pub fn capture_frame(
 ) -> Result<PipewireFrame, Box<dyn std::error::Error>> {
     let (tx, rx) = mpsc::sync_channel::<PipewireFrame>(1);
 
-    let owned_fd: OwnedFd = fd.try_clone_to_owned()
+    let owned_fd: OwnedFd = fd
+        .try_clone_to_owned()
         .map_err(|e| format!("Failed to clone file descriptor: {}", e))?;
 
     std::thread::spawn(move || {
         pw::init();
 
         let mainloop = pw::main_loop::MainLoopRc::new(None).expect("Failed to create main loop");
-        let context = pw::context::ContextRc::new(&mainloop, None).expect("Failed to create context");
+        let context =
+            pw::context::ContextRc::new(&mainloop, None).expect("Failed to create context");
 
-        let core = context.connect_fd_rc(owned_fd, None).expect("Failed to connect via FD");
+        let core = context
+            .connect_fd_rc(owned_fd, None)
+            .expect("Failed to connect via FD");
 
         let data = UserData {
             format: Default::default(),
         };
 
         let stream = pw::stream::StreamRc::new(
-            core.clone(), 
+            core.clone(),
             "lumine-capture",
             properties! {
                 *pw::keys::MEDIA_TYPE => "Video",
@@ -70,7 +74,10 @@ pub fn capture_frame(
                     return;
                 }
 
-                user_data.format.parse(param).expect("Failed to parse format");
+                user_data
+                    .format
+                    .parse(param)
+                    .expect("Failed to parse format");
             })
             .process(move |stream, user_data| {
                 if let Some(mut buffer) = stream.dequeue_buffer() {
@@ -127,7 +134,8 @@ pub fn capture_frame(
         mainloop.run();
     });
 
-    rx.recv().map_err(|e| format!("Failed to receive frame from thread: {}", e).into())
+    rx.recv()
+        .map_err(|e| format!("Failed to receive frame from thread: {}", e).into())
 }
 
 fn build_format_pod<'a>(buffer: &'a mut Vec<u8>) -> &'a Pod {
@@ -152,10 +160,11 @@ fn build_format_pod<'a>(buffer: &'a mut Vec<u8>) -> &'a Pod {
                     flags: PropertyFlags::empty(),
                     value: Value::Id(Id(SPA_MEDIA_SUBTYPE_raw)),
                 },
-                Property {                                                                  // TODO: I've heard some sources may not be able to give an BGRA frame
-                    key: SPA_FORMAT_VIDEO_format,                                           // so we need to support most of the possible formats I guess? 
-                    flags: PropertyFlags::empty(),                                          // at some point will be necessary to make a research about it  
-                    value: Value::Id(Id(spa::param::video::VideoFormat::BGRA.as_raw())),    // to find out if it's really an issue or not
+                Property {
+                    // TODO: I've heard some sources may not be able to give an BGRA frame
+                    key: SPA_FORMAT_VIDEO_format, // so we need to support most of the possible formats I guess?
+                    flags: PropertyFlags::empty(), // at some point will be necessary to make a research about it
+                    value: Value::Id(Id(spa::param::video::VideoFormat::BGRA.as_raw())), // to find out if it's really an issue or not
                 },
             ],
         }),

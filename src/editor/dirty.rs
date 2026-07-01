@@ -1,18 +1,18 @@
-use crate::types::toolbar::TOOLBAR_HEIGHT;
-use crate::types::{MagnifierState, Placement, HANDLE_RADIUS};
-use crate::renderer::{self};
-use crate::tools::selection::{global_selection_to_local};
-use crate::types::annotations::{Annotation, AnnotationShape};
 use crate::editor::EditorState;
+use crate::renderer::{self};
+use crate::tools::selection::global_selection_to_local;
+use crate::types::annotations::{Annotation, AnnotationShape};
+use crate::types::toolbar::TOOLBAR_HEIGHT;
+use crate::types::{HANDLE_RADIUS, MagnifierState, Placement};
 
 use tiny_skia::Rect;
 
 impl EditorState {
-    // for maximal optimization we render only a specific zone of the screen 
-    // instead of entire screen 
+    // for maximal optimization we render only a specific zone of the screen
+    // instead of entire screen
     // entire function take what have changed, and add to dirty rectangle what need to be deleted
-    // and what need to be added 
-    pub fn monitor_dirty_rect(&self,monitor_idx: usize,selection_dirty: bool) -> Option<Rect> {
+    // and what need to be added
+    pub fn monitor_dirty_rect(&self, monitor_idx: usize, selection_dirty: bool) -> Option<Rect> {
         let mut dirty: Option<Rect> = None;
         let placement = &self.placements[monitor_idx];
 
@@ -25,37 +25,49 @@ impl EditorState {
     }
 
     fn calc_selection_dirty(&self, placement: &Placement, selection_dirty: bool) -> Option<Rect> {
-        if !selection_dirty { return None;}
+        if !selection_dirty {
+            return None;
+        }
         let mut dirty = None;
         let selection_pad = (HANDLE_RADIUS as f32).max(4.0);
-        
-        let local_sel = self.selection.zone
-            .as_ref()
-            .and_then(|sel| global_selection_to_local(sel, placement));
-            
-        let prev_local = self.selection.prev_zone
+
+        let local_sel = self
+            .selection
+            .zone
             .as_ref()
             .and_then(|sel| global_selection_to_local(sel, placement));
 
-        if let Some(r) = local_sel.as_ref().and_then(|sel| expand_rect(sel, selection_pad)) {
+        let prev_local = self
+            .selection
+            .prev_zone
+            .as_ref()
+            .and_then(|sel| global_selection_to_local(sel, placement));
+
+        if let Some(r) = local_sel
+            .as_ref()
+            .and_then(|sel| expand_rect(sel, selection_pad))
+        {
             dirty = union_rect(dirty, Some(r));
         }
-        if let Some(r) = prev_local.as_ref().and_then(|sel| expand_rect(sel, selection_pad)) {
+        if let Some(r) = prev_local
+            .as_ref()
+            .and_then(|sel| expand_rect(sel, selection_pad))
+        {
             dirty = union_rect(dirty, Some(r));
         }
         dirty
     }
-
 
     fn calc_magnifier_dirty(&self, monitor_idx: usize, placement: &Placement) -> Option<Rect> {
         let mut dirty = None;
         let (mw, mh) = (placement.size.0 as f32, placement.size.1 as f32);
         if mw > 0.0 && mh > 0.0 {
             let mag_pad = 2.0;
-            
+
             let mut add_mag_dirty = |mag_state: &Option<MagnifierState>| {
                 if let Some(mag) = mag_state.as_ref().filter(|m| m.monitor_idx == monitor_idx) {
-                    let rect = renderer::magnifier_rect((mag.pos.0 as f32, mag.pos.1 as f32), mw, mh);
+                    let rect =
+                        renderer::magnifier_rect((mag.pos.0 as f32, mag.pos.1 as f32), mw, mh);
                     if let Some(r) = expand_rect(&rect, mag_pad) {
                         dirty = union_rect(dirty, Some(r));
                     }
@@ -68,33 +80,43 @@ impl EditorState {
         dirty
     }
 
-    
     fn calc_toolbar_dirty(&self, monitor_idx: usize) -> Option<Rect> {
         let tb = &self.toolbar;
         let mut dirty = None;
         if tb.dirty {
             if tb.monitor_idx == monitor_idx {
-                if let Some(r) = Rect::from_xywh(tb.position.0, tb.render_y, tb.size.0, TOOLBAR_HEIGHT) {
+                if let Some(r) =
+                    Rect::from_xywh(tb.position.0, tb.render_y, tb.size.0, TOOLBAR_HEIGHT)
+                {
                     dirty = union_rect(dirty, Some(r));
                 }
 
                 // if toolbar position (side) changed
                 if tb.prev_monitor_idx == monitor_idx && tb.prev_position != tb.position {
-                    if let Some(r) = Rect::from_xywh(tb.prev_position.0, tb.prev_position.1, tb.size.0, TOOLBAR_HEIGHT) {
+                    if let Some(r) = Rect::from_xywh(
+                        tb.prev_position.0,
+                        tb.prev_position.1,
+                        tb.size.0,
+                        TOOLBAR_HEIGHT,
+                    ) {
                         dirty = union_rect(dirty, Some(r));
                     }
                 }
             }
             // if toolbar monitor changed
             if tb.prev_monitor_idx == monitor_idx && tb.prev_monitor_idx != tb.monitor_idx {
-                if let Some(r) = Rect::from_xywh(tb.prev_position.0, tb.prev_position.1, tb.size.0, TOOLBAR_HEIGHT) {
+                if let Some(r) = Rect::from_xywh(
+                    tb.prev_position.0,
+                    tb.prev_position.1,
+                    tb.size.0,
+                    TOOLBAR_HEIGHT,
+                ) {
                     dirty = union_rect(dirty, Some(r));
                 }
             }
         }
         dirty
     }
-
 
     fn calc_annotations_dirty(&self, placement: &Placement) -> Option<Rect> {
         let mut dirty = None;
@@ -103,9 +125,9 @@ impl EditorState {
 
         let mut add_global_rect_dirty = |global_bbox: &Rect| {
             if let Some(local) = Rect::from_ltrb(
-                global_bbox.left()   - offset.0,
-                global_bbox.top()    - offset.1,
-                global_bbox.right()  - offset.0,
+                global_bbox.left() - offset.0,
+                global_bbox.top() - offset.1,
+                global_bbox.right() - offset.0,
                 global_bbox.bottom() - offset.1,
             ) {
                 if let Some(r) = expand_rect(&local, pad) {
@@ -129,8 +151,6 @@ impl EditorState {
             add_global_rect_dirty(&self.annotations[ann].bbox);
         }
 
-
-
         // undo & redo & pen (to avoid updating its whole bbox)
         for damage_bbox in &self.damage_rects {
             add_global_rect_dirty(damage_bbox);
@@ -139,11 +159,10 @@ impl EditorState {
         dirty
     }
 
-
     pub fn record_history_damage(
-        damage_rects: &mut Vec<Rect>, 
-        state_a: &[Annotation], 
-        state_b: &[Annotation]
+        damage_rects: &mut Vec<Rect>,
+        state_a: &[Annotation],
+        state_b: &[Annotation],
     ) {
         for ann in state_a {
             if !state_b.iter().any(|a| a.id == ann.id) {
@@ -152,7 +171,7 @@ impl EditorState {
                 }
             }
         }
-        
+
         for ann in state_b {
             if !state_a.iter().any(|a| a.id == ann.id) {
                 if let Some(expanded) = expand_rect(&ann.bbox, ann.stroke_width * 2.0 + 4.0) {
@@ -162,9 +181,6 @@ impl EditorState {
         }
     }
 }
-
-
-
 
 fn expand_rect(rect: &Rect, pad: f32) -> Option<Rect> {
     Rect::from_ltrb(
@@ -187,4 +203,3 @@ fn union_rect(a: Option<Rect>, b: Option<Rect>) -> Option<Rect> {
         ),
     }
 }
-
