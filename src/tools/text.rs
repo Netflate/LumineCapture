@@ -1,6 +1,7 @@
 use crate::tools::ToolBehavior;
-use crate::types::{MouseButton, Annotation, AnnotationShape, TextEditState, SpecialKey, SelectionHandle};
+use crate::types::{MouseButton, Annotation, AnnotationShape, TextEditState, SpecialKey};
 use crate::editor::EditorState;
+use crate::types::annotations::{begin_drag_for_annotation, apply_annotation_drag, commit_drag_if_changed};
 
 use tiny_skia::{Rect, Color};
 use std::collections::HashMap;
@@ -10,7 +11,12 @@ pub struct TextTool;
 
 impl ToolBehavior for TextTool {
     fn on_button(&self, state: &mut EditorState, button: MouseButton, pressed: bool, _dirty_mask: &mut u32) {
-        if !matches!(button, MouseButton::Left) || !pressed { return; }
+        if !matches!(button, MouseButton::Left) { return; }
+
+        if !pressed {
+            commit_drag_if_changed(state);
+            return;
+        }
 
         let pos = (state.pointer.global.0 as f32, state.pointer.global.1 as f32);
 
@@ -36,6 +42,8 @@ impl ToolBehavior for TextTool {
                 });
                 state.selected_annotation = Some(i);
                 state.annotations_dirty = true;
+                begin_drag_for_annotation(state, i);
+                
                 return;
             }
         }
@@ -78,9 +86,12 @@ impl ToolBehavior for TextTool {
         });
         state.selected_annotation = Some(state.annotations.len() - 1);
         state.annotations_dirty = true;
+        
     }
 
-    fn on_move(&self, _state: &mut EditorState, _global: (f64, f64), _sel_dirty: &mut bool, _dirty_mask: &mut u32) {}
+    fn on_move(&self, state: &mut EditorState, global: (f64, f64), _sel_dirty: &mut bool, _dirty_mask: &mut u32) {
+        apply_annotation_drag(state, global);
+    }
 
     fn on_text(&self, state: &mut EditorState, ch: char, _dirty_mask: &mut u32) {
         let Some(edit) = state.text_editing.as_mut() else { return };
@@ -90,6 +101,10 @@ impl ToolBehavior for TextTool {
         let AnnotationShape::Text { content, .. } = &mut ann.shape else { return };
 
         state.damage_rects.push(ann.bbox);
+
+        // guard against stale cursor
+        let cursor = clamp_to_char_boundary(content, edit.cursor);
+        edit.cursor = cursor;
 
         content.insert(edit.cursor, ch);
         edit.cursor += ch.len_utf8();
@@ -112,6 +127,9 @@ impl ToolBehavior for TextTool {
 
         if let Some(ann) = state.annotations.iter_mut().find(|a| a.id == id) {
             let AnnotationShape::Text { content, .. } = &mut ann.shape else { return };
+
+            // guard against stale cursor
+            cursor = clamp_to_char_boundary(content, cursor);
 
             match key {
                 SpecialKey::Backspace => {
@@ -165,9 +183,15 @@ impl ToolBehavior for TextTool {
                 state.damage_rects.push(ann.bbox);
             }
         }
+        state.text_editing = None;
         state.selected_annotation = None;
         state.annotations_dirty = true;
     }
+}
+
+fn clamp_to_char_boundary(s: &str, cursor: usize) -> usize {
+    let clamped = cursor.min(s.len());
+    (0..=clamped).rev().find(|&i| s.is_char_boundary(i)).unwrap_or(0)
 }
 
 // separate updating bbox function from annotation.rs
@@ -219,69 +243,4 @@ pub fn update_text_bbox(
     ann.bbox = Rect::from_xywh(x, y, w, h).unwrap_or_else(|| {
         Rect::from_xywh(x, y, 10.0, metrics.line_height).unwrap()
     });
-}
-
-
-// resizing function separate from utils/apply_handle_drag  
-// since its resizing different from other annotations 
-pub fn resize_text_annotation(orig: &Annotation, handle: SelectionHandle, global: (f64, f64)) -> Annotation {
-    let AnnotationShape::Text { font_size, start, content } = &orig.shape else {
-        return orig.clone(); 
-    };
-
-    let bbox = orig.bbox;
-
-    match handle {
-        SelectionHandle::TopLeft | SelectionHandle::TopRight | 
-        SelectionHandle::BottomLeft | SelectionHandle::BottomRight => {
-            
-            let (anchor_x, anchor_y) = match handle {
-                SelectionHandle::TopLeft => (bbox.right(), bbox.bottom()),
-                SelectionHandle::TopRight => (bbox.left(), bbox.bottom()),
-                SelectionHandle::BottomLeft => (bbox.right(), bbox.top()),
-                SelectionHandle::BottomRight => (bbox.left(), bbox.top()),
-                _ => unreachable!(),
-            };
-
-            let orig_handle_x = match handle {
-                SelectionHandle::TopLeft | SelectionHandle::BottomLeft => bbox.left(),
-                _ => bbox.right(),
-            };
-            let orig_handle_y = match handle {
-                SelectionHandle::TopLeft | SelectionHandle::TopRight => bbox.top(),
-                _ => bbox.bottom(),
-            };
-
-            let orig_vec_x = orig_handle_x - anchor_x;
-            let orig_vec_y = orig_handle_y - anchor_y;
-            let new_vec_x = global.0 as f32 - anchor_x;
-            let new_vec_y = global.1 as f32 - anchor_y;
-
-            let dot = orig_vec_x * new_vec_x + orig_vec_y * new_vec_y;
-            
-            let scale = if dot <= 0.0 {
-                0.0 
-            } else {
-                let orig_dist = (orig_vec_x.powi(2) + orig_vec_y.powi(2)).sqrt();
-                let new_dist = (new_vec_x.powi(2) + new_vec_y.powi(2)).sqrt();
-                new_dist / orig_dist.max(1.0)
-            };
-
-            let new_font_size = (*font_size * scale).clamp(6.0, 300.0);
-            let applied_scale = new_font_size / *font_size;
-
-            let new_start_x = anchor_x + (start.0 - anchor_x) * applied_scale;
-            let new_start_y = anchor_y + (start.1 - anchor_y) * applied_scale;
-
-            Annotation {
-                shape: AnnotationShape::Text {
-                    start: (new_start_x, new_start_y),
-                    content: content.clone(),
-                    font_size: new_font_size,
-                },
-                ..orig.clone()
-            }
-        },
-        _ => orig.clone(), 
-    }
 }

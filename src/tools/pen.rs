@@ -27,7 +27,7 @@ impl ToolBehavior for PenTool {
                 id: state.next_id,
                 shape: AnnotationShape::Pen { points: vec![pos] },
                 color: Color::from_rgba8(255, 0, 0, 255),
-                stroke_width: 2.0,
+                stroke_width: 8.0,
                 bbox: Rect::from_xywh(pos.0, pos.1, 1.0, 1.0).unwrap(),
             };
             ann.update_bbox();

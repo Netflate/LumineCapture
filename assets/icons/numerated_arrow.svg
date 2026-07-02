@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg width="800px" height="800px" viewBox="0 0 800 800" xmlns="http://www.w3.org/2000/svg">
+  <g>
+    <title>Layer 1</title>
+    
+    <ellipse stroke-width="20" ry="144" rx="149" id="svg_2" cy="400" cx="400" stroke="#000000" fill="none"/>
+    
+    <text font-style="normal" font-weight="bold" transform="matrix(1.97391, 0, 0, 1.90978, -263.6, -23.3)" xml:space="preserve" text-anchor="start" font-family="sans-serif" font-size="74" id="svg_5" y="248.4" x="311" stroke-width="2" stroke="#000000" fill="#000000">1</text>
+    
+    <path transform="rotate(-130, 226.7, 541.1)" id="svg_23" d="m163.6,541l63,-72.3l63,72.3l-31.5,0l0,72.6l-63,0l0,-72.6l-31.5,0z" stroke-width="20" stroke="#000000" />
+    
+  </g>
+</svg>

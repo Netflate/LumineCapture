@@ -10,6 +10,7 @@ pub const PEN: &str = include_str!("../../assets/icons/pen.svg");
 pub const LINE: &str = include_str!("../../assets/icons/line.svg");
 pub const PICK: &str = include_str!("../../assets/icons/cursor.svg");
 pub const SIDE_CHANGE: &str = include_str!("../../assets/icons/side_change.svg");
+pub const NUMERATED_ARROW: &str = include_str!("../../assets/icons/numerated_arrow.svg");
 
 // svg icon sizes
 const DEFAULT_ICON_SIZE: f32 = BUTTON_CELL_SIZE - 8.0;
@@ -25,6 +26,7 @@ pub fn get_svg(button: &ToolbarButton) -> (&'static str, f32) {
             crate::tools::Tool::Line => (LINE, DEFAULT_ICON_SIZE),
             crate::tools::Tool::Text => (TEXT, BUTTON_CELL_SIZE - 13.0),
             crate::tools::Tool::Pick => (PICK, DEFAULT_ICON_SIZE),
+            crate::tools::Tool::NumeratedArrow => (NUMERATED_ARROW, DEFAULT_ICON_SIZE + 20.0),
         },
         ToolbarButton::Action(action) => match action {
             crate::types::toolbar::ToolbarAction::SideChange => {

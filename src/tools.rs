@@ -3,6 +3,7 @@ pub mod simple_shapes;
 pub mod pen;
 pub mod text;
 pub mod pick;
+pub mod numerated_arrow;
 
 use crate::tools::pen::PenTool;
 use crate::tools::selection::SelectionTool;
@@ -12,6 +13,7 @@ use crate::tools::pick::PickTool;
 use crate::types::annotations::AnnotationShape;
 use crate::types::{MouseButton, SpecialKey};
 use crate::editor::EditorState;
+use crate::tools::numerated_arrow::NumeratedArrowTool;
 // ==========================================
 // 1. Available Tools
 // ==========================================
@@ -25,6 +27,7 @@ pub enum Tool {
     Line,
     Text,
     Pick,
+    NumeratedArrow,
 }
 
 // ==========================================
@@ -53,6 +56,7 @@ pub fn dispatch_move(
         Tool::Pick      => PickTool.on_move(state, global, selection_dirty, dirty_mask),
         Tool::Text      => TextTool.on_move(state, global, selection_dirty, dirty_mask),
         Tool::Pen       => PenTool.on_move(state, global, selection_dirty, dirty_mask),
+        Tool::NumeratedArrow => NumeratedArrowTool.on_move(state, global, selection_dirty, dirty_mask),
         
         Tool::Rectangle | Tool::Arrow | Tool::Circle | Tool::Line => {
             let tool_impl = SimpleShapeTool {
@@ -63,7 +67,7 @@ pub fn dispatch_move(
                     _ => |start, end| AnnotationShape::Line { start, end },
                 },
                 color: tiny_skia::Color::from_rgba8(255, 0, 0, 255), 
-                stroke_width: 2.0,
+                stroke_width: 8.0,
             };
             
             tool_impl.on_move(state, global, selection_dirty, dirty_mask);
@@ -83,6 +87,7 @@ pub fn dispatch_button(
         Tool::Pick => PickTool.on_button(state, button, pressed, dirty_mask),
         Tool::Text => TextTool.on_button(state, button, pressed, dirty_mask),
         Tool::Pen => PenTool.on_button(state, button, pressed, dirty_mask),
+        Tool::NumeratedArrow => NumeratedArrowTool.on_button(state, button, pressed, dirty_mask),
         
         Tool::Rectangle | Tool::Arrow | Tool::Circle | Tool::Line => {
             let tool_impl = SimpleShapeTool {
@@ -93,7 +98,7 @@ pub fn dispatch_button(
                     _ => |start, end| AnnotationShape::Line { start, end },
                 },
                 color: tiny_skia::Color::from_rgba8(255, 0, 0, 255),
-                stroke_width: 2.0,
+                stroke_width: 8.0,
             };
             
             tool_impl.on_button(state, button, pressed, dirty_mask);
