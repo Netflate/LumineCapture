@@ -14,9 +14,12 @@ use crate::types::annotations::AnnotationShape;
 use crate::types::{MouseButton, SpecialKey};
 use crate::editor::EditorState;
 use crate::tools::numerated_arrow::NumeratedArrowTool;
+
+
 // ==========================================
 // 1. Available Tools
 // ==========================================
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, strum::EnumIter)]
 pub enum Tool {
     Selection,
@@ -66,7 +69,7 @@ pub fn dispatch_move(
                     Tool::Circle => |start, end| AnnotationShape::Circle { start, end },
                     _ => |start, end| AnnotationShape::Line { start, end },
                 },
-                color: tiny_skia::Color::from_rgba8(255, 0, 0, 255), 
+                color: tiny_skia::Color::from_rgba8(255, 255, 255, 255), 
                 stroke_width: 8.0,
             };
             
@@ -97,7 +100,7 @@ pub fn dispatch_button(
                     Tool::Circle => |start, end| AnnotationShape::Circle { start, end },
                     _ => |start, end| AnnotationShape::Line { start, end },
                 },
-                color: tiny_skia::Color::from_rgba8(255, 0, 0, 255),
+                color: tiny_skia::Color::from_rgba8(255, 255, 255, 255),
                 stroke_width: 8.0,
             };
             

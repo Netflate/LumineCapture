@@ -1,5 +1,5 @@
 use super::paths::{normalized_rect, oval_path};
-use crate::types::annotations::{Annotation, AnnotationShape, HANDLE_PAD};
+use crate::types::annotations::{Annotation, AnnotationShape, HANDLE_PAD, SHADOW_COLOR, SHADOW_WIDTH_BONUS};
 
 use cosmic_text::{Buffer, FontSystem, SwashCache, SwashContent, Metrics, Shaping, Attrs};
 use std::collections::HashMap;
@@ -76,20 +76,7 @@ fn draw_arrow(
     stroke_width: f32,
     offset: (f32, f32),
 ) {
-    let mut paint = Paint::default();
-    paint.set_color(color);
-    paint.anti_alias = true;
-
-    let mut stroke = Stroke::default();
-    stroke.width = stroke_width;
     let transform = Transform::from_translate(-offset.0, -offset.1);
-
-    let mut pb = PathBuilder::new();
-    pb.move_to(start.0, start.1);
-    pb.line_to(end.0, end.1);
-    if let Some(path) = pb.finish() {
-        canvas.stroke_path(&path, &paint, &stroke, transform, None);
-    }
 
     let dx = end.0 - start.0;
     let dy = end.1 - start.1;
@@ -100,11 +87,32 @@ fn draw_arrow(
 
     let ux = dx / len;
     let uy = dy / len;
-    let head_len = (stroke_width * 4.0).max(12.0);
-    let head_width = head_len * 0.5;
+
+    let head_len = (stroke_width * 4.0).max(12.0).min(len * 0.6);
+    let head_width = head_len * 0.55;
+
+    let line_end = (
+        end.0 - ux * head_len * 0.7,
+        end.1 - uy * head_len * 0.7,
+    );
+
+    let mut pb = PathBuilder::new();
+    pb.move_to(start.0, start.1);
+    pb.line_to(line_end.0, line_end.1);
+    if let Some(path) = pb.finish() {
+        stroke_with_shadow(
+            canvas,
+            &path,
+            color,
+            stroke_width,
+            LineCap::Round,
+            LineJoin::Round,
+            transform,
+        );
+    }
+
     let px = -uy;
     let py = ux;
-
     let tip = end;
     let base1 = (
         end.0 - ux * head_len + px * head_width,
@@ -121,7 +129,10 @@ fn draw_arrow(
     pb.line_to(base2.0, base2.1);
     pb.close();
     if let Some(path) = pb.finish() {
-        canvas.fill_path(&path, &paint, tiny_skia::FillRule::Winding, transform, None);
+        let mut paint = Paint::default();
+        paint.set_color(color);
+        paint.anti_alias = true;
+        canvas.fill_path(&path, &paint, FillRule::Winding, transform, None);
     }
 }
 
@@ -132,14 +143,9 @@ fn draw_rect(
     stroke_width: f32,
     offset: (f32, f32),
 ) {
-    let mut paint = Paint::default();
-    paint.set_color(color);
-    paint.anti_alias = true;
-    let mut stroke = Stroke::default();
-    stroke.width = stroke_width;
     let transform = Transform::from_translate(-offset.0, -offset.1);
     let path = PathBuilder::from_rect(*rect);
-    canvas.stroke_path(&path, &paint, &stroke, transform, None);
+    stroke_with_shadow(canvas, &path, color, stroke_width, LineCap::Butt, LineJoin::Miter, transform);
 }
 
 fn draw_circle(
@@ -149,11 +155,6 @@ fn draw_circle(
     stroke_width: f32,
     offset: (f32, f32),
 ) {
-    let mut paint = Paint::default();
-    paint.set_color(color);
-    paint.anti_alias = true;
-    let mut stroke = Stroke::default();
-    stroke.width = stroke_width;
     let transform = Transform::from_translate(-offset.0, -offset.1);
 
     let cx = (rect.left() + rect.right()) / 2.0;
@@ -162,7 +163,7 @@ fn draw_circle(
     let ry = rect.height() / 2.0;
 
     if let Some(path) = oval_path(cx, cy, rx, ry) {
-        canvas.stroke_path(&path, &paint, &stroke, transform, None);
+        stroke_with_shadow(canvas, &path, color, stroke_width, LineCap::Butt, LineJoin::Round, transform);
     }
 }
 
@@ -174,12 +175,6 @@ fn draw_line(
     stroke_width: f32,
     offset: (f32, f32),
 ) {
-    let mut paint = Paint::default();
-    paint.set_color(color);
-    paint.anti_alias = true;
-
-    let mut stroke = Stroke::default();
-    stroke.width = stroke_width;
     let transform = Transform::from_translate(-offset.0, -offset.1);
 
     let mut pb = PathBuilder::new();
@@ -187,7 +182,7 @@ fn draw_line(
     pb.line_to(end.0, end.1);
 
     if let Some(path) = pb.finish() {
-        canvas.stroke_path(&path, &paint, &stroke, transform, None);
+        stroke_with_shadow(canvas, &path, color, stroke_width, LineCap::Round, LineJoin::Round, transform);
     }
 }
 
@@ -201,13 +196,6 @@ fn draw_pen(
     if points.len() < 2 {
         return;
     }
-    let mut paint = Paint::default();
-    paint.set_color(color);
-    paint.anti_alias = true;
-    let mut stroke = Stroke::default();
-    stroke.width = stroke_width;
-    stroke.line_cap = tiny_skia::LineCap::Round;
-    stroke.line_join = tiny_skia::LineJoin::Round;
     let transform = Transform::from_translate(-offset.0, -offset.1);
 
     let mut pb = PathBuilder::new();
@@ -216,7 +204,7 @@ fn draw_pen(
         pb.line_to(p.0, p.1);
     }
     if let Some(path) = pb.finish() {
-        canvas.stroke_path(&path, &paint, &stroke, transform, None);
+        stroke_with_shadow(canvas, &path, color, stroke_width, LineCap::Round, LineJoin::Round, transform);
     }
 }
 
@@ -225,10 +213,25 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
     paint.set_color(Color::WHITE);
     paint.anti_alias = true;
 
+    let mut shadow_paint = Paint::default();
+    shadow_paint.set_color(Color::from_rgba8(
+        SHADOW_COLOR.0,
+        SHADOW_COLOR.1,
+        SHADOW_COLOR.2,
+        SHADOW_COLOR.3,
+    ));
+    shadow_paint.anti_alias = true;
+
     let mut stroke = Stroke::default();
     stroke.width = 3.0;
     stroke.line_cap = tiny_skia::LineCap::Round;
     stroke.line_join = tiny_skia::LineJoin::Round;
+
+    let mut shadow_stroke = Stroke::default();
+    shadow_stroke.width = 3.0 + SHADOW_WIDTH_BONUS;
+    shadow_stroke.line_cap = tiny_skia::LineCap::Round;
+    shadow_stroke.line_join = tiny_skia::LineJoin::Round;
+
     let transform = Transform::from_translate(-offset.0, -offset.1);
 
     let out_pad = (HANDLE_PAD / 2.0) as f32;
@@ -261,6 +264,7 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
     pb.cubic_to(l, t + r * k, l + r * k, t, l + r, t);
     pb.line_to(l + corner_w, t);
     if let Some(path) = pb.finish() {
+        canvas.stroke_path(&path, &shadow_paint, &shadow_stroke, transform, None);
         canvas.stroke_path(&path, &paint, &stroke, transform, None);
     }
 
@@ -271,6 +275,7 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
     pb.cubic_to(ri - r * k, t, ri, t + r * k, ri, t + r);
     pb.line_to(ri, t + corner_h);
     if let Some(path) = pb.finish() {
+        canvas.stroke_path(&path, &shadow_paint, &shadow_stroke, transform, None);
         canvas.stroke_path(&path, &paint, &stroke, transform, None);
     }
 
@@ -281,6 +286,7 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
     pb.cubic_to(ri, b - r * k, ri - r * k, b, ri - r, b);
     pb.line_to(ri - corner_w, b);
     if let Some(path) = pb.finish() {
+        canvas.stroke_path(&path, &shadow_paint, &shadow_stroke, transform, None);
         canvas.stroke_path(&path, &paint, &stroke, transform, None);
     }
 
@@ -291,6 +297,7 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
     pb.cubic_to(l + r * k, b, l, b - r * k, l, b - r);
     pb.line_to(l, b - corner_h);
     if let Some(path) = pb.finish() {
+        canvas.stroke_path(&path, &shadow_paint, &shadow_stroke, transform, None);
         canvas.stroke_path(&path, &paint, &stroke, transform, None);
     }
 
@@ -299,6 +306,7 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
     pb.move_to(mid_x - mid_hw / 2.0, t);
     pb.line_to(mid_x + mid_hw / 2.0, t);
     if let Some(path) = pb.finish() {
+        canvas.stroke_path(&path, &shadow_paint, &shadow_stroke, transform, None);
         canvas.stroke_path(&path, &paint, &stroke, transform, None);
     }
 
@@ -307,6 +315,7 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
     pb.move_to(mid_x - mid_hw / 2.0, b);
     pb.line_to(mid_x + mid_hw / 2.0, b);
     if let Some(path) = pb.finish() {
+        canvas.stroke_path(&path, &shadow_paint, &shadow_stroke, transform, None);
         canvas.stroke_path(&path, &paint, &stroke, transform, None);
     }
 
@@ -315,6 +324,7 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
     pb.move_to(l, mid_y - mid_hh / 2.0);
     pb.line_to(l, mid_y + mid_hh / 2.0);
     if let Some(path) = pb.finish() {
+        canvas.stroke_path(&path, &shadow_paint, &shadow_stroke, transform, None);
         canvas.stroke_path(&path, &paint, &stroke, transform, None);
     }
 
@@ -323,6 +333,7 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
     pb.move_to(ri, mid_y - mid_hh / 2.0);
     pb.line_to(ri, mid_y + mid_hh / 2.0);
     if let Some(path) = pb.finish() {
+        canvas.stroke_path(&path, &shadow_paint, &shadow_stroke, transform, None);
         canvas.stroke_path(&path, &paint, &stroke, transform, None);
     }
 }
@@ -401,20 +412,11 @@ fn draw_numerated_arrow(
 ) {
     let transform = Transform::from_translate(-offset.0, -offset.1);
 
+    let circle_radius = 25.0;
+
     let dx = end.0 - start.0;
     let dy = end.1 - start.1;
     let len = (dx * dx + dy * dy).sqrt();
-
-    let circle_radius = (stroke_width * 2.5).max(18.0);
-
-    if len <= circle_radius * 2.0 {
-        return;
-    }
-
-    let ux = dx / len;
-    let uy = dy / len;
-
-    // paints 
 
     let mut stroke_paint = Paint::default();
     stroke_paint.set_color(color);
@@ -424,16 +426,64 @@ fn draw_numerated_arrow(
     fill_paint.set_color(Color::WHITE);
     fill_paint.anti_alias = true;
 
+    let mut shadow_paint = Paint::default();
+    shadow_paint.set_color(Color::from_rgba8(
+        SHADOW_COLOR.0,
+        SHADOW_COLOR.1,
+        SHADOW_COLOR.2,
+        SHADOW_COLOR.3,
+    ));
+    shadow_paint.anti_alias = true;
+
     let mut stroke = Stroke::default();
     stroke.width = stroke_width;
     stroke.line_cap = LineCap::Round;
     stroke.line_join = LineJoin::Round;
 
-    // circle 
+    let mut shadow_stroke = Stroke::default();
+    shadow_stroke.width = stroke_width + SHADOW_WIDTH_BONUS;
+    shadow_stroke.line_cap = LineCap::Round;
+    shadow_stroke.line_join = LineJoin::Round;
 
-    if let Some(circle) =
-        oval_path(start.0, start.1, circle_radius, circle_radius)
-    {
+    if len > 2.0 {
+        let ux = dx / len;
+        let uy = dy / len;
+
+        let px = -uy;
+        let py = ux;
+
+        let base_half_width = 12.0;
+
+        let base_left = (
+            start.0 + px * base_half_width,
+            start.1 + py * base_half_width,
+        );
+        let base_right = (
+            start.0 - px * base_half_width,
+            start.1 - py * base_half_width,
+        );
+
+        let mut pb = PathBuilder::new();
+        pb.move_to(end.0, end.1); 
+        pb.line_to(base_left.0, base_left.1);
+        pb.line_to(base_right.0, base_right.1);
+        pb.close();
+
+        if let Some(path) = pb.finish() {
+            canvas.stroke_path(&path, &shadow_paint, &shadow_stroke, transform, None);
+            canvas.fill_path(
+                &path,
+                &stroke_paint,
+                FillRule::Winding,
+                transform,
+                None,
+            );
+        }
+    }
+
+    if let Some(circle) = oval_path(start.0, start.1, circle_radius, circle_radius) {
+        canvas.stroke_path(&circle, &shadow_paint, &shadow_stroke, transform, None);
+
         canvas.fill_path(
             &circle,
             &fill_paint,
@@ -451,68 +501,6 @@ fn draw_numerated_arrow(
         );
     }
 
-    // Arrow line
-
-    let head_len = (stroke_width * 5.0).max(14.0);
-    let head_width = head_len * 0.7;
-
-    let line_start = (
-        start.0 + ux * circle_radius,
-        start.1 + uy * circle_radius,
-    );
-
-    let line_end = (
-        end.0 - ux * head_len,
-        end.1 - uy * head_len,
-    );
-
-    let mut pb = PathBuilder::new();
-    pb.move_to(line_start.0, line_start.1);
-    pb.line_to(line_end.0, line_end.1);
-
-    if let Some(path) = pb.finish() {
-        canvas.stroke_path(
-            &path,
-            &stroke_paint,
-            &stroke,
-            transform,
-            None,
-        );
-    }
-
-    // arrow head
-
-    let px = -uy;
-    let py = ux;
-
-    let left = (
-        line_end.0 - ux * head_len + px * head_width,
-        line_end.1 - uy * head_len + py * head_width,
-    );
-
-    let right = (
-        line_end.0 - ux * head_len - px * head_width,
-        line_end.1 - uy * head_len - py * head_width,
-    );
-
-    let mut pb = PathBuilder::new();
-    pb.move_to(end.0, end.1);
-    pb.line_to(left.0, left.1);
-    pb.line_to(right.0, right.1);
-    pb.close();
-
-    if let Some(path) = pb.finish() {
-        canvas.fill_path(
-            &path,
-            &stroke_paint,
-            FillRule::Winding,
-            transform,
-            None,
-        );
-    }
-
-    // number
-
     let digits = number.to_string().len();
 
     let font_size = match digits {
@@ -524,8 +512,7 @@ fn draw_numerated_arrow(
 
     let line_height = font_size * 1.1;
 
-    let mut buffer =
-        Buffer::new(font_system, Metrics::new(font_size, line_height));
+    let mut buffer = Buffer::new(font_system, Metrics::new(font_size, line_height));
 
     buffer.set_size(
         Some(circle_radius * 2.0),
@@ -534,7 +521,7 @@ fn draw_numerated_arrow(
 
     buffer.set_text(
         &number.to_string(),
-        &Attrs::new(),
+        &Attrs::new().weight(cosmic_text::Weight::BOLD),
         Shaping::Advanced,
         None,
     );
@@ -563,4 +550,41 @@ fn draw_numerated_arrow(
         color,
         offset,
     );
+}
+
+fn stroke_with_shadow(
+    canvas: &mut Pixmap,
+    path: &tiny_skia::Path,
+    color: Color,
+    stroke_width: f32,
+    line_cap: LineCap,
+    line_join: LineJoin,
+    transform: Transform,
+) {
+    let mut shadow_paint = Paint::default();
+    shadow_paint.set_color(Color::from_rgba8(
+        SHADOW_COLOR.0,
+        SHADOW_COLOR.1,
+        SHADOW_COLOR.2,
+        SHADOW_COLOR.3,
+    ));
+    shadow_paint.anti_alias = true;
+
+    let mut shadow_stroke = Stroke::default();
+    shadow_stroke.width = stroke_width + SHADOW_WIDTH_BONUS;
+    shadow_stroke.line_cap = line_cap;
+    shadow_stroke.line_join = line_join;
+
+    canvas.stroke_path(path, &shadow_paint, &shadow_stroke, transform, None);
+
+    let mut paint = Paint::default();
+    paint.set_color(color);
+    paint.anti_alias = true;
+
+    let mut stroke = Stroke::default();
+    stroke.width = stroke_width;
+    stroke.line_cap = line_cap;
+    stroke.line_join = line_join;
+
+    canvas.stroke_path(path, &paint, &stroke, transform, None);
 }

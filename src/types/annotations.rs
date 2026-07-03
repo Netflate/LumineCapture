@@ -5,6 +5,8 @@ use crate::editor::EditorState;
 use crate::tools::text::update_text_bbox;
 
 pub const HANDLE_PAD: f64 = 50.0;
+pub const SHADOW_COLOR: (u8, u8, u8, u8) = (0, 0, 0, 130);
+pub const SHADOW_WIDTH_BONUS: f32 = 4.0;
 
 #[derive(Clone)]
 pub enum AnnotationShape {
