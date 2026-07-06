@@ -2,9 +2,9 @@ use tiny_skia::{Rect, Color};
 use crate::types::{SelectionHandle, SignedRect};
 use crate::utils::{hit_test_rect_handle, apply_handle_drag};
 use crate::editor::EditorState;
-use crate::tools::text::update_text_bbox;
+use crate::tools::text::update_text_bbox_inline;
 
-pub const HANDLE_PAD: f64 = 50.0;
+pub const HANDLE_PAD: f64 = 20.0;
 pub const SHADOW_COLOR: (u8, u8, u8, u8) = (0, 0, 0, 130);
 pub const SHADOW_WIDTH_BONUS: f32 = 4.0;
 
@@ -308,11 +308,11 @@ pub fn apply_annotation_drag(state: &mut EditorState, global: (f64, f64)) {
                     prev_global,
                     global,
                 );
-                update_text_bbox(
-                    &mut state.annotations[idx],
-                    &mut state.font_system,
-                    &mut state.text_buffers,
-                );
+                let ann_id = state.annotations[idx].id;
+                let editor = state.text_editors.get_mut(&ann_id);
+                if let Some(ed) = editor {
+                    update_text_bbox_inline(&mut state.annotations[idx], ed, &mut state.font_system);
+                }
             } else {
                 // shape resize: always from orig + total delta to avoid accumulated error
                 let total_dx = (global.0 - start_global.0) as f32;

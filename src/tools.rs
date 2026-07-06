@@ -113,6 +113,7 @@ pub fn dispatch_button(
 pub fn dispatch_deactivate(tool: Tool, state: &mut EditorState, dirty_mask: &mut u32) {
     match tool {
         Tool::Pick => PickTool.on_deactivate(state, dirty_mask),
+        Tool::Text => TextTool.on_deactivate(state, dirty_mask),
         _ => {}
     }
 }

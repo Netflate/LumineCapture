@@ -10,7 +10,7 @@ pub use paths::{rect_bounds, rounded_rect_path};
 use crate::types::annotations::Annotation;
 use crate::types::toolbar::{Toolbar, ToolbarButton};
 use crate::types::{MagnifierState, SelectionEdges};
-use cosmic_text::{Buffer, FontSystem, SwashCache};
+use cosmic_text::{Editor, FontSystem, SwashCache};
 use std::collections::HashMap;
 use tiny_skia::{Color, Paint, PathBuilder, Pixmap, Rect, Stroke, Transform};
 use usvg::Tree;
@@ -262,7 +262,8 @@ pub fn rebuild_annotations_layer(
     offset: (f32, f32),
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
-    text_buffers: &HashMap<u64, Buffer>,
+    text_editors: &mut HashMap<u64, Editor<'static>>,
+    active_text_id: Option<u64>,   
 ) {
     layer.fill(tiny_skia::Color::TRANSPARENT);
 
@@ -274,7 +275,8 @@ pub fn rebuild_annotations_layer(
             selected == Some(i),
             font_system,
             swash_cache,
-            text_buffers,
+            text_editors,
+            active_text_id,
         );
     }
     if let Some(p) = pending {
@@ -285,7 +287,8 @@ pub fn rebuild_annotations_layer(
             false,
             font_system,
             swash_cache,
-            text_buffers,
+            text_editors,
+            active_text_id,
         );
     }
 }

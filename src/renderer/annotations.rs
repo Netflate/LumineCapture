@@ -1,7 +1,8 @@
 use super::paths::{normalized_rect, oval_path};
 use crate::types::annotations::{Annotation, AnnotationShape, HANDLE_PAD, SHADOW_COLOR, SHADOW_WIDTH_BONUS};
+use crate::tools::text::render_text_annotation;
 
-use cosmic_text::{Buffer, FontSystem, SwashCache, SwashContent, Metrics, Shaping, Attrs};
+use cosmic_text::{Buffer, FontSystem, SwashCache, SwashContent, Metrics, Shaping, Attrs, Editor};
 use std::collections::HashMap;
 use tiny_skia::{
     Color, Paint, PathBuilder, Pixmap, PixmapPaint, PremultipliedColorU8, Rect, Stroke, Transform, LineCap, LineJoin, FillRule,
@@ -14,7 +15,8 @@ pub fn draw_annotation(
     selected: bool,
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
-    text_buffers: &HashMap<u64, Buffer>,
+    text_editors: &mut HashMap<u64, Editor<'static>>,
+    active_text_id: Option<u64>,   
 ) {
     match &ann.shape {
         AnnotationShape::Arrow { start, end } => {
@@ -36,17 +38,12 @@ pub fn draw_annotation(
         AnnotationShape::Pen { points } => {
             draw_pen(canvas, points, ann.color, ann.stroke_width, offset);
         }
-        AnnotationShape::Text { start, .. } => {
-            if let Some(buffer) = text_buffers.get(&ann.id) {
-                draw_text_buffer(
-                    canvas,
-                    buffer,
-                    font_system,
-                    swash_cache,
-                    *start,
-                    ann.color,
-                    offset,
-                );
+        AnnotationShape::Text { .. } => {
+            let is_editing = active_text_id == Some(ann.id);
+            if let Some(editor) = text_editors.get_mut(&ann.id) {
+                let mut pixmap_mut = canvas.as_mut();
+                render_text_annotation(ann, editor, font_system, swash_cache,
+                    &mut pixmap_mut, offset, is_editing);
             }
         }
         AnnotationShape::NumeratedArrow { start, end, number } => {

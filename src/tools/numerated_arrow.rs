@@ -76,7 +76,6 @@ impl ToolBehavior for NumeratedArrowTool {
                 _ => 1,
             };
 
-            // Обновляем шейп
             ann.shape = AnnotationShape::NumeratedArrow { 
                 start, 
                 end: pos, 

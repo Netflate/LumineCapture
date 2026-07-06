@@ -38,6 +38,7 @@ pub enum OverlayEvent {
     Undo,
     TextInput(char),
     KeyPress(SpecialKey),
+    ModifiersChanged { ctrl: bool, shift: bool },
 }
 
 #[derive(Debug, Clone)]
@@ -48,4 +49,8 @@ pub enum SpecialKey {
     Right,
     Home,
     End,
+    Delete, 
+    Up,
+    Down,
+    KeyA,
 }

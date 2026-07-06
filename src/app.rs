@@ -55,8 +55,6 @@ pub async fn make_screenshot(
     let (canvas, dimmed, annotations_layer) = build_layers(&base_pixmaps);
     println!("after initialising dimmed canvas, same size dimmed frames {}ms", t0.elapsed().as_millis());
     let placements = build_placements(&screenshots.frames);
-
-    let text_buffers: HashMap<u64, cosmic_text::Buffer> = HashMap::new();
     
     drop(screenshots);
     // 4 may 2026 : ~75mb memory usage while screenshoting on kde linux with 2 hd monitors
@@ -94,8 +92,11 @@ pub async fn make_screenshot(
         annotations_dirty: false,
         font_system: font_system,
         swash_cache: swash_cache,
-        text_buffers: text_buffers,
+        text_editors: HashMap::new(),
         text_editing: None,
+
+        mod_ctrl: false,
+        mod_shift: false,
     };
 
     println!("after saving base screenshot {}ms", t0.elapsed().as_millis());
@@ -148,6 +149,10 @@ pub async fn make_screenshot(
             OverlayEvent::KeyPress(key) => {
                 handle_key_press(&mut editor_state, key, &mut dirty_mask);
             }
+            OverlayEvent::ModifiersChanged { ctrl, shift } => {
+                editor_state.mod_ctrl  = ctrl;
+                editor_state.mod_shift = shift;
+            }
         }
 
         tick_toolbar_anim(&mut editor_state, &mut dirty_mask);
@@ -155,6 +160,8 @@ pub async fn make_screenshot(
         if dirty_mask != 0 {
 
             if editor_state.annotations_dirty {
+                let active_text_id = editor_state.text_editing.as_ref().map(|e| e.annotation_id);
+                
                 for i in 0..editor_state.base.len() {
                     let offset = (
                         editor_state.placements[i].position.0 as f32,
@@ -168,7 +175,8 @@ pub async fn make_screenshot(
                         offset,
                         &mut editor_state.font_system,
                         &mut editor_state.swash_cache,
-                        &editor_state.text_buffers,
+                        &mut editor_state.text_editors,  
+                        active_text_id,                  
                     );
                 }
             }
@@ -721,7 +729,16 @@ fn render_final(editor_state: &mut EditorState) -> Vec<u8> {
     // or for some specific perfomance eating tools as blur
     let offset = (sel_left as f32, sel_top as f32);
     for ann in &editor_state.annotations {
-        renderer::draw_annotation(&mut out, ann, offset, false, &mut editor_state.font_system, &mut editor_state.swash_cache, &mut editor_state.text_buffers);
+        renderer::draw_annotation(
+            &mut out,
+            ann,
+            offset,
+            false,
+            &mut editor_state.font_system,
+            &mut editor_state.swash_cache,
+            &mut editor_state.text_editors,
+            None,          
+        );
     }
 
     encode_png(&out)

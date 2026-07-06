@@ -5,7 +5,7 @@ use std::time::{Instant};
 use std::collections::HashMap;
 use usvg::Tree;
 use tiny_skia::{Pixmap, Rect};
-use cosmic_text::{FontSystem, SwashCache, Buffer};
+use cosmic_text::{FontSystem, SwashCache, Editor};
 
 use crate::tools::Tool;
 use crate::types::{PointerState, Placement, Toolbar, SelectionState, ToolbarButton, Annotation, AnnDragState, MagnifierState, TextEditState};
@@ -44,6 +44,9 @@ pub struct EditorState {
     pub annotations_dirty: bool,
     pub font_system: FontSystem,
     pub swash_cache: SwashCache,
-    pub text_buffers: HashMap<u64, Buffer>, 
+    pub text_editors: HashMap<u64, Editor<'static>>,
     pub text_editing: Option<TextEditState>,
+
+    pub mod_ctrl: bool,
+    pub mod_shift: bool,
 }
