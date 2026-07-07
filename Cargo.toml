@@ -20,6 +20,7 @@ wayland-cursor = "0.31.14"
 wayland-protocols = { version = "0.32", features = ["staging", "wayland-client"] }
 wayland-protocols-plasma = { version = "0.3.12", features = ["client"] }
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+wl-clipboard-rs = "0.9.3"
 
 # system & os interactions
 dirs = "6.0"

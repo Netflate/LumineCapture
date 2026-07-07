@@ -24,6 +24,7 @@ pub trait ScreenOverlay {
     fn next_event(&mut self, timeout_ms: i32) -> Result<OverlayEvent, Box<dyn std::error::Error>>;
     fn ensure_runtime(&mut self) -> Result<(), Box<dyn std::error::Error>>;
 }
+
 #[async_trait]
 pub trait ClipboardProvider {
     fn copy_image_to_clipboard(&self, png_data: Vec<u8>) -> Result<(), Box<dyn std::error::Error>>;
@@ -34,9 +35,11 @@ pub fn initialize_capture() -> Box<dyn CaptureMethod> {
 
     match desktop.as_str() {
         "KDE" | "GNOME" => {
-            Box::new(wayland::capture::portal::PortalMethod) as Box<dyn CaptureMethod>
+            Box::new(wayland::capture::portal::PortalMethod)
         }
-        _ => Box::new(wayland::capture::portal::PortalMethod) as Box<dyn CaptureMethod>, // TODO : For now it needs to stop the app from running
+        _ => {
+            Box::new(wayland::capture::portal::PortalMethod)
+        }
     }
 }
 
@@ -49,15 +52,6 @@ pub fn initialize_overlay(conn: Connection) -> Box<dyn ScreenOverlay> {
     }
 }
 
-pub fn initialize_clipboard(conn: Connection) -> Box<dyn ClipboardProvider> {
-    let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
-
-    match desktop.as_str() {
-        "KDE" | "GNOME" => {
-            Box::new(wayland::clipboard::ext_data_control::ClipboardMethod { connection: conn })
-                as Box<dyn ClipboardProvider>
-        }
-        _ => Box::new(wayland::clipboard::ext_data_control::ClipboardMethod { connection: conn })
-            as Box<dyn ClipboardProvider>, // TODO : For now it needs to stop the app from running
-    }
+pub fn initialize_clipboard(_conn: Connection) -> Box<dyn ClipboardProvider> {
+    Box::new(wayland::clipboard::ext_data_control::ClipboardMethod)
 }
