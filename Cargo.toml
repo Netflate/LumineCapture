@@ -42,7 +42,6 @@ zune-png = "0.5.2"
 chrono = { version = "0.4", features = ["clock"] }
 strum = { version = "0.28", features = ["derive"] }
 
-
 #[profile.dev]
 #opt-level = 1 
 

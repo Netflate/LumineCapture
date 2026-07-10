@@ -1,5 +1,5 @@
 use crate::backend::wayland::utils::shm::create_shm_buffer;
-use crate::backend::wayland::utils::surface::{SurfaceData, SurfaceVisibility};
+use crate::backend::wayland::utils::surface::SurfaceData;
 
 use crate::backend::ScreenOverlay;
 use crate::backend::wayland::utils::state::{OverlayRunTime, OverlayState};
@@ -12,15 +12,7 @@ use rustix::{
 };
 use std::os::unix::io::AsFd;
 
-// use wayland_cursor::CursorTheme;
-
-use wayland_protocols_wlr::layer_shell::v1::client::{
-    zwlr_layer_shell_v1::Layer,
-    zwlr_layer_surface_v1::{self, Anchor},
-};
-
 use wayland_protocols_plasma::plasma_virtual_desktop::client::{
-    org_kde_plasma_virtual_desktop::{self, OrgKdePlasmaVirtualDesktop},
     org_kde_plasma_virtual_desktop_management::{self, OrgKdePlasmaVirtualDesktopManagement},
 };
 
@@ -63,36 +55,6 @@ impl Dispatch<OrgKdePlasmaVirtualDesktopManagement, ()> for OverlayState {
     }
 }
 
-impl Dispatch<OrgKdePlasmaVirtualDesktop, String> for OverlayState {
-    fn event(
-        state: &mut Self,
-        _: &OrgKdePlasmaVirtualDesktop,
-        event: org_kde_plasma_virtual_desktop::Event,
-        desktop_id: &String,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-        match event {
-            org_kde_plasma_virtual_desktop::Event::Activated {} => {
-                let kde = state.kde.as_mut().unwrap();
-                if kde.current_desktop.is_none() {
-                    kde.current_desktop = Some(desktop_id.clone());
-                } else if kde.current_desktop.as_deref() != Some(desktop_id) {
-                    for sd in state.surfaces.values_mut() {
-                        sd.set_hidden();
-                        state.pending_flush = true;
-                    }
-                } else {
-                    for sd in state.surfaces.values_mut() {
-                        sd.set_visible();
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
 impl ScreenOverlay for KdeOverlay {
     fn present(
         &mut self,
@@ -102,54 +64,66 @@ impl ScreenOverlay for KdeOverlay {
         let rt = self.runtime.as_mut().ok_or("runtime missing")?;
         let qh = rt.event_queue.handle();
 
-        let compositor = rt.state.compositor.clone().ok_or("no compositor")?;
-        let layer_shell = rt.state.layer_shell.clone().ok_or("no layer_shell")?;
-        let shm = rt.state.shm.clone().ok_or("no shm")?;
-
-        let outputs_ref = &rt.state.outputs;
+        // comparing monitors from outputs with placements, to find the correnct one 
         let found_outputs: Vec<wl_output::WlOutput> = placements
             .iter()
             .map(|placement| {
-                outputs_ref
-                    .iter()
-                    .find(|o| o.x == placement.position.0 && o.y == placement.position.1)
-                    .or_else(|| {
-                        eprintln!(
-                            "No screens found with position {:?}, using main screen (0,0)",
-                            placement.position
-                        );
-                        outputs_ref.first()
+                // searching in outputs now 
+                rt.state
+                    .output_state
+                    .outputs()
+                    .find(|output| {
+                        if let Some(info) = rt.state.output_state.info(output) {
+                            info.location.0 == placement.position.0 && info.location.1 == placement.position.1
+                        } else {
+                            false
+                        }
                     })
-                    .map(|o| o.output.clone())
-                    .ok_or("no outputs found")
+                    .or_else(|| {
+                        let current_sctk_outputs: Vec<_> = rt.state.output_state.outputs()
+                            .map(|o| rt.state.output_state.info(&o))
+                            .collect();
+                        eprintln!(
+                            "SCTK Direct Check: placement {:?}, current SCTK data: {:?}",
+                            placement.position, current_sctk_outputs
+                        );
+                        
+                        rt.state.output_state.outputs().next()
+                    })
+                    .ok_or("no outputs found in SCTK output_state")
             })
             .collect::<Result<_, _>>()?;
 
         for (i, (placement, output)) in placements.iter().zip(found_outputs.iter()).enumerate() {
             let (w, h) = (placement.size.0 as u32, placement.size.1 as u32);
 
-            let surface = compositor.create_surface(&qh, ());
+            let surface = rt.state.compositor_state.create_surface(&qh);
 
             if let Some(viewporter) = rt.state.viewporter.clone() {
                 let viewport = viewporter.get_viewport(&surface, &qh, ());
                 viewport.set_destination(w as i32, h as i32);
             }
 
-            let layer_surface = layer_shell.get_layer_surface(
-                &surface,
-                Some(output),
-                Layer::Overlay,
-                "lumine-capture".to_string(),
+            let layer_surface = rt.state.layer_shell.create_layer_surface(
                 &qh,
-                (),
+                surface.clone(),
+                smithay_client_toolkit::shell::wlr_layer::Layer::Overlay,
+                Some("lumine-capture".to_string()),
+                Some(output),
             );
 
             layer_surface.set_size(w, h);
-            layer_surface.set_anchor(Anchor::Top | Anchor::Bottom | Anchor::Left | Anchor::Right);
+            layer_surface.set_anchor(
+                smithay_client_toolkit::shell::wlr_layer::Anchor::TOP 
+                | smithay_client_toolkit::shell::wlr_layer::Anchor::BOTTOM 
+                | smithay_client_toolkit::shell::wlr_layer::Anchor::LEFT 
+                | smithay_client_toolkit::shell::wlr_layer::Anchor::RIGHT
+            );
             layer_surface.set_keyboard_interactivity(
-                zwlr_layer_surface_v1::KeyboardInteractivity::Exclusive,
+                smithay_client_toolkit::shell::wlr_layer::KeyboardInteractivity::Exclusive,
             );
             layer_surface.set_exclusive_zone(-1);
+            
             surface.commit();
 
             let frac_scale = rt
@@ -162,11 +136,14 @@ impl ScreenOverlay for KdeOverlay {
 
             rt.event_queue.roundtrip(&mut rt.state)?;
 
-            let shm_buffer = create_shm_buffer(&shm, &qh, w, h)?;
+            let wl_shm_raw = rt.state.shm.wl_shm();
+            let shm_buffer = create_shm_buffer(wl_shm_raw, &qh, w, h)?;
+            
             let transparent_pixels = vec![0u8; (w * h * 4) as usize];
-            let mut transparent_buffer = create_shm_buffer(&shm, &qh, w, h)?;
+            let mut transparent_buffer = create_shm_buffer(wl_shm_raw, &qh, w, h)?;
             transparent_buffer.write_pixels(&transparent_pixels);
-            let empty_region = compositor.create_region(&qh, ());
+            
+            let empty_region = smithay_client_toolkit::compositor::Region::new(&rt.state.compositor_state)?;
 
             surface.damage_buffer(0, 0, w as i32, h as i32);
             surface.commit();
@@ -182,13 +159,13 @@ impl ScreenOverlay for KdeOverlay {
                     width: w,
                     height: h,
                     configured: false,
-                    visibility: SurfaceVisibility::Visible,
                 },
             );
         }
 
         Ok(&rt.state.outputs)
     }
+
     fn update_frame(
         &mut self,
         monitor_idx: usize,
@@ -201,9 +178,6 @@ impl ScreenOverlay for KdeOverlay {
             .surfaces
             .get_mut(&monitor_idx)
             .ok_or("surface not found")?;
-        if matches!(sd.visibility, SurfaceVisibility::Hidden) {
-            return Ok(());
-        }
 
         if let Some((x, y, w, h)) = damage {
             if x == 0 && y == 0 && w == sd.width && h == sd.height {
