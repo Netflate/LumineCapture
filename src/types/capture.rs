@@ -4,15 +4,14 @@ pub struct Placement {
     pub position: (i32, i32),
 }
 // Wayland outputs
-use wayland_client::protocol::wl_output;
 use smithay_client_toolkit::output::OutputInfo as SctkOutputInfo;
+use wayland_client::protocol::wl_output;
 
 #[derive(Debug, Clone)]
 pub struct Output {
     pub wl_output: wl_output::WlOutput,
     pub info: SctkOutputInfo,
 }
-
 
 #[derive(Debug, Clone)]
 pub enum SourceType {

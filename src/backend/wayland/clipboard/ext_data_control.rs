@@ -1,6 +1,6 @@
+use crate::backend::ClipboardProvider;
 use std::io::Write;
 use std::process::{Command, Stdio};
-use crate::backend::ClipboardProvider;
 
 pub struct ClipboardMethod;
 

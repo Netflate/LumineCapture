@@ -1,33 +1,40 @@
 use crate::backend::{ScreenOverlay, initialize_capture, initialize_clipboard, initialize_overlay};
-use crate::types::{DamageRect, MAG_FRAME_INTERVAL, MagnifierState, MonitorFrame, MouseButton, OverlayEvent, Placement, PointerState, SelectionEdges, SelectionState, SpecialKey};
-use crate::types::toolbar::{TOOLBAR_HEIGHT, TOOLBAR_OFFSET, TOOLBAR_PADDING, Toolbar, ToolbarAnimation, ToolbarAction, ToolbarButton, ToolbarItem, ToolbarSide};
-use crate::renderer::{self};
-use crate::utils::{global_point_to_local, encode_png, save_to_file, get_overlapping_monitors};
-use crate::tools::{Tool, dispatch_button, dispatch_deactivate, dispatch_move, dispatch_key, dispatch_text};
-use crate::tools::selection::{global_selection_to_local, selection_edges_for_monitor};
 use crate::editor::EditorState;
+use crate::renderer::{self};
+use crate::tools::selection::{global_selection_to_local, selection_edges_for_monitor};
+use crate::tools::{
+    Tool, dispatch_button, dispatch_deactivate, dispatch_key, dispatch_move, dispatch_text,
+};
 use crate::types::icons;
-use tiny_skia::{Pixmap, PixmapPaint, Transform, Rect};
-use std::time::{Instant};
-use std::collections::HashMap;
-use usvg::Tree;
+use crate::types::toolbar::{
+    TOOLBAR_HEIGHT, TOOLBAR_OFFSET, TOOLBAR_PADDING, Toolbar, ToolbarAction, ToolbarAnimation,
+    ToolbarButton, ToolbarItem, ToolbarSide,
+};
+use crate::types::{
+    DamageRect, MAG_FRAME_INTERVAL, MagnifierState, MonitorFrame, MouseButton, OverlayEvent,
+    Placement, PointerState, SelectionEdges, SelectionState, SpecialKey,
+};
+use crate::utils::{encode_png, get_overlapping_monitors, global_point_to_local, save_to_file};
 use cosmic_text::{FontSystem, SwashCache};
+use std::collections::HashMap;
+use std::time::Instant;
+use tiny_skia::{Pixmap, PixmapPaint, Rect, Transform};
+use usvg::Tree;
 
 // small note while wip, to notice if it becamwe slower
-// (Background thread) : svg parsed in 0ms 
+// (Background thread) : svg parsed in 0ms
 // after capturing 67ms
 // after initialising base_pixmaps, which are original frames in Vec<Pixmap> 72ms
 // after initialising dimmed canvas, same size dimmed frames 72ms
 // after saving base screenshot 73ms
 // after initialising overlay and showing it 114ms
 
-// (Background thread) : svg parsed in 0ms 
+// (Background thread) : svg parsed in 0ms
 // after capturing 67ms
 // after initialising base_pixmaps, which are original frames in Vec<Pixmap> 72ms
 // after initialising dimmed canvas, same size dimmed frames 72ms
 // after saving base screenshot 73ms
 // after initialising overlay and showing it 114ms
-
 
 // ************************* //
 //      ENTRY POINT          //
@@ -38,9 +45,7 @@ pub async fn make_screenshot(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let t0 = std::time::Instant::now();
     let icons_handle = std::thread::spawn(load_icons_cache);
-    let text_handle = std::thread::spawn(|| { 
-            (SwashCache::new(), FontSystem::new()) 
-        });
+    let text_handle = std::thread::spawn(|| (SwashCache::new(), FontSystem::new()));
 
     let conn = wayland_.unwrap();
     let capture = initialize_capture();
@@ -51,15 +56,21 @@ pub async fn make_screenshot(
     let clipboard = initialize_clipboard(conn);
 
     let base_pixmaps: Vec<Pixmap> = build_base_pixmap(&screenshots.frames);
-    println!("after initialising base_pixmaps, which are original frames in Vec<Pixmap> {}ms", t0.elapsed().as_millis());
+    println!(
+        "after initialising base_pixmaps, which are original frames in Vec<Pixmap> {}ms",
+        t0.elapsed().as_millis()
+    );
     let (canvas, dimmed, annotations_layer) = build_layers(&base_pixmaps);
-    println!("after initialising dimmed canvas, same size dimmed frames {}ms", t0.elapsed().as_millis());
+    println!(
+        "after initialising dimmed canvas, same size dimmed frames {}ms",
+        t0.elapsed().as_millis()
+    );
     let placements = build_placements(&screenshots.frames);
-    
+
     drop(screenshots);
     // 4 may 2026 : ~75mb memory usage while screenshoting on kde linux with 2 hd monitors
     // not ideal, could be resolved with rendering in shm itself
-    
+
     let (swash_cache, font_system) = text_handle.join().expect("Failed to join text thread");
     let icon_cache = icons_handle.join().expect("Failed to join icons thread");
     let mut editor_state = EditorState {
@@ -99,10 +110,16 @@ pub async fn make_screenshot(
         mod_shift: false,
     };
 
-    println!("after saving base screenshot {}ms", t0.elapsed().as_millis());
+    println!(
+        "after saving base screenshot {}ms",
+        t0.elapsed().as_millis()
+    );
     overlay.present(&editor_state.placements)?.to_vec();
     initial_paint(&mut editor_state, &mut overlay)?;
-    println!("after initialising overlay and showing it {}ms", t0.elapsed().as_millis());
+    println!(
+        "after initialising overlay and showing it {}ms",
+        t0.elapsed().as_millis()
+    );
 
     let mut dirty_mask: u32 = 0;
     let mut selection_dirty = false;
@@ -120,14 +137,25 @@ pub async fn make_screenshot(
             let target_opacity = if tb.interferes { 0.1 } else { 1.0 };
             (tb.opacity - target_opacity).abs() > 0.001
         };
-        let timeout = if editor_state.toolbar.anim.is_some() || opacity_animating { 16 } else { -1 };
+        let timeout = if editor_state.toolbar.anim.is_some() || opacity_animating {
+            16
+        } else {
+            -1
+        };
 
         let ev = overlay.next_event(timeout)?;
         match ev {
             OverlayEvent::Tick => {}
             OverlayEvent::EscapePressed => break,
             OverlayEvent::PointerMove { monitor_idx, x, y } => {
-                handle_pointer_move(&mut editor_state, monitor_idx, x, y, &mut dirty_mask, &mut selection_dirty);
+                handle_pointer_move(
+                    &mut editor_state,
+                    monitor_idx,
+                    x,
+                    y,
+                    &mut dirty_mask,
+                    &mut selection_dirty,
+                );
             }
             OverlayEvent::PointerButton { button, pressed } => {
                 handle_pointer_button(&mut editor_state, button, pressed, &mut dirty_mask);
@@ -150,7 +178,7 @@ pub async fn make_screenshot(
                 handle_key_press(&mut editor_state, key, &mut dirty_mask);
             }
             OverlayEvent::ModifiersChanged { ctrl, shift } => {
-                editor_state.mod_ctrl  = ctrl;
+                editor_state.mod_ctrl = ctrl;
                 editor_state.mod_shift = shift;
             }
         }
@@ -158,10 +186,9 @@ pub async fn make_screenshot(
         tick_toolbar_anim(&mut editor_state, &mut dirty_mask);
 
         if dirty_mask != 0 {
-
             if editor_state.annotations_dirty {
                 let active_text_id = editor_state.text_editing.as_ref().map(|e| e.annotation_id);
-                
+
                 for i in 0..editor_state.base.len() {
                     let offset = (
                         editor_state.placements[i].position.0 as f32,
@@ -175,15 +202,16 @@ pub async fn make_screenshot(
                         offset,
                         &mut editor_state.font_system,
                         &mut editor_state.swash_cache,
-                        &mut editor_state.text_editors,  
-                        active_text_id,                  
+                        &mut editor_state.text_editors,
+                        active_text_id,
                     );
                 }
             }
 
             for i in 0..editor_state.base.len() {
                 if is_dirty(dirty_mask, i) {
-                    let is_mag_monitor = editor_state.magnifier
+                    let is_mag_monitor = editor_state
+                        .magnifier
                         .as_ref()
                         .map_or(false, |m| m.monitor_idx == i);
 
@@ -193,17 +221,28 @@ pub async fn make_screenshot(
                         &editor_state.placements[i],
                     );
                     let dirty_rect = editor_state.monitor_dirty_rect(i, selection_dirty);
-                    let damage: Option<DamageRect> = dirty_rect
-                        .as_ref()
-                        .and_then(|r| renderer::rect_bounds(r, editor_state.base[i].width(), editor_state.base[i].height()));
+                    let damage: Option<DamageRect> = dirty_rect.as_ref().and_then(|r| {
+                        renderer::rect_bounds(
+                            r,
+                            editor_state.base[i].width(),
+                            editor_state.base[i].height(),
+                        )
+                    });
 
                     if i == editor_state.toolbar.monitor_idx && !editor_state.toolbar.dirty {
                         if let Some(dirty) = dirty_rect.as_ref() {
                             let tb = &editor_state.toolbar;
-                            let tb_rect = Rect::from_xywh(tb.position.0, tb.position.1, tb.size.0, TOOLBAR_HEIGHT);
+                            let tb_rect = Rect::from_xywh(
+                                tb.position.0,
+                                tb.position.1,
+                                tb.size.0,
+                                TOOLBAR_HEIGHT,
+                            );
                             if let Some(tb_r) = tb_rect {
-                                let intersects = dirty.left() < tb_r.right() && dirty.right() > tb_r.left()
-                                    && dirty.top() < tb_r.bottom() && dirty.bottom() > tb_r.top();
+                                let intersects = dirty.left() < tb_r.right()
+                                    && dirty.right() > tb_r.left()
+                                    && dirty.top() < tb_r.bottom()
+                                    && dirty.bottom() > tb_r.top();
                                 if intersects {
                                     editor_state.toolbar.dirty = true;
                                 }
@@ -211,17 +250,18 @@ pub async fn make_screenshot(
                         }
                     }
 
-                    let toolbar = if i == editor_state.toolbar.monitor_idx && editor_state.toolbar.dirty {
-                        Some(&mut editor_state.toolbar)
-                    } else {
-                        None
-                    };
-                    
+                    let toolbar =
+                        if i == editor_state.toolbar.monitor_idx && editor_state.toolbar.dirty {
+                            Some(&mut editor_state.toolbar)
+                        } else {
+                            None
+                        };
+
                     let offset = (
                         editor_state.placements[i].position.0 as f32,
                         editor_state.placements[i].position.1 as f32,
                     );
-                    
+
                     renderer::render_frame(&mut renderer::RenderRequest {
                         canvas: &mut editor_state.canvas[i],
                         base: &editor_state.base[i],
@@ -236,7 +276,7 @@ pub async fn make_screenshot(
                         toolbar,
                         icons_cache: &editor_state.icon_cache,
                         annotations_layer: &editor_state.annotations_layer[i],
-                        offset : offset,
+                        offset: offset,
                     });
 
                     overlay.update_frame(i, editor_state.canvas[i].data(), damage)?;
@@ -261,7 +301,6 @@ pub async fn make_screenshot(
     Ok(())
 }
 
-
 // ************************* //
 //      INITIALIZATION       //
 // ************************* //
@@ -272,8 +311,8 @@ fn build_base_pixmap(frames: &Vec<MonitorFrame>) -> Vec<Pixmap> {
         .enumerate()
         .map(|(monitor_idx, f)| {
             let (src_w, src_h) = (f.pw_width, f.pw_height);
-            let mut src_pixmap = Pixmap::new(src_w, src_h)
-                .expect("Failed to create source Pixmap for monitor");
+            let mut src_pixmap =
+                Pixmap::new(src_w, src_h).expect("Failed to create source Pixmap for monitor");
 
             let row_bytes = (src_w as usize) * 4;
             let src_stride = f.pw_stride as usize;
@@ -287,15 +326,14 @@ fn build_base_pixmap(frames: &Vec<MonitorFrame>) -> Vec<Pixmap> {
             }
 
             let needed = src_stride * (src_h as usize);
-            let src = f
-                .pixels
-                .get(..needed)
-                .unwrap_or_else(|| panic!(
+            let src = f.pixels.get(..needed).unwrap_or_else(|| {
+                panic!(
                     "Not enough pixel data for monitor {}: have={} need={}",
                     monitor_idx,
                     f.pixels.len(),
                     needed
-                ));
+                )
+            });
 
             for row in 0..(src_h as usize) {
                 let src_off = row * src_stride;
@@ -304,10 +342,8 @@ fn build_base_pixmap(frames: &Vec<MonitorFrame>) -> Vec<Pixmap> {
                     .copy_from_slice(&src[src_off..src_off + row_bytes]);
             }
 
-            let (logical_w_i32, logical_h_i32) = f
-                .info
-                .size
-                .unwrap_or((src_w as i32, src_h as i32));
+            let (logical_w_i32, logical_h_i32) =
+                f.info.size.unwrap_or((src_w as i32, src_h as i32));
             let logical_w = logical_w_i32.max(1) as u32;
             let logical_h = logical_h_i32.max(1) as u32;
 
@@ -320,7 +356,8 @@ fn build_base_pixmap(frames: &Vec<MonitorFrame>) -> Vec<Pixmap> {
             let sx = logical_w as f32 / src_w as f32;
             let sy = logical_h as f32 / src_h as f32;
             logical_pixmap.draw_pixmap(
-                0, 0,
+                0,
+                0,
                 src_pixmap.as_ref(),
                 &PixmapPaint::default(),
                 Transform::from_row(sx, 0.0, 0.0, sy, 0.0, 0.0),
@@ -340,7 +377,7 @@ fn build_layers(base_pixmaps: &[Pixmap]) -> (Vec<Pixmap>, Vec<Pixmap>, Vec<Pixma
     for p in base_pixmaps {
         let w = p.width();
         let h = p.height();
-        
+
         canvases.push(Pixmap::new(w, h).expect("Failed to create canvas"));
         dimmed_layers.push(Pixmap::new(w, h).expect("Failed to create dimmed"));
         annotation_layers.push(Pixmap::new(w, h).expect("Failed to create annotations"));
@@ -350,10 +387,14 @@ fn build_layers(base_pixmaps: &[Pixmap]) -> (Vec<Pixmap>, Vec<Pixmap>, Vec<Pixma
 }
 
 fn build_placements(frames: &Vec<MonitorFrame>) -> Vec<Placement> {
-    frames.iter()
+    frames
+        .iter()
         .map(|stream| Placement {
             position: stream.info.position.unwrap_or((0, 0)),
-            size: stream.info.size.unwrap_or((stream.pw_width as i32, stream.pw_height as i32)),
+            size: stream
+                .info
+                .size
+                .unwrap_or((stream.pw_width as i32, stream.pw_height as i32)),
         })
         .collect()
 }
@@ -364,13 +405,18 @@ fn load_icons_cache() -> HashMap<ToolbarButton, Tree> {
     let opt = usvg::Options::default();
 
     for item in crate::types::toolbar::TOOLBAR_ITEMS {
-        let ToolbarItem::Button(button) = item else { continue };
+        let ToolbarItem::Button(button) = item else {
+            continue;
+        };
         let (svg_str, _) = icons::get_svg(button);
-        let tree = Tree::from_str(svg_str, &opt)
-            .expect("Critical: Failed to parse embedded SVG icon");
+        let tree =
+            Tree::from_str(svg_str, &opt).expect("Critical: Failed to parse embedded SVG icon");
         cache.insert(*button, tree);
     }
-    println!("(Background thread) : svg parsed in {}ms ", t0.elapsed().as_millis());
+    println!(
+        "(Background thread) : svg parsed in {}ms ",
+        t0.elapsed().as_millis()
+    );
     cache
 }
 
@@ -410,7 +456,6 @@ fn initial_paint(
     Ok(())
 }
 
-
 // ************************* //
 //      INPUT HANDLING       //
 // ************************* //
@@ -427,13 +472,23 @@ fn handle_pointer_move(
         editor_state.placements[monitor_idx].position.0 as f64 + x,
         editor_state.placements[monitor_idx].position.1 as f64 + y,
     );
-    let (current_monitor_idx, local_x, local_y) = global_point_to_local(
-        &editor_state.placements, global, monitor_idx, (x, y),
+    let (current_monitor_idx, local_x, local_y) =
+        global_point_to_local(&editor_state.placements, global, monitor_idx, (x, y));
+    update_pointer(
+        editor_state,
+        current_monitor_idx,
+        (local_x, local_y),
+        global,
     );
-    update_pointer(editor_state, current_monitor_idx, (local_x, local_y), global);
     update_magnifier(editor_state, dirty_mask);
-    dispatch_move(editor_state.selected_tool, editor_state, global, selection_dirty, dirty_mask);
-    apply_damage_rects(editor_state, dirty_mask); 
+    dispatch_move(
+        editor_state.selected_tool,
+        editor_state,
+        global,
+        selection_dirty,
+        dirty_mask,
+    );
+    apply_damage_rects(editor_state, dirty_mask);
     update_toolbar(editor_state, dirty_mask);
 }
 
@@ -444,7 +499,8 @@ fn handle_pointer_button(
     dirty_mask: &mut u32,
 ) {
     if matches!(button, MouseButton::Left) && pressed {
-        if let Some(tb_button) = toolbar_hit_test(&editor_state.toolbar, editor_state.pointer.local) {
+        if let Some(tb_button) = toolbar_hit_test(&editor_state.toolbar, editor_state.pointer.local)
+        {
             editor_state.toolbar.dirty = true;
             mark_dirty(dirty_mask, editor_state.toolbar.monitor_idx);
 
@@ -456,7 +512,8 @@ fn handle_pointer_button(
                         editor_state.toolbar.selected = Some(tb_button);
                     }
                     ToolbarButton::Action(ToolbarAction::SideChange) => {
-                        editor_state.toolbar.current_side = match editor_state.toolbar.current_side {
+                        editor_state.toolbar.current_side = match editor_state.toolbar.current_side
+                        {
                             ToolbarSide::Top => ToolbarSide::Bottom,
                             ToolbarSide::Bottom => ToolbarSide::Top,
                         };
@@ -469,8 +526,14 @@ fn handle_pointer_button(
         }
     }
 
-    dispatch_button(editor_state.selected_tool, editor_state, button, pressed, dirty_mask);
-    apply_damage_rects(editor_state, dirty_mask); 
+    dispatch_button(
+        editor_state.selected_tool,
+        editor_state,
+        button,
+        pressed,
+        dirty_mask,
+    );
+    apply_damage_rects(editor_state, dirty_mask);
 
     if matches!(button, MouseButton::Left) && !pressed {
         update_toolbar(editor_state, dirty_mask);
@@ -510,10 +573,12 @@ fn update_magnifier(editor_state: &mut EditorState, dirty_mask: &mut u32) {
         editor_state.prev_magnifier = None;
     }
 
-    editor_state.magnifier = Some(MagnifierState { monitor_idx, pos: local });
+    editor_state.magnifier = Some(MagnifierState {
+        monitor_idx,
+        pos: local,
+    });
     mark_dirty(dirty_mask, monitor_idx);
 }
-
 
 // ************************* //
 //         TOOLBAR           //
@@ -528,7 +593,7 @@ fn update_toolbar(editor_state: &mut EditorState, dirty_mask: &mut u32) {
         editor_state.toolbar.toolbar_width(),
     );
     let from_y = match editor_state.toolbar.current_side {
-        ToolbarSide::Top    => -TOOLBAR_HEIGHT,
+        ToolbarSide::Top => -TOOLBAR_HEIGHT,
         ToolbarSide::Bottom => placement.size.1 as f32,
     };
     let interferes = toolbar_interferes(editor_state);
@@ -573,7 +638,8 @@ fn tick_toolbar_anim(editor_state: &mut EditorState, dirty_mask: &mut u32) {
 
     // smooth opacity animation
     let now = Instant::now();
-    let dt = tb.last_tick
+    let dt = tb
+        .last_tick
         .map(|t| now.duration_since(t).as_secs_f32())
         .unwrap_or(0.016);
     tb.last_tick = Some(now);
@@ -617,18 +683,34 @@ fn toolbar_interferes(editor_state: &EditorState) -> bool {
     let x = (mon_w - tb_width) / 2.0;
 
     let active_rect = match tb.current_side {
-        ToolbarSide::Top    => (x, TOOLBAR_OFFSET, x + tb_width, TOOLBAR_OFFSET + TOOLBAR_HEIGHT),
-        ToolbarSide::Bottom => (x, mon_h - TOOLBAR_OFFSET - TOOLBAR_HEIGHT, x + tb_width, mon_h - TOOLBAR_OFFSET),
+        ToolbarSide::Top => (
+            x,
+            TOOLBAR_OFFSET,
+            x + tb_width,
+            TOOLBAR_OFFSET + TOOLBAR_HEIGHT,
+        ),
+        ToolbarSide::Bottom => (
+            x,
+            mon_h - TOOLBAR_OFFSET - TOOLBAR_HEIGHT,
+            x + tb_width,
+            mon_h - TOOLBAR_OFFSET,
+        ),
     };
 
-    let Some(sel) = editor_state.selection.zone
+    let Some(sel) = editor_state
+        .selection
+        .zone
         .as_ref()
         .and_then(|sel| global_selection_to_local(sel, placement))
-    else { return false };
+    else {
+        return false;
+    };
 
-    active_rect.0 < sel.right()  && active_rect.2 > sel.left() &&
-    active_rect.1 < sel.bottom() && active_rect.3 > sel.top()  &&
-    editor_state.tool_active  // if selection isn't active toolbar won't be transparent
+    active_rect.0 < sel.right()
+        && active_rect.2 > sel.left()
+        && active_rect.1 < sel.bottom()
+        && active_rect.3 > sel.top()
+        && editor_state.tool_active // if selection isn't active toolbar won't be transparent
 }
 
 fn toolbar_position(side: ToolbarSide, placement: &Placement, tb_width: f32) -> (f32, f32) {
@@ -636,7 +718,7 @@ fn toolbar_position(side: ToolbarSide, placement: &Placement, tb_width: f32) -> 
     let mon_h = placement.size.1 as f32;
     let x = (mon_w - tb_width) / 2.0;
     let y = match side {
-        ToolbarSide::Top    => TOOLBAR_OFFSET,
+        ToolbarSide::Top => TOOLBAR_OFFSET,
         ToolbarSide::Bottom => mon_h - TOOLBAR_OFFSET - TOOLBAR_HEIGHT,
     };
     (x, y)
@@ -665,7 +747,6 @@ pub fn toolbar_hit_test(toolbar: &Toolbar, local: (f64, f64)) -> Option<usize> {
     }
     None
 }
-
 
 // ************************* //
 //      RENDER HELPERS       //
@@ -711,11 +792,14 @@ fn render_final(editor_state: &mut EditorState) -> Vec<u8> {
 
     let mut out = Pixmap::new(sel_w, sel_h).unwrap();
     for (i, placement) in editor_state.placements.iter().enumerate() {
-        if (mask & (1 << i)) == 0 { continue; }
+        if (mask & (1 << i)) == 0 {
+            continue;
+        }
         let dst_x = placement.position.0 - sel_left;
         let dst_y = placement.position.1 - sel_top;
         out.draw_pixmap(
-            dst_x, dst_y,
+            dst_x,
+            dst_y,
             editor_state.base[i].as_ref(),
             &PixmapPaint::default(),
             Transform::identity(),
@@ -737,13 +821,12 @@ fn render_final(editor_state: &mut EditorState) -> Vec<u8> {
             &mut editor_state.font_system,
             &mut editor_state.swash_cache,
             &mut editor_state.text_editors,
-            None,          
+            None,
         );
     }
 
     encode_png(&out)
 }
-
 
 // ************************* //
 //           UTILS           //
@@ -757,7 +840,7 @@ fn is_dirty(mask: u32, idx: usize) -> bool {
     (mask & (1 << idx)) != 0
 }
 
-// some parts of the code still identify dirty monitors themselves 
+// some parts of the code still identify dirty monitors themselves
 // that will be fixed
 fn apply_damage_rects(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     for rect in &editor_state.damage_rects {
@@ -765,14 +848,14 @@ fn apply_damage_rects(editor_state: &mut EditorState, dirty_mask: &mut u32) {
         *dirty_mask |= mask;
     }
 }
-// text 
+// text
 
 fn handle_text_input(editor_state: &mut EditorState, ch: char, dirty_mask: &mut u32) {
     dispatch_text(editor_state.selected_tool, editor_state, ch, dirty_mask);
-    apply_damage_rects(editor_state, dirty_mask); 
+    apply_damage_rects(editor_state, dirty_mask);
 }
 
 fn handle_key_press(editor_state: &mut EditorState, key: SpecialKey, dirty_mask: &mut u32) {
     dispatch_key(editor_state.selected_tool, editor_state, key, dirty_mask);
-    apply_damage_rects(editor_state, dirty_mask); 
+    apply_damage_rects(editor_state, dirty_mask);
 }

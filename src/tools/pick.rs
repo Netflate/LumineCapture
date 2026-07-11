@@ -1,8 +1,8 @@
 use crate::editor::EditorState;
 use crate::tools::ToolBehavior;
 use crate::types::{
-    AnnDragState, MouseButton, SelectionHandle, 
-    annotations::{commit_drag_if_changed, apply_annotation_drag, begin_drag_for_annotation}
+    AnnDragState, MouseButton, SelectionHandle,
+    annotations::{apply_annotation_drag, begin_drag_for_annotation, commit_drag_if_changed},
 };
 
 pub struct PickTool;

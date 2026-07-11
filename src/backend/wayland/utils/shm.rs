@@ -1,7 +1,7 @@
 // ── Shared Memory (shm) buffer Utilities ──────────────────────────────────────
 // manage low-level shared memory allocations, stride math, and raw pixel  copying for surface drawing.
 //
-// in 'utils' to separate raw memory manipulation and buffer rendering 
+// in 'utils' to separate raw memory manipulation and buffer rendering
 // from the high-level Wayland protocol handlers ('state/compositor_shm_layer.rs')
 // reminder: each output has its own surface
 
@@ -22,7 +22,8 @@ pub fn create_shm_buffer(
         width as i32,
         height as i32,
         stride,
-        wl_shm::Format::Argb8888)?;
+        wl_shm::Format::Argb8888,
+    )?;
 
     Ok(ShmBuffer { buffer })
 }

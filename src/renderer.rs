@@ -263,7 +263,7 @@ pub fn rebuild_annotations_layer(
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
     text_editors: &mut HashMap<u64, Editor<'static>>,
-    active_text_id: Option<u64>,   
+    active_text_id: Option<u64>,
 ) {
     layer.fill(tiny_skia::Color::TRANSPARENT);
 

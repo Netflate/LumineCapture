@@ -23,7 +23,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-
 fn run_clipboard_daemon() {
     use std::io::Read;
     use wl_clipboard_rs::copy::{MimeSource, MimeType, Options, Source};
@@ -32,7 +31,7 @@ fn run_clipboard_daemon() {
     std::io::stdin().read_to_end(&mut buf).expect("read stdin");
 
     let mut opts = Options::new();
-    opts.foreground(true); 
+    opts.foreground(true);
 
     let result = opts.copy_multi(vec![
         MimeSource {

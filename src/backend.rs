@@ -17,7 +17,6 @@ pub trait ClipboardProvider {
     fn copy_image_to_clipboard(&self, png_data: Vec<u8>) -> Result<(), Box<dyn std::error::Error>>;
 }
 
-
 #[async_trait]
 pub trait ScreenOverlay {
     fn present(
@@ -39,12 +38,10 @@ pub fn initialize_overlay(conn: Connection) -> Box<dyn ScreenOverlay> {
 
     match desktop.as_str() {
         "GNOME" => {
-            // TODO: won't work on gnome anyways :p will be implemented in the future 
+            // TODO: won't work on gnome anyways :p will be implemented in the future
             Box::new(wayland::overlay::WaylandOverlay::new(conn)) as Box<dyn ScreenOverlay>
         }
-        _ => {
-            Box::new(wayland::overlay::WaylandOverlay::new(conn)) as Box<dyn ScreenOverlay>
-        }
+        _ => Box::new(wayland::overlay::WaylandOverlay::new(conn)) as Box<dyn ScreenOverlay>,
     }
 }
 

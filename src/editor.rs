@@ -1,33 +1,36 @@
-pub mod history;
 pub mod dirty;
+pub mod history;
 
-use std::time::{Instant};
+use cosmic_text::{Editor, FontSystem, SwashCache};
 use std::collections::HashMap;
-use usvg::Tree;
+use std::time::Instant;
 use tiny_skia::{Pixmap, Rect};
-use cosmic_text::{FontSystem, SwashCache, Editor};
+use usvg::Tree;
 
 use crate::tools::Tool;
-use crate::types::{PointerState, Placement, Toolbar, SelectionState, ToolbarButton, Annotation, AnnDragState, MagnifierState, TextEditState};
+use crate::types::{
+    AnnDragState, Annotation, MagnifierState, Placement, PointerState, SelectionState,
+    TextEditState, Toolbar, ToolbarButton,
+};
 
 pub struct EditorState {
-    pub base: Vec<Pixmap>,          
+    pub base: Vec<Pixmap>,
     pub canvas: Vec<Pixmap>,
     pub dimmed: Vec<Pixmap>,
-    pub placements : Vec<Placement>, 
+    pub placements: Vec<Placement>,
     pub drag_start: Option<(f64, f64)>,
-    pub selected_tool: Tool,               
+    pub selected_tool: Tool,
     pub tool_active: bool,
     pub pointer: PointerState,
-    pub magnifier: Option<MagnifierState> ,
+    pub magnifier: Option<MagnifierState>,
     pub prev_magnifier: Option<MagnifierState>,
     pub last_mag_update: Option<Instant>,
-    pub mouse_down_left : bool,
+    pub mouse_down_left: bool,
     pub selection: SelectionState,
-    pub toolbar : Toolbar,
-    pub icon_cache : HashMap<ToolbarButton, Tree>,
+    pub toolbar: Toolbar,
+    pub icon_cache: HashMap<ToolbarButton, Tree>,
     pub damage_rects: Vec<Rect>,
-    
+
     // annotations
     pub annotations: Vec<Annotation>,
     pub pending: Option<Annotation>,

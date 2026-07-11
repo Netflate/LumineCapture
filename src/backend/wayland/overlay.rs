@@ -10,7 +10,7 @@ use crate::backend::wayland::utils::surface::SurfaceData;
 use crate::types::{DamageRect, Output, OverlayEvent, Placement};
 
 use rustix::{
-    event::{poll, PollFd, PollFlags},
+    event::{PollFd, PollFlags, poll},
     time::Timespec,
 };
 use std::os::unix::io::AsFd;
@@ -77,7 +77,7 @@ impl ScreenOverlay for WaylandOverlay {
             }
 
             // ── 2. create an overlay layer surface, above everything else   ──────────────────────────────
-            // will be switched to usual force above window 
+            // will be switched to usual force above window
             // at least for everything besides gnome
 
             let layer_surface = rt.state.layer_shell.create_layer_surface(
@@ -113,7 +113,7 @@ impl ScreenOverlay for WaylandOverlay {
 
             rt.event_queue.roundtrip(&mut rt.state)?;
 
-            // ── 3. allocate shared memory (shm) pixel buffers ─────────────────────────────────────────            
+            // ── 3. allocate shared memory (shm) pixel buffers ─────────────────────────────────────────
             let pool = &mut rt.state.pool;
             let shm_buffer = create_shm_buffer(pool, w, h)?;
 
@@ -193,12 +193,12 @@ impl ScreenOverlay for WaylandOverlay {
                 let _ = guard.read();
             }
             rt.event_queue.dispatch_pending(&mut rt.state)?;
-            
+
             if rt.state.pending_flush {
                 rt.state.pending_flush = false;
                 rt.event_queue.flush()?;
             }
-            
+
             if let Some(ev) = rt.state.events.pop_front() {
                 // optimization: coalesce sequential mouse move events.
                 // we only care about the latest mouse coordinate in the event queue per frame
@@ -211,7 +211,7 @@ impl ScreenOverlay for WaylandOverlay {
                 }
                 return Ok(ev);
             }
-            
+
             // block and wait until the Wayland connection file descriptor has data available (poll)
             let fd = rt.event_queue.as_fd();
             let mut fds = [PollFd::new(&fd, PollFlags::IN)];

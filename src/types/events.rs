@@ -1,7 +1,7 @@
 #[derive(Debug, Clone, Copy)]
 pub enum MouseButton {
     Left,
-    Right, 
+    Right,
     Middle,
 }
 
@@ -29,12 +29,12 @@ impl PointerState {
 
 #[derive(Debug, Clone)]
 pub enum OverlayEvent {
-    PointerMove { monitor_idx: usize, x: f64, y: f64},
-    PointerButton {button: MouseButton, pressed : bool},
+    PointerMove { monitor_idx: usize, x: f64, y: f64 },
+    PointerButton { button: MouseButton, pressed: bool },
     EscapePressed,
     SaveToClipboard,
     Tick,
-    Redo, 
+    Redo,
     Undo,
     TextInput(char),
     KeyPress(SpecialKey),
@@ -49,7 +49,7 @@ pub enum SpecialKey {
     Right,
     Home,
     End,
-    Delete, 
+    Delete,
     Up,
     Down,
     KeyA,
