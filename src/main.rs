@@ -18,8 +18,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let wayland_conn = wayland_client::Connection::connect_to_env().ok();
-    app::make_screenshot(wayland_conn).await?;
+    let wayland_ = wayland_client::Connection::connect_to_env().ok();
+    app::make_screenshot(wayland_).await?;
     Ok(())
 }
 

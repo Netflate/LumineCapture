@@ -34,7 +34,7 @@ use cosmic_text::{FontSystem, SwashCache};
 // ************************* //
 
 pub async fn make_screenshot(
-    wayland_conn: Option<wayland_client::Connection>,
+    wayland_: Option<wayland_client::Connection>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let t0 = std::time::Instant::now();
     let icons_handle = std::thread::spawn(load_icons_cache);
@@ -42,7 +42,7 @@ pub async fn make_screenshot(
             (SwashCache::new(), FontSystem::new()) 
         });
 
-    let conn = wayland_conn.unwrap();
+    let conn = wayland_.unwrap();
     let capture = initialize_capture();
     let screenshots = capture.capture_frame().await?;
 

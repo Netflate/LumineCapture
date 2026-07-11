@@ -1,21 +1,18 @@
-use wayland_client::protocol::wl_output;
-
 pub type DamageRect = (u32, u32, u32, u32);
-
 pub struct Placement {
     pub size: (i32, i32),
     pub position: (i32, i32),
 }
-
 // Wayland outputs
+use wayland_client::protocol::wl_output;
+use smithay_client_toolkit::output::OutputInfo as SctkOutputInfo;
+
 #[derive(Debug, Clone)]
-pub struct OutputInfo {
-    pub output: wl_output::WlOutput,
-    pub x: i32,
-    pub y: i32,
-    pub width: i32,
-    pub height: i32,
+pub struct Output {
+    pub wl_output: wl_output::WlOutput,
+    pub info: SctkOutputInfo,
 }
+
 
 #[derive(Debug, Clone)]
 pub enum SourceType {
