@@ -29,7 +29,7 @@ pub fn global_point_to_local(
             let (w, h) = p.size;
             let inside =
                 gx >= px as f64 && gx < (px + w) as f64 && gy >= py as f64 && gy < (py + h) as f64;
-            inside.then(|| (idx, gx - px as f64, gy - py as f64))
+            inside.then_some((idx, gx - px as f64, gy - py as f64))
         })
         .unwrap_or((fallback_idx, fallback_local.0, fallback_local.1))
 }

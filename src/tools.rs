@@ -132,15 +132,13 @@ pub fn dispatch_deactivate(tool: Tool, state: &mut EditorState, dirty_mask: &mut
 }
 
 pub fn dispatch_text(tool: Tool, state: &mut EditorState, ch: char, dirty_mask: &mut u32) {
-    match tool {
-        Tool::Text => TextTool.on_text(state, ch, dirty_mask),
-        _ => {}
+    if tool == Tool::Text {
+        TextTool.on_text(state, ch, dirty_mask)
     }
 }
 
 pub fn dispatch_key(tool: Tool, state: &mut EditorState, key: SpecialKey, dirty_mask: &mut u32) {
-    match tool {
-        Tool::Text => TextTool.on_key(state, key, dirty_mask),
-        _ => {}
+    if tool == Tool::Text {
+        TextTool.on_key(state, key, dirty_mask)
     }
 }

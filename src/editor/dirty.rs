@@ -92,27 +92,29 @@ impl EditorState {
                 }
 
                 // if toolbar position (side) changed
-                if tb.prev_monitor_idx == monitor_idx && tb.prev_position != tb.position {
-                    if let Some(r) = Rect::from_xywh(
+                if tb.prev_monitor_idx == monitor_idx
+                    && tb.prev_position != tb.position
+                    && let Some(r) = Rect::from_xywh(
                         tb.prev_position.0,
                         tb.prev_position.1,
                         tb.size.0,
                         TOOLBAR_HEIGHT,
-                    ) {
-                        dirty = union_rect(dirty, Some(r));
-                    }
+                    )
+                {
+                    dirty = union_rect(dirty, Some(r));
                 }
             }
             // if toolbar monitor changed
-            if tb.prev_monitor_idx == monitor_idx && tb.prev_monitor_idx != tb.monitor_idx {
-                if let Some(r) = Rect::from_xywh(
+            if tb.prev_monitor_idx == monitor_idx
+                && tb.prev_monitor_idx != tb.monitor_idx
+                && let Some(r) = Rect::from_xywh(
                     tb.prev_position.0,
                     tb.prev_position.1,
                     tb.size.0,
                     TOOLBAR_HEIGHT,
-                ) {
-                    dirty = union_rect(dirty, Some(r));
-                }
+                )
+            {
+                dirty = union_rect(dirty, Some(r));
             }
         }
         dirty
@@ -129,22 +131,21 @@ impl EditorState {
                 global_bbox.top() - offset.1,
                 global_bbox.right() - offset.0,
                 global_bbox.bottom() - offset.1,
-            ) {
-                if let Some(r) = expand_rect(&local, pad) {
-                    dirty = union_rect(dirty, Some(r));
-                }
+            ) && let Some(r) = expand_rect(&local, pad)
+            {
+                dirty = union_rect(dirty, Some(r));
             }
         };
 
-        if let Some(ann) = &self.pending {
-            if !matches!(ann.shape, AnnotationShape::Pen { .. }) {
-                add_global_rect_dirty(&ann.bbox);
-            }
+        if let Some(ann) = &self.pending
+            && !matches!(ann.shape, AnnotationShape::Pen { .. })
+        {
+            add_global_rect_dirty(&ann.bbox);
         }
-        if let Some(ann) = &self.prev_pending {
-            if !matches!(ann.shape, AnnotationShape::Pen { .. }) {
-                add_global_rect_dirty(&ann.bbox);
-            }
+        if let Some(ann) = &self.prev_pending
+            && !matches!(ann.shape, AnnotationShape::Pen { .. })
+        {
+            add_global_rect_dirty(&ann.bbox);
         }
         // selected / moved / resized through Pick tool
         if let Some(ann) = self.selected_annotation {
@@ -165,18 +166,18 @@ impl EditorState {
         state_b: &[Annotation],
     ) {
         for ann in state_a {
-            if !state_b.iter().any(|a| a.id == ann.id) {
-                if let Some(expanded) = expand_rect(&ann.bbox, ann.stroke_width * 2.0 + 4.0) {
-                    damage_rects.push(expanded);
-                }
+            if !state_b.iter().any(|a| a.id == ann.id)
+                && let Some(expanded) = expand_rect(&ann.bbox, ann.stroke_width * 2.0 + 4.0)
+            {
+                damage_rects.push(expanded);
             }
         }
 
         for ann in state_b {
-            if !state_a.iter().any(|a| a.id == ann.id) {
-                if let Some(expanded) = expand_rect(&ann.bbox, ann.stroke_width * 2.0 + 4.0) {
-                    damage_rects.push(expanded);
-                }
+            if !state_a.iter().any(|a| a.id == ann.id)
+                && let Some(expanded) = expand_rect(&ann.bbox, ann.stroke_width * 2.0 + 4.0)
+            {
+                damage_rects.push(expanded);
             }
         }
     }

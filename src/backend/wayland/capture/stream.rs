@@ -138,7 +138,7 @@ pub fn capture_frame(
         .map_err(|e| format!("Failed to receive frame from thread: {}", e).into())
 }
 
-fn build_format_pod<'a>(buffer: &'a mut Vec<u8>) -> &'a Pod {
+fn build_format_pod(buffer: &mut Vec<u8>) -> &Pod {
     use spa::pod::serialize::PodSerializer;
     use spa::pod::{Object, Property, PropertyFlags, Value};
     use spa::sys::*;

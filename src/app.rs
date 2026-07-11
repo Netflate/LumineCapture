@@ -75,12 +75,12 @@ pub async fn make_screenshot(
     let icon_cache = icons_handle.join().expect("Failed to join icons thread");
     let mut editor_state = EditorState {
         base: base_pixmaps,
-        canvas: canvas,
-        dimmed: dimmed,
+        canvas,
+        dimmed,
         selected_tool: Tool::Selection,
         tool_active: false,
         selection: SelectionState::default(),
-        placements: placements,
+        placements,
         drag_start: None,
         pointer: PointerState::default(),
         magnifier: None,
@@ -99,10 +99,10 @@ pub async fn make_screenshot(
         selected_annotation: None,
         ann_drag: None,
 
-        annotations_layer: annotations_layer,
+        annotations_layer,
         annotations_dirty: false,
-        font_system: font_system,
-        swash_cache: swash_cache,
+        font_system,
+        swash_cache,
         text_editors: HashMap::new(),
         text_editing: None,
 
@@ -213,7 +213,7 @@ pub async fn make_screenshot(
                     let is_mag_monitor = editor_state
                         .magnifier
                         .as_ref()
-                        .map_or(false, |m| m.monitor_idx == i);
+                        .is_some_and(|m| m.monitor_idx == i);
 
                     let (local_sel, prev_local, edges) = selection_render_info(
                         &editor_state.selection.zone,
@@ -229,23 +229,24 @@ pub async fn make_screenshot(
                         )
                     });
 
-                    if i == editor_state.toolbar.monitor_idx && !editor_state.toolbar.dirty {
-                        if let Some(dirty) = dirty_rect.as_ref() {
-                            let tb = &editor_state.toolbar;
-                            let tb_rect = Rect::from_xywh(
-                                tb.position.0,
-                                tb.position.1,
-                                tb.size.0,
-                                TOOLBAR_HEIGHT,
-                            );
-                            if let Some(tb_r) = tb_rect {
-                                let intersects = dirty.left() < tb_r.right()
-                                    && dirty.right() > tb_r.left()
-                                    && dirty.top() < tb_r.bottom()
-                                    && dirty.bottom() > tb_r.top();
-                                if intersects {
-                                    editor_state.toolbar.dirty = true;
-                                }
+                    if i == editor_state.toolbar.monitor_idx
+                        && !editor_state.toolbar.dirty
+                        && let Some(dirty) = dirty_rect.as_ref()
+                    {
+                        let tb = &editor_state.toolbar;
+                        let tb_rect = Rect::from_xywh(
+                            tb.position.0,
+                            tb.position.1,
+                            tb.size.0,
+                            TOOLBAR_HEIGHT,
+                        );
+                        if let Some(tb_r) = tb_rect {
+                            let intersects = dirty.left() < tb_r.right()
+                                && dirty.right() > tb_r.left()
+                                && dirty.top() < tb_r.bottom()
+                                && dirty.bottom() > tb_r.top();
+                            if intersects {
+                                editor_state.toolbar.dirty = true;
                             }
                         }
                     }
@@ -276,7 +277,7 @@ pub async fn make_screenshot(
                         toolbar,
                         icons_cache: &editor_state.icon_cache,
                         annotations_layer: &editor_state.annotations_layer[i],
-                        offset: offset,
+                        offset,
                     });
 
                     overlay.update_frame(i, editor_state.canvas[i].data(), damage)?;
@@ -498,32 +499,31 @@ fn handle_pointer_button(
     pressed: bool,
     dirty_mask: &mut u32,
 ) {
-    if matches!(button, MouseButton::Left) && pressed {
-        if let Some(tb_button) = toolbar_hit_test(&editor_state.toolbar, editor_state.pointer.local)
-        {
-            editor_state.toolbar.dirty = true;
-            mark_dirty(dirty_mask, editor_state.toolbar.monitor_idx);
+    if matches!(button, MouseButton::Left)
+        && pressed
+        && let Some(tb_button) = toolbar_hit_test(&editor_state.toolbar, editor_state.pointer.local)
+    {
+        editor_state.toolbar.dirty = true;
+        mark_dirty(dirty_mask, editor_state.toolbar.monitor_idx);
 
-            if let Some(ToolbarItem::Button(button)) = editor_state.toolbar.items.get(tb_button) {
-                match button {
-                    ToolbarButton::Tool(tool) => {
-                        dispatch_deactivate(editor_state.selected_tool, editor_state, dirty_mask);
-                        editor_state.selected_tool = *tool;
-                        editor_state.toolbar.selected = Some(tb_button);
-                    }
-                    ToolbarButton::Action(ToolbarAction::SideChange) => {
-                        editor_state.toolbar.current_side = match editor_state.toolbar.current_side
-                        {
-                            ToolbarSide::Top => ToolbarSide::Bottom,
-                            ToolbarSide::Bottom => ToolbarSide::Top,
-                        };
-                    }
+        if let Some(ToolbarItem::Button(button)) = editor_state.toolbar.items.get(tb_button) {
+            match button {
+                ToolbarButton::Tool(tool) => {
+                    dispatch_deactivate(editor_state.selected_tool, editor_state, dirty_mask);
+                    editor_state.selected_tool = *tool;
+                    editor_state.toolbar.selected = Some(tb_button);
                 }
-                editor_state.toolbar.dirty = true;
-                update_toolbar(editor_state, dirty_mask);
+                ToolbarButton::Action(ToolbarAction::SideChange) => {
+                    editor_state.toolbar.current_side = match editor_state.toolbar.current_side {
+                        ToolbarSide::Top => ToolbarSide::Bottom,
+                        ToolbarSide::Bottom => ToolbarSide::Top,
+                    };
+                }
             }
-            return;
+            editor_state.toolbar.dirty = true;
+            update_toolbar(editor_state, dirty_mask);
         }
+        return;
     }
 
     dispatch_button(
@@ -551,10 +551,10 @@ fn update_pointer(
 
 fn update_magnifier(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     let now = Instant::now();
-    if let Some(last) = editor_state.last_mag_update {
-        if now.duration_since(last) < MAG_FRAME_INTERVAL {
-            return;
-        }
+    if let Some(last) = editor_state.last_mag_update
+        && now.duration_since(last) < MAG_FRAME_INTERVAL
+    {
+        return;
     }
     editor_state.last_mag_update = Some(now);
 

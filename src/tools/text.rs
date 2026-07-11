@@ -152,18 +152,18 @@ impl ToolBehavior for TextTool {
                 continue;
             }
 
-            if let Some(prev) = state.text_editing.as_ref() {
-                if prev.annotation_id != ann.id {
-                    if let Some(prev_ann) = state
-                        .annotations
-                        .iter()
-                        .find(|a| a.id == prev.annotation_id)
-                    {
-                        state.damage_rects.push(prev_ann.damage_bbox(true));
-                    }
-                    if let Some(prev_editor) = state.text_editors.get_mut(&prev.annotation_id) {
-                        prev_editor.set_selection(Selection::None);
-                    }
+            if let Some(prev) = state.text_editing.as_ref()
+                && prev.annotation_id != ann.id
+            {
+                if let Some(prev_ann) = state
+                    .annotations
+                    .iter()
+                    .find(|a| a.id == prev.annotation_id)
+                {
+                    state.damage_rects.push(prev_ann.damage_bbox(true));
+                }
+                if let Some(prev_editor) = state.text_editors.get_mut(&prev.annotation_id) {
+                    prev_editor.set_selection(Selection::None);
                 }
             }
 

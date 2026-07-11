@@ -18,7 +18,7 @@ pub fn draw_toolbar(
     let needs_resize = toolbar
         .toolbar_pixmap
         .as_ref()
-        .map_or(true, |p| p.width() != pw || p.height() != ph);
+        .is_none_or(|p| p.width() != pw || p.height() != ph);
 
     if needs_resize {
         toolbar.toolbar_pixmap = Pixmap::new(pw, ph);
@@ -90,20 +90,19 @@ fn draw_toolbar_content(
                     let icon_x = current_x + padding;
                     let icon_y = rect.top() + padding;
 
-                    if toolbar.selected == Some(index) || toolbar.hovered == Some(index) {
-                        if let Some(cell_rect) =
+                    if (toolbar.selected == Some(index) || toolbar.hovered == Some(index))
+                        && let Some(cell_rect) =
                             Rect::from_xywh(current_x, rect.top(), cell_size, cell_size)
-                        {
-                            let mut cell_paint = Paint::default();
-                            let color = if toolbar.selected == Some(index) {
-                                Color::from_rgba8(200, 200, 200, 255)
-                            } else {
-                                Color::from_rgba8(230, 230, 230, 255)
-                            };
-                            cell_paint.set_color(color);
-                            cell_paint.anti_alias = true;
-                            canvas.fill_rect(cell_rect, &cell_paint, Transform::identity(), None);
-                        }
+                    {
+                        let mut cell_paint = Paint::default();
+                        let color = if toolbar.selected == Some(index) {
+                            Color::from_rgba8(200, 200, 200, 255)
+                        } else {
+                            Color::from_rgba8(230, 230, 230, 255)
+                        };
+                        cell_paint.set_color(color);
+                        cell_paint.anti_alias = true;
+                        canvas.fill_rect(cell_rect, &cell_paint, Transform::identity(), None);
                     }
 
                     let scale_x = icon_size / rtree.size().width();

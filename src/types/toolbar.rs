@@ -60,6 +60,12 @@ pub struct Toolbar {
     pub last_tick: Option<Instant>,
 }
 
+impl Default for Toolbar {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Toolbar {
     pub fn new() -> Self {
         let mut toolbar = Self {
@@ -84,7 +90,7 @@ impl Toolbar {
             last_tick: None,
         };
 
-        toolbar.size.0 = toolbar.toolbar_width() as f32;
+        toolbar.size.0 = toolbar.toolbar_width();
         toolbar.size.1 = TOOLBAR_HEIGHT;
 
         toolbar

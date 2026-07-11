@@ -168,7 +168,7 @@ impl OverlayState {
                 _ => None,
             };
             // fallback to raw physical scan codes (to support AZERTY/non-QWERTY layouts)
-            let final_action = matched_action.or_else(|| match event.raw_code {
+            let final_action = matched_action.or(match event.raw_code {
                 44 => Some(if self.shift {
                     OverlayEvent::Redo
                 } else {

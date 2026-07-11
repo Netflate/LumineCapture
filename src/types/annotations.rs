@@ -296,29 +296,29 @@ pub fn begin_drag_for_annotation(state: &mut EditorState, idx: usize) {
 
 pub fn commit_drag_if_changed(state: &mut EditorState) {
     // mouse up > commit to undo only if something actually changed
-    if let Some(drag) = &state.ann_drag {
-        if let Some(idx) = state.selected_annotation {
-            let actually_changed = !matches!(drag.handle, SelectionHandle::None)
-                && state.annotations[idx].bbox != drag.orig.bbox;
+    if let Some(drag) = &state.ann_drag
+        && let Some(idx) = state.selected_annotation
+    {
+        let actually_changed = !matches!(drag.handle, SelectionHandle::None)
+            && state.annotations[idx].bbox != drag.orig.bbox;
 
-            if actually_changed {
-                // annotations[idx] already has the new position from on_move
-                // we reconstruct the pre-drag snapshot using drag.orig
-                let pre_drag: Vec<_> = state
-                    .annotations
-                    .iter()
-                    .enumerate()
-                    .map(|(i, ann)| {
-                        if i == idx {
-                            drag.orig.clone()
-                        } else {
-                            ann.clone()
-                        }
-                    })
-                    .collect();
-                state.undo_stack.push(pre_drag);
-                state.redo_stack.clear();
-            }
+        if actually_changed {
+            // annotations[idx] already has the new position from on_move
+            // we reconstruct the pre-drag snapshot using drag.orig
+            let pre_drag: Vec<_> = state
+                .annotations
+                .iter()
+                .enumerate()
+                .map(|(i, ann)| {
+                    if i == idx {
+                        drag.orig.clone()
+                    } else {
+                        ann.clone()
+                    }
+                })
+                .collect();
+            state.undo_stack.push(pre_drag);
+            state.redo_stack.clear();
         }
     }
     state.ann_drag = None;
