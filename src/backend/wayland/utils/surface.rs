@@ -10,11 +10,11 @@ use crate::backend::wayland::utils::shm::ShmBuffer;
 use wayland_client::protocol::wl_surface;
 
 pub struct SurfaceData {
+    pub window: smithay_client_toolkit::shell::xdg::window::Window,
     pub surface: wl_surface::WlSurface,
-
-    pub layer_surface: smithay_client_toolkit::shell::wlr_layer::LayerSurface,
-    pub shm_buffer: ShmBuffer,
-    pub transparent_buffer: ShmBuffer,
+    
+    pub shm_buffer: Option<ShmBuffer>,
+    pub transparent_buffer: Option<ShmBuffer>,
 
     pub width: u32,
     pub height: u32,

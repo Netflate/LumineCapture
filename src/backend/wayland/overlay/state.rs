@@ -1,4 +1,4 @@
-pub mod compositor_shm_layer;
+pub mod compositor_shm_xdg;
 pub mod global;
 pub mod keyboard;
 pub mod output;
@@ -28,7 +28,7 @@ pub struct OverlayState {
     // ── sctk ─────────────────────────────────────────────────────────────────────
     pub compositor_state: smithay_client_toolkit::compositor::CompositorState,
     pub shm: smithay_client_toolkit::shm::Shm,
-    pub layer_shell: smithay_client_toolkit::shell::wlr_layer::LayerShell,
+    pub xdg_shell: smithay_client_toolkit::shell::xdg::XdgShell,
     pub registry_state: smithay_client_toolkit::registry::RegistryState,
     pub output_state: smithay_client_toolkit::output::OutputState,
     pub cursor_shape_manager:
@@ -69,8 +69,8 @@ impl OverlayRunTime {
         let shm = Shm::bind(&globals, &qh)?;
         let compositor_state =
             smithay_client_toolkit::compositor::CompositorState::bind(&globals, &qh)?;
-        let layer_shell =
-            smithay_client_toolkit::shell::wlr_layer::LayerShell::bind(&globals, &qh)?;
+        let xdg_shell =
+            smithay_client_toolkit::shell::xdg::XdgShell::bind(&globals, &qh)?;
         let seat = smithay_client_toolkit::seat::SeatState::new(&globals, &qh);
         let cursor_shape_manager =
             smithay_client_toolkit::seat::pointer::cursor_shape::CursorShapeManager::bind(
@@ -95,7 +95,7 @@ impl OverlayRunTime {
         let mut state = OverlayState::new(
             compositor_state,
             shm,
-            layer_shell,
+            xdg_shell,
             registry_state,
             output_state,
             cursor_shape_manager,
@@ -119,7 +119,7 @@ impl OverlayState {
     pub fn new(
         compositor_state: smithay_client_toolkit::compositor::CompositorState,
         shm: smithay_client_toolkit::shm::Shm,
-        layer_shell: smithay_client_toolkit::shell::wlr_layer::LayerShell,
+        xdg_shell: smithay_client_toolkit::shell::xdg::XdgShell,
         registry_state: smithay_client_toolkit::registry::RegistryState,
         output_state: smithay_client_toolkit::output::OutputState,
         cursor_shape_manager: smithay_client_toolkit::seat::pointer::cursor_shape::CursorShapeManager,
@@ -131,7 +131,7 @@ impl OverlayState {
         Self {
             compositor_state,
             shm,
-            layer_shell,
+            xdg_shell,
             registry_state,
             output_state,
             cursor_shape_manager,

@@ -3,12 +3,6 @@
 // this module implements the 'ScreenOverlay' trait for wayland using SCTK
 // It is responsible for creating surfaces, mapping them to the correct outputs
 // via layer_shell, managing shm pixel buffers, and driving the event loop
-
-use crate::backend::ScreenOverlay;
-use crate::backend::wayland::utils::shm::create_shm_buffer;
-use crate::backend::wayland::utils::surface::SurfaceData;
-use crate::types::{DamageRect, Output, OverlayEvent, Placement};
-
 use rustix::{
     event::{PollFd, PollFlags, poll},
     time::Timespec,
@@ -17,6 +11,10 @@ use std::os::unix::io::AsFd;
 use wayland_client::protocol::wl_output;
 
 pub mod state;
+
+use crate::backend::ScreenOverlay;
+use crate::types::{DamageRect, Output, OverlayEvent, Placement};
+use crate::backend::wayland::utils::surface::SurfaceData;
 
 pub struct WaylandOverlay {
     pub connection: wayland_client::Connection,
@@ -76,72 +74,47 @@ impl ScreenOverlay for WaylandOverlay {
                 viewport.set_destination(w as i32, h as i32);
             }
 
-            // ── 2. create an overlay layer surface, above everything else   ──────────────────────────────
-            // will be switched to usual force above window
-            // at least for everything besides gnome
-
-            let layer_surface = rt.state.layer_shell.create_layer_surface(
-                &qh,
-                surface.clone(),
-                smithay_client_toolkit::shell::wlr_layer::Layer::Overlay,
-                Some("lumine-capture".to_string()),
-                Some(output),
+            // ── 2. creating a forced full screen window, with screenshot itself and etc ────────────────────
+            let window = rt.state.xdg_shell.create_window(
+                surface.clone(), 
+                smithay_client_toolkit::shell::xdg::window::WindowDecorations::None, 
+                &qh
             );
-
-            layer_surface.set_size(w, h);
-            layer_surface.set_anchor(
-                smithay_client_toolkit::shell::wlr_layer::Anchor::TOP
-                    | smithay_client_toolkit::shell::wlr_layer::Anchor::BOTTOM
-                    | smithay_client_toolkit::shell::wlr_layer::Anchor::LEFT
-                    | smithay_client_toolkit::shell::wlr_layer::Anchor::RIGHT,
-            );
-            layer_surface.set_keyboard_interactivity(
-                smithay_client_toolkit::shell::wlr_layer::KeyboardInteractivity::Exclusive,
-            );
-            layer_surface.set_exclusive_zone(-1);
-
-            surface.commit();
-
+            window.set_title("lumine-capture");
+            window.set_app_id("lumine-capture");
+            window.set_fullscreen(Some(output));
+            
             // handle fractional scaling calculations for HiDPI setups
-            let frac_scale = rt
-                .state
-                .frac
-                .as_ref()
+            let frac_scale = rt.state.frac.as_ref()
                 .expect("no fractional scale manager")
                 .get_fractional_scale(&surface, &qh, ());
             rt.state.frac_scale = Some(frac_scale);
 
-            rt.event_queue.roundtrip(&mut rt.state)?;
-
-            // ── 3. allocate shared memory (shm) pixel buffers ─────────────────────────────────────────
-            let pool = &mut rt.state.pool;
-            let shm_buffer = create_shm_buffer(pool, w, h)?;
-
-            let transparent_pixels = vec![0u8; (w * h * 4) as usize];
-            let mut transparent_buffer = create_shm_buffer(pool, w, h)?;
-            transparent_buffer.write_pixels(pool, &transparent_pixels);
-
-            surface.attach(Some(shm_buffer.wl_buffer()), 0, 0);
-            surface.damage_buffer(0, 0, w as i32, h as i32);
-            surface.commit();
+            surface.commit(); 
 
             rt.state.surfaces.insert(
                 i,
                 SurfaceData {
                     surface,
-                    layer_surface,
-                    shm_buffer,
-                    transparent_buffer,
+                    window,
+                    shm_buffer: None, 
+                    transparent_buffer: None, 
                     width: w,
                     height: h,
                 },
             );
         }
 
+        while rt.state.surfaces.values().any(|sd| sd.shm_buffer.is_none()) {
+            // freezes untill WindowHandler create necessary buffers in utils/compositor_shm_xdg.rs
+            // if we continue without waiting compositor response, app will crash 
+            rt.event_queue.roundtrip(&mut rt.state)?;
+        }
+
         Ok(&rt.state.outputs)
     }
 
-    fn update_frame(
+fn update_frame(
         &mut self,
         monitor_idx: usize,
         pixels: &[u8],
@@ -156,30 +129,29 @@ impl ScreenOverlay for WaylandOverlay {
 
         let pool = &mut rt.state.pool;
 
-        // optimization: only upload and redraw the modified area, if provided (damage tracking)
+        let buffer = sd.shm_buffer.as_mut().ok_or("SHM buffer is not configured yet")?;
+
+        // optimization: only upload and redraw the modified area
         if let Some((x, y, w, h)) = damage {
             if x == 0 && y == 0 && w == sd.width && h == sd.height {
-                sd.shm_buffer.write_pixels(pool, pixels);
-                sd.surface.attach(Some(sd.shm_buffer.wl_buffer()), 0, 0);
-                sd.surface
-                    .damage_buffer(0, 0, sd.width as i32, sd.height as i32);
+                buffer.write_pixels(pool, pixels);
+                sd.surface.attach(Some(buffer.wl_buffer()), 0, 0);
+                sd.surface.damage_buffer(0, 0, sd.width as i32, sd.height as i32);
             } else {
-                sd.shm_buffer
-                    .write_pixels_rect(pool, pixels, sd.width, (x, y, w, h));
-                sd.surface.attach(Some(sd.shm_buffer.wl_buffer()), 0, 0);
-                sd.surface
-                    .damage_buffer(x as i32, y as i32, w as i32, h as i32);
+                buffer.write_pixels_rect(pool, pixels, sd.width, (x, y, w, h));
+                sd.surface.attach(Some(buffer.wl_buffer()), 0, 0);
+                sd.surface.damage_buffer(x as i32, y as i32, w as i32, h as i32);
             }
         } else {
             // fallback to full frame redraw
-            sd.shm_buffer.write_pixels(pool, pixels);
-            sd.surface.attach(Some(sd.shm_buffer.wl_buffer()), 0, 0);
-            sd.surface
-                .damage_buffer(0, 0, sd.width as i32, sd.height as i32);
+            buffer.write_pixels(pool, pixels);
+            sd.surface.attach(Some(buffer.wl_buffer()), 0, 0);
+            sd.surface.damage_buffer(0, 0, sd.width as i32, sd.height as i32);
         }
+        
         sd.surface.commit();
-
         rt.event_queue.flush()?;
+        
         Ok(())
     }
 
