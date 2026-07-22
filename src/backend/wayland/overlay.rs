@@ -8,63 +8,41 @@ use rustix::{
     time::Timespec,
 };
 use std::os::unix::io::AsFd;
-use wayland_client::protocol::wl_output;
 
 pub mod state;
 
 use crate::backend::ScreenOverlay;
-use crate::types::{DamageRect, Output, OverlayEvent, Placement};
+use crate::types::{DamageRect, Output, OverlayEvent};
 use crate::backend::wayland::utils::surface::SurfaceData;
 
 pub struct WaylandOverlay {
     pub connection: wayland_client::Connection,
-    runtime: Option<state::OverlayRunTime>,
+    runtime: state::OverlayRunTime,
 }
 
 impl WaylandOverlay {
-    pub fn new(connection: wayland_client::Connection) -> Self {
-        Self {
+    pub fn new(connection: wayland_client::Connection) -> Result<Self, Box<dyn std::error::Error>> {        
+        let rt = state::OverlayRunTime::new(&connection)?;
+
+        Ok(Self {
             connection,
-            runtime: None,
-        }
+            runtime: rt,
+        })
     }
 }
 
 impl ScreenOverlay for WaylandOverlay {
-    fn present(
-        &mut self,
-        placements: &[Placement],
-    ) -> Result<&[Output], Box<dyn std::error::Error>> {
-        self.ensure_runtime()?;
-        let rt = self.runtime.as_mut().ok_or("runtime missing")?;
+    fn present(&mut self) -> Result<&[Output], Box<dyn std::error::Error>> {
+        let rt = &mut self.runtime;
         let qh = rt.event_queue.handle();
 
-        // ── 1. map requested window placements to actual Wayland outputs detected by SCTK ─────────────────
-        let found_outputs: Vec<wl_output::WlOutput> = placements
-            .iter()
-            .map(|placement| {
-                rt.state
-                    .outputs
-                    .iter()
-                    .find(|o| {
-                        o.info.location.0 == placement.position.0
-                            && o.info.location.1 == placement.position.1
-                    })
-                    .map(|o| o.wl_output.clone())
-                    .or_else(|| {
-                        eprintln!(
-                            "Warning: fallback to first output for position {:?}",
-                            placement.position
-                        );
-                        rt.state.outputs.first().map(|o| o.wl_output.clone())
-                    })
-                    .ok_or("No outputs available at all")
-            })
-            .collect::<Result<_, _>>()?;
+        let outputs_snapshot: Vec<_> = rt.state.outputs.iter()
+            .map(|o| (o.wl_output.clone(), o.info.logical_size.unwrap_or((0, 0))))
+            .collect();
 
-        for (i, (placement, output)) in placements.iter().zip(found_outputs.iter()).enumerate() {
-            // for each output
-            let (w, h) = (placement.size.0 as u32, placement.size.1 as u32);
+        // for each output
+        for (i, (wl_output, (w, h))) in outputs_snapshot.into_iter().enumerate() {
+            let (w, h) = (w as u32, h as u32);
 
             let surface = rt.state.compositor_state.create_surface(&qh);
 
@@ -74,35 +52,31 @@ impl ScreenOverlay for WaylandOverlay {
                 viewport.set_destination(w as i32, h as i32);
             }
 
-            // ── 2. creating a forced full screen window, with screenshot itself and etc ────────────────────
+            // ── creating a forced full screen window, with screenshot itself and etc ────────────────────
             let window = rt.state.xdg_shell.create_window(
-                surface.clone(), 
-                smithay_client_toolkit::shell::xdg::window::WindowDecorations::None, 
+                surface.clone(),
+                smithay_client_toolkit::shell::xdg::window::WindowDecorations::None,
                 &qh
             );
             window.set_title("lumine-capture");
             window.set_app_id("lumine-capture");
-            window.set_fullscreen(Some(output));
-            
+            window.set_fullscreen(Some(&wl_output));
+
             // handle fractional scaling calculations for HiDPI setups
             let frac_scale = rt.state.frac.as_ref()
                 .expect("no fractional scale manager")
                 .get_fractional_scale(&surface, &qh, ());
             rt.state.frac_scale = Some(frac_scale);
 
-            surface.commit(); 
+            surface.commit();
 
-            rt.state.surfaces.insert(
-                i,
-                SurfaceData {
-                    surface,
-                    window,
-                    shm_buffer: None, 
-                    transparent_buffer: None, 
-                    width: w,
-                    height: h,
-                },
-            );
+            rt.state.surfaces.insert(i, SurfaceData {
+                surface, window,
+                shm_buffer: None,
+                transparent_buffer: None,
+                width: w,
+                height: h,
+            });
         }
 
         while rt.state.surfaces.values().any(|sd| sd.shm_buffer.is_none()) {
@@ -113,14 +87,14 @@ impl ScreenOverlay for WaylandOverlay {
 
         Ok(&rt.state.outputs)
     }
-
-fn update_frame(
+    
+    fn update_frame(
         &mut self,
         monitor_idx: usize,
         pixels: &[u8],
         damage: Option<DamageRect>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let rt = self.runtime.as_mut().ok_or("runtime missing")?;
+        let rt = &mut self.runtime;
         let sd = rt
             .state
             .surfaces
@@ -156,8 +130,7 @@ fn update_frame(
     }
 
     fn next_event(&mut self, timeout_ms: i32) -> Result<OverlayEvent, Box<dyn std::error::Error>> {
-        self.ensure_runtime()?;
-        let rt = self.runtime.as_mut().ok_or("runtime missing")?;
+        let rt = &mut self.runtime;
 
         loop {
             // prepare the wayland connection socket for reading incoming server events
@@ -205,13 +178,7 @@ fn update_frame(
         }
     }
 
-    fn ensure_runtime(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        if self.runtime.is_some() {
-            return Ok(());
-        }
-
-        let rt = state::OverlayRunTime::new(&self.connection)?;
-        self.runtime = Some(rt);
-        Ok(())
+    fn discovered_outputs(&self) -> &[Output] {
+        &self.runtime.state.outputs
     }
 }

@@ -5,14 +5,13 @@ use crate::tools::selection::{global_selection_to_local, selection_edges_for_mon
 use crate::tools::{
     Tool, dispatch_button, dispatch_deactivate, dispatch_key, dispatch_move, dispatch_text,
 };
-use crate::types::icons;
 use crate::types::toolbar::{
     TOOLBAR_HEIGHT, TOOLBAR_OFFSET, TOOLBAR_PADDING, Toolbar, ToolbarAction, ToolbarAnimation,
     ToolbarButton, ToolbarItem, ToolbarSide,
 };
 use crate::types::{
     DamageRect, MAG_FRAME_INTERVAL, MagnifierState, MonitorFrame, MouseButton, OverlayEvent,
-    Placement, PointerState, SelectionEdges, SelectionState, SpecialKey,
+    Placement, PointerState, SelectionEdges, SelectionState, SpecialKey, Output, icons
 };
 use crate::utils::{encode_png, get_overlapping_monitors, global_point_to_local, save_to_file};
 use cosmic_text::{FontSystem, SwashCache};
@@ -48,11 +47,16 @@ pub async fn make_screenshot(
     let text_handle = std::thread::spawn(|| (SwashCache::new(), FontSystem::new()));
 
     let conn = wayland_.unwrap();
-    let capture = initialize_capture();
-    let screenshots = capture.capture_frame().await?;
+    // we need to initialize overlay first, since we need outputs from wayland
+    // which is already used and extracted from wayland in overlay
+    // so to avoid duplicating code its better to initialize overlay first
+    let mut overlay = initialize_overlay(conn.clone())?;
+    let outputs = overlay.discovered_outputs().to_vec();
+
+    let capture = initialize_capture( );
+    let screenshots = capture.capture_frame(&outputs).await?;
 
     println!("after capturing {}ms", t0.elapsed().as_millis());
-    let mut overlay = initialize_overlay(conn.clone());
     let clipboard = initialize_clipboard(conn);
 
     let base_pixmaps: Vec<Pixmap> = build_base_pixmap(&screenshots.frames);
@@ -65,7 +69,7 @@ pub async fn make_screenshot(
         "after initialising dimmed canvas, same size dimmed frames {}ms",
         t0.elapsed().as_millis()
     );
-    let placements = build_placements(&screenshots.frames);
+    let placements = build_placements(&outputs);
 
     drop(screenshots);
     // 4 may 2026 : ~75mb memory usage while screenshoting on kde linux with 2 hd monitors
@@ -114,7 +118,7 @@ pub async fn make_screenshot(
         "after saving base screenshot {}ms",
         t0.elapsed().as_millis()
     );
-    overlay.present(&editor_state.placements)?.to_vec();
+    overlay.present()?.to_vec();
     initial_paint(&mut editor_state, &mut overlay)?;
     println!(
         "after initialising overlay and showing it {}ms",
@@ -387,17 +391,15 @@ fn build_layers(base_pixmaps: &[Pixmap]) -> (Vec<Pixmap>, Vec<Pixmap>, Vec<Pixma
     (canvases, dimmed_layers, annotation_layers)
 }
 
-fn build_placements(frames: &Vec<MonitorFrame>) -> Vec<Placement> {
-    frames
-        .iter()
-        .map(|stream| Placement {
-            position: stream.info.position.unwrap_or((0, 0)),
-            size: stream
-                .info
-                .size
-                .unwrap_or((stream.pw_width as i32, stream.pw_height as i32)),
-        })
-        .collect()
+fn build_placements(outputs: &[Output]) -> Vec<Placement> {
+    outputs.iter().map(|o| Placement {
+        position: o.info.logical_position.unwrap_or(o.info.location),
+        size: o.info.logical_size.unwrap_or_else(|| {
+            o.info.modes.iter().find(|m| m.current)
+                .map(|m| m.dimensions)
+                .unwrap_or((0, 0))
+        }),
+    }).collect()
 }
 
 fn load_icons_cache() -> HashMap<ToolbarButton, Tree> {
