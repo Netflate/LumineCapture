@@ -53,6 +53,12 @@ pub async fn make_screenshot(
     let mut overlay = initialize_overlay(conn.clone())?;
     let outputs = overlay.discovered_outputs().to_vec();
 
+    let present_handle = std::thread::spawn(move || {
+        let t = std::time::Instant::now();
+        let res = overlay.present().map(|_| ()).map_err(|e| e.to_string());
+        (overlay, res, t.elapsed())
+    });
+
     let capture = initialize_capture( );
     let screenshots = capture.capture_frame(&outputs).await?;
 
@@ -118,11 +124,13 @@ pub async fn make_screenshot(
         "after saving base screenshot {}ms",
         t0.elapsed().as_millis()
     );
-    overlay.present()?.to_vec();
-    println!(
-        "after overlay.present {}ms",
-        t0.elapsed().as_millis()
-    );
+
+    let (mut overlay, present_res, present_dt) = present_handle
+        .join()
+        .map_err(|_| "present thread panicked")?;
+    present_res?;
+    println!("present() overlapped with capture, took {}ms", present_dt.as_millis());
+
     initial_paint(&mut editor_state, &mut overlay, t0)?;
 
     let mut dirty_mask: u32 = 0;

@@ -23,7 +23,7 @@ pub trait ClipboardProvider {
 }
 
 #[async_trait]
-pub trait ScreenOverlay {
+pub trait ScreenOverlay: Send {
     fn present(&mut self) -> Result<&[Output], Box<dyn std::error::Error>>;
     fn update_frame(&mut self, monitor_idx: usize, pixels: &[u8], damage: Option<DamageRect>) -> Result<(), Box<dyn std::error::Error>>;
     fn next_event(&mut self, timeout_ms: i32) -> Result<OverlayEvent, Box<dyn std::error::Error>>;
