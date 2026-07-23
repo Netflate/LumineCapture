@@ -119,11 +119,11 @@ pub async fn make_screenshot(
         t0.elapsed().as_millis()
     );
     overlay.present()?.to_vec();
-    initial_paint(&mut editor_state, &mut overlay)?;
     println!(
-        "after initialising overlay and showing it {}ms",
+        "after overlay.present {}ms",
         t0.elapsed().as_millis()
     );
+    initial_paint(&mut editor_state, &mut overlay, t0)?;
 
     let mut dirty_mask: u32 = 0;
     let mut selection_dirty = false;
@@ -426,17 +426,27 @@ fn load_icons_cache() -> HashMap<ToolbarButton, Tree> {
 fn initial_paint(
     editor_state: &mut EditorState,
     overlay: &mut Box<dyn ScreenOverlay>,
+    t0: Instant,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    println!("\ninitial paint time measures after every action: ");
     for monitor_idx in 0..editor_state.base.len() {
         let (local_sel, prev_local, edges) = selection_render_info(
             &editor_state.selection.zone,
             &editor_state.selection.prev_zone,
             &editor_state.placements[monitor_idx],
         );
+        println!(
+            "   * after getting local_sel and etc {}ms",
+            t0.elapsed().as_millis()
+        );
         renderer::init_dimming(
             &mut editor_state.dimmed[monitor_idx],
             &editor_state.base[monitor_idx],
             &local_sel,
+        );
+        println!(
+            "   * after renderer::init_dimming {}ms",
+            t0.elapsed().as_millis()
         );
         renderer::render_frame(&mut renderer::RenderRequest {
             canvas: &mut editor_state.canvas[monitor_idx],
@@ -454,7 +464,15 @@ fn initial_paint(
             annotations_layer: &editor_state.annotations_layer[monitor_idx],
             offset: (0.0, 0.0), // FIXME: idk if it won't causes any bugs for now
         });
+        println!(
+            "   * after renderer::render_frame {}ms",
+            t0.elapsed().as_millis()
+        );
         overlay.update_frame(monitor_idx, editor_state.canvas[monitor_idx].data(), None)?;
+        println!(
+            "   * update_frame {}ms",
+            t0.elapsed().as_millis()
+        );
     }
     Ok(())
 }

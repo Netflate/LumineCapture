@@ -10,7 +10,11 @@ pub trait CaptureMethod {
 }
 
 pub fn initialize_capture() -> Box<dyn CaptureMethod> {
-    Box::new(wayland::capture::portal::PortalMethod)
+    let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
+    match desktop.as_str() {
+        "KDE" => Box::new(wayland::capture::kde::KdeMethod::new()),
+        _ => Box::new(wayland::capture::portal::PortalMethod),
+    }
 }
 
 #[async_trait]
