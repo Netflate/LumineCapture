@@ -288,7 +288,34 @@ pub fn rebuild_annotations_layer(
 ) {
     layer.fill(tiny_skia::Color::TRANSPARENT);
 
+    let mon_rect = match Rect::from_xywh(
+        offset.0,
+        offset.1,
+        layer.width() as f32,
+        layer.height() as f32,
+    ) {
+        Some(r) => r,
+        None => return,
+    };
+
+    let is_visible = |bbox: &Rect| -> bool {
+        let margin = 50.0;
+        let left = bbox.left() - margin;
+        let right = bbox.right() + margin;
+        let top = bbox.top() - margin;
+        let bottom = bbox.bottom() + margin;
+
+        mon_rect.left() < right
+            && mon_rect.right() > left
+            && mon_rect.top() < bottom
+            && mon_rect.bottom() > top
+    };
+
     for (i, ann) in annotations.iter().enumerate() {
+        if !is_visible(&ann.bbox) {
+            continue;
+        }
+
         draw_annotation(
             layer,
             ann,
@@ -300,16 +327,19 @@ pub fn rebuild_annotations_layer(
             active_text_id,
         );
     }
+
     if let Some(p) = pending {
-        draw_annotation(
-            layer,
-            p,
-            offset,
-            false,
-            font_system,
-            swash_cache,
-            text_editors,
-            active_text_id,
-        );
+        if is_visible(&p.bbox) {
+            draw_annotation(
+                layer,
+                p,
+                offset,
+                false,
+                font_system,
+                swash_cache,
+                text_editors,
+                active_text_id,
+            );
+        }
     }
 }

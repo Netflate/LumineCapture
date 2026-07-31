@@ -272,7 +272,6 @@ pub async fn make_screenshot(
                         annotations_layer_empty: false,
 
                     });
-
                     overlay.stage_frame(i, editor_state.canvas[i].data(), damage)?;
                 }
             }
@@ -282,6 +281,7 @@ pub async fn make_screenshot(
             dirty_mask = 0;
             editor_state.prev_pending = editor_state.pending.clone();
             editor_state.annotations_dirty = false;
+            editor_state.damage_rects.clear();
         }
     }
 

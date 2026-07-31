@@ -94,7 +94,6 @@ impl ScreenOverlay for WaylandOverlay {
         pixels: &[u8],
         damage: Option<DamageRect>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        println!("-updating monitor {}", monitor_idx );
         let rt = &mut self.runtime;
         let sd = rt
             .state
