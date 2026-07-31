@@ -88,7 +88,7 @@ impl ScreenOverlay for WaylandOverlay {
         Ok(&rt.state.outputs)
     }
     
-    fn update_frame(
+    fn stage_frame(
         &mut self,
         monitor_idx: usize,
         pixels: &[u8],
@@ -124,9 +124,12 @@ impl ScreenOverlay for WaylandOverlay {
             sd.surface.damage_buffer(0, 0, sd.width as i32, sd.height as i32);
         }
         
-        sd.surface.commit();
-        rt.event_queue.flush()?;
-        
+        sd.surface.commit();        
+        Ok(())
+    }
+
+    fn flush(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        self.runtime.event_queue.flush()?;
         Ok(())
     }
 

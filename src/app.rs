@@ -1,5 +1,6 @@
 use crate::backend::{ScreenOverlay, initialize_capture, initialize_clipboard, initialize_overlay};
 use crate::editor::EditorState;
+use crate::profiler::Profiler;
 use crate::renderer::{self};
 use crate::tools::selection::{global_selection_to_local, selection_edges_for_monitor};
 use crate::tools::{
@@ -20,21 +21,6 @@ use std::time::Instant;
 use tiny_skia::{Pixmap, PixmapPaint, Rect, Transform};
 use usvg::Tree;
 
-// small note while wip, to notice if it becamwe slower
-// (Background thread) : svg parsed in 0ms
-// after capturing 67ms
-// after initialising base_pixmaps, which are original frames in Vec<Pixmap> 72ms
-// after initialising dimmed canvas, same size dimmed frames 72ms
-// after saving base screenshot 73ms
-// after initialising overlay and showing it 114ms
-
-// (Background thread) : svg parsed in 0ms
-// after capturing 67ms
-// after initialising base_pixmaps, which are original frames in Vec<Pixmap> 72ms
-// after initialising dimmed canvas, same size dimmed frames 72ms
-// after saving base screenshot 73ms
-// after initialising overlay and showing it 114ms
-
 // ************************* //
 //      ENTRY POINT          //
 // ************************* //
@@ -42,17 +28,19 @@ use usvg::Tree;
 pub async fn make_screenshot(
     wayland_: Option<wayland_client::Connection>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let t0 = std::time::Instant::now();
+    let mut prof = Profiler::new();
+
     let icons_handle = std::thread::spawn(load_icons_cache);
     let text_handle = std::thread::spawn(|| (SwashCache::new(), FontSystem::new()));
 
     let conn = wayland_.unwrap();
-    // we need to initialize overlay first, since we need outputs from wayland
-    // which is already used and extracted from wayland in overlay
-    // so to avoid duplicating code its better to initialize overlay first
-    let mut overlay = initialize_overlay(conn.clone())?;
-    let outputs = overlay.discovered_outputs().to_vec();
 
+    let mut overlay = initialize_overlay(conn.clone())?;
+    prof.mark("overlay init");
+
+    let outputs = overlay.discovered_outputs().to_vec();
+    // we don't work with capture workspace functions, instead of use capture on each screen
+    // so we need to get output list first of all 
     let present_handle = std::thread::spawn(move || {
         let t = std::time::Instant::now();
         let res = overlay.present().map(|_| ()).map_err(|e| e.to_string());
@@ -61,21 +49,14 @@ pub async fn make_screenshot(
 
     let capture = initialize_capture( );
     let screenshots = capture.capture_frame(&outputs).await?;
+    prof.mark("capture");
 
-    println!("after capturing {}ms", t0.elapsed().as_millis());
     let clipboard = initialize_clipboard(conn);
 
     let base_pixmaps: Vec<Pixmap> = build_base_pixmap(&screenshots.frames);
-    println!(
-        "after initialising base_pixmaps, which are original frames in Vec<Pixmap> {}ms",
-        t0.elapsed().as_millis()
-    );
     let (canvas, dimmed, annotations_layer) = build_layers(&base_pixmaps);
-    println!(
-        "after initialising dimmed canvas, same size dimmed frames {}ms",
-        t0.elapsed().as_millis()
-    );
     let placements = build_placements(&outputs);
+    prof.mark("base_pixmaps + layers + placements");
 
     drop(screenshots);
     // 4 may 2026 : ~75mb memory usage while screenshoting on kde linux with 2 hd monitors
@@ -119,19 +100,17 @@ pub async fn make_screenshot(
         mod_ctrl: false,
         mod_shift: false,
     };
-
-    println!(
-        "after saving base screenshot {}ms",
-        t0.elapsed().as_millis()
-    );
+    prof.mark("editor_state built");
 
     let (mut overlay, present_res, present_dt) = present_handle
         .join()
         .map_err(|_| "present thread panicked")?;
-    present_res?;
-    println!("present() overlapped with capture, took {}ms", present_dt.as_millis());
+    present_res.map_err(|msg| -> Box<dyn std::error::Error> { msg.into() })?;
+    prof.mark("present() joined");
+    prof.mark_external("  ^ present_dt (thread-internal duration)", present_dt);
 
-    initial_paint(&mut editor_state, &mut overlay, t0)?;
+    initial_paint(&mut editor_state, &mut overlay, &mut prof)?;
+    prof.dump();
 
     let mut dirty_mask: u32 = 0;
     let mut selection_dirty = false;
@@ -290,11 +269,14 @@ pub async fn make_screenshot(
                         icons_cache: &editor_state.icon_cache,
                         annotations_layer: &editor_state.annotations_layer[i],
                         offset,
+                        annotations_layer_empty: false,
+
                     });
 
-                    overlay.update_frame(i, editor_state.canvas[i].data(), damage)?;
+                    overlay.stage_frame(i, editor_state.canvas[i].data(), damage)?;
                 }
             }
+            overlay.flush()?;
             selection_dirty = false;
             editor_state.toolbar.dirty = false;
             dirty_mask = 0;
@@ -313,7 +295,6 @@ pub async fn make_screenshot(
 
     Ok(())
 }
-
 // ************************* //
 //      INITIALIZATION       //
 // ************************* //
@@ -411,7 +392,6 @@ fn build_placements(outputs: &[Output]) -> Vec<Placement> {
 }
 
 fn load_icons_cache() -> HashMap<ToolbarButton, Tree> {
-    let t0 = std::time::Instant::now();
     let mut cache = HashMap::new();
     let opt = usvg::Options::default();
 
@@ -424,64 +404,83 @@ fn load_icons_cache() -> HashMap<ToolbarButton, Tree> {
             Tree::from_str(svg_str, &opt).expect("Critical: Failed to parse embedded SVG icon");
         cache.insert(*button, tree);
     }
-    println!(
-        "(Background thread) : svg parsed in {}ms ",
-        t0.elapsed().as_millis()
-    );
     cache
 }
 
 fn initial_paint(
     editor_state: &mut EditorState,
     overlay: &mut Box<dyn ScreenOverlay>,
-    t0: Instant,
+    prof: &mut Profiler,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    println!("\ninitial paint time measures after every action: ");
-    for monitor_idx in 0..editor_state.base.len() {
-        let (local_sel, prev_local, edges) = selection_render_info(
-            &editor_state.selection.zone,
-            &editor_state.selection.prev_zone,
-            &editor_state.placements[monitor_idx],
-        );
-        println!(
-            "   * after getting local_sel and etc {}ms",
-            t0.elapsed().as_millis()
-        );
-        renderer::init_dimming(
-            &mut editor_state.dimmed[monitor_idx],
-            &editor_state.base[monitor_idx],
-            &local_sel,
-        );
-        println!(
-            "   * after renderer::init_dimming {}ms",
-            t0.elapsed().as_millis()
-        );
-        renderer::render_frame(&mut renderer::RenderRequest {
-            canvas: &mut editor_state.canvas[monitor_idx],
-            base: &editor_state.base[monitor_idx],
-            dimmed: &mut editor_state.dimmed[monitor_idx],
-            selection: local_sel.as_ref(),
-            prev_selection: prev_local.as_ref(),
-            dirty_rect: None,
-            selection_edges: edges.as_ref(),
-            selection_dirty: false,
-            magnifier: editor_state.magnifier.as_ref(),
-            is_mag_monitor: false,
-            toolbar: None,
-            icons_cache: &editor_state.icon_cache,
-            annotations_layer: &editor_state.annotations_layer[monitor_idx],
-            offset: (0.0, 0.0), // FIXME: idk if it won't causes any bugs for now
-        });
-        println!(
-            "   * after renderer::render_frame {}ms",
-            t0.elapsed().as_millis()
-        );
-        overlay.update_frame(monitor_idx, editor_state.canvas[monitor_idx].data(), None)?;
-        println!(
-            "   * update_frame {}ms",
-            t0.elapsed().as_millis()
-        );
+    let n = editor_state.base.len();
+
+    let EditorState {
+        base,
+        canvas,
+        dimmed,
+        annotations_layer,
+        placements,
+        icon_cache,
+        magnifier,
+        selection,
+        ..
+    } = editor_state;
+
+    let sel_zone = &selection.zone;
+    let prev_zone = &selection.prev_zone;
+    let icon_cache_ref = &*icon_cache;
+    let magnifier_ref = &*magnifier;
+
+    std::thread::scope(|scope| {
+        let mut handles = Vec::with_capacity(n);
+
+        for (i, (((base_i, canvas_i), dimmed_i), ann_i)) in base
+            .iter()
+            .zip(canvas.iter_mut())
+            .zip(dimmed.iter_mut())
+            .zip(annotations_layer.iter_mut())
+            .enumerate()
+        {
+            let placement = &placements[i];
+
+            handles.push(scope.spawn(move || {
+                let (local_sel, prev_local, edges) =
+                    selection_render_info(sel_zone, prev_zone, placement);
+
+                renderer::init_dimming(dimmed_i, base_i, &local_sel);
+
+                renderer::render_frame(&mut renderer::RenderRequest {
+                    canvas: canvas_i,
+                    base: base_i,
+                    dimmed: dimmed_i,
+                    selection: local_sel.as_ref(),
+                    prev_selection: prev_local.as_ref(),
+                    dirty_rect: None,
+                    selection_edges: edges.as_ref(),
+                    selection_dirty: false,
+                    magnifier: magnifier_ref.as_ref(),
+                    is_mag_monitor: false,
+                    toolbar: None,
+                    icons_cache: icon_cache_ref,
+                    offset: (0.0, 0.0),
+                    annotations_layer: ann_i,
+                    annotations_layer_empty: true,
+                });
+            }));
+        }
+
+        for h in handles {
+            h.join().expect("initial_paint render thread panicked");
+        }
+    });
+
+    prof.mark(&format!("dimming+render for {n} monitors (parallel)"));
+
+    for i in 0..n {
+        overlay.stage_frame(i, editor_state.canvas[i].data(), None)?;
     }
+    overlay.flush()?;
+    prof.mark("frames staged + flushed");
     Ok(())
 }
 

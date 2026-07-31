@@ -30,9 +30,10 @@ pub struct RenderRequest<'a> {
     pub is_mag_monitor: bool,
     pub toolbar: Option<&'a mut Toolbar>,
     pub icons_cache: &'a HashMap<ToolbarButton, Tree>,
+    pub offset: (f32, f32),
     // annotations
     pub annotations_layer: &'a Pixmap,
-    pub offset: (f32, f32),
+    pub annotations_layer_empty: bool,
 }
 
 pub fn render_frame(req: &mut RenderRequest) {
@@ -50,17 +51,18 @@ pub fn render_frame(req: &mut RenderRequest) {
         draw_selection_border(req.canvas, sel, req.selection_edges);
     }
 
-    if let Some(dirty) = req.dirty_rect {
-        blit_annotations(req.annotations_layer, req.canvas, dirty);
-    } else {
-        req.canvas.draw_pixmap(
-            0,
-            0,
-            req.annotations_layer.as_ref(),
-            &tiny_skia::PixmapPaint::default(),
-            Transform::identity(),
-            None,
-        );
+    if !req.annotations_layer_empty {
+        if let Some(dirty) = req.dirty_rect {
+            blit_annotations(req.annotations_layer, req.canvas, dirty);
+        } else {
+            req.canvas.draw_pixmap(
+                0, 0,
+                req.annotations_layer.as_ref(),
+                &tiny_skia::PixmapPaint::default(),
+                Transform::identity(),
+                None,
+            );
+        }
     }
 
     if req.is_mag_monitor
@@ -80,8 +82,26 @@ pub fn render_frame(req: &mut RenderRequest) {
 /// SELECTION + DIMMING  ////
 // **************************/
 pub fn init_dimming(dimmed: &mut Pixmap, base: &Pixmap, selection: &Option<Rect>) {
-    dimmed.data_mut().copy_from_slice(base.data());
-    draw_dimming(dimmed, selection, base.width(), base.height());
+
+    match selection {
+        None => {
+            let src = base.data();
+            let dst = dimmed.data_mut();
+
+            for (s, d) in src.chunks_exact(4).zip(dst.chunks_exact_mut(4)) {
+                d[0] = ((s[0] as u16 * 115) / 255) as u8; 
+                d[1] = ((s[1] as u16 * 115) / 255) as u8; 
+                d[2] = ((s[2] as u16 * 115) / 255) as u8; 
+                d[3] = s[3];                              
+            }
+        }
+        Some(sel) => {
+            // just in case if somehow something going to be selected with init in the future
+            dimmed.data_mut().copy_from_slice(base.data());
+            draw_dimming(dimmed, &Some(*sel), base.width(), base.height());
+        }
+    }
+
 }
 
 fn draw_selection_border(canvas: &mut Pixmap, sel: &Rect, edges: Option<&SelectionEdges>) {
