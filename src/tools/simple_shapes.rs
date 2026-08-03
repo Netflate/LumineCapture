@@ -43,7 +43,6 @@ impl ToolBehavior for SimpleShapeTool {
         &self,
         state: &mut EditorState,
         _global: (f64, f64),
-        _sel_dirty: &mut bool,
         _dirty_mask: &mut u32,
     ) {
         if let Some(ann) = state.pending.as_mut() {

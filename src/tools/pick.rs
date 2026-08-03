@@ -82,7 +82,6 @@ impl ToolBehavior for PickTool {
         &self,
         state: &mut EditorState,
         global: (f64, f64),
-        _selection_dirty: &mut bool,
         _dirty_mask: &mut u32,
     ) {
         apply_annotation_drag(state, global);

@@ -45,7 +45,6 @@ impl ToolBehavior for PenTool {
         &self,
         state: &mut EditorState,
         _global: (f64, f64),
-        _sel_dirty: &mut bool,
         _dirty_mask: &mut u32,
     ) {
         let pos = (state.pointer.global.0 as f32, state.pointer.global.1 as f32);

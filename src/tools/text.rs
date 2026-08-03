@@ -255,7 +255,6 @@ impl ToolBehavior for TextTool {
         &self,
         state: &mut EditorState,
         global: (f64, f64),
-        _sel_dirty: &mut bool,
         _dirty_mask: &mut u32,
     ) {
         apply_annotation_drag(state, global);

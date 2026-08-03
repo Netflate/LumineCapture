@@ -8,15 +8,11 @@ use crate::types::{HANDLE_RADIUS, MagnifierState, Placement};
 use tiny_skia::Rect;
 
 impl EditorState {
-    // for maximal optimization we render only a specific zone of the screen
-    // instead of entire screen
-    // entire function take what have changed, and add to dirty rectangle what need to be deleted
-    // and what need to be added
-    pub fn monitor_dirty_rect(&self, monitor_idx: usize, selection_dirty: bool) -> Option<Rect> {
-        let mut dirty: Option<Rect> = None;
+    pub fn monitor_dirty_rect(&self, monitor_idx: usize) -> Option<Rect> {
         let placement = &self.placements[monitor_idx];
+        let mut dirty: Option<Rect> = None;
 
-        dirty = union_rect(dirty, self.calc_selection_dirty(placement, selection_dirty));
+        dirty = union_rect(dirty, self.calc_selection_dirty(placement));
         dirty = union_rect(dirty, self.calc_magnifier_dirty(monitor_idx, placement));
         dirty = union_rect(dirty, self.calc_toolbar_dirty(monitor_idx));
         dirty = union_rect(dirty, self.calc_annotations_dirty(placement));
@@ -24,8 +20,8 @@ impl EditorState {
         dirty
     }
 
-    fn calc_selection_dirty(&self, placement: &Placement, selection_dirty: bool) -> Option<Rect> {
-        if !selection_dirty {
+    fn calc_selection_dirty(&self, placement: &Placement) -> Option<Rect> {
+        if self.selection.zone == self.selection.prev_zone {
             return None;
         }
         let mut dirty = None;
@@ -43,21 +39,15 @@ impl EditorState {
             .as_ref()
             .and_then(|sel| global_selection_to_local(sel, placement));
 
-        if let Some(r) = local_sel
-            .as_ref()
-            .and_then(|sel| expand_rect(sel, selection_pad))
-        {
+        if let Some(r) = local_sel.as_ref().and_then(|sel| expand_rect(sel, selection_pad)) {
             dirty = union_rect(dirty, Some(r));
         }
-        if let Some(r) = prev_local
-            .as_ref()
-            .and_then(|sel| expand_rect(sel, selection_pad))
-        {
+        if let Some(r) = prev_local.as_ref().and_then(|sel| expand_rect(sel, selection_pad)) {
             dirty = union_rect(dirty, Some(r));
         }
         dirty
     }
-
+    
     fn calc_magnifier_dirty(&self, monitor_idx: usize, placement: &Placement) -> Option<Rect> {
         let mut dirty = None;
         let (mw, mh) = (placement.size.0 as f32, placement.size.1 as f32);

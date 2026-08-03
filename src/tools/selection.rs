@@ -1,7 +1,7 @@
 use crate::editor::EditorState;
 use crate::tools::ToolBehavior;
 use crate::types::{MouseButton, Placement, SelectionEdges, SelectionHandle};
-use crate::utils::{apply_handle_drag, get_overlapping_monitors, hit_test_rect_handle, make_rect};
+use crate::utils::{apply_handle_drag, hit_test_rect_handle, make_rect};
 use tiny_skia::Rect;
 
 pub struct SelectionTool;
@@ -88,17 +88,17 @@ impl ToolBehavior for SelectionTool {
             state.selection.set_drag(SelectionHandle::None, None, None);
         }
     }
-
+    
     fn on_move(
         &self,
         state: &mut EditorState,
         global: (f64, f64),
-        selection_dirty: &mut bool,
-        dirty_mask: &mut u32,
+        _dirty_mask: &mut u32, 
     ) {
         let old_sel = state.selection.zone;
+        let mut selection_changed = false;
 
-        // handle drag (resizon_movee/move existing selection)
+        // handle drag (resize/move existing selection)
         if state.mouse_down_left && state.selection.active_handle != SelectionHandle::None {
             if let (Some(origin), Some(sel_start)) = (
                 state.selection.drag_origin,
@@ -107,48 +107,24 @@ impl ToolBehavior for SelectionTool {
                 let delta = (global.0 - origin.0, global.1 - origin.1);
                 state.selection.zone =
                     apply_handle_drag(&sel_start, state.selection.active_handle, delta).to_rect();
-                state.selection.prev_zone = old_sel;
-                apply_selection_dirty(
-                    old_sel,
-                    state.selection.zone,
-                    &state.placements,
-                    dirty_mask,
-                    selection_dirty,
-                );
+                selection_changed = true;
             }
-            return;
+        } else if state.mouse_down_left {
+            // new selection drag
+            if let Some(start) = state.drag_start {
+                state.selection.zone = make_rect(start, global);
+                selection_changed = true;
+            }
         }
 
-        // new selection drag
-        if !state.mouse_down_left {
-            return;
-        }
-        if let Some(start) = state.drag_start {
-            state.selection.zone = make_rect(start, global);
-            state.selection.prev_zone = old_sel;
-            apply_selection_dirty(
-                old_sel,
-                state.selection.zone,
-                &state.placements,
-                dirty_mask,
-                selection_dirty,
-            );
+        if selection_changed {
+            if let Some(sel) = old_sel {
+                state.damage_rects.push(sel);
+            }
+            if let Some(sel) = state.selection.zone {
+                state.damage_rects.push(sel);
+            }
         }
     }
 }
 
-fn apply_selection_dirty(
-    old_sel: Option<Rect>,
-    new_sel: Option<Rect>,
-    placements: &[crate::types::Placement],
-    dirty_mask: &mut u32,
-    selection_dirty: &mut bool,
-) {
-    *selection_dirty = true;
-    if let Some(sel) = old_sel {
-        *dirty_mask |= get_overlapping_monitors(&sel, placements);
-    }
-    if let Some(sel) = new_sel {
-        *dirty_mask |= get_overlapping_monitors(&sel, placements);
-    }
-}

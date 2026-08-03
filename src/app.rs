@@ -14,7 +14,7 @@ use crate::types::{
     DamageRect, MAG_FRAME_INTERVAL, MagnifierState, MonitorFrame, MouseButton, OverlayEvent,
     Placement, PointerState, SelectionEdges, SelectionState, SpecialKey, Output, icons
 };
-use crate::utils::{encode_png, get_overlapping_monitors, global_point_to_local, save_to_file};
+use crate::utils::{encode_png, get_overlapping_monitors, global_point_to_local, save_to_file, get_full_workspace_rect};
 use cosmic_text::{FontSystem, SwashCache};
 use std::collections::HashMap;
 use std::time::Instant;
@@ -113,7 +113,6 @@ pub async fn make_screenshot(
     prof.dump();
 
     let mut dirty_mask: u32 = 0;
-    let mut selection_dirty = false;
 
     // todo: Remove hardcoded settings, will be saved later in a config-like structure
     let mut save_to_clipboard = false;
@@ -145,7 +144,6 @@ pub async fn make_screenshot(
                     x,
                     y,
                     &mut dirty_mask,
-                    &mut selection_dirty,
                 );
             }
             OverlayEvent::PointerButton { button, pressed } => {
@@ -177,6 +175,8 @@ pub async fn make_screenshot(
         tick_toolbar_anim(&mut editor_state, &mut dirty_mask);
 
         if dirty_mask != 0 {
+            let selection_dirty = editor_state.selection.zone != editor_state.selection.prev_zone;
+
             if editor_state.annotations_dirty {
                 let active_text_id = editor_state.text_editing.as_ref().map(|e| e.annotation_id);
 
@@ -211,13 +211,10 @@ pub async fn make_screenshot(
                         &editor_state.selection.prev_zone,
                         &editor_state.placements[i],
                     );
-                    let dirty_rect = editor_state.monitor_dirty_rect(i, selection_dirty);
+
+                    let dirty_rect = editor_state.monitor_dirty_rect(i);
                     let damage: Option<DamageRect> = dirty_rect.as_ref().and_then(|r| {
-                        renderer::rect_bounds(
-                            r,
-                            editor_state.base[i].width(),
-                            editor_state.base[i].height(),
-                        )
+                        renderer::rect_bounds(r, editor_state.base[i].width(), editor_state.base[i].height())
                     });
 
                     if i == editor_state.toolbar.monitor_idx
@@ -225,29 +222,16 @@ pub async fn make_screenshot(
                         && let Some(dirty) = dirty_rect.as_ref()
                     {
                         let tb = &editor_state.toolbar;
-                        let tb_rect = Rect::from_xywh(
-                            tb.position.0,
-                            tb.position.1,
-                            tb.size.0,
-                            TOOLBAR_HEIGHT,
-                        );
-                        if let Some(tb_r) = tb_rect {
-                            let intersects = dirty.left() < tb_r.right()
-                                && dirty.right() > tb_r.left()
-                                && dirty.top() < tb_r.bottom()
-                                && dirty.bottom() > tb_r.top();
-                            if intersects {
-                                editor_state.toolbar.dirty = true;
-                            }
+                        if let Some(tb_r) = Rect::from_xywh(tb.position.0, tb.position.1, tb.size.0, TOOLBAR_HEIGHT) {
+                            let intersects = dirty.left() < tb_r.right() && dirty.right() > tb_r.left()
+                                && dirty.top() < tb_r.bottom() && dirty.bottom() > tb_r.top();
+                            if intersects { editor_state.toolbar.dirty = true; }
                         }
                     }
 
-                    let toolbar =
-                        if i == editor_state.toolbar.monitor_idx && editor_state.toolbar.dirty {
-                            Some(&mut editor_state.toolbar)
-                        } else {
-                            None
-                        };
+                    let toolbar = if i == editor_state.toolbar.monitor_idx && editor_state.toolbar.dirty {
+                        Some(&mut editor_state.toolbar)
+                    } else { None };
 
                     let offset = (
                         editor_state.placements[i].position.0 as f32,
@@ -261,8 +245,8 @@ pub async fn make_screenshot(
                         selection: local_sel.as_ref(),
                         prev_selection: prev_local.as_ref(),
                         dirty_rect: dirty_rect.as_ref(),
-                        selection_edges: edges.as_ref(),
                         selection_dirty,
+                        selection_edges: edges.as_ref(),
                         magnifier: editor_state.magnifier.as_ref(),
                         is_mag_monitor,
                         toolbar,
@@ -270,13 +254,14 @@ pub async fn make_screenshot(
                         annotations_layer: &editor_state.annotations_layer[i],
                         offset,
                         annotations_layer_empty: false,
-
                     });
+                    
                     overlay.stage_frame(i, editor_state.canvas[i].data(), damage)?;
                 }
             }
             overlay.flush()?;
-            selection_dirty = false;
+            
+            editor_state.selection.prev_zone = editor_state.selection.zone;
             editor_state.toolbar.dirty = false;
             dirty_mask = 0;
             editor_state.prev_pending = editor_state.pending.clone();
@@ -494,7 +479,6 @@ fn handle_pointer_move(
     x: f64,
     y: f64,
     dirty_mask: &mut u32,
-    selection_dirty: &mut bool,
 ) {
     let global = (
         editor_state.placements[monitor_idx].position.0 as f64 + x,
@@ -513,7 +497,6 @@ fn handle_pointer_move(
         editor_state.selected_tool,
         editor_state,
         global,
-        selection_dirty,
         dirty_mask,
     );
     apply_damage_rects(editor_state, dirty_mask);
@@ -536,6 +519,12 @@ fn handle_pointer_button(
         if let Some(ToolbarItem::Button(button)) = editor_state.toolbar.items.get(tb_button) {
             match button {
                 ToolbarButton::Tool(tool) => {
+                    if editor_state.selection.zone.is_none() {
+                        editor_state.selection.zone = get_full_workspace_rect(&editor_state.placements);
+                        for i in 0..editor_state.placements.len() {
+                            mark_dirty(dirty_mask, i);
+                        }
+                    }
                     dispatch_deactivate(editor_state.selected_tool, editor_state, dirty_mask);
                     editor_state.selected_tool = *tool;
                     editor_state.toolbar.selected = Some(tb_button);
@@ -801,7 +790,10 @@ fn selection_render_info(
 fn render_final(editor_state: &mut EditorState) -> Vec<u8> {
     let sel = match editor_state.selection.zone {
         Some(s) => s,
-        None => return vec![],
+        None => match get_full_workspace_rect(&editor_state.placements) {
+            Some(r) => r,
+            None => return vec![],
+        },
     };
 
     // based on selection choosing monitors for render
