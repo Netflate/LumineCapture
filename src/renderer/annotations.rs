@@ -221,9 +221,20 @@ fn draw_pen(
 
     let mut pb = PathBuilder::new();
     pb.move_to(points[0].0, points[0].1);
-    for p in &points[1..] {
-        pb.line_to(p.0, p.1);
+
+    if points.len() == 2 {
+        pb.line_to(points[1].0, points[1].1);
+    } else {
+        for i in 1..points.len() - 1 {
+            let curr = points[i];
+            let next = points[i + 1];
+            let mid = ((curr.0 + next.0) / 2.0, (curr.1 + next.1) / 2.0);
+            pb.quad_to(curr.0, curr.1, mid.0, mid.1);
+        }
+        let last = points[points.len() - 1];
+        pb.line_to(last.0, last.1);
     }
+
     if let Some(path) = pb.finish() {
         stroke_with_shadow(
             canvas,
