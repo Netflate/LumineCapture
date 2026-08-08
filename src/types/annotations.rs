@@ -74,16 +74,57 @@ pub struct Annotation {
 impl Annotation {
     pub fn update_bbox(&mut self) {
         match &self.shape {
-            AnnotationShape::NumeratedArrow { start, end, .. }
-            | AnnotationShape::Arrow { start, end }
-            | AnnotationShape::Rectangle { start, end }
+            AnnotationShape::Rectangle { start, end }
             | AnnotationShape::Circle { start, end }
             | AnnotationShape::Line { start, end } => {
+                let pad = self.stroke_width / 2.0 + SHADOW_WIDTH_BONUS / 2.0;
                 self.bbox = Rect::from_ltrb(
-                    start.0.min(end.0),
-                    start.1.min(end.1),
-                    start.0.max(end.0),
-                    start.1.max(end.1),
+                    start.0.min(end.0) - pad,
+                    start.1.min(end.1) - pad,
+                    start.0.max(end.0) + pad,
+                    start.1.max(end.1) + pad,
+                )
+                .unwrap();
+            }
+            AnnotationShape::Arrow { start, end } => {
+                let pad = self.stroke_width / 2.0 + SHADOW_WIDTH_BONUS / 2.0;
+                let dx = end.0 - start.0;
+                let dy = end.1 - start.1;
+                let len = (dx * dx + dy * dy).sqrt().max(1.0);
+                let head_len = (self.stroke_width * 4.0).max(12.0).min(len * 0.6);
+                let head_width = head_len * 0.55;
+
+                let ux = dx / len;
+                let uy = dy / len;
+                let px = -uy;
+                let py = ux;
+
+                let base = (end.0 - ux * head_len, end.1 - uy * head_len);
+                let b1 = (base.0 + px * head_width, base.1 + py * head_width);
+                let b2 = (base.0 - px * head_width, base.1 - py * head_width);
+
+                let xs = [start.0, end.0, b1.0, b2.0];
+                let ys = [start.1, end.1, b1.1, b2.1];
+
+                self.bbox = Rect::from_ltrb(
+                    xs.iter().cloned().fold(f32::INFINITY, f32::min) - pad,
+                    ys.iter().cloned().fold(f32::INFINITY, f32::min) - pad,
+                    xs.iter().cloned().fold(f32::NEG_INFINITY, f32::max) + pad,
+                    ys.iter().cloned().fold(f32::NEG_INFINITY, f32::max) + pad,
+                )
+                .unwrap();
+            }
+
+            AnnotationShape::NumeratedArrow { start, end, .. } => {
+                let circle_radius = self.stroke_width * 3.0;
+                let xs = [start.0 - circle_radius, start.0 + circle_radius, end.0];
+                let ys = [start.1 - circle_radius, start.1 + circle_radius, end.1];
+
+                self.bbox = Rect::from_ltrb(
+                    xs.iter().cloned().fold(f32::INFINITY, f32::min),
+                    ys.iter().cloned().fold(f32::INFINITY, f32::min),
+                    xs.iter().cloned().fold(f32::NEG_INFINITY, f32::max),
+                    ys.iter().cloned().fold(f32::NEG_INFINITY, f32::max),
                 )
                 .unwrap();
             }

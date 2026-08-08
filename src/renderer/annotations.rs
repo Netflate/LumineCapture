@@ -98,25 +98,9 @@ fn draw_arrow(
     let head_len = (stroke_width * 4.0).max(12.0).min(len * 0.6);
     let head_width = head_len * 0.55;
 
-    let line_end = (end.0 - ux * head_len * 0.7, end.1 - uy * head_len * 0.7);
-
-    let mut pb = PathBuilder::new();
-    pb.move_to(start.0, start.1);
-    pb.line_to(line_end.0, line_end.1);
-    if let Some(path) = pb.finish() {
-        stroke_with_shadow(
-            canvas,
-            &path,
-            color,
-            stroke_width,
-            LineCap::Round,
-            LineJoin::Round,
-            transform,
-        );
-    }
-
     let px = -uy;
     let py = ux;
+
     let tip = end;
     let base1 = (
         end.0 - ux * head_len + px * head_width,
@@ -128,15 +112,24 @@ fn draw_arrow(
     );
 
     let mut pb = PathBuilder::new();
-    pb.move_to(tip.0, tip.1);
-    pb.line_to(base1.0, base1.1);
+    
+    pb.move_to(start.0, start.1);
+    pb.line_to(tip.0, tip.1);
+
+    pb.move_to(base1.0, base1.1);
+    pb.line_to(tip.0, tip.1);
     pb.line_to(base2.0, base2.1);
-    pb.close();
+
     if let Some(path) = pb.finish() {
-        let mut paint = Paint::default();
-        paint.set_color(color);
-        paint.anti_alias = true;
-        canvas.fill_path(&path, &paint, FillRule::Winding, transform, None);
+        stroke_with_shadow(
+            canvas,
+            &path,
+            color,
+            stroke_width,
+            LineCap::Round,
+            LineJoin::Round,
+            transform,
+        );
     }
 }
 
@@ -431,137 +424,6 @@ pub fn draw_text_buffer(
         }
     }
 }
-fn draw_numerated_arrow(
-    canvas: &mut Pixmap,
-    start: (f32, f32),
-    end: (f32, f32),
-    number: u32,
-    color: Color,
-    stroke_width: f32,
-    offset: (f32, f32),
-    font_system: &mut FontSystem,
-    swash_cache: &mut SwashCache,
-) {
-    let transform = Transform::from_translate(-offset.0, -offset.1);
-
-    let circle_radius = 25.0;
-
-    let dx = end.0 - start.0;
-    let dy = end.1 - start.1;
-    let len = (dx * dx + dy * dy).sqrt();
-
-    let mut stroke_paint = Paint::default();
-    stroke_paint.set_color(color);
-    stroke_paint.anti_alias = true;
-
-    let mut fill_paint = Paint::default();
-    fill_paint.set_color(Color::WHITE);
-    fill_paint.anti_alias = true;
-
-    let mut shadow_paint = Paint::default();
-    shadow_paint.set_color(Color::from_rgba8(
-        SHADOW_COLOR.0,
-        SHADOW_COLOR.1,
-        SHADOW_COLOR.2,
-        SHADOW_COLOR.3,
-    ));
-    shadow_paint.anti_alias = true;
-
-    let mut stroke = Stroke::default();
-    stroke.width = stroke_width;
-    stroke.line_cap = LineCap::Round;
-    stroke.line_join = LineJoin::Round;
-
-    let mut shadow_stroke = Stroke::default();
-    shadow_stroke.width = stroke_width + SHADOW_WIDTH_BONUS;
-    shadow_stroke.line_cap = LineCap::Round;
-    shadow_stroke.line_join = LineJoin::Round;
-
-    if len > 2.0 {
-        let ux = dx / len;
-        let uy = dy / len;
-
-        let px = -uy;
-        let py = ux;
-
-        let base_half_width = 12.0;
-
-        let base_left = (
-            start.0 + px * base_half_width,
-            start.1 + py * base_half_width,
-        );
-        let base_right = (
-            start.0 - px * base_half_width,
-            start.1 - py * base_half_width,
-        );
-
-        let mut pb = PathBuilder::new();
-        pb.move_to(end.0, end.1);
-        pb.line_to(base_left.0, base_left.1);
-        pb.line_to(base_right.0, base_right.1);
-        pb.close();
-
-        if let Some(path) = pb.finish() {
-            canvas.stroke_path(&path, &shadow_paint, &shadow_stroke, transform, None);
-            canvas.fill_path(&path, &stroke_paint, FillRule::Winding, transform, None);
-        }
-    }
-
-    if let Some(circle) = oval_path(start.0, start.1, circle_radius, circle_radius) {
-        canvas.stroke_path(&circle, &shadow_paint, &shadow_stroke, transform, None);
-
-        canvas.fill_path(&circle, &fill_paint, FillRule::Winding, transform, None);
-
-        canvas.stroke_path(&circle, &stroke_paint, &stroke, transform, None);
-    }
-
-    let digits = number.to_string().len();
-
-    let font_size = match digits {
-        1 => circle_radius * 1.1,
-        2 => circle_radius * 0.85,
-        3 => circle_radius * 0.65,
-        _ => circle_radius * 0.5,
-    };
-
-    let line_height = font_size * 1.1;
-
-    let mut buffer = Buffer::new(font_system, Metrics::new(font_size, line_height));
-
-    buffer.set_size(Some(circle_radius * 2.0), Some(circle_radius * 2.0));
-
-    buffer.set_text(
-        &number.to_string(),
-        &Attrs::new().weight(cosmic_text::Weight::BOLD),
-        Shaping::Advanced,
-        None,
-    );
-
-    buffer.shape_until_scroll(font_system, false);
-
-    let mut text_width: f32 = 0.0;
-    let mut text_height: f32 = 0.0;
-
-    for run in buffer.layout_runs() {
-        text_width = text_width.max(run.line_w);
-        text_height += run.line_height;
-    }
-
-    let text_pos = (
-        start.0 - text_width / 2.0,
-        start.1 - text_height / 2.0 - font_size * 0.1,
-    );
-
-    draw_text_buffer(
-        canvas,
-        &buffer,
-        font_system,
-        swash_cache,
-        text_pos,
-        color,
-        offset,
-    );
-}
 
 fn stroke_with_shadow(
     canvas: &mut Pixmap,
@@ -598,4 +460,139 @@ fn stroke_with_shadow(
     stroke.line_join = line_join;
 
     canvas.stroke_path(path, &paint, &stroke, transform, None);
+}
+
+fn contrasting_text_color(circle_color: Color) -> Color {
+    // Perceived luminance (ITU-R BT.601)
+    let luminance = 0.299 * circle_color.red()
+        + 0.587 * circle_color.green()
+        + 0.114 * circle_color.blue();
+
+    if luminance > 0.55 {
+        Color::BLACK
+    } else {
+        Color::WHITE
+    }
+}
+
+fn draw_numerated_arrow(
+    canvas: &mut Pixmap,
+    start: (f32, f32),
+    end: (f32, f32),
+    number: u32,
+    color: Color,
+    stroke_width: f32,
+    offset: (f32, f32),
+    font_system: &mut FontSystem,
+    swash_cache: &mut SwashCache,
+) {
+    const SHADOW_OFFSET: (f32, f32) = (0.0, 3.0);
+    const CIRCLE_RADIUS_RATIO: f32 = 3.0;
+
+    let transform = Transform::from_translate(-offset.0, -offset.1);
+    let shadow_transform =
+        Transform::from_translate(-offset.0 + SHADOW_OFFSET.0, -offset.1 + SHADOW_OFFSET.1);
+
+    let circle_radius = stroke_width * CIRCLE_RADIUS_RATIO;
+
+    let dx = end.0 - start.0;
+    let dy = end.1 - start.1;
+    let len = (dx * dx + dy * dy).sqrt();
+
+    let mut fill_paint = Paint::default();
+    fill_paint.set_color(color);
+    fill_paint.anti_alias = true;
+
+    let mut shadow_paint = Paint::default();
+    shadow_paint.set_color(Color::from_rgba8(
+        SHADOW_COLOR.0,
+        SHADOW_COLOR.1,
+        SHADOW_COLOR.2,
+        SHADOW_COLOR.3,
+    ));
+    shadow_paint.anti_alias = true;
+
+    if len > 2.0 {
+        let ux = dx / len;
+        let uy = dy / len;
+
+        let px = -uy;
+        let py = ux;
+
+        let base_half_width = circle_radius * 0.48;
+
+        let base_left = (
+            start.0 + px * base_half_width,
+            start.1 + py * base_half_width,
+        );
+        let base_right = (
+            start.0 - px * base_half_width,
+            start.1 - py * base_half_width,
+        );
+
+        let mut pb = PathBuilder::new();
+        pb.move_to(end.0, end.1);
+        pb.line_to(base_left.0, base_left.1);
+        pb.line_to(base_right.0, base_right.1);
+        pb.close();
+
+        if let Some(path) = pb.finish() {
+            canvas.fill_path(&path, &shadow_paint, FillRule::Winding, shadow_transform, None);
+            canvas.fill_path(&path, &fill_paint, FillRule::Winding, transform, None);
+        }
+    }
+
+    if let Some(circle) = oval_path(start.0, start.1, circle_radius, circle_radius) {
+        canvas.fill_path(&circle, &shadow_paint, FillRule::Winding, shadow_transform, None);
+        canvas.fill_path(&circle, &fill_paint, FillRule::Winding, transform, None);
+    }
+
+    let digits = number.to_string().len();
+
+    let font_size = match digits {
+        1 => circle_radius * 1.1,
+        2 => circle_radius * 0.85,
+        3 => circle_radius * 0.65,
+        _ => circle_radius * 0.5,
+    };
+
+    let line_height = font_size * 1.1;
+
+    let mut buffer = Buffer::new(font_system, Metrics::new(font_size, line_height));
+
+    buffer.set_size(Some(circle_radius * 2.0), Some(circle_radius * 2.0));
+
+    buffer.set_text(
+        &number.to_string(),
+        &Attrs::new().weight(cosmic_text::Weight::BOLD),
+        Shaping::Advanced,
+        None,
+    );
+
+    buffer.shape_until_scroll(font_system, false);
+
+    let mut text_width: f32 = 0.0;
+    let mut text_height: f32 = 0.0;
+
+    for run in buffer.layout_runs() {
+        text_width = text_width.max(run.line_w);
+        text_height += run.line_height;
+    }
+
+    let text_pos = (
+        start.0 - text_width / 2.0,
+        start.1 - text_height / 2.0,
+    );
+
+    let text_color = contrasting_text_color(color);
+
+    draw_text_buffer(
+        canvas,
+        &buffer,
+        font_system,
+        swash_cache,
+        text_pos,
+        text_color,
+        offset,
+    );
 }
