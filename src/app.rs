@@ -519,8 +519,14 @@ fn handle_pointer_button(
         if let Some(ToolbarItem::Button(button)) = editor_state.toolbar.items.get(tb_button) {
             match button {
                 ToolbarButton::Tool(tool) => {
-                    if editor_state.selection.zone.is_none() {
+                    if editor_state.selection.zone.is_none() && *tool != Tool::Selection {
                         editor_state.selection.zone = get_full_workspace_rect(&editor_state.placements);
+                        for i in 0..editor_state.placements.len() {
+                            mark_dirty(dirty_mask, i);
+                        }
+                    }
+                    else if *tool == Tool::Selection && editor_state.selection.zone == get_full_workspace_rect(&editor_state.placements) {
+                        editor_state.selection.zone = None;
                         for i in 0..editor_state.placements.len() {
                             mark_dirty(dirty_mask, i);
                         }
