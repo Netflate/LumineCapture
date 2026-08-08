@@ -7,7 +7,7 @@
 
 use smithay_client_toolkit::shm::slot::{Buffer, SlotPool};
 use wayland_client::protocol::{wl_buffer, wl_shm};
-
+use crate::utils::swizzle_all;
 pub struct ShmBuffer {
     pub buffer: Buffer,
 }
@@ -35,7 +35,11 @@ impl ShmBuffer {
 
     pub fn write_pixels(&mut self, pool: &mut SlotPool, pixels: &[u8]) {
         if let Some(canvas) = pool.canvas(&self.buffer) {
-            canvas[..pixels.len()].copy_from_slice(pixels);
+            let len = pixels.len().min(canvas.len());
+            
+            canvas[..len].copy_from_slice(&pixels[..len]);
+            
+            swizzle_all(&mut canvas[..len]);
         }
     }
 
@@ -59,7 +63,12 @@ impl ShmBuffer {
                 let sy = (y + row) as usize;
                 let sx = x as usize;
                 let off = sy * stride + sx * 4;
-                dst[off..off + row_bytes].copy_from_slice(&pixels[off..off + row_bytes]);
+                
+                let dst_slice = &mut dst[off..off + row_bytes];
+                
+                dst_slice.copy_from_slice(&pixels[off..off + row_bytes]);
+                
+                swizzle_all(dst_slice);
             }
         }
     }

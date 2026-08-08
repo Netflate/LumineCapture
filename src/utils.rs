@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use tiny_skia::Pixmap;
 use tiny_skia::Rect;
 
+#[inline]
 pub fn make_rect(a: (f64, f64), b: (f64, f64)) -> Option<Rect> {
     let x = a.0.min(b.0) as f32;
     let y = a.1.min(b.1) as f32;
@@ -75,6 +76,7 @@ pub fn save_to_file(png_data: &[u8]) -> Result<PathBuf, Box<dyn std::error::Erro
 }
 
 // to render necessary monitors
+#[inline]
 pub fn get_overlapping_monitors(selection: &Rect, placements: &[crate::types::Placement]) -> u32 {
     let mut mask = 0u32;
     for (i, p) in placements.iter().enumerate() {
@@ -92,6 +94,7 @@ pub fn get_overlapping_monitors(selection: &Rect, placements: &[crate::types::Pl
 }
 
 // used for selecting/resizing annotations or selection
+#[inline]
 pub fn hit_test_rect_handle(sel: &Rect, pos: (f64, f64)) -> SelectionHandle {
     let (x, y) = pos;
     let (l, r, t, b) = (
@@ -160,6 +163,7 @@ pub fn hit_test_rect_handle(sel: &Rect, pos: (f64, f64)) -> SelectionHandle {
     SelectionHandle::None
 }
 
+#[inline]
 pub fn apply_handle_drag(orig: &Rect, handle: SelectionHandle, delta: (f64, f64)) -> SignedRect {
     let (dx, dy) = (delta.0 as f32, delta.1 as f32);
     let (mut l, mut r, mut t, mut b) = (orig.left(), orig.right(), orig.top(), orig.bottom());
@@ -226,4 +230,30 @@ pub fn get_full_workspace_rect(placements: &[Placement]) -> Option<Rect> {
     }
 
     Rect::from_ltrb(min_x as f32, min_y as f32, max_x as f32, max_y as f32)
+}
+
+// pixels swap
+#[inline]
+pub fn swizzle_rect(pixels: &mut [u8], total_width: u32, x: u32, y: u32, w: u32, h: u32) {
+    let stride = (total_width * 4) as usize;
+    let start_byte = (x * 4) as usize;
+    let width_bytes = (w * 4) as usize;
+
+    for row in y..(y + h) {
+        let row_start = (row as usize) * stride + start_byte;
+        let row_end = row_start + width_bytes;
+        
+        let row_pixels = &mut pixels[row_start..row_end];
+        
+        for chunk in row_pixels.chunks_exact_mut(4) {
+            chunk.swap(0, 2);
+        }
+    }
+}
+
+#[inline]
+pub fn swizzle_all(pixels: &mut [u8]) {
+    for chunk in pixels.chunks_exact_mut(4) {
+        chunk.swap(0, 2);
+    }
 }

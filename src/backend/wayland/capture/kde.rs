@@ -12,6 +12,7 @@ use zbus::{proxy, Connection};
 use zbus::zvariant::{Fd, OwnedValue, Value};
 
 use crate::backend::CaptureMethod;
+use crate::utils::swizzle_all;
 use crate::types::{CaptureResult, MonitorFrame, Output, StreamInfo};
 
 // async_trait requires the whole future graph to be Send; std::error::Error
@@ -44,7 +45,6 @@ impl KdeMethod {
 }
 
 // captures a single output by name; returns tight (unpadded) pixels
-// no channel swap needed here
 async fn capture_one_screen(
     proxy: &ScreenShot2Proxy<'_>,
     output_name: &str,
@@ -87,6 +87,7 @@ async fn capture_one_screen(
     // if there is no padding, there is no point in allocations and copying
     if stride as usize == row_bytes {
         raw.truncate(row_bytes * height as usize);
+        swizzle_all(&mut raw);
         return Ok((raw, width, height));
     }
 
@@ -97,6 +98,8 @@ async fn capture_one_screen(
         let dst = &mut tight[row * row_bytes..][..row_bytes];
         dst.copy_from_slice(src);
     }
+    swizzle_all(&mut tight);
+    
     Ok((tight, width, height))
 }
 
