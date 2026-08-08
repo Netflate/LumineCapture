@@ -1,8 +1,8 @@
 use super::paths::rounded_rect_path;
 use crate::types::icons::get_svg;
-use crate::types::toolbar::{TOOLBAR_PADDING, Toolbar, ToolbarButton, ToolbarItem, ToolbarSide};
+use crate::types::toolbar::{TOOLBAR_PADDING, ICON_COLOR, SEPARATOR_COLOR, TOOLBAR_COLOR, BUTTON_HOVERED, BUTTON_SELECTED, Toolbar, ToolbarButton, ToolbarItem, ToolbarSide};
 use std::collections::HashMap;
-use tiny_skia::{BlendMode, Color, FilterQuality, Paint, Pixmap, PixmapPaint, Rect, Transform};
+use tiny_skia::{BlendMode, FilterQuality, Paint, Pixmap, PixmapPaint, Rect, Transform};
 use usvg::Tree;
 
 pub fn draw_toolbar(
@@ -69,7 +69,7 @@ fn draw_toolbar_content(
     };
 
     let mut paint = Paint::default();
-    paint.set_color(Color::from_rgba8(255, 255, 255, 255));
+    paint.set_color(TOOLBAR_COLOR);
     paint.anti_alias = true;
     canvas.fill_path(
         &path,
@@ -96,9 +96,9 @@ fn draw_toolbar_content(
                     {
                         let mut cell_paint = Paint::default();
                         let color = if toolbar.selected == Some(index) {
-                            Color::from_rgba8(200, 200, 200, 255)
+                            BUTTON_SELECTED
                         } else {
-                            Color::from_rgba8(230, 230, 230, 255)
+                            BUTTON_HOVERED
                         };
                         cell_paint.set_color(color);
                         cell_paint.anti_alias = true;
@@ -107,9 +107,24 @@ fn draw_toolbar_content(
 
                     let scale_x = icon_size / rtree.size().width();
                     let scale_y = icon_size / rtree.size().height();
-                    let transform =
-                        Transform::from_translate(icon_x, icon_y).pre_scale(scale_x, scale_y);
-                    resvg::render(rtree, transform, &mut canvas.as_mut());
+
+                    // Render icon into its own pixmap so recoloring doesn't
+                    // touch the toolbar background/hover cells.
+                    let px_size = icon_size.ceil().max(1.0) as u32;
+                    if let Some(mut icon_pixmap) = Pixmap::new(px_size, px_size) {
+                        let transform = Transform::from_scale(scale_x, scale_y);
+                        resvg::render(rtree, transform, &mut icon_pixmap.as_mut());
+                        tint_pixmap(&mut icon_pixmap, ICON_COLOR);
+
+                        canvas.draw_pixmap(
+                            icon_x.round() as i32,
+                            icon_y.round() as i32,
+                            icon_pixmap.as_ref(),
+                            &tiny_skia::PixmapPaint::default(),
+                            Transform::identity(),
+                            None,
+                        );
+                    }
                 }
             }
             ToolbarItem::Seperator => {
@@ -119,12 +134,25 @@ fn draw_toolbar_content(
                 let sep_y = rect.top() + (h - sep_h) / 2.0;
                 if let Some(sep_rect) = Rect::from_xywh(sep_x, sep_y, sep_w, sep_h) {
                     let mut sep_paint = Paint::default();
-                    sep_paint.set_color(Color::from_rgba8(70, 70, 70, 255));
+                    sep_paint.set_color(SEPARATOR_COLOR);
                     sep_paint.anti_alias = true;
                     canvas.fill_rect(sep_rect, &sep_paint, Transform::identity(), None);
                 }
             }
         }
         current_x += cell_size + item.trailing_padding();
+    }
+}
+
+fn tint_pixmap(pixmap: &mut tiny_skia::Pixmap, color: usvg::Color) {
+    for pixel in pixmap.pixels_mut() {
+        let a = pixel.alpha();
+        if a == 0 {
+            continue;
+        }
+        let r = (color.red as u16 * a as u16 / 255) as u8;
+        let g = (color.green as u16 * a as u16 / 255) as u8;
+        let b = (color.blue as u16 * a as u16 / 255) as u8;
+        *pixel = tiny_skia::PremultipliedColorU8::from_rgba(r, g, b, a).unwrap();
     }
 }

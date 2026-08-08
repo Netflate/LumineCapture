@@ -20,13 +20,13 @@ pub fn get_svg(button: &ToolbarButton) -> (&'static str, f32) {
         ToolbarButton::Tool(tool) => match tool {
             crate::tools::Tool::Selection => (SELECTION, BUTTON_CELL_SIZE - 13.0),
             crate::tools::Tool::Arrow => (ARROW, DEFAULT_ICON_SIZE),
-            crate::tools::Tool::Rectangle => (RECTANGLE, DEFAULT_ICON_SIZE),
-            crate::tools::Tool::Circle => (CIRCLE, DEFAULT_ICON_SIZE),
+            crate::tools::Tool::Rectangle => (RECTANGLE, DEFAULT_ICON_SIZE + 4.0),
+            crate::tools::Tool::Circle => (CIRCLE, DEFAULT_ICON_SIZE + 2.0),
             crate::tools::Tool::Pen => (PEN, DEFAULT_ICON_SIZE - 4.0),
             crate::tools::Tool::Line => (LINE, DEFAULT_ICON_SIZE),
             crate::tools::Tool::Text => (TEXT, BUTTON_CELL_SIZE - 13.0),
             crate::tools::Tool::Pick => (PICK, DEFAULT_ICON_SIZE),
-            crate::tools::Tool::NumeratedArrow => (NUMERATED_ARROW, DEFAULT_ICON_SIZE + 20.0),
+            crate::tools::Tool::NumeratedArrow => (NUMERATED_ARROW, DEFAULT_ICON_SIZE + 2.0),
         },
         ToolbarButton::Action(action) => match action {
             crate::types::toolbar::ToolbarAction::SideChange => {

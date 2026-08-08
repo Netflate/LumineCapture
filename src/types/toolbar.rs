@@ -8,8 +8,27 @@ pub const TOOLBAR_HEIGHT: f32 = 36.0;
 pub const TOOLBAR_OFFSET: f32 = 0.0;
 pub const TOOLBAR_PADDING: f32 = 8.0; // left & right 
 
-pub const BUTTON_CELL_SIZE: f32 = 36.0;
+pub const BUTTON_CELL_SIZE: f32 = 30.0;
 const SEPARATOR_CELL_SIZE: f32 = 20.0;
+
+const fn unit(v: u8) -> f32 {
+    v as f32 / 255.0
+}
+
+pub const TOOLBAR_COLOR: tiny_skia::Color = unsafe {
+    tiny_skia::Color::from_rgba_unchecked(unit(17), unit(17), unit(27), unit(255))
+};
+pub const SEPARATOR_COLOR: tiny_skia::Color = unsafe {
+    tiny_skia::Color::from_rgba_unchecked(unit(255), unit(255), unit(255), unit(255))
+};
+pub const BUTTON_HOVERED: tiny_skia::Color = unsafe {
+    tiny_skia::Color::from_rgba_unchecked(unit(203), unit(166), unit(247), unit(255))
+};
+pub const BUTTON_SELECTED: tiny_skia::Color = unsafe {
+    tiny_skia::Color::from_rgba_unchecked(unit(133), unit(44), unit(177), unit(255))
+};
+
+pub const ICON_COLOR: usvg::Color = usvg::Color { red: 255, green: 255, blue: 255 };
 
 // Toolbar tools list
 pub const TOOLBAR_ITEMS: &[ToolbarItem] = &[
