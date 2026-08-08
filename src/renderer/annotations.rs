@@ -71,7 +71,41 @@ pub fn draw_annotation(
         }
     }
     if selected {
-        draw_annotation_handles(canvas, &ann.bbox, offset);
+        if matches!(ann.shape, AnnotationShape::Text { .. }) {
+            draw_text_box(canvas, &ann.bbox, offset);
+        } else {
+            draw_annotation_handles(canvas, &ann.bbox, offset);
+        }
+    }
+}
+
+fn draw_text_box(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32)) {
+    let mut paint = Paint::default(); paint.set_color(Color::WHITE); paint.anti_alias = true;
+    let mut shadow_paint = Paint::default(); shadow_paint.set_color(Color::from_rgba8(SHADOW_COLOR.0, SHADOW_COLOR.1, SHADOW_COLOR.2, SHADOW_COLOR.3)); shadow_paint.anti_alias = true;
+    
+    let mut stroke = Stroke::default(); stroke.width = 3.0; stroke.line_cap = tiny_skia::LineCap::Round; stroke.line_join = tiny_skia::LineJoin::Round;
+    let mut shadow_stroke = stroke.clone(); shadow_stroke.width = 3.0 + SHADOW_WIDTH_BONUS;
+
+    let transform = Transform::from_translate(-offset.0, -offset.1);
+    let pad = (HANDLE_PAD / 2.0) as f32;
+    let (l, t, ri, b) = (bbox.left() - pad, bbox.top() - pad, bbox.right() + pad, bbox.bottom() + pad);
+
+    let (w, h) = (ri - l, b - t);
+    let corner_w = (w * 0.20).clamp(8.0_f32.min(w * 0.5), w * 0.5);
+    let corner_h = (h * 0.20).clamp(8.0_f32.min(h * 0.5), h * 0.5);
+    let r = 4.0_f32.min(corner_w * 0.5).min(corner_h * 0.5);
+    let k = 0.5523_f32;
+
+    let mut pb = PathBuilder::new();
+    
+    pb.move_to(l, t + corner_h); pb.line_to(l, t + r); pb.cubic_to(l, t + r * k, l + r * k, t, l + r, t); pb.line_to(l + corner_w, t);
+    pb.move_to(ri - corner_w, t); pb.line_to(ri - r, t); pb.cubic_to(ri - r * k, t, ri, t + r * k, ri, t + r); pb.line_to(ri, t + corner_h);
+    pb.move_to(ri, b - corner_h); pb.line_to(ri, b - r); pb.cubic_to(ri, b - r * k, ri - r * k, b, ri - r, b); pb.line_to(ri - corner_w, b);
+    pb.move_to(l + corner_w, b); pb.line_to(l + r, b); pb.cubic_to(l + r * k, b, l, b - r * k, l, b - r); pb.line_to(l, b - corner_h);
+
+    if let Some(path) = pb.finish() {
+        canvas.stroke_path(&path, &shadow_paint, &shadow_stroke, transform, None);
+        canvas.stroke_path(&path, &paint, &stroke, transform, None);
     }
 }
 

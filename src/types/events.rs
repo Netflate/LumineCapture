@@ -53,4 +53,7 @@ pub enum SpecialKey {
     Up,
     Down,
     KeyA,
+    KeyC,
+    KeyX,
+    KeyV,
 }

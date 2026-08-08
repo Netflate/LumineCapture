@@ -17,6 +17,9 @@ pub struct TextTool;
 fn key_to_action(key: SpecialKey, ctrl: bool) -> Option<Action> {
     match key {
         SpecialKey::KeyA => None,
+        SpecialKey::KeyC => None,
+        SpecialKey::KeyV => None,
+        SpecialKey::KeyX => None,
         SpecialKey::Left => Some(Action::Motion(if ctrl {
             Motion::LeftWord
         } else {
@@ -64,11 +67,50 @@ pub fn apply_key_to_editor(
     ctrl: bool,
     shift: bool,
 ) -> bool {
+    // Ctrl+A
     if ctrl && matches!(key, SpecialKey::KeyA) {
         let start_cursor = cosmic_text::Cursor::new(0, 0);
         editor.set_selection(Selection::Normal(start_cursor));
         editor.action(font_system, Action::Motion(Motion::BufferEnd));
         return false;
+    }
+
+    // clipboard
+    if ctrl {
+        match key {
+            SpecialKey::KeyC | SpecialKey::KeyX => {
+                if let Some(text) = extract_selected_text(editor) {
+                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                        let _ = clipboard.set_text(text);
+                    }
+                }
+                
+                if matches!(key, SpecialKey::KeyX) {
+                    editor.delete_selection();
+                    return true; 
+                }
+                
+                return false; 
+            }
+            SpecialKey::KeyV => {
+                if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                    if let Ok(text) = clipboard.get_text() {
+                        if editor.selection_bounds().is_some() {
+                            editor.delete_selection();
+                        }
+                        
+                        for ch in text.chars() {
+                            if ch != '\r' {
+                                editor.action(font_system, Action::Insert(ch));
+                            }
+                        }
+                        return true; 
+                    }
+                }
+                return false;
+            }
+            _ => {}
+        }
     }
 
     let is_motion = matches!(
@@ -540,4 +582,38 @@ pub fn render_text_annotation(
             }
         },
     );
+}
+
+fn extract_selected_text(editor: &Editor<'static>) -> Option<String> {
+    let (start, end) = editor.selection_bounds()?;
+
+    let result = editor.with_buffer(|buffer| {
+        let mut result = String::new();
+
+        for (i, line) in buffer.lines.iter().enumerate() {
+            if i >= start.line && i <= end.line {
+                let text = line.text();
+
+                let start_idx = if i == start.line { start.index } else { 0 };
+                let end_idx = if i == end.line { end.index } else { text.len() };
+
+                let safe_start = start_idx.min(text.len());
+                let safe_end = end_idx.min(text.len());
+
+                result.push_str(&text[safe_start..safe_end]);
+
+                if i < end.line {
+                    result.push('\n');
+                }
+            }
+        }
+
+        result
+    });
+
+    if result.is_empty() {
+        None
+    } else {
+        Some(result)
+    }
 }

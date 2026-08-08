@@ -165,6 +165,9 @@ impl OverlayState {
                 Keysym::y | Keysym::Y => Some(OverlayEvent::Redo),
                 Keysym::s | Keysym::S => Some(OverlayEvent::SaveToClipboard),
                 Keysym::a | Keysym::A => Some(OverlayEvent::KeyPress(SpecialKey::KeyA)),
+                Keysym::c | Keysym::C => Some(OverlayEvent::KeyPress(SpecialKey::KeyC)),
+                Keysym::v | Keysym::V => Some(OverlayEvent::KeyPress(SpecialKey::KeyV)),
+                Keysym::x | Keysym::X => Some(OverlayEvent::KeyPress(SpecialKey::KeyX)),
                 _ => None,
             };
             // fallback to raw physical scan codes (to support AZERTY/non-QWERTY layouts)
