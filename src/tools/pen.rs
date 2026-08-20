@@ -1,4 +1,4 @@
-use crate::editor::EditorState;
+use crate::editor::{EditorState, DamageZone};
 use crate::tools::ToolBehavior;
 use crate::types::MouseButton;
 use crate::types::annotations::{Annotation, AnnotationShape};
@@ -52,7 +52,7 @@ impl ToolBehavior for PenTool {
         if let Some(ann) = state.pending.as_mut() {
             if let AnnotationShape::Pen { points } = &mut ann.shape {
                 let smoothed = if let Some(&last) = points.last() {
-                    const SMOOTHING: f32 = 0.6; // 0.0 = без сглаживания, 0.8+ = сильный лаг
+                    const SMOOTHING: f32 = 0.6; // 0.1-0.9 range
                     (
                         last.0 + (raw_pos.0 - last.0) * (1.0 - SMOOTHING),
                         last.1 + (raw_pos.1 - last.1) * (1.0 - SMOOTHING),
@@ -75,7 +75,7 @@ impl ToolBehavior for PenTool {
                         last.0.max(smoothed.0),
                         last.1.max(smoothed.1),
                     ) {
-                        state.damage_rects.push(segment_bbox);
+                        state.damage_rects.push(DamageZone::Global(segment_bbox));
                         state.annotations_dirty = true;
                     }
                 }

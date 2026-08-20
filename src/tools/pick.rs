@@ -1,4 +1,4 @@
-use crate::editor::EditorState;
+use crate::editor::{EditorState, DamageZone};
 use crate::tools::ToolBehavior;
 use crate::types::{
     AnnDragState, MouseButton, SelectionHandle,
@@ -40,7 +40,7 @@ impl ToolBehavior for PickTool {
                 if let Some(old_idx) = state.selected_annotation {
                     state
                         .damage_rects
-                        .push(state.annotations[old_idx].damage_bbox(true));
+                        .push(DamageZone::Global(state.annotations[old_idx].damage_bbox(true)));
                 }
                 state.selected_annotation = None;
                 state.ann_drag = None;
@@ -52,12 +52,12 @@ impl ToolBehavior for PickTool {
                 if let Some(old_idx) = state.selected_annotation {
                     state
                         .damage_rects
-                        .push(state.annotations[old_idx].damage_bbox(true));
+                        .push(DamageZone::Global(state.annotations[old_idx].damage_bbox(true)));
                 }
                 state.selected_annotation = selected_annotation;
                 let idx = selected_annotation.unwrap();
                 let ann = &state.annotations[idx];
-                state.damage_rects.push(ann.damage_bbox(true));
+                state.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
 
                 // always start as Move when switching selection
                 state.ann_drag = Some(AnnDragState {
@@ -92,7 +92,7 @@ impl ToolBehavior for PickTool {
             state.annotations_dirty = true;
             state
                 .damage_rects
-                .push(state.annotations[idx].damage_bbox(true));
+                .push(DamageZone::Global(state.annotations[idx].damage_bbox(true)));
             state.selected_annotation = None;
             state.ann_drag = None;
         }

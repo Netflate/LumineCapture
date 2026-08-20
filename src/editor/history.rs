@@ -1,4 +1,4 @@
-use crate::editor::EditorState;
+use crate::editor::{EditorState, DamageZone};
 
 impl EditorState {
     pub fn push_undo(&mut self) {
@@ -10,7 +10,7 @@ impl EditorState {
         // no point in keeping in redo what wasn't commited
         if self.pending.is_some() {
             if let Some(ann) = &self.pending {
-                self.damage_rects.push(ann.bbox);
+                self.damage_rects.push(DamageZone::Global(ann.bbox));
             }
             self.pending = None;
             self.prev_pending = None;

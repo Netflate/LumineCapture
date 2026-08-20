@@ -29,7 +29,7 @@ pub struct EditorState {
     pub selection: SelectionState,
     pub toolbar: Toolbar,
     pub icon_cache: HashMap<ToolbarButton, Tree>,
-    pub damage_rects: Vec<Rect>,
+    pub damage_rects: Vec<DamageZone>,
 
     // annotations
     pub annotations: Vec<Annotation>,
@@ -52,4 +52,11 @@ pub struct EditorState {
 
     pub mod_ctrl: bool,
     pub mod_shift: bool,
+}
+
+// types.rs
+#[derive(Clone, Copy)]
+pub enum DamageZone {
+    Global(Rect),
+    Local { monitor_idx: usize, rect: Rect },
 }

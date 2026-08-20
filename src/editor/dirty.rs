@@ -1,8 +1,7 @@
-use crate::editor::EditorState;
+use crate::editor::{EditorState, DamageZone};
 use crate::renderer::{self};
 use crate::tools::selection::global_selection_to_local;
 use crate::types::annotations::{Annotation, AnnotationShape};
-use crate::types::toolbar::TOOLBAR_HEIGHT;
 use crate::types::{HANDLE_RADIUS, MagnifierState, Placement};
 
 use tiny_skia::Rect;
@@ -14,8 +13,8 @@ impl EditorState {
 
         dirty = union_rect(dirty, self.calc_selection_dirty(placement));
         dirty = union_rect(dirty, self.calc_magnifier_dirty(monitor_idx, placement));
-        dirty = union_rect(dirty, self.calc_toolbar_dirty(monitor_idx));
-        dirty = union_rect(dirty, self.calc_annotations_dirty(placement));
+        //dirty = union_rect(dirty, self.calc_toolbar_dirty(monitor_idx));
+        dirty = union_rect(dirty, self.calc_damage_zones_dirty(monitor_idx, placement));
 
         dirty
     }
@@ -70,88 +69,53 @@ impl EditorState {
         dirty
     }
 
-    fn calc_toolbar_dirty(&self, monitor_idx: usize) -> Option<Rect> {
-        let tb = &self.toolbar;
-        let mut dirty = None;
-        if tb.dirty {
-            if tb.monitor_idx == monitor_idx {
-                if let Some(r) =
-                    Rect::from_xywh(tb.position.0, tb.render_y, tb.size.0, TOOLBAR_HEIGHT)
-                {
-                    dirty = union_rect(dirty, Some(r));
-                }
-
-                // if toolbar position (side) changed
-                if tb.prev_monitor_idx == monitor_idx
-                    && tb.prev_position != tb.position
-                    && let Some(r) = Rect::from_xywh(
-                        tb.prev_position.0,
-                        tb.prev_position.1,
-                        tb.size.0,
-                        TOOLBAR_HEIGHT,
-                    )
-                {
-                    dirty = union_rect(dirty, Some(r));
-                }
-            }
-            // if toolbar monitor changed
-            if tb.prev_monitor_idx == monitor_idx
-                && tb.prev_monitor_idx != tb.monitor_idx
-                && let Some(r) = Rect::from_xywh(
-                    tb.prev_position.0,
-                    tb.prev_position.1,
-                    tb.size.0,
-                    TOOLBAR_HEIGHT,
-                )
-            {
-                dirty = union_rect(dirty, Some(r));
-            }
-        }
-        dirty
-    }
-
-    fn calc_annotations_dirty(&self, placement: &Placement) -> Option<Rect> {
+    fn calc_damage_zones_dirty(&self, monitor_idx: usize, placement: &Placement) -> Option<Rect> {
         let mut dirty = None;
         let offset = (placement.position.0 as f32, placement.position.1 as f32);
         let pad = 4.0;
 
-        let mut add_global_rect_dirty = |global_bbox: &Rect| {
-            if let Some(local) = Rect::from_ltrb(
+        // больше не замыкание — свободная функция, не заимствует dirty
+        fn global_to_local_padded(global_bbox: &Rect, offset: (f32, f32), pad: f32) -> Option<Rect> {
+            Rect::from_ltrb(
                 global_bbox.left() - offset.0,
                 global_bbox.top() - offset.1,
                 global_bbox.right() - offset.0,
                 global_bbox.bottom() - offset.1,
-            ) && let Some(r) = expand_rect(&local, pad)
-            {
-                dirty = union_rect(dirty, Some(r));
-            }
-        };
+            )
+            .and_then(|local| expand_rect(&local, pad))
+        }
 
         if let Some(ann) = &self.pending
             && !matches!(ann.shape, AnnotationShape::Pen { .. })
         {
-            add_global_rect_dirty(&ann.bbox);
+            dirty = union_rect(dirty, global_to_local_padded(&ann.bbox, offset, pad));
         }
         if let Some(ann) = &self.prev_pending
             && !matches!(ann.shape, AnnotationShape::Pen { .. })
         {
-            add_global_rect_dirty(&ann.bbox);
+            dirty = union_rect(dirty, global_to_local_padded(&ann.bbox, offset, pad));
         }
-        // selected / moved / resized through Pick tool
         if let Some(ann) = self.selected_annotation {
-            add_global_rect_dirty(&self.annotations[ann].bbox);
+            dirty = union_rect(dirty, global_to_local_padded(&self.annotations[ann].bbox, offset, pad));
         }
 
-        // undo & redo & pen (to avoid updating its whole bbox)
-        for damage_bbox in &self.damage_rects {
-            add_global_rect_dirty(damage_bbox);
+        for zone in &self.damage_rects {
+            match zone {
+                DamageZone::Global(rect) => {
+                    dirty = union_rect(dirty, global_to_local_padded(rect, offset, pad));
+                }
+                DamageZone::Local { monitor_idx: idx, rect } if *idx == monitor_idx => {
+                    dirty = union_rect(dirty, expand_rect(rect, pad));
+                }
+                DamageZone::Local { .. } => {}
+            }
         }
 
         dirty
     }
 
     pub fn record_history_damage(
-        damage_rects: &mut Vec<Rect>,
+        damage_rects: &mut Vec<DamageZone>,
         state_a: &[Annotation],
         state_b: &[Annotation],
     ) {
@@ -159,7 +123,7 @@ impl EditorState {
             if !state_b.iter().any(|a| a.id == ann.id)
                 && let Some(expanded) = expand_rect(&ann.bbox, ann.stroke_width * 2.0 + 4.0)
             {
-                damage_rects.push(expanded);
+                damage_rects.push(DamageZone::Global(expanded));
             }
         }
 
@@ -167,9 +131,20 @@ impl EditorState {
             if !state_a.iter().any(|a| a.id == ann.id)
                 && let Some(expanded) = expand_rect(&ann.bbox, ann.stroke_width * 2.0 + 4.0)
             {
-                damage_rects.push(expanded);
+                damage_rects.push(DamageZone::Global(expanded));
             }
         }
+    }
+
+    // when code push dirty zones in damage_dirty
+    // sometimes it pushes local monitor zones (like for toolbar)
+    // sometimes global (which is necessary for )
+    pub fn damage_global(&mut self, rect: Rect) {
+        self.damage_rects.push(DamageZone::Global(rect));
+    }
+
+    pub fn damage_local(&mut self, monitor_idx: usize, rect: Rect) {
+        self.damage_rects.push(DamageZone::Local { monitor_idx, rect });
     }
 }
 

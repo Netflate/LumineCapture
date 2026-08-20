@@ -1,4 +1,4 @@
-use crate::editor::EditorState;
+use crate::editor::{EditorState, DamageZone};
 use crate::tools::ToolBehavior;
 use crate::types::annotations::{
     apply_annotation_drag, begin_drag_for_annotation, commit_drag_if_changed,
@@ -202,14 +202,14 @@ impl ToolBehavior for TextTool {
                     .iter()
                     .find(|a| a.id == prev.annotation_id)
                 {
-                    state.damage_rects.push(prev_ann.damage_bbox(true));
+                    state.damage_rects.push(DamageZone::Global(prev_ann.damage_bbox(true)));
                 }
                 if let Some(prev_editor) = state.text_editors.get_mut(&prev.annotation_id) {
                     prev_editor.set_selection(Selection::None);
                 }
             }
 
-            state.damage_rects.push(ann.damage_bbox(true));
+            state.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
 
             let ann_id = ann.id;
             if let Some(editor) = state.text_editors.get_mut(&ann_id) {
@@ -234,7 +234,7 @@ impl ToolBehavior for TextTool {
                 .iter()
                 .find(|a| a.id == edit.annotation_id)
             {
-                state.damage_rects.push(prev_ann.damage_bbox(true));
+                state.damage_rects.push(DamageZone::Global(prev_ann.damage_bbox(true)));
             }
             if let Some(editor) = state.text_editors.get_mut(&edit.annotation_id) {
                 editor.set_selection(Selection::None);
@@ -282,7 +282,7 @@ impl ToolBehavior for TextTool {
         );
 
         state.push_undo();
-        state.damage_rects.push(ann.damage_bbox(true));
+        state.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
         state.annotations.push(ann);
 
         state.text_editing = Some(TextEditState {
@@ -309,7 +309,7 @@ impl ToolBehavior for TextTool {
         let id = edit.annotation_id;
 
         if let Some(ann) = state.annotations.iter().find(|a| a.id == id) {
-            state.damage_rects.push(ann.damage_bbox(true));
+            state.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
         }
 
         if let Some(editor) = state.text_editors.get_mut(&id) {
@@ -318,7 +318,7 @@ impl ToolBehavior for TextTool {
         }
 
         if let Some(ann) = state.annotations.iter().find(|a| a.id == id) {
-            state.damage_rects.push(ann.damage_bbox(true));
+            state.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
         }
 
         state.annotations_dirty = true;
@@ -333,7 +333,7 @@ impl ToolBehavior for TextTool {
         let shift = state.mod_shift;
 
         if let Some(ann) = state.annotations.iter().find(|a| a.id == id) {
-            state.damage_rects.push(ann.damage_bbox(true));
+            state.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
         }
 
         if let Some(editor) = state.text_editors.get_mut(&id) {
@@ -350,7 +350,7 @@ impl ToolBehavior for TextTool {
         }
 
         if let Some(ann) = state.annotations.iter().find(|a| a.id == id) {
-            state.damage_rects.push(ann.damage_bbox(true));
+            state.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
         }
 
         state.annotations_dirty = true;
@@ -363,7 +363,7 @@ impl ToolBehavior for TextTool {
                 .iter()
                 .find(|a| a.id == edit.annotation_id)
             {
-                state.damage_rects.push(ann.damage_bbox(true));
+                state.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
             }
             if let Some(editor) = state.text_editors.get_mut(&edit.annotation_id) {
                 editor.set_selection(Selection::None);

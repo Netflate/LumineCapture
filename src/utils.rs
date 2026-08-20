@@ -257,3 +257,33 @@ pub fn swizzle_all(pixels: &mut [u8]) {
         chunk.swap(0, 2);
     }
 }
+
+pub fn intersect_area(a: &Rect, b: &Rect) -> f32 {
+    let left = a.left().max(b.left());
+    let right = a.right().min(b.right());
+    let top = a.top().max(b.top());
+    let bottom = a.bottom().min(b.bottom());
+    if right > left && bottom > top {
+        (right - left) * (bottom - top)
+    } else {
+        0.0
+    }
+}
+
+pub fn largest_overlap_monitor(sel: &Rect, placements: &[Placement]) -> Option<usize> {
+    placements
+        .iter()
+        .enumerate()
+        .filter_map(|(i, p)| {
+            let mon_rect = Rect::from_xywh(
+                p.position.0 as f32,
+                p.position.1 as f32,
+                p.size.0 as f32,
+                p.size.1 as f32,
+            )?;
+            let area = intersect_area(sel, &mon_rect);
+            (area > 0.0).then_some((i, area))
+        })
+        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+        .map(|(i, _)| i)
+}

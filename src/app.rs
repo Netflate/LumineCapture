@@ -1,5 +1,5 @@
 use crate::backend::{ScreenOverlay, initialize_capture, initialize_clipboard, initialize_overlay};
-use crate::editor::EditorState;
+use crate::editor::{EditorState, DamageZone};
 use crate::profiler::Profiler;
 use crate::renderer::{self};
 use crate::tools::selection::{global_selection_to_local, selection_edges_for_monitor};
@@ -7,14 +7,14 @@ use crate::tools::{
     Tool, dispatch_button, dispatch_deactivate, dispatch_key, dispatch_move, dispatch_text,
 };
 use crate::types::toolbar::{
-    TOOLBAR_HEIGHT, TOOLBAR_OFFSET, TOOLBAR_PADDING, Toolbar, ToolbarAction, ToolbarAnimation,
-    ToolbarButton, ToolbarItem, ToolbarSide,
+    Toolbar, TOOLBAR_OFFSET, TOOLBAR_ANIM_INTERVAL, TOOLBAR_TRANSITION_OFFSET,
+    ToolbarButton, ToolbarItem, ToolbarPlacementKind, TOOLBAR_ANIM_DT,
 };
 use crate::types::{
     DamageRect, MAG_FRAME_INTERVAL, MagnifierState, MonitorFrame, MouseButton, OverlayEvent,
     Placement, PointerState, SelectionEdges, SelectionState, SpecialKey, Output, icons
 };
-use crate::utils::{encode_png, get_overlapping_monitors, global_point_to_local, save_to_file, get_full_workspace_rect};
+use crate::utils::{encode_png, get_overlapping_monitors, largest_overlap_monitor, global_point_to_local, save_to_file, get_full_workspace_rect};
 use cosmic_text::{FontSystem, SwashCache};
 use std::collections::HashMap;
 use std::time::Instant;
@@ -39,15 +39,15 @@ pub async fn make_screenshot(
     prof.mark("overlay init");
 
     let outputs = overlay.discovered_outputs().to_vec();
-    // we don't work with capture workspace functions, instead of use capture on each screen
-    // so we need to get output list first of all 
+    // We don't use the compositor's capture-workspace functions, we capture
+    // each screen individually, so we need the output list up front.
     let present_handle = std::thread::spawn(move || {
         let t = std::time::Instant::now();
         let res = overlay.present().map(|_| ()).map_err(|e| e.to_string());
         (overlay, res, t.elapsed())
     });
 
-    let capture = initialize_capture( );
+    let capture = initialize_capture();
     let screenshots = capture.capture_frame(&outputs).await?;
     prof.mark("capture");
 
@@ -59,8 +59,7 @@ pub async fn make_screenshot(
     prof.mark("base_pixmaps + layers + placements");
 
     drop(screenshots);
-    // 4 may 2026 : ~75mb memory usage while screenshoting on kde linux with 2 hd monitors
-    // not ideal, could be resolved with rendering in shm itself
+    // 4 may 2026: ~75mb memory usage while screenshotting on KDE Linux with
 
     let (swash_cache, font_system) = text_handle.join().expect("Failed to join text thread");
     let icon_cache = icons_handle.join().expect("Failed to join icons thread");
@@ -119,32 +118,24 @@ pub async fn make_screenshot(
     let _save_as_file = true;
 
     loop {
-        // rendering happens only if x event happens
-        // if we have some kind of animation we need to force rendering every 16 ms
-        // to create a 60 fps animation
-        let opacity_animating = {
+        // rendering happens only when an event occurs. If an animation is
+        // running we need to force rendering every 16ms to get a 60fps animation.
+        let toolbar_animating = {
             let tb = &editor_state.toolbar;
-            let target_opacity = if tb.interferes { 0.1 } else { 1.0 };
-            (tb.opacity - target_opacity).abs() > 0.001
+            let target_opacity = if tb.interferes { 0.0 } else { 1.0 };
+            let opacity_diff = (tb.opacity - target_opacity).abs() > 0.001;
+            let pos_diff = (tb.position.0 - tb.render_pos.0).abs() > 0.5
+                || (tb.position.1 - tb.render_pos.1).abs() > 0.5;
+            opacity_diff || pos_diff
         };
-        let timeout = if editor_state.toolbar.anim.is_some() || opacity_animating {
-            16
-        } else {
-            -1
-        };
+        let timeout = if toolbar_animating { 16 } else { -1 };
 
         let ev = overlay.next_event(timeout)?;
         match ev {
             OverlayEvent::Tick => {}
             OverlayEvent::EscapePressed => break,
             OverlayEvent::PointerMove { monitor_idx, x, y } => {
-                handle_pointer_move(
-                    &mut editor_state,
-                    monitor_idx,
-                    x,
-                    y,
-                    &mut dirty_mask,
-                );
+                handle_pointer_move(&mut editor_state, monitor_idx, x, y, &mut dirty_mask);
             }
             OverlayEvent::PointerButton { button, pressed } => {
                 handle_pointer_button(&mut editor_state, button, pressed, &mut dirty_mask);
@@ -220,12 +211,12 @@ pub async fn make_screenshot(
                     if i == editor_state.toolbar.monitor_idx
                         && !editor_state.toolbar.dirty
                         && let Some(dirty) = dirty_rect.as_ref()
+                        && let Some(tb_r) = editor_state.toolbar.rect()
                     {
-                        let tb = &editor_state.toolbar;
-                        if let Some(tb_r) = Rect::from_xywh(tb.position.0, tb.position.1, tb.size.0, TOOLBAR_HEIGHT) {
-                            let intersects = dirty.left() < tb_r.right() && dirty.right() > tb_r.left()
-                                && dirty.top() < tb_r.bottom() && dirty.bottom() > tb_r.top();
-                            if intersects { editor_state.toolbar.dirty = true; }
+                        let intersects = dirty.left() < tb_r.right() && dirty.right() > tb_r.left()
+                            && dirty.top() < tb_r.bottom() && dirty.bottom() > tb_r.top();
+                        if intersects {
+                            editor_state.toolbar.dirty = true;
                         }
                     }
 
@@ -255,12 +246,12 @@ pub async fn make_screenshot(
                         offset,
                         annotations_layer_empty: false,
                     });
-                    
+
                     overlay.stage_frame(i, editor_state.canvas[i].data(), damage)?;
                 }
             }
             overlay.flush()?;
-            
+
             editor_state.selection.prev_zone = editor_state.selection.zone;
             editor_state.toolbar.dirty = false;
             dirty_mask = 0;
@@ -272,14 +263,14 @@ pub async fn make_screenshot(
 
     if save_to_clipboard {
         let final_result = render_final(&mut editor_state);
-        // it doesn't make sense, but while this program in wip
-        // it will have one option - save to clipboard AND file
+        // TODO: wip bullshit
         let _path = save_to_file(&final_result);
         clipboard.copy_image_to_clipboard(final_result)?;
     }
 
     Ok(())
 }
+
 // ************************* //
 //      INITIALIZATION       //
 // ************************* //
@@ -486,21 +477,11 @@ fn handle_pointer_move(
     );
     let (current_monitor_idx, local_x, local_y) =
         global_point_to_local(&editor_state.placements, global, monitor_idx, (x, y));
-    update_pointer(
-        editor_state,
-        current_monitor_idx,
-        (local_x, local_y),
-        global,
-    );
+    update_pointer(editor_state, current_monitor_idx, (local_x, local_y), global);
     update_magnifier(editor_state, dirty_mask);
-    dispatch_move(
-        editor_state.selected_tool,
-        editor_state,
-        global,
-        dirty_mask,
-    );
+    dispatch_move(editor_state.selected_tool, editor_state, global, dirty_mask);
+    update_toolbar(editor_state);
     apply_damage_rects(editor_state, dirty_mask);
-    update_toolbar(editor_state, dirty_mask);
 }
 
 fn handle_pointer_button(
@@ -509,23 +490,27 @@ fn handle_pointer_button(
     pressed: bool,
     dirty_mask: &mut u32,
 ) {
-    if matches!(button, MouseButton::Left)
-        && pressed
-        && let Some(tb_button) = toolbar_hit_test(&editor_state.toolbar, editor_state.pointer.local)
-    {
+    let hit_button = if matches!(button, MouseButton::Left) && pressed {
+        editor_state.toolbar.hit_test(editor_state.pointer.local)
+    } else {
+        None
+    };
+
+    if let Some(tb_button) = hit_button {
         editor_state.toolbar.dirty = true;
         mark_dirty(dirty_mask, editor_state.toolbar.monitor_idx);
 
-        if let Some(ToolbarItem::Button(button)) = editor_state.toolbar.items.get(tb_button) {
-            match button {
+        if let Some(ToolbarItem::Button(btn)) = editor_state.toolbar.items.get(tb_button) {
+            match btn {
                 ToolbarButton::Tool(tool) => {
                     if editor_state.selection.zone.is_none() && *tool != Tool::Selection {
                         editor_state.selection.zone = get_full_workspace_rect(&editor_state.placements);
                         for i in 0..editor_state.placements.len() {
                             mark_dirty(dirty_mask, i);
                         }
-                    }
-                    else if *tool == Tool::Selection && editor_state.selection.zone == get_full_workspace_rect(&editor_state.placements) {
+                    } else if *tool == Tool::Selection
+                        && editor_state.selection.zone == get_full_workspace_rect(&editor_state.placements)
+                    {
                         editor_state.selection.zone = None;
                         for i in 0..editor_state.placements.len() {
                             mark_dirty(dirty_mask, i);
@@ -535,31 +520,21 @@ fn handle_pointer_button(
                     editor_state.selected_tool = *tool;
                     editor_state.toolbar.selected = Some(tb_button);
                 }
-                ToolbarButton::Action(ToolbarAction::SideChange) => {
-                    editor_state.toolbar.current_side = match editor_state.toolbar.current_side {
-                        ToolbarSide::Top => ToolbarSide::Bottom,
-                        ToolbarSide::Bottom => ToolbarSide::Top,
-                    };
-                }
             }
             editor_state.toolbar.dirty = true;
-            update_toolbar(editor_state, dirty_mask);
+            update_toolbar(editor_state);
+            apply_damage_rects(editor_state, dirty_mask);
         }
         return;
     }
 
-    dispatch_button(
-        editor_state.selected_tool,
-        editor_state,
-        button,
-        pressed,
-        dirty_mask,
-    );
-    apply_damage_rects(editor_state, dirty_mask);
+    dispatch_button(editor_state.selected_tool, editor_state, button, pressed, dirty_mask);
 
     if matches!(button, MouseButton::Left) && !pressed {
-        update_toolbar(editor_state, dirty_mask);
+        update_toolbar(editor_state);
     }
+
+    apply_damage_rects(editor_state, dirty_mask);
 }
 
 fn update_pointer(
@@ -595,10 +570,7 @@ fn update_magnifier(editor_state: &mut EditorState, dirty_mask: &mut u32) {
         editor_state.prev_magnifier = None;
     }
 
-    editor_state.magnifier = Some(MagnifierState {
-        monitor_idx,
-        pos: local,
-    });
+    editor_state.magnifier = Some(MagnifierState { monitor_idx, pos: local });
     mark_dirty(dirty_mask, monitor_idx);
 }
 
@@ -606,168 +578,141 @@ fn update_magnifier(editor_state: &mut EditorState, dirty_mask: &mut u32) {
 //         TOOLBAR           //
 // ************************* //
 
-fn update_toolbar(editor_state: &mut EditorState, dirty_mask: &mut u32) {
-    let monitor_idx = editor_state.pointer.monitor_idx;
-    let placement = &editor_state.placements[monitor_idx];
-    let (pos_x, pos_y) = toolbar_position(
-        editor_state.toolbar.current_side,
-        placement,
-        editor_state.toolbar.toolbar_width(),
-    );
-    let from_y = match editor_state.toolbar.current_side {
-        ToolbarSide::Top => -TOOLBAR_HEIGHT,
-        ToolbarSide::Bottom => placement.size.1 as f32,
+fn update_toolbar(editor_state: &mut EditorState) {
+    let old_monitor = editor_state.toolbar.monitor_idx;
+    let old_position = editor_state.toolbar.position;
+    let old_rect = editor_state.toolbar.rect();
+    let old_kind = editor_state.toolbar.placement_kind;
+    let mut layout_changed = false;
+
+    let (target_monitor, target_position, hidden) = compute_toolbar_placement(editor_state);
+
+    let new_kind = if hidden {
+        ToolbarPlacementKind::Hidden
+    } else if editor_state.selection.zone.is_none() {
+        ToolbarPlacementKind::Idle
+    } else {
+        ToolbarPlacementKind::AtSelection
     };
-    let interferes = toolbar_interferes(editor_state);
-    let pointer_local = editor_state.pointer.local;
 
-    let tb = &mut editor_state.toolbar;
-    if tb.interferes != interferes {
-        tb.dirty = true;
-        mark_dirty(dirty_mask, tb.monitor_idx);
+    // Covers: initial startup, switching monitors while idle (no selection),
+    // and returning to Idle from Hidden/AtSelection.
+    let entering_idle_fresh = new_kind == ToolbarPlacementKind::Idle
+        && (old_kind != Some(ToolbarPlacementKind::Idle) || old_monitor != target_monitor);
+
+    if entering_idle_fresh {
+        editor_state.toolbar.render_pos = (target_position.0, -editor_state.toolbar.size.1);
+    } else if old_monitor != target_monitor || old_position != target_position {
+        let start_pos = editor_state.toolbar.compute_transition_start(
+            old_monitor,
+            target_position,
+            target_monitor,
+            &editor_state.placements,
+            TOOLBAR_TRANSITION_OFFSET,
+        );
+        editor_state.toolbar.render_pos = start_pos;
     }
-    tb.interferes = interferes;
 
-    if tb.monitor_idx != monitor_idx || tb.position != (pos_x, pos_y) {
-        tb.anim = Some(ToolbarAnimation {
-            start: Instant::now(),
-            duration_ms: 200,
-            from_y,
-            to_y: pos_y,
-        });
-        tb.render_y = from_y;
-        tb.prev_position = tb.position;
-        tb.prev_monitor_idx = tb.monitor_idx;
-        mark_dirty(dirty_mask, tb.monitor_idx);
-        if tb.monitor_idx != monitor_idx {
-            mark_dirty(dirty_mask, monitor_idx);
+    if old_monitor != target_monitor || old_position != target_position {
+        editor_state.toolbar.monitor_idx = target_monitor;
+        editor_state.toolbar.position = target_position;
+        layout_changed = true;
+    }
+    if editor_state.toolbar.interferes != hidden {
+        editor_state.toolbar.interferes = hidden;
+        layout_changed = true;
+    }
+
+    editor_state.toolbar.placement_kind = Some(new_kind);
+
+    let new_rect = editor_state.toolbar.rect();
+    let new_monitor = editor_state.toolbar.monitor_idx;
+
+    if layout_changed || old_rect != new_rect || old_monitor != new_monitor {
+        editor_state.toolbar.dirty = true;
+        if let Some(rect) = old_rect {
+            editor_state.damage_rects.push(DamageZone::Local { monitor_idx: old_monitor, rect });
         }
-        tb.dirty = true;
-        tb.position = (pos_x, pos_y);
-        tb.monitor_idx = monitor_idx;
+        if let Some(rect) = new_rect {
+            editor_state.damage_rects.push(DamageZone::Local { monitor_idx: new_monitor, rect });
+        }
     }
 
-    let button = toolbar_hit_test(tb, pointer_local);
-    if button != tb.hovered {
-        tb.hovered = button;
-        tb.dirty = true;
-        mark_dirty(dirty_mask, tb.monitor_idx);
+    if let Some(tb_rect) = new_rect {
+        let button = editor_state.toolbar.hit_test(editor_state.pointer.local);
+        if button != editor_state.toolbar.hovered {
+            editor_state.toolbar.dirty = true;
+            editor_state.toolbar.hovered = button;
+            editor_state.damage_rects.push(DamageZone::Local { monitor_idx: new_monitor, rect: tb_rect });
+        }
     }
 }
 
 fn tick_toolbar_anim(editor_state: &mut EditorState, dirty_mask: &mut u32) {
+    let now = Instant::now();
     let tb = &mut editor_state.toolbar;
 
-    // smooth opacity animation
-    let now = Instant::now();
-    let dt = tb
-        .last_tick
-        .map(|t| now.duration_since(t).as_secs_f32())
-        .unwrap_or(0.016);
+    let elapsed = tb.last_tick
+        .map(|t| now.duration_since(t))
+        .unwrap_or(TOOLBAR_ANIM_INTERVAL);
+
+    // Not time for the next step yet.
+    if elapsed < TOOLBAR_ANIM_INTERVAL {
+        return;
+    }
+
+    // If more time has passed than expected, catch up with fixed steps,
+    // capped at 4 in a row (avoids a big jump after a long idle period).
+    let steps = ((elapsed.as_secs_f32() / TOOLBAR_ANIM_DT).floor() as u32).clamp(1, 4);
     tb.last_tick = Some(now);
 
-    let opacity_per_sec = 5.0;
-    let target_opacity = if tb.interferes { 0.1 } else { 1.0 };
-    if (tb.opacity - target_opacity).abs() > 0.001 {
-        let delta = opacity_per_sec * dt;
-        if tb.opacity < target_opacity {
-            tb.opacity = (tb.opacity + delta).min(target_opacity);
-        } else {
-            tb.opacity = (tb.opacity - delta).max(target_opacity);
+    let old_render_pos = tb.render_pos;
+    let mut changed = false;
+
+    for _ in 0..steps {
+        let target_opacity = if tb.interferes { 0.0 } else { 1.0 };
+        if (tb.opacity - target_opacity).abs() > 0.001 {
+            let delta = 5.0 * TOOLBAR_ANIM_DT;
+            tb.opacity += (target_opacity - tb.opacity).signum() * delta;
+            tb.opacity = tb.opacity.clamp(0.0, 1.0);
+            changed = true;
         }
+
+        let target = tb.position;
+        let dx = target.0 - tb.render_pos.0;
+        let dy = target.1 - tb.render_pos.1;
+        if dx.abs() > 0.5 || dy.abs() > 0.5 {
+            let t = (12.0 * TOOLBAR_ANIM_DT).min(1.0);
+            tb.render_pos.0 += dx * t;
+            tb.render_pos.1 += dy * t;
+            changed = true;
+        } else if tb.render_pos != target {
+            tb.render_pos = target;
+            changed = true;
+        }
+    }
+
+    if changed {
         tb.dirty = true;
-        mark_dirty(dirty_mask, tb.monitor_idx);
-    }
+        let monitor_idx = tb.monitor_idx;
+        mark_dirty(dirty_mask, monitor_idx);
 
-    // ease out animation
-    let Some(anim) = &tb.anim else { return };
+        let old_rect = tiny_skia::Rect::from_xywh(old_render_pos.0, old_render_pos.1, tb.size.0, tb.size.1);
+        let new_rect = tb.rect();
 
-    let t = (anim.start.elapsed().as_millis() as f32 / anim.duration_ms as f32).clamp(0.0, 1.0);
-    let t_eased = 1.0 - (1.0 - t).powi(3);
+        let union = match (old_rect, new_rect) {
+            (Some(a), Some(b)) => tiny_skia::Rect::from_ltrb(
+                a.left().min(b.left()), a.top().min(b.top()),
+                a.right().max(b.right()), a.bottom().max(b.bottom()),
+            ),
+            (Some(a), None) | (None, Some(a)) => Some(a),
+            (None, None) => None,
+        };
 
-    tb.render_y = anim.from_y + (anim.to_y - anim.from_y) * t_eased;
-    tb.dirty = true;
-    mark_dirty(dirty_mask, tb.monitor_idx);
-
-    if t >= 1.0 {
-        tb.render_y = anim.to_y;
-        tb.anim = None;
-    }
-}
-
-fn toolbar_interferes(editor_state: &EditorState) -> bool {
-    let monitor_idx = editor_state.pointer.monitor_idx;
-    let placement = &editor_state.placements[monitor_idx];
-    let mon_w = placement.size.0 as f32;
-    let mon_h = placement.size.1 as f32;
-    let tb = &editor_state.toolbar;
-    let tb_width = tb.size.0;
-    let x = (mon_w - tb_width) / 2.0;
-
-    let active_rect = match tb.current_side {
-        ToolbarSide::Top => (
-            x,
-            TOOLBAR_OFFSET,
-            x + tb_width,
-            TOOLBAR_OFFSET + TOOLBAR_HEIGHT,
-        ),
-        ToolbarSide::Bottom => (
-            x,
-            mon_h - TOOLBAR_OFFSET - TOOLBAR_HEIGHT,
-            x + tb_width,
-            mon_h - TOOLBAR_OFFSET,
-        ),
-    };
-
-    let Some(sel) = editor_state
-        .selection
-        .zone
-        .as_ref()
-        .and_then(|sel| global_selection_to_local(sel, placement))
-    else {
-        return false;
-    };
-
-    active_rect.0 < sel.right()
-        && active_rect.2 > sel.left()
-        && active_rect.1 < sel.bottom()
-        && active_rect.3 > sel.top()
-        && editor_state.tool_active // if selection isn't active toolbar won't be transparent
-}
-
-fn toolbar_position(side: ToolbarSide, placement: &Placement, tb_width: f32) -> (f32, f32) {
-    let mon_w = placement.size.0 as f32;
-    let mon_h = placement.size.1 as f32;
-    let x = (mon_w - tb_width) / 2.0;
-    let y = match side {
-        ToolbarSide::Top => TOOLBAR_OFFSET,
-        ToolbarSide::Bottom => mon_h - TOOLBAR_OFFSET - TOOLBAR_HEIGHT,
-    };
-    (x, y)
-}
-
-pub fn toolbar_hit_test(toolbar: &Toolbar, local: (f64, f64)) -> Option<usize> {
-    let (px, py) = (local.0 as f32, local.1 as f32);
-    let (tb_x, tb_y) = toolbar.position;
-    let (_, tb_h) = toolbar.size;
-
-    if py < tb_y || py > tb_y + tb_h {
-        return None;
-    }
-
-    let mut current_x = tb_x + TOOLBAR_PADDING;
-    for (idx, item) in toolbar.items.iter().enumerate() {
-        let item_w = item.size();
-        let item_right = current_x + item_w;
-        if px >= current_x && px <= item_right {
-            return match item {
-                ToolbarItem::Button(_) => Some(idx),
-                ToolbarItem::Seperator => None,
-            };
+        if let Some(rect) = union {
+            editor_state.damage_rects.push(DamageZone::Local { monitor_idx, rect });
         }
-        current_x += item_w + item.trailing_padding();
     }
-    None
 }
 
 // ************************* //
@@ -802,7 +747,6 @@ fn render_final(editor_state: &mut EditorState) -> Vec<u8> {
         },
     };
 
-    // based on selection choosing monitors for render
     let mask = get_overlapping_monitors(&sel, &editor_state.placements);
 
     let sel_left = sel.left().floor() as i32;
@@ -832,10 +776,9 @@ fn render_final(editor_state: &mut EditorState) -> Vec<u8> {
         );
     }
 
-    // re-drawing annotations
-    // maybe in the future it would be better to make a separate layer
-    // instead of redrawing them
-    // or for some specific perfomance eating tools as blur
+    // Re-drawing annotations. Maybe in the future it'd be better to keep a
+    // separate composited layer instead of redrawing them here, especially
+    // for expensive tools like blur.
     let offset = (sel_left as f32, sel_top as f32);
     for ann in &editor_state.annotations {
         renderer::draw_annotation(
@@ -865,15 +808,6 @@ fn is_dirty(mask: u32, idx: usize) -> bool {
     (mask & (1 << idx)) != 0
 }
 
-// some parts of the code still identify dirty monitors themselves
-// that will be fixed
-fn apply_damage_rects(editor_state: &mut EditorState, dirty_mask: &mut u32) {
-    for rect in &editor_state.damage_rects {
-        let mask = get_overlapping_monitors(rect, &editor_state.placements);
-        *dirty_mask |= mask;
-    }
-}
-// text
 
 fn handle_text_input(editor_state: &mut EditorState, ch: char, dirty_mask: &mut u32) {
     dispatch_text(editor_state.selected_tool, editor_state, ch, dirty_mask);
@@ -883,4 +817,59 @@ fn handle_text_input(editor_state: &mut EditorState, ch: char, dirty_mask: &mut 
 fn handle_key_press(editor_state: &mut EditorState, key: SpecialKey, dirty_mask: &mut u32) {
     dispatch_key(editor_state.selected_tool, editor_state, key, dirty_mask);
     apply_damage_rects(editor_state, dirty_mask);
+}
+
+fn apply_damage_rects(editor_state: &mut EditorState, dirty_mask: &mut u32) {
+    for zone in &editor_state.damage_rects {
+        match zone {
+            DamageZone::Global(rect) => {
+                *dirty_mask |= get_overlapping_monitors(rect, &editor_state.placements);
+            }
+            DamageZone::Local { monitor_idx, .. } => {
+                mark_dirty(dirty_mask, *monitor_idx);
+            }
+        }
+    }
+}
+
+fn compute_toolbar_placement(editor_state: &EditorState) -> (usize, (f32, f32), bool) {
+    if editor_state.tool_active {
+        // Active drag: hide, keep the position so the fade-out happens in place
+        return (editor_state.toolbar.monitor_idx, editor_state.toolbar.position, true);
+    }
+
+    let Some(sel) = editor_state.selection.zone else {
+        // No selection: top-center on the cursor's monitor
+        let monitor_idx = editor_state.pointer.monitor_idx;
+        let placement = &editor_state.placements[monitor_idx];
+        let mon_w = placement.size.0 as f32;
+        let pos = ((mon_w - editor_state.toolbar.size.0) / 2.0, 0.0);
+        return (monitor_idx, pos, false);
+    };
+
+    // Selection finished: move to it, on the monitor with the largest overlap
+    let monitor_idx = largest_overlap_monitor(&sel, &editor_state.placements)
+        .unwrap_or(editor_state.pointer.monitor_idx);
+    let placement = &editor_state.placements[monitor_idx];
+
+    let local_sel = global_selection_to_local(&sel, placement).unwrap_or_else(|| {
+        Rect::from_xywh(0.0, 0.0, placement.size.0 as f32, placement.size.1 as f32).unwrap()
+    });
+
+    let tb_w = editor_state.toolbar.size.0;
+    let tb_h = editor_state.toolbar.size.1;
+    let margin = TOOLBAR_OFFSET;
+
+    let sel_center_x = (local_sel.left() + local_sel.right()) / 2.0;
+    let pos_x = (sel_center_x - tb_w / 2.0)
+        .clamp(0.0, (placement.size.0 as f32 - tb_w).max(0.0));
+
+    let above_y = local_sel.top() - tb_h - margin;
+    let pos_y = if above_y >= 0.0 {
+        above_y // room above the selection
+    } else {
+        local_sel.top() + margin // otherwise below the top edge
+    };
+
+    (monitor_idx, (pos_x, pos_y), false)
 }

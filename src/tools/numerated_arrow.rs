@@ -1,4 +1,4 @@
-use crate::editor::EditorState;
+use crate::editor::{EditorState, DamageZone};
 use crate::tools::ToolBehavior;
 use crate::types::MouseButton;
 use crate::types::annotations::{Annotation, AnnotationShape};
@@ -47,6 +47,9 @@ impl ToolBehavior for NumeratedArrowTool {
             };
             ann.update_bbox();
 
+            state.damage_rects.push(DamageZone::Global(ann.bbox));
+            state.annotations_dirty = true;
+            
             state.pending = Some(ann.clone());
             state.prev_pending = Some(ann);
         } else if let Some(ann) = state.pending.take() {
@@ -64,7 +67,7 @@ impl ToolBehavior for NumeratedArrowTool {
         _dirty_mask: &mut u32,
     ) {
         if let Some(ann) = state.pending.as_mut() {
-            state.damage_rects.push(ann.bbox);
+            state.damage_rects.push(DamageZone::Global(ann.bbox));
 
             let pos = (state.pointer.global.0 as f32, state.pointer.global.1 as f32);
             let start = ann.shape.start_point();
@@ -81,7 +84,7 @@ impl ToolBehavior for NumeratedArrowTool {
             };
             ann.update_bbox();
 
-            state.damage_rects.push(ann.bbox);
+            state.damage_rects.push(DamageZone::Global(ann.bbox));
             state.annotations_dirty = true;
         }
     }

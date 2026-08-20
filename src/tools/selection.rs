@@ -1,4 +1,4 @@
-use crate::editor::EditorState;
+use crate::editor::{EditorState, DamageZone};
 use crate::tools::ToolBehavior;
 use crate::types::{MouseButton, Placement, SelectionEdges, SelectionHandle};
 use crate::utils::{apply_handle_drag, hit_test_rect_handle, make_rect};
@@ -119,10 +119,10 @@ impl ToolBehavior for SelectionTool {
 
         if selection_changed {
             if let Some(sel) = old_sel {
-                state.damage_rects.push(sel);
+                state.damage_rects.push(DamageZone::Global(sel));
             }
             if let Some(sel) = state.selection.zone {
-                state.damage_rects.push(sel);
+                state.damage_rects.push(DamageZone::Global(sel));
             }
         }
     }

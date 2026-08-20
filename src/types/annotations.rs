@@ -1,4 +1,4 @@
-use crate::editor::EditorState;
+use crate::editor::{EditorState, DamageZone};
 use crate::tools::text::update_text_bbox_inline;
 use crate::types::{SelectionHandle, SignedRect};
 use crate::utils::{apply_handle_drag, hit_test_rect_handle};
@@ -381,7 +381,7 @@ pub fn apply_annotation_drag(state: &mut EditorState, global: (f64, f64)) {
 
     state
         .damage_rects
-        .push(state.annotations[idx].damage_bbox(true));
+        .push(DamageZone::Global(state.annotations[idx].damage_bbox(true)));
 
     match handle {
         SelectionHandle::Move => {
@@ -427,7 +427,7 @@ pub fn apply_annotation_drag(state: &mut EditorState, global: (f64, f64)) {
 
     state
         .damage_rects
-        .push(state.annotations[idx].damage_bbox(true));
+        .push(DamageZone::Global(state.annotations[idx].damage_bbox(true)));
     state.annotations_dirty = true;
 
     if let Some(drag) = state.ann_drag.as_mut() {
