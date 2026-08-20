@@ -84,16 +84,16 @@ pub fn render_frame(req: &mut RenderRequest) {
 pub fn init_dimming(dimmed: &mut Pixmap, base: &Pixmap, selection: &Option<Rect>) {
 
     match selection {
-        None => {
-            let src = base.data();
-            let dst = dimmed.data_mut();
+    None => {
+        let src = base.data();
+        let dst = dimmed.data_mut();
 
-            for (s, d) in src.chunks_exact(4).zip(dst.chunks_exact_mut(4)) {
-                d[0] = ((s[0] as u16 * 115) / 255) as u8; 
-                d[1] = ((s[1] as u16 * 115) / 255) as u8; 
-                d[2] = ((s[2] as u16 * 115) / 255) as u8; 
-                d[3] = s[3];                              
-            }
+        for (s, d) in src.chunks_exact(4).zip(dst.chunks_exact_mut(4)) {
+            d[0] = ((s[0] as u16 * 115 + 127) / 255) as u8;
+            d[1] = ((s[1] as u16 * 115 + 127) / 255) as u8;
+            d[2] = ((s[2] as u16 * 115 + 127) / 255) as u8;
+            d[3] = s[3];
+        }
         }
         Some(sel) => {
             // just in case if somehow something going to be selected with init in the future
