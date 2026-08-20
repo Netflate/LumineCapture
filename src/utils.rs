@@ -40,15 +40,15 @@ pub fn encode_png(pixmap: &Pixmap) -> Vec<u8> {
     use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 
     let mut png_bytes = Vec::new();
-    let mut rgba = pixmap.data().to_vec();
-    for px in rgba.chunks_exact_mut(4) {
-        px.swap(0, 2);
-    }
+    
+    let rgba = pixmap.data();
+
     let encoder =
         PngEncoder::new_with_quality(&mut png_bytes, CompressionType::Fast, FilterType::Adaptive);
+    
     encoder
         .write_image(
-            &rgba,
+            rgba,
             pixmap.width(),
             pixmap.height(),
             image::ExtendedColorType::Rgba8,
