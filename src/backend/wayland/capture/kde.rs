@@ -62,6 +62,12 @@ async fn capture_one_screen(
         Ok(buf)
     });
 
+    let mut options: HashMap<&str, Value> = HashMap::new();
+    options.insert("include-decoration", Value::from(true));
+    options.insert("include-shadow", Value::from(true));
+    options.insert("native-resolution", Value::from(true));
+    eprintln!("{:?}", options);
+    
     let result = proxy
         .capture_screen(output_name, HashMap::new(), Fd::from(write_fd.as_fd()))
         .await;
@@ -81,7 +87,11 @@ async fn capture_one_screen(
     let row_bytes = (width * 4) as usize;
     let needed = stride as usize * height as usize;
     if raw.len() < needed {
-        return Err(format!("short read for '{output_name}': have {} need {}", raw.len(), needed).into());
+        let missing = needed - raw.len();
+        eprintln!(
+            "warning: short read for '{output_name}': padding {missing} missing bytes with transparent"
+        );
+        raw.resize(needed, 0); // zero-pad remaining tail with black pixels
     }
 
     // if there is no padding, there is no point in allocations and copying
