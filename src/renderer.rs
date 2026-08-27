@@ -2,13 +2,17 @@ mod annotations;
 mod magnifier;
 mod paths;
 mod toolbar;
+mod settings_panel;
+mod text;
 
 pub use annotations::draw_annotation;
+pub use settings_panel::char_index_for_x;
 pub use magnifier::magnifier_rect;
 pub use paths::{rect_bounds, rounded_rect_path};
 
 use crate::types::annotations::Annotation;
 use crate::types::toolbar::{Toolbar, ToolbarButton};
+use crate::types::settings_panel::SettingsPanel;
 use crate::types::{MagnifierState, SelectionEdges};
 use cosmic_text::{Editor, FontSystem, SwashCache};
 use std::collections::HashMap;
@@ -29,11 +33,14 @@ pub struct RenderRequest<'a> {
     pub magnifier: Option<&'a MagnifierState>,
     pub is_mag_monitor: bool,
     pub toolbar: Option<&'a mut Toolbar>,
+    pub settings_panel: Option<&'a mut SettingsPanel>,
     pub icons_cache: &'a HashMap<ToolbarButton, Tree>,
     pub offset: (f32, f32),
     // annotations
     pub annotations_layer: &'a Pixmap,
     pub annotations_layer_empty: bool,
+    pub font_system: Option<&'a mut FontSystem>,
+    pub swash_cache: Option<&'a mut SwashCache>,
 }
 
 pub fn render_frame(req: &mut RenderRequest) {
@@ -71,13 +78,32 @@ pub fn render_frame(req: &mut RenderRequest) {
         magnifier::draw_magnifier(req.canvas, req.base, (mag.pos.0 as f32, mag.pos.1 as f32));
     }
 
-    if let Some(tb) = req.toolbar.as_mut()
+    if let Some(tb) = req.toolbar.as_deref_mut()
         && tb.dirty
     {
         toolbar::draw_toolbar(req.canvas, tb, req.icons_cache);
     }
-}
 
+    if let Some(settings) = req.settings_panel.as_deref_mut()
+        && settings.dirty
+    {
+        match (req.font_system.as_deref_mut(), req.swash_cache.as_deref_mut()) {
+            (Some(font_system), Some(swash_cache)) => {
+                settings_panel::draw_settings_panel(
+                    req.canvas,
+                    settings,
+                    req.icons_cache,
+                    font_system,
+                    swash_cache,
+                );
+            }
+            _ => debug_assert!(
+                false,
+                "font_system/swash_cache are required for drawing settings panel"
+            ),
+        }
+    }
+}
 // ***************************/
 /// SELECTION + DIMMING  ////
 // **************************/

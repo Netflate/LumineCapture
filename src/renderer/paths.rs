@@ -1,4 +1,5 @@
-use tiny_skia::{PathBuilder, Rect};
+use tiny_skia::{PathBuilder, Paint, Pixmap, Rect, Transform, Color, Stroke};
+use crate::types::toolbar::TOOLBAR_COLOR;
 
 pub fn rounded_rect_path(
     rect: &Rect,
@@ -88,4 +89,86 @@ pub fn rect_bounds(rect: &Rect, width: u32, height: u32) -> Option<(u32, u32, u3
     }
 
     Some((x0 as u32, y0 as u32, (x1 - x0) as u32, (y1 - y0) as u32))
+}
+
+pub fn tint_pixmap(pixmap: &mut tiny_skia::Pixmap, color: usvg::Color) {
+    for pixel in pixmap.pixels_mut() {
+        let a = pixel.alpha();
+        if a == 0 {
+            continue;
+        }
+        let r = (color.red as u16 * a as u16 / 255) as u8;
+        let g = (color.green as u16 * a as u16 / 255) as u8;
+        let b = (color.blue as u16 * a as u16 / 255) as u8;
+        *pixel = tiny_skia::PremultipliedColorU8::from_rgba(r, g, b, a).unwrap();
+    }
+}
+
+pub fn panel_border_color(bg: Color) -> Color {
+    let r = bg.red() as f32;
+    let g = bg.green() as f32;
+    let b = bg.blue() as f32;
+    let luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+
+    if luminance > 0.5 {
+        Color::from_rgba8(0, 0, 0, 40)
+    } else {
+        Color::from_rgba8(255, 255, 255, 40)
+    }
+}
+
+pub fn draw_panel_border(canvas: &mut Pixmap, x: f32, y: f32, w: f32, h: f32, radius: f32, opacity: f32) {
+    const BORDER_WIDTH: f32 = 1.0;
+    const K: f32 = 0.5522847498;
+
+    let inset = BORDER_WIDTH / 2.0;
+    let bx = x + inset;
+    let by = y + inset;
+    let bw = (w - BORDER_WIDTH).max(0.0);
+    let bh = (h - BORDER_WIDTH).max(0.0);
+    let r = (radius - inset).max(0.0).min(bw / 2.0).min(bh / 2.0);
+    let kr = r * K;
+
+    let mut pb = PathBuilder::new();
+
+    pb.move_to(bx, by + r);
+    pb.line_to(bx, by + bh - r);
+    pb.cubic_to(bx, by + bh - r + kr, bx + r - kr, by + bh, bx + r, by + bh);
+
+    pb.line_to(bx + bw - r, by + bh);
+    pb.cubic_to(
+        bx + bw - r + kr, by + bh,
+        bx + bw, by + bh - r + kr,
+        bx + bw, by + bh - r,
+    );
+
+    pb.line_to(bx + bw, by + r);
+    pb.cubic_to(
+        bx + bw, by + r - kr,
+        bx + bw - r + kr, by,
+        bx + bw - r, by,
+    );
+    pb.line_to(bx + r, by);
+    pb.cubic_to(
+        bx + r - kr, by,
+        bx, by + r - kr,
+        bx, by + r,
+    );
+    pb.close();
+
+    let Some(path) = pb.finish() else { return };
+
+    let mut color = panel_border_color(TOOLBAR_COLOR);
+    color.set_alpha(color.alpha() * opacity);
+
+    let mut paint = Paint::default();
+    paint.set_color(color);
+    paint.anti_alias = true;
+
+    let stroke = Stroke {
+        width: BORDER_WIDTH,
+        ..Default::default()
+    };
+
+    canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
 }

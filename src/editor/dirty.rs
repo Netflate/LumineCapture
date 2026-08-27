@@ -3,6 +3,7 @@ use crate::renderer::{self};
 use crate::tools::selection::global_selection_to_local;
 use crate::types::annotations::{Annotation, AnnotationShape};
 use crate::types::{HANDLE_RADIUS, MagnifierState, Placement};
+use crate::utils::get_overlapping_monitors;
 
 use tiny_skia::Rect;
 
@@ -74,7 +75,6 @@ impl EditorState {
         let offset = (placement.position.0 as f32, placement.position.1 as f32);
         let pad = 4.0;
 
-        // больше не замыкание — свободная функция, не заимствует dirty
         fn global_to_local_padded(global_bbox: &Rect, offset: (f32, f32), pad: f32) -> Option<Rect> {
             Rect::from_ltrb(
                 global_bbox.left() - offset.0,
@@ -167,5 +167,26 @@ fn union_rect(a: Option<Rect>, b: Option<Rect>) -> Option<Rect> {
             r1.right().max(r2.right()),
             r1.bottom().max(r2.bottom()),
         ),
+    }
+}
+
+pub fn mark_dirty(mask: &mut u32, idx: usize) {
+    *mask |= 1 << idx;
+}
+
+pub fn is_dirty(mask: u32, idx: usize) -> bool {
+    (mask & (1 << idx)) != 0
+}
+
+pub fn apply_damage_rects(editor_state: &mut EditorState, dirty_mask: &mut u32) {
+    for zone in &editor_state.damage_rects {
+        match zone {
+            DamageZone::Global(rect) => {
+                *dirty_mask |= get_overlapping_monitors(rect, &editor_state.placements);
+            }
+            DamageZone::Local { monitor_idx, .. } => {
+                mark_dirty(dirty_mask, *monitor_idx);
+            }
+        }
     }
 }

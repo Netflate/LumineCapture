@@ -6,6 +6,11 @@ pub mod magnifier;
 pub mod selection;
 pub mod text;
 pub mod toolbar;
+pub mod settings_panel;
+pub mod panel;
+pub mod text_field;
+pub mod tool_settings;
+pub mod click;
 
 pub use annotations::*;
 pub use capture::*;
@@ -15,6 +20,11 @@ pub use magnifier::*;
 pub use selection::*;
 pub use text::*;
 pub use toolbar::*;
+pub use settings_panel::*;
+pub use panel::*;
+pub use text_field::*;
+pub use tool_settings::*;
+pub use click::*;
 
 use tiny_skia::Rect;
 #[derive(Clone, Copy, Debug)]

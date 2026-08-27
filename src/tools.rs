@@ -64,15 +64,18 @@ pub fn dispatch_move(
     dirty_mask: &mut u32,
 ) {
     match tool {
-        Tool::Selection => SelectionTool.on_move(state, global,  dirty_mask),
-        Tool::Pick => PickTool.on_move(state, global,  dirty_mask),
-        Tool::Text => TextTool.on_move(state, global,  dirty_mask),
-        Tool::Pen => PenTool.on_move(state, global,  dirty_mask),
+        Tool::Selection => SelectionTool.on_move(state, global, dirty_mask),
+        Tool::Pick => PickTool.on_move(state, global, dirty_mask),
+        Tool::Text => TextTool.on_move(state, global, dirty_mask),
+        Tool::Pen => PenTool.on_move(state, global, dirty_mask),
         Tool::NumeratedArrow => {
-            NumeratedArrowTool.on_move(state, global,  dirty_mask)
+            NumeratedArrowTool.on_move(state, global, dirty_mask)
         }
 
         Tool::Rectangle | Tool::Arrow | Tool::Circle | Tool::Line => {
+            let color = state.tool_settings.color;
+            let stroke_width = state.tool_settings.stroke_width;
+
             let tool_impl = SimpleShapeTool {
                 make_shape: match tool {
                     Tool::Rectangle => |start, end| AnnotationShape::Rectangle { start, end },
@@ -80,11 +83,11 @@ pub fn dispatch_move(
                     Tool::Circle => |start, end| AnnotationShape::Circle { start, end },
                     _ => |start, end| AnnotationShape::Line { start, end },
                 },
-                color: tiny_skia::Color::from_rgba8(255, 255, 255, 255),
-                stroke_width: 8.0,
+                color,
+                stroke_width,
             };
 
-            tool_impl.on_move(state, global,  dirty_mask);
+            tool_impl.on_move(state, global, dirty_mask);
         }
     }
 }
@@ -104,6 +107,9 @@ pub fn dispatch_button(
         Tool::NumeratedArrow => NumeratedArrowTool.on_button(state, button, pressed, dirty_mask),
 
         Tool::Rectangle | Tool::Arrow | Tool::Circle | Tool::Line => {
+            let color = state.tool_settings.color;
+            let stroke_width = state.tool_settings.stroke_width;
+
             let tool_impl = SimpleShapeTool {
                 make_shape: match tool {
                     Tool::Rectangle => |start, end| AnnotationShape::Rectangle { start, end },
@@ -111,8 +117,8 @@ pub fn dispatch_button(
                     Tool::Circle => |start, end| AnnotationShape::Circle { start, end },
                     _ => |start, end| AnnotationShape::Line { start, end },
                 },
-                color: tiny_skia::Color::from_rgba8(255, 255, 255, 255),
-                stroke_width: 8.0,
+                color,
+                stroke_width,
             };
 
             tool_impl.on_button(state, button, pressed, dirty_mask);

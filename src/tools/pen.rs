@@ -2,13 +2,7 @@ use crate::editor::{EditorState, DamageZone};
 use crate::tools::ToolBehavior;
 use crate::types::MouseButton;
 use crate::types::annotations::{Annotation, AnnotationShape};
-use tiny_skia::{Color, Rect};
-
-pub struct SimpleShapeTool {
-    pub make_shape: fn((f32, f32), (f32, f32)) -> AnnotationShape,
-    pub color: Color,
-    pub stroke_width: f32,
-}
+use tiny_skia::Rect;
 
 pub struct PenTool;
 
@@ -26,12 +20,11 @@ impl ToolBehavior for PenTool {
             let mut ann = Annotation {
                 id: state.next_id,
                 shape: AnnotationShape::Pen { points: vec![pos] },
-                color: Color::from_rgba8(255, 255, 255, 255),
-                stroke_width: 8.0,
+                color: state.tool_settings.color,
+                stroke_width: state.tool_settings.stroke_width,
                 bbox: Rect::from_xywh(pos.0, pos.1, 1.0, 1.0).unwrap(),
             };
             ann.update_bbox();
-
             state.pending = Some(ann);
         } else if let Some(ann) = state.pending.take() {
             state.next_id += 1;
@@ -68,19 +61,14 @@ impl ToolBehavior for PenTool {
                     if dx * dx + dy * dy < MIN_DIST_SQ {
                         return;
                     }
+                    points.push(smoothed);
 
-                    if let Some(segment_bbox) = Rect::from_ltrb(
-                        last.0.min(smoothed.0),
-                        last.1.min(smoothed.1),
-                        last.0.max(smoothed.0),
-                        last.1.max(smoothed.1),
-                    ) {
-                        state.damage_rects.push(DamageZone::Global(segment_bbox));
-                        state.annotations_dirty = true;
-                    }
-                }
-                points.push(smoothed);
-            }
+                    state.damage_rects.push(DamageZone::Global(ann.last_segment_bbox()));
+                    state.annotations_dirty = true;
+                } else {
+                    points.push(smoothed);
+                } 
+            };
             ann.update_bbox();
         }
     }

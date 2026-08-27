@@ -142,24 +142,24 @@ impl Annotation {
         }
     }
 
+    // to render only new pixels from pen, insted of rendering the whole rectangle
     pub fn last_segment_bbox(&self) -> Rect {
-        match &self.shape {
-            // to render only new pixels from pen, insted of rendering the whole rectangle
-            AnnotationShape::Pen { points } if points.len() >= 2 => {
-                let from = points[points.len() - 2];
-                let to = points[points.len() - 1];
-
-                Rect::from_ltrb(
-                    from.0.min(to.0),
-                    from.1.min(to.1),
-                    from.0.max(to.0),
-                    from.1.max(to.1),
-                )
-                .unwrap()
+        let pad = self.stroke_width / 2.0 + SHADOW_WIDTH_BONUS / 2.0;
+            match &self.shape {
+                AnnotationShape::Pen { points } if points.len() >= 2 => {
+                    let from = points[points.len() - 2];
+                    let to = points[points.len() - 1];
+                    Rect::from_ltrb(
+                        from.0.min(to.0) - pad,
+                        from.1.min(to.1) - pad,
+                        from.0.max(to.0) + pad,
+                        from.1.max(to.1) + pad,
+                    )
+                    .unwrap()
+                }
+                _ => self.bbox,
             }
-            _ => self.bbox,
         }
-    }
 
     pub fn translate_mut(&mut self, dx: f32, dy: f32) {
         match &mut self.shape {
@@ -310,7 +310,7 @@ impl Annotation {
 
 // to not repeat the same code in tools/pick.rs, and tools/text.rs
 // (they both can select and drag, tho text does that only with text)
-// utils.rs или editor/drag.rs
+// utils.rs or editor/drag.rs
 
 pub fn begin_drag_for_annotation(state: &mut EditorState, idx: usize) {
     let ann = &state.annotations[idx];
@@ -433,6 +433,23 @@ pub fn apply_annotation_drag(state: &mut EditorState, global: (f64, f64)) {
     if let Some(drag) = state.ann_drag.as_mut() {
         drag.prev_global = global;
     }
+}
+
+pub fn rebuild_annotation(state: &mut EditorState, idx: usize) {
+    let Some(ann) = state.annotations.get(idx) else { return };
+    state.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
+
+    let ann_id = ann.id;
+    if matches!(state.annotations[idx].shape, AnnotationShape::Text { .. }) {
+        if let Some(editor) = state.text_editors.get_mut(&ann_id) {
+            update_text_bbox_inline(&mut state.annotations[idx], editor, &mut state.font_system);
+        }
+    } else {
+        state.annotations[idx].update_bbox();
+    }
+
+    state.damage_rects.push(DamageZone::Global(state.annotations[idx].damage_bbox(true)));
+    state.annotations_dirty = true;
 }
 
 // resizing function for non-text annotations

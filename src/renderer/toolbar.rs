@@ -1,8 +1,10 @@
-use super::paths::rounded_rect_path;
+use super::paths::{rounded_rect_path, draw_panel_border, tint_pixmap};
 use crate::types::icons::get_svg;
+use crate::types::panel::PanelItem;
+use crate::types::UiPanel;
 use crate::types::toolbar::{TOOLBAR_PADDING, ICON_COLOR, SEPARATOR_COLOR, TOOLBAR_COLOR, BUTTON_HOVERED, BUTTON_SELECTED, Toolbar, ToolbarButton, ToolbarItem};
 use std::collections::HashMap;
-use tiny_skia::{BlendMode, FilterQuality, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Transform, Color, Stroke};
+use tiny_skia::{BlendMode, FilterQuality, Paint, Pixmap, PixmapPaint, Rect, Transform};
 use usvg::Tree;
 
 pub fn draw_toolbar(
@@ -50,7 +52,7 @@ pub fn draw_toolbar(
         None,
     );
 
-    draw_toolbar_border(canvas, x, y, w, h, 8.0, toolbar.opacity);
+    draw_panel_border(canvas, x, y, w, h, 8.0, toolbar.opacity);
 
     toolbar.toolbar_pixmap = Some(toolbar_pixmap);
 }
@@ -165,104 +167,4 @@ fn draw_toolbar_content(
         }
         current_x += cell_size + item.trailing_padding();
     }
-}
-
-fn tint_pixmap(pixmap: &mut tiny_skia::Pixmap, color: usvg::Color) {
-    for pixel in pixmap.pixels_mut() {
-        let a = pixel.alpha();
-        if a == 0 {
-            continue;
-        }
-        let r = (color.red as u16 * a as u16 / 255) as u8;
-        let g = (color.green as u16 * a as u16 / 255) as u8;
-        let b = (color.blue as u16 * a as u16 / 255) as u8;
-        *pixel = tiny_skia::PremultipliedColorU8::from_rgba(r, g, b, a).unwrap();
-    }
-}
-
-fn toolbar_border_color(bg: Color) -> Color {
-    // Simple luminance check to decide whether the border should be light or dark.
-    let r = bg.red() as f32;
-    let g = bg.green() as f32;
-    let b = bg.blue() as f32;
-    let luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-
-    if luminance > 0.5 {
-        // Light toolbar -> dark, subtle border.
-        Color::from_rgba8(0, 0, 0, 40)
-    } else {
-        // Dark toolbar -> light, subtle border.
-        Color::from_rgba8(255, 255, 255, 40)
-    }
-}
-
-fn draw_toolbar_border(
-    canvas: &mut Pixmap,
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-    radius: f32,
-    opacity: f32,
-) {
-    const BORDER_WIDTH: f32 = 1.0;
-    const K: f32 = 0.5522847498;
-
-    let inset = BORDER_WIDTH / 2.0;
-    let bx = x + inset;
-    let by = y + inset;
-    let bw = (w - BORDER_WIDTH).max(0.0);
-    let bh = (h - BORDER_WIDTH).max(0.0);
-    let r = (radius - inset).max(0.0).min(bw / 2.0).min(bh / 2.0);
-    let kr = r * K;
-
-    let mut pb = PathBuilder::new();
-
-    // 1. Начинаем чуть ниже левого верхнего угла (учитывая r)
-    pb.move_to(bx, by + r);
-    
-    // Левая грань и левый нижний угол
-    pb.line_to(bx, by + bh - r);
-    pb.cubic_to(bx, by + bh - r + kr, bx + r - kr, by + bh, bx + r, by + bh);
-    
-    // Нижняя грань и правый нижний угол
-    pb.line_to(bx + bw - r, by + bh);
-    pb.cubic_to(
-        bx + bw - r + kr, by + bh,
-        bx + bw, by + bh - r + kr,
-        bx + bw, by + bh - r,
-    );
-    
-    // Правая грань
-    pb.line_to(bx + bw, by + r);
-
-    // --- ДОБАВЛЕНО: Верхний правый угол, верхняя грань и верхний левый угол ---
-    pb.cubic_to(
-        bx + bw, by + r - kr,
-        bx + bw - r + kr, by,
-        bx + bw - r, by,
-    );
-    pb.line_to(bx + r, by); // Верхняя линия
-    pb.cubic_to(
-        bx + r - kr, by,
-        bx, by + r - kr,
-        bx, by + r,
-    );
-    pb.close(); // Замыкаем контур
-
-    let Some(path) = pb.finish() else { return };
-
-    let mut color = toolbar_border_color(TOOLBAR_COLOR);
-    color.set_alpha(color.alpha() * opacity);
-
-    let mut paint = Paint::default();
-    paint.set_color(color);
-    paint.anti_alias = true;
-
-    let stroke = Stroke {
-        width: BORDER_WIDTH,
-        ..Default::default()
-    };
-
-    canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
 }

@@ -66,7 +66,6 @@ async fn capture_one_screen(
     options.insert("include-decoration", Value::from(true));
     options.insert("include-shadow", Value::from(true));
     options.insert("native-resolution", Value::from(true));
-    eprintln!("{:?}", options);
     
     let result = proxy
         .capture_screen(output_name, HashMap::new(), Fd::from(write_fd.as_fd()))

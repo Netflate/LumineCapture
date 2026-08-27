@@ -2,7 +2,7 @@ use crate::editor::{EditorState, DamageZone};
 use crate::tools::ToolBehavior;
 use crate::types::MouseButton;
 use crate::types::annotations::{Annotation, AnnotationShape};
-use tiny_skia::{Color, Rect};
+use tiny_skia::Rect;
 
 pub struct NumeratedArrowTool;
 
@@ -41,8 +41,8 @@ impl ToolBehavior for NumeratedArrowTool {
                     end: pos,
                     number: next_number,
                 },
-                color: Color::from_rgba8(255, 0, 0, 255),
-                stroke_width: 8.0,
+                color: state.tool_settings.color,
+                stroke_width: state.tool_settings.stroke_width,
                 bbox: Rect::from_xywh(pos.0, pos.1, 1.0, 1.0).unwrap(),
             };
             ann.update_bbox();
