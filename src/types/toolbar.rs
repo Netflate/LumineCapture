@@ -1,4 +1,5 @@
 use crate::tools::Tool;
+use crate::types::panel::{PanelItem, UiPanel};
 use crate::types::Placement;
 use std::time::Instant;
 use tiny_skia::Pixmap;
@@ -11,7 +12,7 @@ pub const TOOLBAR_ANIM_DT: f32 = 0.016;
 pub const TOOLBAR_TRANSITION_OFFSET: f32 = 340.0; // max cap on the transition entrance distance
 
 pub const TOOLBAR_HEIGHT: f32 = 42.0;
-pub const TOOLBAR_OFFSET: f32 = 10.0;
+pub const TOOLBAR_OFFSET: f32 = 5.0;
 pub const TOOLBAR_PADDING: f32 = 8.0; // left & right
 
 pub const BUTTON_CELL_SIZE: f32 = 35.0;
@@ -48,7 +49,6 @@ pub const TOOLBAR_ITEMS: &[ToolbarItem] = &[
     ToolbarItem::Button(ToolbarButton::Tool(Tool::Rectangle)),
     ToolbarItem::Button(ToolbarButton::Tool(Tool::Circle)),
     ToolbarItem::Button(ToolbarButton::Tool(Tool::NumeratedArrow)),
-    ToolbarItem::Seperator,
 ];
 
 // ==========================================
@@ -80,6 +80,15 @@ impl Default for Toolbar {
     }
 }
 
+impl UiPanel for Toolbar {
+    type Item = ToolbarItem;
+
+    fn render_pos(&self) -> (f32, f32) { self.render_pos }
+    fn size(&self) -> (f32, f32) { self.size }
+    fn items(&self) -> &[Self::Item] { self.items }
+    fn padding(&self) -> f32 { TOOLBAR_PADDING }
+}
+
 impl Toolbar {
     pub fn new() -> Self {
         let mut toolbar = Self {
@@ -100,28 +109,10 @@ impl Toolbar {
             placement_kind: None,
         };
 
-        toolbar.size.0 = toolbar.toolbar_width();
+        toolbar.size.0 = toolbar.width();
         toolbar.size.1 = TOOLBAR_HEIGHT;
 
         toolbar
-    }
-
-    pub fn rect(&self) -> Option<tiny_skia::Rect> {
-        tiny_skia::Rect::from_xywh(
-            self.render_pos.0,
-            self.render_pos.1,
-            self.size.0,
-            self.size.1,
-        )
-    }
-
-    pub fn toolbar_width(&self) -> f32 {
-        let mut total_width = TOOLBAR_PADDING * 2.0;
-
-        for item in self.items {
-            total_width += item.size() + item.trailing_padding();
-        }
-        total_width
     }
 
     pub fn get_selected_tool(&self) -> Option<&Tool> {
@@ -225,19 +216,23 @@ pub enum ToolbarItem {
     Seperator,
 }
 
-impl ToolbarItem {
-    pub fn size(&self) -> f32 {
+impl PanelItem for ToolbarItem {
+    fn size(&self) -> f32 {
         match self {
             ToolbarItem::Button(_) => BUTTON_CELL_SIZE,
             ToolbarItem::Seperator => SEPARATOR_CELL_SIZE,
         }
     }
 
-    pub fn trailing_padding(&self) -> f32 {
+    fn trailing_padding(&self) -> f32 {
         match self {
             ToolbarItem::Button(_) => 4.0,
             ToolbarItem::Seperator => 0.0,
         }
+    }
+
+    fn is_button(&self) -> bool {
+        matches!(self, ToolbarItem::Button(_))
     }
 }
 
