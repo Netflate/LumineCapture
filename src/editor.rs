@@ -10,7 +10,7 @@ use usvg::Tree;
 use crate::tools::Tool;
 use crate::types::{
     AnnDragState, Annotation, MagnifierState, Placement, PointerState, SelectionState,
-    TextEditState, Toolbar, ToolbarButton, SettingsPanel, ToolSettings, DoubleClickTracker,
+    TextEditState, Toolbar, SettingsPanel, ToolSettings, DoubleClickTracker,
     ClickTarget
 };
 
@@ -28,7 +28,7 @@ pub struct EditorState {
     pub last_mag_update: Option<Instant>,
     pub mouse_down_left: bool,
     pub selection: SelectionState,
-    pub icon_cache: HashMap<ToolbarButton, Tree>,
+    pub icons_cache: HashMap<&'static str, Tree>,
     pub damage_rects: Vec<DamageZone>,
     
     pub toolbar: Toolbar,

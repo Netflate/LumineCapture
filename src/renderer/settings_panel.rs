@@ -1,15 +1,14 @@
-use super::paths::{rounded_rect_path, draw_panel_border, panel_border_color};
+use super::paths::{draw_svg_icon, rounded_rect_path, draw_panel_border, panel_border_color};
 use super::text::{draw_aligned_text, HAlign};
-use crate::types::toolbar::ToolbarButton;
 use crate::types::panel::{
-    ICON_COLOR, SEPARATOR_COLOR, PANEL_COLOR, BUTTON_HOVERED, BUTTON_SELECTED,
+    ICON_COLOR, SEPARATOR_COLOR, PANEL_COLOR, BUTTON_HOVERED, BUTTON_SELECTED, ICON_HOVERED, ICON_SELECTED,
     PanelItem
 };
 use crate::types::panel::UiPanel;
 use crate::types::settings_panel::{
-    SettingsPanel, SettingsWidget, StepperArrow, SETTINGS_BUTTON_GAP, SETTINGS_BUTTON_WIDTH,
+    SettingsPanel, SettingsWidget, StepperArrow, ToggleVisual, SETTINGS_CHECKBOX_LABEL_GAP, SETTINGS_CHECKBOX_BOX_SIZE, 
     SETTINGS_LABEL_FONT_SIZE, SETTINGS_PADDING, STEPPER_ARROW_GAP, STEPPER_ARROW_HEIGHT,
-    STEPPER_ARROW_STROKE, STEPPER_ARROW_WIDTH, STEPPER_ARROW_ZONE,
+    STEPPER_ARROW_STROKE, STEPPER_ARROW_WIDTH, STEPPER_ARROW_ZONE
 };
 use std::collections::HashMap;
 use usvg::Tree;
@@ -22,7 +21,7 @@ use tiny_skia::{
 pub fn draw_settings_panel(
     canvas: &mut Pixmap,
     panel: &mut SettingsPanel,
-    icons_cache: &HashMap<ToolbarButton, Tree>,
+    icons_cache: &HashMap<&'static str, Tree>,
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
 ) {
@@ -83,7 +82,7 @@ pub fn draw_settings_panel(
 fn draw_settings_content(
     canvas: &mut Pixmap,
     panel: &SettingsPanel,
-    _icons_cache: &HashMap<ToolbarButton, Tree>,
+    icons_cache: &HashMap<&'static str, Tree>,
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
 ) {
@@ -131,8 +130,13 @@ fn draw_settings_content(
                     swash_cache,
                 );
             }
-            SettingsWidget::ButtonGroup { options } => {
-                draw_button_group(canvas, current_x, item_y, item_h, options, is_hovered, is_selected);
+            SettingsWidget::Toggle { visual, .. } => {
+                let is_on = panel.is_toggled(index);
+                draw_toggle(
+                    canvas, current_x, item_y, item_w, item_h,
+                    visual, is_on, is_hovered, 
+                    icons_cache, icon_color, font_system, swash_cache,
+                );
             }
             SettingsWidget::Label(text) => {
                 if let Some(label_rect) = Rect::from_xywh(current_x, item_y, item_w, item_h) {
@@ -394,17 +398,6 @@ fn draw_stepper_arrows(
     }
 }
 
-fn draw_button_group(canvas: &mut Pixmap, x: f32, y: f32, h: f32, options: &[(&str, u8)], is_hovered: bool, is_selected: bool) {
-    let mut curr_x = x;
-    for (idx, _) in options.iter().enumerate() {
-        let is_active = is_selected || (idx == 0);
-        
-        draw_item_border(canvas, curr_x, y, SETTINGS_BUTTON_WIDTH, h, 4.0, is_hovered, is_active);
-        
-        curr_x += SETTINGS_BUTTON_WIDTH + SETTINGS_BUTTON_GAP;
-    }
-}
-
 fn stepper_display_text(panel: &SettingsPanel, index: usize, label: &str, unit: &str) -> String {
     if let Some(edit) = panel.editing.as_ref().filter(|e| e.widget_idx == index) {
         return edit.field.text.clone();
@@ -456,4 +449,70 @@ pub fn char_index_for_x(
 
 fn byte_to_char_index(text: &str, byte_idx: usize) -> usize {
     text[..byte_idx.min(text.len())].chars().count()
+}
+
+fn draw_toggle(
+    canvas: &mut Pixmap,
+    x: f32, y: f32, w: f32, h: f32,
+    visual: &ToggleVisual,
+    is_on: bool,
+    is_hovered: bool,
+    icons_cache: &HashMap<&'static str, Tree>,
+    icon_color: Color,
+    font_system: &mut FontSystem,
+    swash_cache: &mut SwashCache,
+) {
+    match visual {
+        ToggleVisual::Icon { svg, icon_size } => {
+            draw_item_border(canvas, x, y, w, h, 4.0, is_hovered, is_on);
+
+            let tint = if is_on {
+                ICON_SELECTED
+            } else if is_hovered {
+                ICON_HOVERED
+            }else {
+                usvg::Color { red: ICON_COLOR.red, green: ICON_COLOR.green, blue: ICON_COLOR.blue }
+            };
+
+            let icon_x = x + (w - icon_size) / 2.0;
+            let icon_y = y + (h - icon_size) / 2.0;
+            draw_svg_icon(canvas, icons_cache, svg, *icon_size, icon_x, icon_y, tint);
+        }
+        ToggleVisual::Checkbox { label } => {
+            let box_size = SETTINGS_CHECKBOX_BOX_SIZE;
+            let box_x = x + w - box_size;
+            let box_y = y + (h - box_size) / 2.0;
+
+            if let Some(label_rect) =
+                Rect::from_xywh(x, y, (w - box_size - SETTINGS_CHECKBOX_LABEL_GAP).max(0.0), h)
+            {
+                draw_aligned_text(
+                    canvas, label, font_system, swash_cache, label_rect,
+                    SETTINGS_LABEL_FONT_SIZE, icon_color, HAlign::Left, (0.0, 0.0),
+                    cosmic_text::Weight::NORMAL,
+                );
+            }
+
+            draw_item_border(canvas, box_x, box_y, box_size, box_size, 3.0, is_hovered, is_on);
+
+            if is_on {
+                draw_checkmark(canvas, box_x, box_y, box_size, icon_color);
+            }
+        }
+    }
+}
+
+fn draw_checkmark(canvas: &mut Pixmap, x: f32, y: f32, size: f32, color: Color) {
+    let mut pb = PathBuilder::new();
+    pb.move_to(x + size * 0.22, y + size * 0.55);
+    pb.line_to(x + size * 0.42, y + size * 0.75);
+    pb.line_to(x + size * 0.80, y + size * 0.28);
+    let Some(path) = pb.finish() else { return };
+
+    let mut paint = Paint::default();
+    paint.set_color(color);
+    paint.anti_alias = true;
+
+    let stroke = Stroke { width: 2.0, line_cap: tiny_skia::LineCap::Round, line_join: tiny_skia::LineJoin::Round, ..Default::default() };
+    canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
 }

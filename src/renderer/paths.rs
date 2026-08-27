@@ -1,5 +1,8 @@
-use tiny_skia::{PathBuilder, Paint, Pixmap, Rect, Transform, Color, Stroke};
 use crate::types::panel::PANEL_COLOR;
+
+use tiny_skia::{PathBuilder, Paint, Pixmap, Rect, Transform, Color, Stroke};
+use usvg::Tree;
+use std::collections::HashMap;
 
 pub fn rounded_rect_path(
     rect: &Rect,
@@ -171,4 +174,36 @@ pub fn draw_panel_border(canvas: &mut Pixmap, x: f32, y: f32, w: f32, h: f32, ra
     };
 
     canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+}
+
+
+
+pub fn draw_svg_icon(
+    canvas: &mut Pixmap,
+    icons_cache: &HashMap<&'static str, Tree>,
+    svg_str: &'static str,
+    icon_size: f32,
+    x: f32,
+    y: f32,
+    tint: usvg::Color,
+) {
+    let Some(rtree) = icons_cache.get(svg_str) else { return };
+
+    let scale_x = icon_size / rtree.size().width();
+    let scale_y = icon_size / rtree.size().height();
+
+    let px_size = icon_size.ceil().max(1.0) as u32;
+    let Some(mut icon_pixmap) = Pixmap::new(px_size, px_size) else { return };
+
+    resvg::render(rtree, Transform::from_scale(scale_x, scale_y), &mut icon_pixmap.as_mut());
+    tint_pixmap(&mut icon_pixmap, tint);
+
+    canvas.draw_pixmap(
+        x.round() as i32,
+        y.round() as i32,
+        icon_pixmap.as_ref(),
+        &tiny_skia::PixmapPaint::default(),
+        Transform::identity(),
+        None,
+    );
 }

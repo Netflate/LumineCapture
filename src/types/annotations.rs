@@ -38,6 +38,8 @@ pub enum AnnotationShape {
         start: (f32, f32),
         content: String,
         font_size: f32,
+        bold: bool,
+        italic: bool,
     },
 }
 
@@ -259,6 +261,8 @@ impl Annotation {
                 start,
                 content,
                 font_size,
+                bold, 
+                italic,
             } => {
                 // NOTE: bbox after this is stale, must call update_text_bbox() afterwards
                 // because text dimensions require FontSystem
@@ -269,6 +273,8 @@ impl Annotation {
                     start: remap(*start),
                     content: content.clone(),
                     font_size: (*font_size * scale).clamp(6.0, 200.0),
+                    bold: *bold,
+                    italic: *italic,
                 }
             }
         };

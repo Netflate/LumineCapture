@@ -27,7 +27,7 @@ use std::time::Instant;
 use super::toolbar_logic::update_toolbar;
 use super::settings_logic::{
     apply_stepper_arrow_step, commit_stepper_text_edit, handle_settings_key_press,
-    handle_settings_text_input,
+    handle_settings_text_input, apply_toggle_field,
 };
 
 pub fn handle_pointer_move(
@@ -127,49 +127,58 @@ pub fn handle_pointer_button(
         editor_state.settings_panel.dirty = true;
         editor_state.settings_panel.selected = Some(widget_idx);
 
-        if matches!(editor_state.settings_panel.widgets[widget_idx], SettingsWidget::Stepper { .. }) {
-            if let Some(arrow) = editor_state.settings_panel.stepper_arrow_hit(widget_idx, editor_state.pointer.local) {
-                apply_stepper_arrow_step(editor_state, widget_idx, arrow, dirty_mask);
-                editor_state.settings_panel.arrow_held = Some(ArrowHoldState {
-                    widget_idx,
-                    arrow,
-                    started_at: Instant::now(),
-                    last_step_at: Instant::now(),
-                    repeat_count: 0,
-                });
-            } else {
-                let click_pos = (
-                    editor_state.pointer.local.0 as f32,
-                    editor_state.pointer.local.1 as f32,
-                );
-                let is_double_click = editor_state
-                    .click_tracker
-                    .register(ClickTarget::SettingsWidget(widget_idx), click_pos);
-
-                let current_value = editor_state
-                    .settings_panel
-                    .values
-                    .get(&widget_idx)
-                    .cloned()
-                    .unwrap_or_default();
-
-                let cursor_init = if is_double_click {
-                    CursorInit::SelectAll
-                } else if let Some(text_x) = editor_state.settings_panel.widget_text_x(widget_idx) {
-                    let click_x = editor_state.pointer.local.0 as f32 - text_x;
-                    let idx = char_index_for_x(
-                        &current_value,
-                        click_x,
-                        SETTINGS_LABEL_FONT_SIZE,
-                        &mut editor_state.font_system,
-                    );
-                    CursorInit::At(idx)
+        println!("hit settings widget {widget_idx:?} at {:?}", editor_state.pointer.local);
+        match editor_state.settings_panel.widgets[widget_idx] {
+            SettingsWidget::Stepper { .. } => {
+                if let Some(arrow) = editor_state.settings_panel.stepper_arrow_hit(widget_idx, editor_state.pointer.local) {
+                    apply_stepper_arrow_step(editor_state, widget_idx, arrow, dirty_mask);
+                    editor_state.settings_panel.arrow_held = Some(ArrowHoldState {
+                        widget_idx,
+                        arrow,
+                        started_at: Instant::now(),
+                        last_step_at: Instant::now(),
+                        repeat_count: 0,
+                    });
                 } else {
-                    CursorInit::End
-                };
+                    let click_pos = (
+                        editor_state.pointer.local.0 as f32,
+                        editor_state.pointer.local.1 as f32,
+                    );
+                    let is_double_click = editor_state
+                        .click_tracker
+                        .register(ClickTarget::SettingsWidget(widget_idx), click_pos);
 
-                editor_state.settings_panel.begin_edit(widget_idx, current_value, cursor_init);
+                    let current_value = editor_state
+                        .settings_panel
+                        .values
+                        .get(&widget_idx)
+                        .cloned()
+                        .unwrap_or_default();
+
+                    let cursor_init = if is_double_click {
+                        CursorInit::SelectAll
+                    } else if let Some(text_x) = editor_state.settings_panel.widget_text_x(widget_idx) {
+                        let click_x = editor_state.pointer.local.0 as f32 - text_x;
+                        let idx = char_index_for_x(
+                            &current_value,
+                            click_x,
+                            SETTINGS_LABEL_FONT_SIZE,
+                            &mut editor_state.font_system,
+                        );
+                        CursorInit::At(idx)
+                    } else {
+                        CursorInit::End
+                    };
+
+                    editor_state.settings_panel.begin_edit(widget_idx, current_value, cursor_init);
+                }
             }
+            SettingsWidget::Toggle { field, .. } => {
+                let new_val = editor_state.settings_panel.toggle(widget_idx);
+                apply_toggle_field(editor_state, field, new_val, dirty_mask);
+            }
+            _ => {}
+
         }
 
         mark_dirty(dirty_mask, monitor_idx);

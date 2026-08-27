@@ -11,7 +11,7 @@ pub use magnifier::magnifier_rect;
 pub use paths::{rect_bounds, rounded_rect_path};
 
 use crate::types::annotations::Annotation;
-use crate::types::toolbar::{Toolbar, ToolbarButton};
+use crate::types::toolbar::Toolbar;
 use crate::types::settings_panel::SettingsPanel;
 use crate::types::{MagnifierState, SelectionEdges};
 use cosmic_text::{Editor, FontSystem, SwashCache};
@@ -34,7 +34,7 @@ pub struct RenderRequest<'a> {
     pub is_mag_monitor: bool,
     pub toolbar: Option<&'a mut Toolbar>,
     pub settings_panel: Option<&'a mut SettingsPanel>,
-    pub icons_cache: &'a HashMap<ToolbarButton, Tree>,
+    pub icons_cache: &'a HashMap<&'static str, Tree>,
     pub offset: (f32, f32),
     // annotations
     pub annotations_layer: &'a Pixmap,

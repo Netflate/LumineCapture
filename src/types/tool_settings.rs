@@ -8,6 +8,8 @@ use tiny_skia::Color;
 pub struct ToolSettings {
     pub stroke_width: f32,
     pub font_size: f32,
+    pub bold: bool,
+    pub italic: bool,
     pub color: Color,
 }
 
@@ -16,6 +18,8 @@ impl Default for ToolSettings {
         Self {
             stroke_width: 12.0, 
             font_size: 24.0,   
+            bold: true,
+            italic: false,
             color: Color::from_rgba8(255, 255, 255, 255),
         }
     }

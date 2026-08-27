@@ -6,7 +6,7 @@ use crate::tools::Tool;
 use crate::types::annotations::rebuild_annotation;
 use crate::types::{
     Annotation, AnnotationShape, SettingsSource, SettingsWidget,
-    StepperArrow, ToolSettings, UiPanel, SpecialKey, compute_settings_placement, widgets_for_annotation,
+    StepperArrow, ToolSettings, UiPanel, SpecialKey, ToggleField, compute_settings_placement, widgets_for_annotation,
     widgets_for_tool,
 };
 use crate::types::panel::{emit_panel_damage, sync_panel_rect, sync_panel_hover};
@@ -50,20 +50,39 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
         editor_state.settings_panel.values.clear();
     }
 
-    let widgets = editor_state.settings_panel.widgets; 
+    let widgets = editor_state.settings_panel.widgets;
     for (idx, widget) in widgets.iter().enumerate() {
-        if matches!(widget, SettingsWidget::Stepper { .. }) {
-            let value = match selected_ann {
-                Some(ann) => match &ann.shape {
-                    AnnotationShape::Text { font_size, .. } => *font_size,
-                    _ => ann.stroke_width,
-                },
-                None => match editor_state.selected_tool {
-                    Tool::Text => editor_state.tool_settings.font_size,
-                    _ => editor_state.tool_settings.stroke_width,
-                },
-            };
-            editor_state.settings_panel.sync_value(idx, format_stepper_number(value));
+        match widget {
+            SettingsWidget::Stepper { .. } => {
+                let value = match selected_ann {
+                    Some(ann) => match &ann.shape {
+                        AnnotationShape::Text { font_size, .. } => *font_size,
+                        _ => ann.stroke_width,
+                    },
+                    None => match editor_state.selected_tool {
+                        Tool::Text => editor_state.tool_settings.font_size,
+                        _ => editor_state.tool_settings.stroke_width,
+                    },
+                };
+                editor_state.settings_panel.sync_value(idx, format_stepper_number(value));
+            }
+            SettingsWidget::Toggle { field, .. } => {
+                let value = match selected_ann {
+                    Some(ann) => match &ann.shape {
+                        AnnotationShape::Text { bold, italic, .. } => match field {
+                            ToggleField::Bold => *bold,
+                            ToggleField::Italic => *italic,
+                        },
+                        _ => false,
+                    },
+                    None => match field {
+                        ToggleField::Bold => editor_state.tool_settings.bold,
+                        ToggleField::Italic => editor_state.tool_settings.italic,
+                    },
+                };
+                editor_state.settings_panel.set_toggled(idx, value);
+            }
+            _ => {}
         }
     }
 
@@ -205,14 +224,11 @@ fn commit_settings_change(
         return;
     }
 
-    match active_annotation_idx(editor_state) {
-        Some(idx) => {
-            apply_to_annotation(&mut editor_state.annotations[idx]);
-            rebuild_annotation(editor_state, idx);
-        }
-        None => {
-            apply_to_tool(&mut editor_state.tool_settings);
-        }
+    apply_to_tool(&mut editor_state.tool_settings);
+
+    if let Some(idx) = active_annotation_idx(editor_state) {
+        apply_to_annotation(&mut editor_state.annotations[idx]);
+        rebuild_annotation(editor_state, idx);
     }
 
     // NB: unlike the sync helpers above, this marks the monitor dirty even
@@ -264,6 +280,31 @@ fn apply_stepper_field(editor_state: &mut EditorState, new_value: f32, dirty_mas
         move |ann| match &mut ann.shape {
             AnnotationShape::Text { font_size, .. } => *font_size = new_value,
             _ => ann.stroke_width = new_value,
+        },
+        dirty_mask,
+    );
+}
+
+pub fn apply_toggle_field(
+    editor_state: &mut EditorState,
+    field: ToggleField,
+    new_value: bool,
+    dirty_mask: &mut u32,
+) {
+    commit_settings_change(
+        editor_state,
+        true, 
+        move |ts| match field {
+            ToggleField::Bold => ts.bold = new_value,
+            ToggleField::Italic => ts.italic = new_value,
+        },
+        move |ann| {
+            if let AnnotationShape::Text { bold, italic, .. } = &mut ann.shape {
+                match field {
+                    ToggleField::Bold => *bold = new_value,
+                    ToggleField::Italic => *italic = new_value,
+                }
+            }
         },
         dirty_mask,
     );

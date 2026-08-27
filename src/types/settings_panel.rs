@@ -16,9 +16,11 @@ pub const SETTINGS_ITEM_GAP: f32 = 8.0;
 pub const SETTINGS_SWATCH_SIZE: f32 = 28.0;
 pub const SETTINGS_SEPARATOR_SIZE: f32 = 16.0;
 pub const SETTINGS_STEPPER_WIDTH: f32 = 84.0;
-pub const SETTINGS_BUTTON_WIDTH: f32 = 60.0;
-pub const SETTINGS_BUTTON_GAP: f32 = 4.0;
 pub const SETTINGS_LABEL_FONT_SIZE: f32 = 14.0;
+
+pub const SETTINGS_ICON_BUTTON_SIZE: f32 = SETTINGS_SWATCH_SIZE;
+pub const SETTINGS_CHECKBOX_BOX_SIZE: f32 = 18.0;
+pub const SETTINGS_CHECKBOX_LABEL_GAP: f32 = 6.0;
 
 pub const STEPPER_ARROW_ZONE: f32 = 30.0;
 pub const STEPPER_ARROW_WIDTH: f32 = 15.0;
@@ -27,11 +29,17 @@ pub const STEPPER_ARROW_GAP: f32 = 9.0;
 pub const STEPPER_ARROW_STROKE: f32 = 1.6;
 
 
+#[derive(Debug, Clone, Copy)]
+pub enum ToggleVisual {
+    Icon { svg: &'static str, icon_size: f32 },
+    Checkbox { label: &'static str },
+}
+
 #[derive(Debug, Clone)]
 pub enum SettingsWidget {
     ColorSwatch,
     Stepper { label: &'static str, min: f32, max: f32, step: f32, unit: &'static str },
-    ButtonGroup { options: &'static [(&'static str, u8)] },
+    Toggle { visual: ToggleVisual, field: ToggleField },
     Label(&'static str),
     Separator,
 }
@@ -57,6 +65,12 @@ pub enum SettingsSource {
     Annotation(u64),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToggleField {
+    Bold,
+    Italic,
+}
+
 pub fn widgets_for_tool(tool: Tool) -> &'static [SettingsWidget] {
     match tool {
         Tool::Pen | Tool::Line | Tool::Arrow => &[
@@ -68,6 +82,9 @@ pub fn widgets_for_tool(tool: Tool) -> &'static [SettingsWidget] {
             SettingsWidget::ColorSwatch,
             SettingsWidget::Separator,
             SettingsWidget::Stepper { label: "", min: 8.0, max: 72.0, step: 1.0, unit: "px" },
+            SettingsWidget::Separator,
+                SettingsWidget::Toggle { visual: ToggleVisual::Icon { svg: crate::types::icons::BOLD, icon_size: 16.0 }, field: ToggleField::Bold },
+                SettingsWidget::Toggle { visual: ToggleVisual::Icon { svg: crate::types::icons::ITALIC, icon_size: 16.0 }, field: ToggleField::Italic },
         ],
         Tool::Rectangle | Tool::Circle => &[
             SettingsWidget::ColorSwatch,
@@ -96,10 +113,12 @@ impl PanelItem for SettingsWidget {
         match self {
             SettingsWidget::ColorSwatch => SETTINGS_SWATCH_SIZE,
             SettingsWidget::Stepper { .. } => SETTINGS_STEPPER_WIDTH,
-            SettingsWidget::ButtonGroup { options } => {
-                let n = options.len() as f32;
-                n * SETTINGS_BUTTON_WIDTH + (n - 1.0).max(0.0) * SETTINGS_BUTTON_GAP
-            }
+            SettingsWidget::Toggle { visual, .. } => match visual {
+                ToggleVisual::Icon { .. } => SETTINGS_ICON_BUTTON_SIZE,
+                ToggleVisual::Checkbox { label } => {
+                    SETTINGS_CHECKBOX_BOX_SIZE + SETTINGS_CHECKBOX_LABEL_GAP + label.len() as f32 * 7.0
+                }
+            },
             SettingsWidget::Label(text) => text.len() as f32 * 7.0 + 8.0,
             SettingsWidget::Separator => SETTINGS_SEPARATOR_SIZE,
         }
@@ -113,7 +132,12 @@ impl PanelItem for SettingsWidget {
     }
 
     fn is_button(&self) -> bool {
-        matches!(self, SettingsWidget::ColorSwatch | SettingsWidget::Stepper { .. } | SettingsWidget::ButtonGroup { .. })
+        matches!(
+            self,
+            SettingsWidget::ColorSwatch
+                | SettingsWidget::Stepper { .. }
+                | SettingsWidget::Toggle { .. }
+        )
     }
 }
 
@@ -139,6 +163,7 @@ pub struct SettingsPanel {
     pub editing: Option<StepperEdit>,
     pub arrow_held: Option<ArrowHoldState>,
     pub values: HashMap<usize, String>,
+    pub toggled: HashMap<usize, bool>,
 }
 
 impl Default for SettingsPanel {
@@ -164,6 +189,7 @@ impl SettingsPanel {
             editing: None,
             arrow_held: None,
             values: HashMap::new(),
+            toggled: HashMap::new(),
         }
     }
 
@@ -335,6 +361,20 @@ impl SettingsPanel {
             current_x += widget.size() + widget.trailing_padding();
         }
         None
+    }
+
+
+    pub fn is_toggled(&self, idx: usize) -> bool {
+        self.toggled.get(&idx).copied().unwrap_or(false)
+    }
+    pub fn set_toggled(&mut self, idx: usize, value: bool) {
+        self.toggled.insert(idx, value);
+        self.dirty = true;
+    }
+    pub fn toggle(&mut self, idx: usize) -> bool {
+        let v = !self.is_toggled(idx);
+        self.set_toggled(idx, v);
+        v
     }
 }
 

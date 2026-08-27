@@ -29,6 +29,8 @@ pub const BUTTON_SELECTED: tiny_skia::Color = unsafe {
 };
 
 pub const ICON_COLOR: usvg::Color = usvg::Color { red: 255, green: 255, blue: 255 };
+pub const ICON_HOVERED: usvg::Color = usvg::Color { red: 159, green: 48, blue: 215 };
+pub const ICON_SELECTED: usvg::Color = usvg::Color { red: 133, green: 44, blue: 177 };
 
 
 pub trait UiPanel {

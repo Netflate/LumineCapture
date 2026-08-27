@@ -82,13 +82,13 @@ pub fn apply_key_to_editor(
                 if let Some(text) = extract_selected_text(editor) {
                     crate::utils::copy_to_clipboard(&text);
                 }
-                
+
                 if matches!(key, SpecialKey::KeyX) {
                     editor.delete_selection();
-                    return true; 
+                    return true;
                 }
-                
-                return false; 
+
+                return false;
             }
             SpecialKey::KeyV => {
                 if let Some(text) = crate::utils::paste_from_clipboard() {
@@ -225,7 +225,7 @@ impl ToolBehavior for TextTool {
                     Action::Click { x: local_x, y: local_y }
                 };
                 editor.action(&mut state.font_system, click_action);
-}
+            }
 
             state.text_editing = Some(TextEditState {
                 annotation_id: ann_id,
@@ -259,13 +259,21 @@ impl ToolBehavior for TextTool {
         state.next_id += 1;
 
         let font_size = state.tool_settings.font_size;
+        let bold = state.tool_settings.bold;
+        let italic = state.tool_settings.italic;
         let metrics = Metrics::new(font_size, font_size * 1.2);
+
+        let weight = if bold { cosmic_text::Weight::BOLD } else { cosmic_text::Weight::NORMAL };
+        let style = if italic { cosmic_text::Style::Italic } else { cosmic_text::Style::Normal };
 
         let mut buffer = Buffer::new_empty(metrics);
         buffer.set_size(None, None);
         buffer.set_text(
             "",
-            &Attrs::new().family(Family::SansSerif),
+            &Attrs::new()
+                .family(Family::SansSerif)
+                .weight(weight)
+                .style(style),
             Shaping::Advanced,
             None,
         );
@@ -279,6 +287,8 @@ impl ToolBehavior for TextTool {
                 start: pos,
                 content: String::new(),
                 font_size,
+                bold,
+                italic,
             },
             color: Color::from_rgba8(255, 255, 255, 255),
             stroke_width: 0.0,
@@ -417,6 +427,7 @@ fn sync_content_from_editor(
         content,
         start,
         font_size,
+        ..
     } = &mut ann.shape
     else {
         return;
@@ -448,13 +459,31 @@ fn sync_content_from_editor(
 
 /// Since it needs editor its better to make this function seperate
 /// instead of using update_bbox from types/nnotations.rs
+///
+/// NOTE: unlike color (read straight from `ann.color` at draw time in
+/// render_text_annotation), weight/style are baked into the cosmic-text
+/// buffer at shape time. So whenever font_size, bold or italic change,
+/// we have to re-run set_text with fresh Attrs here, not just recompute
+/// metrics. This is the one function that needs to know about all three -
+/// commit_settings_change / apply_toggle_field stay generic and just call
+/// rebuild_annotation, which routes here for Text shapes.
+///
+/// Caveat: set_text() re-shapes the whole buffer, which may reset cursor/
+/// selection state inside the Editor if this runs while the user is
+/// actively editing that same annotation's text. Not currently hit by any
+/// caller (typing goes through sync_content_from_editor instead, which
+/// doesn't call this), but worth testing if that ever changes.
 pub fn update_text_bbox_inline(
     ann: &mut Annotation,
     editor: &mut Editor<'static>,
     font_system: &mut cosmic_text::FontSystem,
 ) {
     let AnnotationShape::Text {
-        start, font_size, ..
+        start,
+        content,
+        font_size,
+        bold,
+        italic,
     } = &ann.shape
     else {
         return;
@@ -464,11 +493,19 @@ pub fn update_text_bbox_inline(
     let fallback_h = current_font_size * 1.2;
 
     let new_metrics = Metrics::new(current_font_size, current_font_size * 1.2);
+    let weight = if *bold { cosmic_text::Weight::BOLD } else { cosmic_text::Weight::NORMAL };
+    let style = if *italic { cosmic_text::Style::Italic } else { cosmic_text::Style::Normal };
 
     editor.with_buffer_mut(|buf| {
         if buf.metrics() != new_metrics {
             buf.set_metrics(new_metrics);
         }
+        buf.set_text(
+            content,
+            &Attrs::new().family(Family::SansSerif).weight(weight).style(style),
+            Shaping::Advanced,
+            None,
+        );
     });
 
     editor.shape_as_needed(font_system, false);
@@ -508,12 +545,7 @@ pub fn render_text_annotation(
     let ann_x = start.0 - offset.0;
     let ann_y = start.1 - offset.1;
 
-    let r = (ann.color.red() * 255.0) as u8;
-    let g = (ann.color.green() * 255.0) as u8;
-    let b = (ann.color.blue() * 255.0) as u8;
-    let a = (ann.color.alpha() * 255.0) as u8;
-
-    let text_color = cosmic_text::Color::rgba(r, g, b, a);
+    let text_color = tiny_skia_to_cosmic(ann.color);
     let cursor_color = cosmic_text::Color::rgba(255, 255, 255, 220);
     let sel_color = cosmic_text::Color::rgba(100, 150, 255, 160);
     let sel_text_color = cosmic_text::Color::rgba(255, 255, 255, 255);
@@ -626,4 +658,14 @@ fn extract_selected_text(editor: &Editor<'static>) -> Option<String> {
     } else {
         Some(result)
     }
+}
+
+// small helper
+fn tiny_skia_to_cosmic(c: tiny_skia::Color) -> cosmic_text::Color {
+    cosmic_text::Color::rgba(
+        (c.red() * 255.0).round() as u8,
+        (c.green() * 255.0).round() as u8,
+        (c.blue() * 255.0).round() as u8,
+        (c.alpha() * 255.0).round() as u8,
+    )
 }

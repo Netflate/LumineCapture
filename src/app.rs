@@ -61,7 +61,7 @@ pub async fn make_screenshot(
     drop(screenshots);
 
     let (swash_cache, font_system) = text_handle.join().expect("Failed to join text thread");
-    let icon_cache = icons_handle.join().expect("Failed to join icons thread");
+    let icons_cache = icons_handle.join().expect("Failed to join icons thread");
     let mut editor_state = EditorState {
         base: base_pixmaps,
         canvas,
@@ -79,7 +79,7 @@ pub async fn make_screenshot(
         toolbar: Toolbar::new(),
         settings_panel: SettingsPanel::new(),
         tool_settings: ToolSettings::default(),
-        icon_cache,
+        icons_cache,
         annotations: Vec::new(),
         pending: None,
         next_id: 0,
@@ -259,7 +259,7 @@ pub async fn make_screenshot(
                         magnifier: editor_state.magnifier.as_ref(),
                         is_mag_monitor,
                         toolbar,
-                        icons_cache: &editor_state.icon_cache,
+                        icons_cache: &editor_state.icons_cache,
                         annotations_layer: &editor_state.annotations_layer[i],
                         offset,
                         annotations_layer_empty: false,

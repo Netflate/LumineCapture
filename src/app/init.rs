@@ -6,7 +6,7 @@ use crate::backend::ScreenOverlay;
 use crate::editor::EditorState;
 use crate::profiler::Profiler;
 use crate::renderer;
-use crate::types::toolbar::{ToolbarButton, ToolbarItem};
+use crate::types::toolbar::{ToolbarItem, ToolbarButton};
 use crate::types::{icons, MonitorFrame, Output, Placement};
 
 use std::collections::HashMap;
@@ -107,18 +107,24 @@ pub fn build_placements(outputs: &[Output]) -> Vec<Placement> {
     }).collect()
 }
 
-pub fn load_icons_cache() -> HashMap<ToolbarButton, Tree> {
-    let mut cache = HashMap::new();
+pub fn load_icons_cache() -> HashMap<&'static str, Tree> {
     let opt = usvg::Options::default();
 
-    for item in crate::types::toolbar::TOOLBAR_ITEMS {
-        let ToolbarItem::Button(button) = item else {
-            continue;
-        };
-        let (svg_str, _) = icons::get_svg(button);
-        let tree =
-            Tree::from_str(svg_str, &opt).expect("Critical: Failed to parse embedded SVG icon");
-        cache.insert(*button, tree);
+    let all_svgs = crate::types::toolbar::TOOLBAR_ITEMS
+        .iter()
+        .filter_map(|item| match item {
+            ToolbarItem::Button(ToolbarButton::Tool(tool)) => {
+                Some(icons::get_svg_for_tool(*tool).0)
+            }
+            _ => None,
+        })
+        .chain(icons::EXTRA_ICONS.iter().copied());
+
+    let mut cache = HashMap::new();
+    for svg_str in all_svgs {
+        cache.entry(svg_str).or_insert_with(|| {
+            Tree::from_str(svg_str, &opt).expect("Critical: Failed to parse embedded SVG icon")
+        });
     }
     cache
 }
@@ -136,7 +142,7 @@ pub fn initial_paint(
         dimmed,
         annotations_layer,
         placements,
-        icon_cache,
+        icons_cache,
         magnifier,
         selection,
         ..
@@ -144,7 +150,7 @@ pub fn initial_paint(
 
     let sel_zone = &selection.zone;
     let prev_zone = &selection.prev_zone;
-    let icon_cache_ref = &*icon_cache;
+    let icons_cache_ref = &*icons_cache;
     let magnifier_ref = &*magnifier;
 
     std::thread::scope(|scope| {
@@ -178,7 +184,7 @@ pub fn initial_paint(
                     is_mag_monitor: false,
                     toolbar: None,
                     settings_panel: None,
-                    icons_cache: icon_cache_ref,
+                    icons_cache: icons_cache_ref,
                     offset: (0.0, 0.0),
                     annotations_layer: ann_i,
                     annotations_layer_empty: true,
