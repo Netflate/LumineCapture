@@ -1,5 +1,5 @@
 use tiny_skia::{PathBuilder, Paint, Pixmap, Rect, Transform, Color, Stroke};
-use crate::types::toolbar::TOOLBAR_COLOR;
+use crate::types::panel::PANEL_COLOR;
 
 pub fn rounded_rect_path(
     rect: &Rect,
@@ -158,7 +158,7 @@ pub fn draw_panel_border(canvas: &mut Pixmap, x: f32, y: f32, w: f32, h: f32, ra
 
     let Some(path) = pb.finish() else { return };
 
-    let mut color = panel_border_color(TOOLBAR_COLOR);
+    let mut color = panel_border_color(PANEL_COLOR);
     color.set_alpha(color.alpha() * opacity);
 
     let mut paint = Paint::default();

@@ -1,8 +1,8 @@
 use crate::tools::Tool;
-use crate::types::panel::{PanelItem, UiPanel};
+use crate::types::panel::{AnimatedPanel, HoverablePanel, PanelItem, UiPanel};
 use crate::types::Placement;
-use std::time::Instant;
-use tiny_skia::Pixmap;
+use std::time::{Duration, Instant};
+use tiny_skia::{Pixmap, Rect};
 
 // ==========================================
 // 1. UI Layout Constants
@@ -13,29 +13,10 @@ pub const TOOLBAR_TRANSITION_OFFSET: f32 = 340.0; // max cap on the transition e
 
 pub const TOOLBAR_HEIGHT: f32 = 42.0;
 pub const TOOLBAR_OFFSET: f32 = 5.0;
-pub const TOOLBAR_PADDING: f32 = 8.0; // left & right
+pub const TOOLBAR_PADDING: f32 = 8.0; 
 
 pub const BUTTON_CELL_SIZE: f32 = 35.0;
 const SEPARATOR_CELL_SIZE: f32 = 20.0;
-
-const fn unit(v: u8) -> f32 {
-    v as f32 / 255.0
-}
-
-pub const TOOLBAR_COLOR: tiny_skia::Color = unsafe {
-    tiny_skia::Color::from_rgba_unchecked(unit(13), unit(13), unit(23), unit(240))
-};
-pub const SEPARATOR_COLOR: tiny_skia::Color = unsafe {
-    tiny_skia::Color::from_rgba_unchecked(unit(255), unit(255), unit(255), unit(255))
-};
-pub const BUTTON_HOVERED: tiny_skia::Color = unsafe {
-    tiny_skia::Color::from_rgba_unchecked(unit(159), unit(48), unit(215), unit(255))
-};
-pub const BUTTON_SELECTED: tiny_skia::Color = unsafe {
-    tiny_skia::Color::from_rgba_unchecked(unit(133), unit(44), unit(177), unit(255))
-};
-
-pub const ICON_COLOR: usvg::Color = usvg::Color { red: 255, green: 255, blue: 255 };
 
 // Toolbar tools list
 pub const TOOLBAR_ITEMS: &[ToolbarItem] = &[
@@ -87,6 +68,68 @@ impl UiPanel for Toolbar {
     fn size(&self) -> (f32, f32) { self.size }
     fn items(&self) -> &[Self::Item] { self.items }
     fn padding(&self) -> f32 { TOOLBAR_PADDING }
+    fn monitor_idx(&self) -> usize { self.monitor_idx }
+    fn set_dirty(&mut self) { self.dirty = true; }
+
+    // Same pattern as SettingsPanel: once fully faded out there's nothing
+    // to hit-test or damage, so say so explicitly here instead of every
+    // call site re-deriving "invisible" from raw opacity itself.
+    fn rect(&self) -> Option<Rect> {
+        if self.opacity <= 0.0 {
+            return None;
+        }
+        let (x, y) = self.render_pos();
+        let (w, h) = self.size();
+        Rect::from_xywh(x, y, w, h)
+    }
+}
+
+impl HoverablePanel for Toolbar {
+    type Hover = Option<usize>;
+    fn hovered(&self) -> Self::Hover { self.hovered }
+    fn set_hovered(&mut self, hover: Self::Hover) { self.hovered = hover; }
+}
+
+impl AnimatedPanel for Toolbar {
+    fn last_tick(&self) -> Option<Instant> { self.last_tick }
+    fn set_last_tick(&mut self, at: Instant) { self.last_tick = Some(at); }
+
+    fn anim_interval(&self) -> Duration { TOOLBAR_ANIM_INTERVAL }
+    fn anim_dt(&self) -> f32 { TOOLBAR_ANIM_DT }
+
+    fn is_animating(&self) -> bool {
+        let target_opacity = if self.interferes { 0.0 } else { 1.0 };
+        (self.opacity - target_opacity).abs() > 0.001
+            || (self.position.0 - self.render_pos.0).abs() > 0.5
+            || (self.position.1 - self.render_pos.1).abs() > 0.5
+    }
+
+    fn animate_step(&mut self, dt: f32) -> bool {
+        let mut changed = false;
+
+        let target_opacity = if self.interferes { 0.0 } else { 1.0 };
+        if (self.opacity - target_opacity).abs() > 0.001 {
+            let delta = 5.0 * dt;
+            self.opacity += (target_opacity - self.opacity).signum() * delta;
+            self.opacity = self.opacity.clamp(0.0, 1.0);
+            changed = true;
+        }
+
+        let target = self.position;
+        let dx = target.0 - self.render_pos.0;
+        let dy = target.1 - self.render_pos.1;
+        if dx.abs() > 0.5 || dy.abs() > 0.5 {
+            let t = (12.0 * dt).min(1.0);
+            self.render_pos.0 += dx * t;
+            self.render_pos.1 += dy * t;
+            changed = true;
+        } else if self.render_pos != target {
+            self.render_pos = target;
+            changed = true;
+        }
+
+        changed
+    }
 }
 
 impl Toolbar {

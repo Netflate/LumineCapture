@@ -10,6 +10,7 @@ use crate::renderer::char_index_for_x;
 use crate::tools::{
     Tool, dispatch_button, dispatch_deactivate, dispatch_key, dispatch_move, dispatch_text,
 };
+use crate::types::panel::UiPanel;
 use crate::types::toolbar::{ToolbarButton, ToolbarItem};
 use crate::types::{
     MAG_FRAME_INTERVAL, MagnifierState, MouseButton, PointerState, SettingsWidget,
@@ -45,7 +46,7 @@ pub fn handle_pointer_move(
     update_pointer(editor_state, current_monitor_idx, (local_x, local_y), global);
     update_magnifier(editor_state, dirty_mask);
     dispatch_move(editor_state.selected_tool, editor_state, global, dirty_mask);
-    update_toolbar(editor_state);
+    update_toolbar(editor_state, dirty_mask);
     apply_damage_rects(editor_state, dirty_mask);
 }
 
@@ -107,7 +108,7 @@ pub fn handle_pointer_button(
                 }
             }
             editor_state.toolbar.dirty = true;
-            update_toolbar(editor_state);
+            update_toolbar(editor_state, dirty_mask);
             apply_damage_rects(editor_state, dirty_mask);
         }
         return;
@@ -128,9 +129,6 @@ pub fn handle_pointer_button(
 
         if matches!(editor_state.settings_panel.widgets[widget_idx], SettingsWidget::Stepper { .. }) {
             if let Some(arrow) = editor_state.settings_panel.stepper_arrow_hit(widget_idx, editor_state.pointer.local) {
-                // Клик по стрелке степпера — сразу применяем один шаг и
-                // запускаем hold-состояние для повтора с ускорением,
-                // не открывая текстовое редактирование значения.
                 apply_stepper_arrow_step(editor_state, widget_idx, arrow, dirty_mask);
                 editor_state.settings_panel.arrow_held = Some(ArrowHoldState {
                     widget_idx,
@@ -200,7 +198,7 @@ pub fn handle_pointer_button(
     dispatch_button(editor_state.selected_tool, editor_state, button, pressed, dirty_mask);
 
     if matches!(button, MouseButton::Left) && !pressed {
-        update_toolbar(editor_state);
+        update_toolbar(editor_state, dirty_mask);
     }
 
     apply_damage_rects(editor_state, dirty_mask);

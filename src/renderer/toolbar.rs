@@ -1,8 +1,11 @@
 use super::paths::{rounded_rect_path, draw_panel_border, tint_pixmap};
 use crate::types::icons::get_svg;
-use crate::types::panel::PanelItem;
 use crate::types::UiPanel;
-use crate::types::toolbar::{TOOLBAR_PADDING, ICON_COLOR, SEPARATOR_COLOR, TOOLBAR_COLOR, BUTTON_HOVERED, BUTTON_SELECTED, Toolbar, ToolbarButton, ToolbarItem};
+use crate::types::panel::{
+    ICON_COLOR, SEPARATOR_COLOR, PANEL_COLOR, BUTTON_HOVERED, BUTTON_SELECTED,
+    PanelItem
+};
+use crate::types::toolbar::{TOOLBAR_PADDING, Toolbar, ToolbarButton, ToolbarItem};
 use std::collections::HashMap;
 use tiny_skia::{BlendMode, FilterQuality, Paint, Pixmap, PixmapPaint, Rect, Transform};
 use usvg::Tree;
@@ -73,7 +76,7 @@ fn draw_toolbar_content(
     };
 
     let mut paint = Paint::default();
-    paint.set_color(TOOLBAR_COLOR);
+    paint.set_color(PANEL_COLOR);
     paint.anti_alias = true;
     canvas.fill_path(
         &path,

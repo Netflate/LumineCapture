@@ -1,3 +1,16 @@
+use super::paths::{rounded_rect_path, draw_panel_border, panel_border_color};
+use super::text::{draw_aligned_text, HAlign};
+use crate::types::toolbar::ToolbarButton;
+use crate::types::panel::{
+    ICON_COLOR, SEPARATOR_COLOR, PANEL_COLOR, BUTTON_HOVERED, BUTTON_SELECTED,
+    PanelItem
+};
+use crate::types::panel::UiPanel;
+use crate::types::settings_panel::{
+    SettingsPanel, SettingsWidget, StepperArrow, SETTINGS_BUTTON_GAP, SETTINGS_BUTTON_WIDTH,
+    SETTINGS_LABEL_FONT_SIZE, SETTINGS_PADDING, STEPPER_ARROW_GAP, STEPPER_ARROW_HEIGHT,
+    STEPPER_ARROW_STROKE, STEPPER_ARROW_WIDTH, STEPPER_ARROW_ZONE,
+};
 use std::collections::HashMap;
 use usvg::Tree;
 use cosmic_text::{FontSystem, SwashCache};
@@ -5,19 +18,6 @@ use tiny_skia::{
     BlendMode, Color, FilterQuality, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke,
     Transform,
 };
-
-use super::paths::{rounded_rect_path, draw_panel_border, panel_border_color};
-use super::text::{draw_aligned_text, HAlign};
-use crate::types::toolbar::{
-    ToolbarButton, BUTTON_HOVERED, BUTTON_SELECTED, ICON_COLOR, SEPARATOR_COLOR, TOOLBAR_COLOR,
-};
-
-use crate::types::settings_panel::{
-    SettingsPanel, SettingsWidget, StepperArrow, SETTINGS_BUTTON_GAP, SETTINGS_BUTTON_WIDTH,
-    SETTINGS_LABEL_FONT_SIZE, SETTINGS_PADDING, STEPPER_ARROW_GAP, STEPPER_ARROW_HEIGHT,
-    STEPPER_ARROW_STROKE, STEPPER_ARROW_WIDTH, STEPPER_ARROW_ZONE,
-};
-use crate::types::panel::PanelItem;
 
 pub fn draw_settings_panel(
     canvas: &mut Pixmap,
@@ -94,7 +94,7 @@ fn draw_settings_content(
 
     if let Some(path) = rounded_rect_path(&rect, 8.0, true, true, true, true) {
         let mut paint = Paint::default();
-        paint.set_color(TOOLBAR_COLOR);
+        paint.set_color(PANEL_COLOR);
         paint.anti_alias = true;
         canvas.fill_path(&path, &paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
     }
@@ -195,7 +195,7 @@ fn draw_item_border(
             } else if is_hovered {
                 BUTTON_HOVERED
             } else {
-                panel_border_color(TOOLBAR_COLOR) 
+                panel_border_color(PANEL_COLOR) 
             });
             paint.anti_alias = true;
             

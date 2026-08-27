@@ -9,6 +9,7 @@ use crate::types::{
     StepperArrow, ToolSettings, UiPanel, SpecialKey, compute_settings_placement, widgets_for_annotation,
     widgets_for_tool,
 };
+use crate::types::panel::{emit_panel_damage, sync_panel_rect, sync_panel_hover};
 use crate::editor::dirty::{mark_dirty, apply_damage_rects};
 
 use std::time::{Duration, Instant};
@@ -82,24 +83,16 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
         editor_state.settings_panel.arrow_held = None;
     }
 
-    let new_rect = editor_state.settings_panel.rect();
-    let new_monitor = editor_state.settings_panel.monitor_idx;
+    sync_panel_rect(
+        &mut editor_state.settings_panel,
+        old_rect,
+        old_monitor,
+        source_changed,
+        &mut editor_state.damage_rects,
+        dirty_mask,
+    );
 
-    let changed = source_changed || old_rect != new_rect || old_monitor != new_monitor;
-
-    if changed {
-        editor_state.settings_panel.dirty = true;
-        if let Some(rect) = old_rect {
-            editor_state.damage_rects.push(DamageZone::Local { monitor_idx: old_monitor, rect });
-            mark_dirty(dirty_mask, old_monitor);
-        }
-        if let Some(rect) = new_rect {
-            editor_state.damage_rects.push(DamageZone::Local { monitor_idx: new_monitor, rect });
-            mark_dirty(dirty_mask, new_monitor);
-        }
-    }
-
-    if let Some(rect) = new_rect {
+    if editor_state.settings_panel.rect().is_some() {
         let hovered = editor_state.settings_panel.hit_test(editor_state.pointer.local);
         let hovered_arrow = hovered.and_then(|idx| {
             editor_state
@@ -108,16 +101,12 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
                 .map(|arrow| (idx, arrow))
         });
 
-        let hover_changed = hovered != editor_state.settings_panel.hovered
-            || hovered_arrow != editor_state.settings_panel.hovered_arrow;
-
-        if hover_changed {
-            editor_state.settings_panel.dirty = true;
-            editor_state.settings_panel.hovered = hovered;
-            editor_state.settings_panel.hovered_arrow = hovered_arrow;
-            editor_state.damage_rects.push(DamageZone::Local { monitor_idx: new_monitor, rect });
-            mark_dirty(dirty_mask, new_monitor);
-        }
+        sync_panel_hover(
+            &mut editor_state.settings_panel,
+            (hovered, hovered_arrow),
+            &mut editor_state.damage_rects,
+            dirty_mask,
+        );
 
         if let Some(hold) = editor_state.settings_panel.arrow_held.as_ref() {
             let still_on_arrow = hovered_arrow == Some((hold.widget_idx, hold.arrow));
@@ -160,8 +149,7 @@ pub fn handle_settings_text_input(editor_state: &mut EditorState, ch: char, dirt
     let Some(rect) = editor_state.settings_panel.rect() else { return };
 
     if editor_state.settings_panel.insert_char(ch) {
-        editor_state.damage_rects.push(DamageZone::Local { monitor_idx, rect });
-        mark_dirty(dirty_mask, monitor_idx);
+        emit_panel_damage(rect, monitor_idx, &mut editor_state.damage_rects, dirty_mask);
     }
 }
 
@@ -175,8 +163,7 @@ pub fn handle_settings_key_press(editor_state: &mut EditorState, key: SpecialKey
     let (changed, commit) = editor_state.settings_panel.handle_key(key, ctrl, shift);
 
     if changed {
-        editor_state.damage_rects.push(DamageZone::Local { monitor_idx, rect });
-        mark_dirty(dirty_mask, monitor_idx);
+        emit_panel_damage(rect, monitor_idx, &mut editor_state.damage_rects, dirty_mask);
     }
 
     if commit {
@@ -193,8 +180,7 @@ pub fn commit_stepper_text_edit(editor_state: &mut EditorState, dirty_mask: &mut
     };
 
     if let Some(rect) = rect {
-        editor_state.damage_rects.push(DamageZone::Local { monitor_idx, rect });
-        mark_dirty(dirty_mask, monitor_idx);
+        emit_panel_damage(rect, monitor_idx, &mut editor_state.damage_rects, dirty_mask);
     }
 
     let Some(SettingsWidget::Stepper { min, max, .. }) =
@@ -229,6 +215,10 @@ fn commit_settings_change(
         }
     }
 
+    // NB: unlike the sync helpers above, this marks the monitor dirty even
+    // when the panel currently has no rect (e.g. invisible). Left exactly
+    // as it was before this refactor - might be worth checking whether
+    // that's intentional.
     editor_state.settings_panel.dirty = true;
     let monitor_idx = editor_state.settings_panel.monitor_idx;
     if let Some(rect) = editor_state.settings_panel.rect() {

@@ -17,6 +17,7 @@ use crate::types::{
 };
 use crate::types::click::DoubleClickTracker;
 use crate::utils::{encode_png, get_full_workspace_rect, get_overlapping_monitors, save_to_file};
+use crate::types::panel::{tick_panel_animation, AnimatedPanel};
 
 use cosmic_text::{FontSystem, SwashCache};
 use std::collections::HashMap;
@@ -119,14 +120,7 @@ pub async fn make_screenshot(
     let _save_as_file = true;
 
     loop {
-        let toolbar_animating = {
-            let tb = &editor_state.toolbar;
-            let target_opacity = if tb.interferes { 0.0 } else { 1.0 };
-            let opacity_diff = (tb.opacity - target_opacity).abs() > 0.001;
-            let pos_diff = (tb.position.0 - tb.render_pos.0).abs() > 0.5
-                || (tb.position.1 - tb.render_pos.1).abs() > 0.5;
-            opacity_diff || pos_diff
-        };
+        let toolbar_animating = editor_state.toolbar.is_animating();
         let stepper_holding = editor_state.settings_panel.arrow_held.is_some();
         let timeout = if toolbar_animating || stepper_holding { 16 } else { -1 };
 
@@ -163,7 +157,7 @@ pub async fn make_screenshot(
             }
         }
 
-        toolbar_logic::tick_toolbar_anim(&mut editor_state, &mut dirty_mask);
+        tick_panel_animation(&mut editor_state.toolbar, &mut editor_state.damage_rects, &mut dirty_mask);
         settings_logic::tick_stepper_arrow_hold(&mut editor_state, &mut dirty_mask);
         settings_logic::update_settings_panel(&mut editor_state, &mut dirty_mask);
 

@@ -1,21 +1,14 @@
-//! Логика раскладки и анимации Toolbar (позиционирование относительно
-//! выделения/монитора, hover, opacity/позиция при появлении и
-//! скрытии). Отрисовка пикселей — в renderer/toolbar.rs, это разные
-//! слои и здесь им не место.
+// toolbar's animation and positioning logic 
 
-use crate::editor::{EditorState, DamageZone};
+use crate::editor::EditorState;
 use crate::tools::selection::global_selection_to_local;
-use crate::types::toolbar::{
-    TOOLBAR_ANIM_DT, TOOLBAR_ANIM_INTERVAL, TOOLBAR_OFFSET, TOOLBAR_TRANSITION_OFFSET,
-    ToolbarPlacementKind
-};
+use crate::types::toolbar::{TOOLBAR_OFFSET, TOOLBAR_TRANSITION_OFFSET, ToolbarPlacementKind};
 use crate::types::UiPanel;
-use crate::editor::dirty::mark_dirty;
+use crate::types::panel::{sync_panel_rect, sync_panel_hover};
 
-use std::time::Instant;
 use tiny_skia::Rect;
 
-pub fn update_toolbar(editor_state: &mut EditorState) {
+pub fn update_toolbar(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     let old_monitor = editor_state.toolbar.monitor_idx;
     let old_position = editor_state.toolbar.position;
     let old_rect = editor_state.toolbar.rect();
@@ -60,90 +53,18 @@ pub fn update_toolbar(editor_state: &mut EditorState) {
 
     editor_state.toolbar.placement_kind = Some(new_kind);
 
-    let new_rect = editor_state.toolbar.rect();
-    let new_monitor = editor_state.toolbar.monitor_idx;
+    sync_panel_rect(
+        &mut editor_state.toolbar,
+        old_rect,
+        old_monitor,
+        layout_changed,
+        &mut editor_state.damage_rects,
+        dirty_mask,
+    );
 
-    if layout_changed || old_rect != new_rect || old_monitor != new_monitor {
-        editor_state.toolbar.dirty = true;
-        if let Some(rect) = old_rect {
-            editor_state.damage_rects.push(DamageZone::Local { monitor_idx: old_monitor, rect });
-        }
-        if let Some(rect) = new_rect {
-            editor_state.damage_rects.push(DamageZone::Local { monitor_idx: new_monitor, rect });
-        }
-    }
-
-    if let Some(tb_rect) = new_rect {
-        let button = editor_state.toolbar.hit_test(editor_state.pointer.local);
-        if button != editor_state.toolbar.hovered {
-            editor_state.toolbar.dirty = true;
-            editor_state.toolbar.hovered = button;
-            editor_state.damage_rects.push(DamageZone::Local { monitor_idx: new_monitor, rect: tb_rect });
-        }
-    }
-}
-
-pub fn tick_toolbar_anim(editor_state: &mut EditorState, dirty_mask: &mut u32) {
-    let now = Instant::now();
-    let tb = &mut editor_state.toolbar;
-
-    let elapsed = tb.last_tick
-        .map(|t| now.duration_since(t))
-        .unwrap_or(TOOLBAR_ANIM_INTERVAL);
-
-    if elapsed < TOOLBAR_ANIM_INTERVAL {
-        return;
-    }
-
-    let steps = ((elapsed.as_secs_f32() / TOOLBAR_ANIM_DT).floor() as u32).clamp(1, 4);
-    tb.last_tick = Some(now);
-
-    let old_render_pos = tb.render_pos;
-    let mut changed = false;
-
-    for _ in 0..steps {
-        let target_opacity = if tb.interferes { 0.0 } else { 1.0 };
-        if (tb.opacity - target_opacity).abs() > 0.001 {
-            let delta = 5.0 * TOOLBAR_ANIM_DT;
-            tb.opacity += (target_opacity - tb.opacity).signum() * delta;
-            tb.opacity = tb.opacity.clamp(0.0, 1.0);
-            changed = true;
-        }
-
-        let target = tb.position;
-        let dx = target.0 - tb.render_pos.0;
-        let dy = target.1 - tb.render_pos.1;
-        if dx.abs() > 0.5 || dy.abs() > 0.5 {
-            let t = (12.0 * TOOLBAR_ANIM_DT).min(1.0);
-            tb.render_pos.0 += dx * t;
-            tb.render_pos.1 += dy * t;
-            changed = true;
-        } else if tb.render_pos != target {
-            tb.render_pos = target;
-            changed = true;
-        }
-    }
-
-    if changed {
-        tb.dirty = true;
-        let monitor_idx = tb.monitor_idx;
-        mark_dirty(dirty_mask, monitor_idx);
-
-        let old_rect = tiny_skia::Rect::from_xywh(old_render_pos.0, old_render_pos.1, tb.size.0, tb.size.1);
-        let new_rect = tb.rect();
-
-        let union = match (old_rect, new_rect) {
-            (Some(a), Some(b)) => tiny_skia::Rect::from_ltrb(
-                a.left().min(b.left()), a.top().min(b.top()),
-                a.right().max(b.right()), a.bottom().max(b.bottom()),
-            ),
-            (Some(a), None) | (None, Some(a)) => Some(a),
-            (None, None) => None,
-        };
-
-        if let Some(rect) = union {
-            editor_state.damage_rects.push(DamageZone::Local { monitor_idx, rect });
-        }
+    if editor_state.toolbar.rect().is_some() {
+        let hovered = editor_state.toolbar.hit_test(editor_state.pointer.local);
+        sync_panel_hover(&mut editor_state.toolbar, hovered, &mut editor_state.damage_rects, dirty_mask);
     }
 }
 

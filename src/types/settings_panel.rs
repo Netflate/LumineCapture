@@ -3,7 +3,7 @@ use std::time::Instant;
 use tiny_skia::{Pixmap, Rect};
 use crate::editor::EditorState;
 use crate::tools::Tool;
-use crate::types::panel::{PanelItem, UiPanel};
+use crate::types::panel::{HoverablePanel, PanelItem, UiPanel};
 use crate::types::toolbar::TOOLBAR_OFFSET;
 use crate::types::text_field::{is_stepper_char, LineEditState};
 use crate::types::SpecialKey;
@@ -165,13 +165,6 @@ impl SettingsPanel {
             arrow_held: None,
             values: HashMap::new(),
         }
-    }
-
-    pub fn rect(&self) -> Option<Rect> {
-        if !self.visible {
-            return None;
-        }
-        <Self as UiPanel>::rect(self)
     }
 
     pub fn hit_test(&self, local: (f64, f64)) -> Option<usize> {
@@ -352,6 +345,27 @@ impl UiPanel for SettingsPanel {
     fn size(&self) -> (f32, f32) { self.size }
     fn items(&self) -> &[Self::Item] { self.widgets }
     fn padding(&self) -> f32 { SETTINGS_PADDING }
+    fn monitor_idx(&self) -> usize { self.monitor_idx }
+    fn set_dirty(&mut self) { self.dirty = true; }
+
+    fn rect(&self) -> Option<Rect> {
+        if !self.visible {
+            return None;
+        }
+        let (x, y) = self.render_pos();
+        let (w, h) = self.size();
+        Rect::from_xywh(x, y, w, h)
+    }
+}
+
+impl HoverablePanel for SettingsPanel {
+    type Hover = (Option<usize>, Option<(usize, StepperArrow)>);
+
+    fn hovered(&self) -> Self::Hover { (self.hovered, self.hovered_arrow) }
+    fn set_hovered(&mut self, hover: Self::Hover) {
+        self.hovered = hover.0;
+        self.hovered_arrow = hover.1;
+    }
 }
 
 // ── Placement ─────────────────────────────────────────
