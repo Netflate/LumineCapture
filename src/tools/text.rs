@@ -3,7 +3,7 @@ use crate::tools::ToolBehavior;
 use crate::types::annotations::{
     apply_annotation_drag, begin_drag_for_annotation, commit_drag_if_changed,
 };
-use crate::types::{Annotation, AnnotationShape, MouseButton, SpecialKey, TextEditState};
+use crate::types::{Annotation, AnnotationShape, MouseButton, SpecialKey, TextEditState, ClickTarget};
 
 use cosmic_text::{
     Action, Attrs, Buffer, Edit, Editor, Family, Metrics, Motion, Selection, Shaping, SwashCache,
@@ -12,7 +12,7 @@ use tiny_skia::{Color, PixmapMut, Rect};
 
 pub struct TextTool;
 
-// ── key → Action ─────────────────────────────────────────────────────────────
+// ── key -> Action ─────────────────────────────────────────────────────────────
 
 fn key_to_action(key: SpecialKey, ctrl: bool) -> Option<Action> {
     match key {
@@ -80,9 +80,7 @@ pub fn apply_key_to_editor(
         match key {
             SpecialKey::KeyC | SpecialKey::KeyX => {
                 if let Some(text) = extract_selected_text(editor) {
-                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                        let _ = clipboard.set_text(text);
-                    }
+                    crate::utils::copy_to_clipboard(&text);
                 }
                 
                 if matches!(key, SpecialKey::KeyX) {
@@ -93,19 +91,16 @@ pub fn apply_key_to_editor(
                 return false; 
             }
             SpecialKey::KeyV => {
-                if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                    if let Ok(text) = clipboard.get_text() {
-                        if editor.selection_bounds().is_some() {
-                            editor.delete_selection();
-                        }
-                        
-                        for ch in text.chars() {
-                            if ch != '\r' {
-                                editor.action(font_system, Action::Insert(ch));
-                            }
-                        }
-                        return true; 
+                if let Some(text) = crate::utils::paste_from_clipboard() {
+                    if editor.selection_bounds().is_some() {
+                        editor.delete_selection();
                     }
+                    for ch in text.chars() {
+                        if ch != '\r' {
+                            editor.action(font_system, Action::Insert(ch));
+                        }
+                    }
+                    return true;
                 }
                 return false;
             }
@@ -212,10 +207,25 @@ impl ToolBehavior for TextTool {
             state.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
 
             let ann_id = ann.id;
+            let AnnotationShape::Text { start, .. } = &ann.shape else {
+                unreachable!("checked Text shape above")
+            };
+            let local_x = (state.pointer.global.0 as f32 - start.0).round() as i32;
+            let local_y = (state.pointer.global.1 as f32 - start.1).round() as i32;
+
+            let click_pos = (state.pointer.global.0 as f32, state.pointer.global.1 as f32);
+            let is_double = state
+                .click_tracker
+                .register(ClickTarget::TextAnnotation(ann_id), click_pos);
+
             if let Some(editor) = state.text_editors.get_mut(&ann_id) {
-                editor.set_selection(Selection::None);
-                editor.action(&mut state.font_system, Action::Motion(Motion::BufferEnd));
-            }
+                let click_action = if is_double {
+                    Action::DoubleClick { x: local_x, y: local_y }
+                } else {
+                    Action::Click { x: local_x, y: local_y }
+                };
+                editor.action(&mut state.font_system, click_action);
+}
 
             state.text_editing = Some(TextEditState {
                 annotation_id: ann_id,
@@ -248,7 +258,7 @@ impl ToolBehavior for TextTool {
         let id = state.next_id;
         state.next_id += 1;
 
-        let font_size = 24.0_f32;
+        let font_size = state.tool_settings.font_size;
         let metrics = Metrics::new(font_size, font_size * 1.2);
 
         let mut buffer = Buffer::new_empty(metrics);

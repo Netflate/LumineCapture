@@ -1,14 +1,14 @@
 use super::paths::{normalized_rect, oval_path};
+use super::text::{draw_text_buffer, shape_single_line};
 use crate::tools::text::render_text_annotation;
 use crate::types::annotations::{
     Annotation, AnnotationShape, HANDLE_PAD, SHADOW_COLOR, SHADOW_WIDTH_BONUS,
 };
 
-use cosmic_text::{Attrs, Buffer, Editor, FontSystem, Metrics, Shaping, SwashCache, SwashContent};
+use cosmic_text::{Editor, FontSystem, SwashCache};
 use std::collections::HashMap;
 use tiny_skia::{
-    Color, FillRule, LineCap, LineJoin, Paint, PathBuilder, Pixmap, PixmapPaint,
-    PremultipliedColorU8, Rect, Stroke, Transform,
+    Color, FillRule, LineCap, LineJoin, Paint, PathBuilder, Pixmap, Rect, Stroke, Transform,
 };
 
 pub fn draw_annotation(
@@ -412,64 +412,6 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
     }
 }
 
-pub fn draw_text_buffer(
-    canvas: &mut Pixmap,
-    buffer: &Buffer,
-    font_system: &mut FontSystem,
-    swash_cache: &mut SwashCache,
-    pos: (f32, f32),
-    color: Color,
-    offset: (f32, f32),
-) {
-    let (x_start, y_start) = pos;
-
-    for run in buffer.layout_runs() {
-        for glyph in run.glyphs.iter() {
-            let physical = glyph.physical((0., 0.), 1.0);
-
-            if let Some(image) = swash_cache.get_image(font_system, physical.cache_key) {
-                let width = image.placement.width;
-                let height = image.placement.height;
-
-                if width == 0 || height == 0 {
-                    continue;
-                }
-
-                let draw_x =
-                    (x_start + physical.x as f32 + image.placement.left as f32 - offset.0) as i32;
-                let draw_y = (y_start + run.line_y - image.placement.top as f32 - offset.1) as i32;
-
-                if image.content == SwashContent::Mask
-                    && let Some(mut glyph_pixmap) = Pixmap::new(width, height)
-                {
-                    let pixels = glyph_pixmap.pixels_mut();
-
-                    for (i, mask_alpha) in image.data.iter().enumerate() {
-                        let a_f32 = (*mask_alpha as f32 / 255.0) * color.alpha();
-                        let a_u8 = (a_f32 * 255.0) as u8;
-
-                        let pr = (color.red() * a_f32 * 255.0) as u8;
-                        let pg = (color.green() * a_f32 * 255.0) as u8;
-                        let pb = (color.blue() * a_f32 * 255.0) as u8;
-
-                        pixels[i] = PremultipliedColorU8::from_rgba(pr, pg, pb, a_u8)
-                            .unwrap_or(PremultipliedColorU8::TRANSPARENT);
-                    }
-
-                    canvas.draw_pixmap(
-                        draw_x,
-                        draw_y,
-                        glyph_pixmap.as_ref(),
-                        &PixmapPaint::default(),
-                        Transform::identity(),
-                        None,
-                    );
-                }
-            }
-        }
-    }
-}
-
 fn stroke_with_shadow(
     canvas: &mut Pixmap,
     path: &tiny_skia::Path,
@@ -601,28 +543,12 @@ fn draw_numerated_arrow(
         _ => circle_radius * 0.5,
     };
 
-    let line_height = font_size * 1.1;
-
-    let mut buffer = Buffer::new(font_system, Metrics::new(font_size, line_height));
-
-    buffer.set_size(Some(circle_radius * 2.0), Some(circle_radius * 2.0));
-
-    buffer.set_text(
+    let (buffer, text_width, text_height) = shape_single_line(
+        font_system,
         &number.to_string(),
-        &Attrs::new().weight(cosmic_text::Weight::BOLD),
-        Shaping::Advanced,
-        None,
+        font_size,
+        cosmic_text::Weight::BOLD,
     );
-
-    buffer.shape_until_scroll(font_system, false);
-
-    let mut text_width: f32 = 0.0;
-    let mut text_height: f32 = 0.0;
-
-    for run in buffer.layout_runs() {
-        text_width = text_width.max(run.line_w);
-        text_height += run.line_height;
-    }
 
     let text_pos = (
         start.0 - text_width / 2.0,

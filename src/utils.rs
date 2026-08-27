@@ -270,20 +270,12 @@ pub fn intersect_area(a: &Rect, b: &Rect) -> f32 {
     }
 }
 
-pub fn largest_overlap_monitor(sel: &Rect, placements: &[Placement]) -> Option<usize> {
-    placements
-        .iter()
-        .enumerate()
-        .filter_map(|(i, p)| {
-            let mon_rect = Rect::from_xywh(
-                p.position.0 as f32,
-                p.position.1 as f32,
-                p.size.0 as f32,
-                p.size.1 as f32,
-            )?;
-            let area = intersect_area(sel, &mon_rect);
-            (area > 0.0).then_some((i, area))
-        })
-        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
-        .map(|(i, _)| i)
+pub fn copy_to_clipboard(text: &str) {
+    if let Ok(mut cb) = arboard::Clipboard::new() {
+        let _ = cb.set_text(text.to_owned());
+    }
+}
+
+pub fn paste_from_clipboard() -> Option<String> {
+    arboard::Clipboard::new().ok()?.get_text().ok()
 }
