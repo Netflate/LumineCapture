@@ -174,30 +174,26 @@ pub fn handle_pointer_button(
                 let monitor_idx = editor_state.settings_panel.monitor_idx;
                 editor_state.settings_panel.dirty = true;
 
-                if editor_state.settings_panel.selected == Some(widget_idx) {
-                    match editor_state.settings_panel.widgets[widget_idx] {
-                        SettingsWidget::ColorSwatch => {
-                            editor_state.color_popover.open = false;
-                            editor_state.settings_panel.selected = None;
-                            return
-                        }
-                        _ => {
-                            // no need to reset selection for other widgets
-                            // i think its better to do that only with color swatch
-                            return;
-                        }
-                    }
+                // спец-случай только для ColorSwatch: повторный клик закрывает попап
+                if editor_state.settings_panel.selected == Some(widget_idx)
+                    && matches!(editor_state.settings_panel.widgets[widget_idx], SettingsWidget::ColorSwatch)
+                {
+                    editor_state.color_popover.open = false;
+                    editor_state.settings_panel.selected = None;
+                    mark_dirty(dirty_mask, monitor_idx);
+                    apply_damage_rects(editor_state, dirty_mask);
+                    return;
                 }
+
                 editor_state.settings_panel.selected = Some(widget_idx);
 
-                println!("hit settings widget {widget_idx:?} at {:?}", editor_state.pointer.local);
+
                 match editor_state.settings_panel.widgets[widget_idx] {
                     SettingsWidget::Stepper { .. } => {
                         if let Some(arrow) = editor_state.settings_panel.stepper_arrow_hit(widget_idx, editor_state.pointer.local) {
                             apply_stepper_arrow_step(editor_state, widget_idx, arrow, dirty_mask);
                             editor_state.settings_panel.arrow_held = Some(ArrowHoldState {
-                                widget_idx,
-                                arrow,
+                                widget_idx, arrow,
                                 started_at: Instant::now(),
                                 last_step_at: Instant::now(),
                                 repeat_count: 0,
@@ -279,6 +275,7 @@ pub fn handle_pointer_button(
 
     if matches!(button, MouseButton::Left) && !pressed {
         update_toolbar(editor_state, dirty_mask);
+        update_settings_panel(editor_state, dirty_mask);
     }
 
     apply_damage_rects(editor_state, dirty_mask);
