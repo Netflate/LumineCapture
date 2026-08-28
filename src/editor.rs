@@ -11,7 +11,7 @@ use crate::tools::Tool;
 use crate::types::{
     AnnDragState, Annotation, MagnifierState, Placement, PointerState, SelectionState,
     TextEditState, Toolbar, SettingsPanel, ToolSettings, DoubleClickTracker,
-    ClickTarget
+    ClickTarget, ColorPickerPopover,
 };
 
 pub struct EditorState {
@@ -33,7 +33,7 @@ pub struct EditorState {
     
     pub toolbar: Toolbar,
     pub settings_panel: SettingsPanel,
-    //pub color_picker: Option<ColorPickerPopover>,
+    pub color_popover: ColorPickerPopover,
     // annotations
     pub annotations: Vec<Annotation>,
     pub pending: Option<Annotation>,

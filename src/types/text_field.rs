@@ -1,5 +1,8 @@
 /// another text engine, but unlike tool/text.rs, this is for simple single-line text input fields
 /// so i couldn't use the same functions in both files, since tool one is for rich text and use editor
+use std::collections::HashMap;
+use std::hash::Hash;
+use crate::types::SpecialKey;
 
 #[derive(Debug, Clone, Default)]
 pub struct LineEditState {
@@ -158,4 +161,130 @@ pub enum CursorInit {
     End,
     SelectAll,
     At(usize), 
+}
+
+pub struct FieldEdit<K> {
+    pub key: K,
+    pub field: LineEditState,
+}
+
+pub struct TextFieldGroup<K: Eq + Hash + Copy> {
+    pub values: HashMap<K, String>,
+    pub editing: Option<FieldEdit<K>>,
+}
+
+impl<K: Eq + Hash + Copy> TextFieldGroup<K> {
+    pub fn new() -> Self {
+        Self { values: HashMap::new(), editing: None }
+    }
+
+    pub fn begin_edit(&mut self, key: K, initial_text: String, cursor: CursorInit) {
+        let mut field = LineEditState::new(initial_text);
+        match cursor {
+            CursorInit::End => field.move_end(false),
+            CursorInit::SelectAll => field.select_all(),
+            CursorInit::At(idx) => {
+                let len = field.text.chars().count();
+                field.cursor = idx.min(len);
+                field.selection_anchor = None;
+            }
+        }
+        self.editing = Some(FieldEdit { key, field });
+    }
+
+    pub fn cancel_edit(&mut self) -> bool {
+        self.editing.take().is_some()
+    }
+
+    pub fn commit_edit(&mut self) -> Option<(K, String)> {
+        let edit = self.editing.take()?;
+        Some((edit.key, edit.field.text))
+    }
+
+    pub fn is_editing(&self) -> bool {
+        self.editing.is_some()
+    }
+
+    pub fn is_editing_key(&self, key: K) -> bool {
+        self.editing.as_ref().map(|e| e.key) == Some(key)
+    }
+
+    pub fn insert_char(&mut self, ch: char, allowed: impl Fn(char) -> bool) -> bool {
+        let Some(edit) = self.editing.as_mut() else { return false };
+        if !allowed(ch) {
+            return false;
+        }
+        edit.field.insert(ch);
+        true
+    }
+
+    pub fn handle_key(
+        &mut self,
+        key: SpecialKey,
+        ctrl: bool,
+        shift: bool,
+        allowed: impl Fn(char) -> bool,
+    ) -> (bool, bool) {
+        let Some(edit) = self.editing.as_mut() else { return (false, false) };
+
+        if ctrl {
+            match key {
+                SpecialKey::KeyA => {
+                    edit.field.select_all();
+                    return (true, false);
+                }
+                SpecialKey::KeyC | SpecialKey::KeyX => {
+                    if let Some(sel) = edit.field.selected_text() {
+                        crate::utils::copy_to_clipboard(&sel);
+                    }
+                    if matches!(key, SpecialKey::KeyX) {
+                        edit.field.backspace_selection_only();
+                        return (true, false);
+                    }
+                    return (false, false);
+                }
+                SpecialKey::KeyV => {
+                    if let Some(text) = crate::utils::paste_from_clipboard() {
+                        let filtered: String = text.chars().filter(|c| allowed(*c)).collect();
+                        if !filtered.is_empty() {
+                            edit.field.insert_str(&filtered);
+                            return (true, false);
+                        }
+                    }
+                    return (false, false);
+                }
+                _ => {}
+            }
+        }
+
+        match key {
+            SpecialKey::Enter => (false, true),
+            SpecialKey::Left => { edit.field.move_left(shift); (true, false) }
+            SpecialKey::Right => { edit.field.move_right(shift); (true, false) }
+            SpecialKey::Home => { edit.field.move_home(shift); (true, false) }
+            SpecialKey::End => { edit.field.move_end(shift); (true, false) }
+            SpecialKey::Backspace => { edit.field.backspace(); (true, false) }
+            SpecialKey::Delete => { edit.field.delete_forward(); (true, false) }
+            _ => (false, false),
+        }
+    }
+
+    pub fn sync_value(&mut self, key: K, text: String) {
+        if self.is_editing_key(key) {
+            return;
+        }
+        self.values.insert(key, text);
+    }
+
+    pub fn value(&self, key: K) -> Option<&String> {
+        self.values.get(&key)
+    }
+}
+
+pub fn is_hex_char(ch: char) -> bool {
+    ch.is_ascii_hexdigit() || ch == '#'
+}
+
+pub fn is_rgba_channel_char(ch: char) -> bool {
+    ch.is_ascii_digit()
 }

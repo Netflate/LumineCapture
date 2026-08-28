@@ -1,14 +1,15 @@
-use std::collections::HashMap;
-use std::time::Instant;
 use tiny_skia::{Pixmap, Rect};
 use crate::editor::EditorState;
 use crate::tools::Tool;
 use crate::types::panel::{HoverablePanel, PanelItem, UiPanel};
 use crate::types::toolbar::TOOLBAR_OFFSET;
-use crate::types::text_field::{is_stepper_char, LineEditState};
+use crate::types::text_field::{is_stepper_char, TextFieldGroup};
 use crate::types::SpecialKey;
 use crate::types::CursorInit;
 use crate::types::annotations::{Annotation, AnnotationShape};
+
+use std::collections::HashMap;
+use std::time::{Instant, Duration};
 
 pub const SETTINGS_PANEL_HEIGHT: f32 = 42.0;
 pub const SETTINGS_PADDING: f32 = 8.0;
@@ -27,7 +28,10 @@ pub const STEPPER_ARROW_WIDTH: f32 = 15.0;
 pub const STEPPER_ARROW_HEIGHT: f32 = 6.0;
 pub const STEPPER_ARROW_GAP: f32 = 9.0;
 pub const STEPPER_ARROW_STROKE: f32 = 1.6;
-
+pub const STEPPER_HOLD_INITIAL_DELAY: Duration = Duration::from_millis(400);
+pub const STEPPER_HOLD_REPEAT_INTERVAL: Duration = Duration::from_millis(120);
+pub const STEPPER_HOLD_ACCEL_AFTER: u32 = 8;
+pub const STEPPER_HOLD_FAST_INTERVAL: Duration = Duration::from_millis(40);
 
 #[derive(Debug, Clone, Copy)]
 pub enum ToggleVisual {
@@ -73,7 +77,7 @@ pub enum ToggleField {
 
 pub fn widgets_for_tool(tool: Tool) -> &'static [SettingsWidget] {
     match tool {
-        Tool::Pen | Tool::Line | Tool::Arrow => &[
+        Tool::Pen | Tool::Line | Tool::Arrow | Tool::NumeratedArrow =>  &[
             SettingsWidget::ColorSwatch,
             SettingsWidget::Separator,
             SettingsWidget::Stepper { label: "", min: 1.0, max: 40.0, step: 1.0, unit: "px" },
@@ -141,11 +145,6 @@ impl PanelItem for SettingsWidget {
     }
 }
 
-pub struct StepperEdit {
-    pub widget_idx: usize,
-    pub field: LineEditState,
-}
-
 pub struct SettingsPanel {
     pub widgets: &'static [SettingsWidget],
     pub active_source: Option<SettingsSource>,
@@ -160,14 +159,9 @@ pub struct SettingsPanel {
     pub selected: Option<usize>,
     pub opacity: f32,
     pub panel_pixmap: Option<Pixmap>,
-    pub editing: Option<StepperEdit>,
+    pub fields: TextFieldGroup<usize>,
     pub arrow_held: Option<ArrowHoldState>,
-    pub values: HashMap<usize, String>,
     pub toggled: HashMap<usize, bool>,
-}
-
-impl Default for SettingsPanel {
-    fn default() -> Self { Self::new() }
 }
 
 impl SettingsPanel {
@@ -186,9 +180,8 @@ impl SettingsPanel {
             selected: None,
             opacity: 1.0,
             panel_pixmap: None,
-            editing: None,
+            fields: TextFieldGroup::new(),
             arrow_held: None,
-            values: HashMap::new(),
             toggled: HashMap::new(),
         }
     }
@@ -250,95 +243,40 @@ impl SettingsPanel {
     }
 
     // ── editing input fields ─────────────────────────────────────────
+    // wrapper around TextFieldGroup: same external signature, but with dirty flag management
     pub fn begin_edit(&mut self, widget_idx: usize, initial_text: String, cursor: CursorInit) {
-        let mut field = LineEditState::new(initial_text);
-        match cursor {
-            CursorInit::End => field.move_end(false),
-            CursorInit::SelectAll => field.select_all(),
-            CursorInit::At(idx) => {
-                let len = field.text.chars().count();
-                field.cursor = idx.min(len);
-                field.selection_anchor = None;
-            }
-        }
-        self.editing = Some(StepperEdit { widget_idx, field });
+        self.fields.begin_edit(widget_idx, initial_text, cursor);
         self.dirty = true;
     }
 
     pub fn cancel_edit(&mut self) {
-        if self.editing.take().is_some() {
+        if self.fields.cancel_edit() {
             self.dirty = true;
         }
     }
 
     pub fn commit_edit(&mut self) -> Option<(usize, String)> {
-        let edit = self.editing.take()?;
-        self.dirty = true;
-        Some((edit.widget_idx, edit.field.text))
+        let result = self.fields.commit_edit();
+        if result.is_some() {
+            self.dirty = true;
+        }
+        result
     }
 
     pub fn is_editing(&self) -> bool {
-        self.editing.is_some()
+        self.fields.is_editing()
     }
 
     pub fn insert_char(&mut self, ch: char) -> bool {
-        let Some(edit) = self.editing.as_mut() else { return false };
-        if !is_stepper_char(ch) {
-            return false;
+        let inserted = self.fields.insert_char(ch, is_stepper_char);
+        if inserted {
+            self.dirty = true;
         }
-        edit.field.insert(ch);
-        self.dirty = true;
-        true
+        inserted
     }
 
     pub fn handle_key(&mut self, key: SpecialKey, ctrl: bool, shift: bool) -> (bool, bool) {
-        let Some(edit) = self.editing.as_mut() else { return (false, false) };
-
-        if ctrl {
-            match key {
-                SpecialKey::KeyA => {
-                    edit.field.select_all();
-                    self.dirty = true;
-                    return (true, false);
-                }
-                SpecialKey::KeyC | SpecialKey::KeyX => {
-                    if let Some(sel) = edit.field.selected_text() {
-                        crate::utils::copy_to_clipboard(&sel);
-                    }
-                    if matches!(key, SpecialKey::KeyX) {
-                        edit.field.backspace_selection_only();
-                        self.dirty = true;
-                        return (true, false);
-                    }
-                    return (false, false);
-                }
-                SpecialKey::KeyV => {
-                    if let Some(text) = crate::utils::paste_from_clipboard() {
-                        let filtered: String =
-                            text.chars().filter(|c| is_stepper_char(*c)).collect();
-                        if !filtered.is_empty() {
-                            edit.field.insert_str(&filtered);
-                            self.dirty = true;
-                            return (true, false);
-                        }
-                    }
-                    return (false, false);
-                }
-                _ => {}
-            }
-        }
-
-        let result = match key {
-            SpecialKey::Enter => (false, true),
-            SpecialKey::Left => { edit.field.move_left(shift); (true, false) }
-            SpecialKey::Right => { edit.field.move_right(shift); (true, false) }
-            SpecialKey::Home => { edit.field.move_home(shift); (true, false) }
-            SpecialKey::End => { edit.field.move_end(shift); (true, false) }
-            SpecialKey::Backspace => { edit.field.backspace(); (true, false) }
-            SpecialKey::Delete => { edit.field.delete_forward(); (true, false) }
-            _ => (false, false),
-        };
-
+        let result = self.fields.handle_key(key, ctrl, shift, is_stepper_char);
         if result.0 {
             self.dirty = true;
         }
@@ -346,11 +284,9 @@ impl SettingsPanel {
     }
 
     pub fn sync_value(&mut self, idx: usize, text: String) {
-        if self.editing.as_ref().map(|e| e.widget_idx) == Some(idx) {
-            return;
-        }
-        self.values.insert(idx, text);
+        self.fields.sync_value(idx, text);
     }
+
     pub fn widget_text_x(&self, widget_idx: usize) -> Option<f32> {
         let rect = self.rect()?;
         let mut current_x = rect.left() + SETTINGS_PADDING;

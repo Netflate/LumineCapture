@@ -1,4 +1,5 @@
 use std::time::{Duration, Instant};
+use crate::types::color_popover::ColorField;
 
 pub const DOUBLE_CLICK_MS: u64 = 400;
 pub const DOUBLE_CLICK_DIST: f32 = 6.0;
@@ -64,4 +65,5 @@ fn dist(a: (f32, f32), b: (f32, f32)) -> f32 {
 pub enum ClickTarget {
     SettingsWidget(usize),
     TextAnnotation(u64),
+    ColorField(ColorField),
 }

@@ -16,7 +16,7 @@ const fn unit(v: u8) -> f32 {
 }
 
 pub const PANEL_COLOR: tiny_skia::Color = unsafe {
-    tiny_skia::Color::from_rgba_unchecked(unit(13), unit(13), unit(23), unit(240))
+    tiny_skia::Color::from_rgba_unchecked(unit(13), unit(13), unit(23), unit(250))
 };
 pub const SEPARATOR_COLOR: tiny_skia::Color = unsafe {
     tiny_skia::Color::from_rgba_unchecked(unit(255), unit(255), unit(255), unit(255))
@@ -25,14 +25,14 @@ pub const BUTTON_HOVERED: tiny_skia::Color = unsafe {
     tiny_skia::Color::from_rgba_unchecked(unit(159), unit(48), unit(215), unit(255))
 };
 pub const BUTTON_SELECTED: tiny_skia::Color = unsafe {
-    tiny_skia::Color::from_rgba_unchecked(unit(133), unit(44), unit(177), unit(255))
+    tiny_skia::Color::from_rgba_unchecked(unit(215), unit(132), unit(255), unit(255))
 };
 
 pub const ICON_COLOR: usvg::Color = usvg::Color { red: 255, green: 255, blue: 255 };
 pub const ICON_HOVERED: usvg::Color = usvg::Color { red: 159, green: 48, blue: 215 };
-pub const ICON_SELECTED: usvg::Color = usvg::Color { red: 133, green: 44, blue: 177 };
+pub const ICON_SELECTED: usvg::Color = usvg::Color { red: 215, green: 132, blue: 255 };
 
-
+pub const DEFAULT_ITEM_BORDER_STROKE: f32 = 1.0;
 pub trait UiPanel {
     type Item: PanelItem;
 

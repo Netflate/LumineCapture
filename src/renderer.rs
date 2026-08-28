@@ -4,6 +4,7 @@ mod paths;
 mod toolbar;
 mod settings_panel;
 mod text;
+mod color_popover;
 
 pub use annotations::draw_annotation;
 pub use settings_panel::char_index_for_x;
@@ -13,6 +14,7 @@ pub use paths::{rect_bounds, rounded_rect_path};
 use crate::types::annotations::Annotation;
 use crate::types::toolbar::Toolbar;
 use crate::types::settings_panel::SettingsPanel;
+use crate::types::color_popover::ColorPickerPopover;
 use crate::types::{MagnifierState, SelectionEdges};
 use cosmic_text::{Editor, FontSystem, SwashCache};
 use std::collections::HashMap;
@@ -34,6 +36,7 @@ pub struct RenderRequest<'a> {
     pub is_mag_monitor: bool,
     pub toolbar: Option<&'a mut Toolbar>,
     pub settings_panel: Option<&'a mut SettingsPanel>,
+    pub color_picker: Option<&'a mut ColorPickerPopover>,
     pub icons_cache: &'a HashMap<&'static str, Tree>,
     pub offset: (f32, f32),
     // annotations
@@ -100,6 +103,25 @@ pub fn render_frame(req: &mut RenderRequest) {
             _ => debug_assert!(
                 false,
                 "font_system/swash_cache are required for drawing settings panel"
+            ),
+        }
+    }
+    if let Some(color_picker) = req.color_picker.as_deref_mut()
+        && color_picker.dirty
+    {
+        match (req.font_system.as_deref_mut(), req.swash_cache.as_deref_mut()) {
+            (Some(font_system), Some(swash_cache)) => {
+                color_popover::draw_color_popover(
+                    req.canvas,
+                    color_picker,
+                    //req.icons_cache,
+                    font_system,
+                    swash_cache,
+                );
+            }
+            _ => debug_assert!(
+                false,
+                "font_system/swash_cache are required for drawing color popover"
             ),
         }
     }

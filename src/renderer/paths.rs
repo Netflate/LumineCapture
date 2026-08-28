@@ -1,4 +1,4 @@
-use crate::types::panel::PANEL_COLOR;
+use crate::types::panel::{PANEL_COLOR, BUTTON_HOVERED, BUTTON_SELECTED};
 
 use tiny_skia::{PathBuilder, Paint, Pixmap, Rect, Transform, Color, Stroke};
 use usvg::Tree;
@@ -120,6 +120,37 @@ pub fn panel_border_color(bg: Color) -> Color {
     }
 }
 
+pub fn draw_item_border(
+    canvas: &mut Pixmap,
+    x: f32, y: f32, w: f32, h: f32,
+    radius: f32,
+    stroke_width: f32,
+    is_hovered: bool,
+    is_selected: bool,
+) {
+    let inset = stroke_width / 2.0;
+    let Some(inset_rect) = Rect::from_xywh(
+        x + inset, y + inset,
+        (w - stroke_width).max(0.1), (h - stroke_width).max(0.1),
+    ) else { return };
+
+    let r = (radius - inset).max(0.0).min(inset_rect.width() / 2.0).min(inset_rect.height() / 2.0);
+    let Some(path) = rounded_rect_path(&inset_rect, r, true, true, true, true) else { return };
+
+    let mut paint = Paint::default();
+    paint.set_color(if is_selected {
+        BUTTON_SELECTED
+    } else if is_hovered {
+        BUTTON_HOVERED
+    } else {
+        panel_border_color(PANEL_COLOR)
+    });
+    paint.anti_alias = true;
+
+    let stroke = Stroke { width: stroke_width, ..Default::default() };
+    canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+}
+
 pub fn draw_panel_border(canvas: &mut Pixmap, x: f32, y: f32, w: f32, h: f32, radius: f32, opacity: f32) {
     const BORDER_WIDTH: f32 = 1.0;
     const K: f32 = 0.5522847498;
@@ -175,8 +206,6 @@ pub fn draw_panel_border(canvas: &mut Pixmap, x: f32, y: f32, w: f32, h: f32, ra
 
     canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
 }
-
-
 
 pub fn draw_svg_icon(
     canvas: &mut Pixmap,

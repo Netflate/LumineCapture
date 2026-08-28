@@ -1,8 +1,8 @@
-use super::paths::{draw_svg_icon, rounded_rect_path, draw_panel_border, panel_border_color};
-use super::text::{draw_aligned_text, HAlign};
+use super::paths::{draw_svg_icon, rounded_rect_path, draw_panel_border, draw_item_border};
+use super::text::{draw_aligned_text, draw_line_edit, HAlign};
 use crate::types::panel::{
-    ICON_COLOR, SEPARATOR_COLOR, PANEL_COLOR, BUTTON_HOVERED, BUTTON_SELECTED, ICON_HOVERED, ICON_SELECTED,
-    PanelItem
+    ICON_COLOR, SEPARATOR_COLOR, PANEL_COLOR, BUTTON_HOVERED, ICON_HOVERED, ICON_SELECTED,
+    PanelItem, DEFAULT_ITEM_BORDER_STROKE
 };
 use crate::types::panel::UiPanel;
 use crate::types::settings_panel::{
@@ -48,18 +48,14 @@ pub fn draw_settings_panel(
 
     if needs_resize {
         panel.panel_pixmap = Pixmap::new(pw, ph);
-        panel.dirty = true;
     }
 
     let Some(mut panel_pixmap) = panel.panel_pixmap.take() else {
         return;
     };
 
-    if panel.dirty {
-        panel_pixmap.fill(Color::TRANSPARENT);
-        draw_settings_content(&mut panel_pixmap, panel, icons_cache, font_system, swash_cache);
-        panel.dirty = false;
-    }
+    panel_pixmap.fill(Color::TRANSPARENT);
+    draw_settings_content(&mut panel_pixmap, panel, icons_cache, font_system, swash_cache);
 
     canvas.draw_pixmap(
         x as i32,
@@ -181,39 +177,8 @@ fn draw_settings_content(
     }
 }
 
-fn draw_item_border(
-    canvas: &mut Pixmap,
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-    radius: f32,
-    is_hovered: bool,
-    is_selected: bool,
-) {
-    if let Some(inset_rect) = Rect::from_xywh(x + 0.5, y + 0.5, (w - 1.0).max(0.1), (h - 1.0).max(0.1)) {
-        if let Some(path) = rounded_rect_path(&inset_rect, radius, true, true, true, true) {
-            let mut paint = Paint::default();
-            paint.set_color(if is_selected {
-                BUTTON_SELECTED
-            } else if is_hovered {
-                BUTTON_HOVERED
-            } else {
-                panel_border_color(PANEL_COLOR) 
-            });
-            paint.anti_alias = true;
-            
-            let stroke = Stroke {
-                width: 1.0,
-                ..Default::default()
-            };
-            canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
-        }
-    }
-}
-
 fn draw_color_swatch(canvas: &mut Pixmap, x: f32, y: f32, w: f32, h: f32, is_hovered: bool, is_selected: bool) {
-    draw_item_border(canvas, x, y, w, h, 4.0, is_hovered, is_selected);
+    draw_item_border(canvas, x, y, w, h, 4.0, DEFAULT_ITEM_BORDER_STROKE, is_hovered, is_selected);
 
     let circle_r = (h.min(w) * 0.35).max(4.0);
     let cx = x + w / 2.0;
@@ -245,7 +210,7 @@ fn draw_stepper(
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
 ) {
-    draw_item_border(canvas, x, y, w, h, 4.0, is_hovered, is_selected);
+    draw_item_border(canvas, x, y, w, h, 4.0, DEFAULT_ITEM_BORDER_STROKE, is_hovered, is_selected);
 
     let Some(label_rect) = Rect::from_xywh(
         x + SETTINGS_PADDING,
@@ -260,97 +225,19 @@ fn draw_stepper(
         return;
     };
 
-    let is_editing = panel.editing.as_ref().is_some_and(|e| e.widget_idx == index);
+    let editing = panel.fields.editing.as_ref()
+        .filter(|e| e.key == index)
+        .map(|e| &e.field);
 
-    if is_editing {
-        let edit = panel.editing.as_ref().unwrap();
-        let raw_text = &edit.field.text;
-
-        if let Some((start_byte, end_byte)) = edit.field.selection_byte_range() {
-            let sx = measure_prefix_width(raw_text, start_byte, SETTINGS_LABEL_FONT_SIZE, font_system);
-            let ex = measure_prefix_width(raw_text, end_byte, SETTINGS_LABEL_FONT_SIZE, font_system);
-            let sel_h = label_rect.height() * 0.75;
-            let sel_y = label_rect.top() + (label_rect.height() - sel_h) / 2.0;
-            if let Some(sel_rect) = Rect::from_xywh(
-                label_rect.left() + sx,
-                sel_y,
-                (ex - sx).max(1.0),
-                sel_h,
-            ) {
-                let mut sel_paint = Paint::default();
-                sel_paint.set_color(Color::from_rgba8(100, 150, 255, 110));
-                sel_paint.anti_alias = true;
-                canvas.fill_rect(sel_rect, &sel_paint, Transform::identity(), None);
-            }
-        }
-
-        let cx = measure_prefix_width(raw_text, edit.field.cursor_byte(), SETTINGS_LABEL_FONT_SIZE, font_system);
-        let cur_h = label_rect.height() * 0.75;
-        let cur_y = label_rect.top() + (label_rect.height() - cur_h) / 2.0;
-        if let Some(cur_rect) = Rect::from_xywh(
-            (label_rect.left() + cx).round(),
-            cur_y,
-            1.5,
-            cur_h,
-        ) {
-            let mut cur_paint = Paint::default();
-            cur_paint.set_color(Color::from_rgba8(255, 255, 255, 220));
-            cur_paint.anti_alias = false;
-            canvas.fill_rect(cur_rect, &cur_paint, Transform::identity(), None);
-        }
-    }
-
-    if !text.is_empty() {
-        draw_aligned_text(
-            canvas,
-            text,
-            font_system,
-            swash_cache,
-            label_rect,
-            SETTINGS_LABEL_FONT_SIZE,
-            icon_color,
-            HAlign::Left,
-            (0.0, 0.0),
-            cosmic_text::Weight::BOLD,
-        );
-    }
+    draw_line_edit(
+        canvas, label_rect, text, editing, font_system, swash_cache,
+        SETTINGS_LABEL_FONT_SIZE, icon_color, cosmic_text::Weight::BOLD,
+    );
 
     let hovered_arrow = panel.hovered_arrow
         .filter(|(idx, _)| *idx == index)
         .map(|(_, arrow)| arrow);
     draw_stepper_arrows(canvas, x, y, w, h, icon_color, hovered_arrow);
-}
-
-fn measure_prefix_width(
-    text: &str,
-    upto_byte: usize,
-    font_size: f32,
-    font_system: &mut FontSystem,
-) -> f32 {
-    if upto_byte == 0 || text.is_empty() {
-        return 0.0;
-    }
-
-    let metrics = cosmic_text::Metrics::new(font_size, font_size * 1.2);
-    let mut buffer = cosmic_text::Buffer::new_empty(metrics);
-    buffer.set_size(None, None);
-    buffer.set_text(
-        text,
-        &cosmic_text::Attrs::new().family(cosmic_text::Family::SansSerif),
-        cosmic_text::Shaping::Advanced,
-        None,
-    );
-    buffer.shape_until_scroll(font_system, false);
-
-    for run in buffer.layout_runs() {
-        for glyph in run.glyphs.iter() {
-            if glyph.start >= upto_byte {
-                return glyph.x;
-            }
-        }
-        return run.line_w;
-    }
-    0.0
 }
 
 fn draw_stepper_arrows(
@@ -399,11 +286,11 @@ fn draw_stepper_arrows(
 }
 
 fn stepper_display_text(panel: &SettingsPanel, index: usize, label: &str, unit: &str) -> String {
-    if let Some(edit) = panel.editing.as_ref().filter(|e| e.widget_idx == index) {
+    if let Some(edit) = panel.fields.editing.as_ref().filter(|e| e.key == index) {
         return edit.field.text.clone();
     }
 
-    let value = panel.values.get(&index).map(String::as_str).unwrap_or("");
+    let value = panel.fields.value(index).map(String::as_str).unwrap_or("");
 
     if label.is_empty() {
         format!("{value}{unit}")
@@ -464,8 +351,7 @@ fn draw_toggle(
 ) {
     match visual {
         ToggleVisual::Icon { svg, icon_size } => {
-            draw_item_border(canvas, x, y, w, h, 4.0, is_hovered, is_on);
-
+        draw_item_border(canvas, x, y, w, h, 4.0, DEFAULT_ITEM_BORDER_STROKE, is_hovered, is_on);
             let tint = if is_on {
                 ICON_SELECTED
             } else if is_hovered {
@@ -492,9 +378,9 @@ fn draw_toggle(
                     cosmic_text::Weight::NORMAL,
                 );
             }
-
-            draw_item_border(canvas, box_x, box_y, box_size, box_size, 3.0, is_hovered, is_on);
-
+            
+            draw_item_border(canvas, box_x, box_y, box_size, box_size, 3.0, DEFAULT_ITEM_BORDER_STROKE, is_hovered, is_on);
+            
             if is_on {
                 draw_checkmark(canvas, box_x, box_y, box_size, icon_color);
             }

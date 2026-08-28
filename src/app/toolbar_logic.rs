@@ -7,8 +7,12 @@ use crate::types::UiPanel;
 use crate::types::panel::{sync_panel_rect, sync_panel_hover};
 
 use tiny_skia::Rect;
+use std::sync::atomic::{AtomicUsize, Ordering};
+static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 pub fn update_toolbar(editor_state: &mut EditorState, dirty_mask: &mut u32) {
+    let call_id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    println!("update_toolbar #{}", call_id);
     let old_monitor = editor_state.toolbar.monitor_idx;
     let old_position = editor_state.toolbar.position;
     let old_rect = editor_state.toolbar.rect();
@@ -48,6 +52,9 @@ pub fn update_toolbar(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     }
     if editor_state.toolbar.interferes != hidden {
         editor_state.toolbar.interferes = hidden;
+        layout_changed = true;
+    }
+    if editor_state.toolbar.dirty {
         layout_changed = true;
     }
 

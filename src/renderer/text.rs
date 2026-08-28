@@ -1,5 +1,8 @@
 use cosmic_text::{Attrs, Buffer, FontSystem, Metrics, Shaping, SwashCache, SwashContent};
-use tiny_skia::{Color, Pixmap, PixmapPaint, PremultipliedColorU8, Rect, Transform};
+use tiny_skia::{Color, Paint, Pixmap, PixmapPaint, PremultipliedColorU8, Rect, Transform};
+
+use crate::types::text_field::LineEditState;
+use super::paths::rounded_rect_path;
 
 pub enum HAlign {
     Left,
@@ -113,4 +116,101 @@ pub fn draw_aligned_text(
     let py = rect.top() + (rect.height() - text_h) / 2.0;
 
     draw_text_buffer(canvas, &buffer, font_system, swash_cache, (px, py), color, offset);
+}
+
+// ── common input field stuff ─────────────────────────────────────
+pub fn draw_input_box(canvas: &mut Pixmap, rect: Rect, radius: f32) {
+    let Some(path) = rounded_rect_path(&rect, radius, true, true, true, true) else { return };
+
+    let mut fill_paint = Paint::default();
+    fill_paint.set_color(Color::from_rgba8(255, 255, 255, 18));
+    fill_paint.anti_alias = true;
+    canvas.fill_path(&path, &fill_paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
+}
+
+pub fn measure_text_prefix_width(
+    text: &str,
+    upto_byte: usize,
+    font_size: f32,
+    font_system: &mut FontSystem,
+) -> f32 {
+    if upto_byte == 0 || text.is_empty() {
+        return 0.0;
+    }
+
+    let metrics = Metrics::new(font_size, font_size * 1.2);
+    let mut buffer = Buffer::new_empty(metrics);
+    buffer.set_size(None, None);
+    buffer.set_text(
+        text,
+        &Attrs::new().family(cosmic_text::Family::SansSerif),
+        Shaping::Advanced,
+        None,
+    );
+    buffer.shape_until_scroll(font_system, false);
+
+    for run in buffer.layout_runs() {
+        for glyph in run.glyphs.iter() {
+            if glyph.start >= upto_byte {
+                return glyph.x;
+            }
+        }
+        return run.line_w;
+    }
+    0.0
+}
+
+pub fn draw_text_selection(canvas: &mut Pixmap, rect: Rect, start_x: f32, end_x: f32) {
+    let sel_h = rect.height() * 0.75;
+    let sel_y = rect.top() + (rect.height() - sel_h) / 2.0;
+    let Some(sel_rect) = Rect::from_xywh(rect.left() + start_x, sel_y, (end_x - start_x).max(1.0), sel_h) else {
+        return;
+    };
+
+    let mut paint = Paint::default();
+    paint.set_color(Color::from_rgba8(100, 150, 255, 110));
+    paint.anti_alias = true;
+    canvas.fill_rect(sel_rect, &paint, Transform::identity(), None);
+}
+
+pub fn draw_text_caret(canvas: &mut Pixmap, rect: Rect, cursor_x: f32) {
+    let cur_h = rect.height() * 0.75;
+    let cur_y = rect.top() + (rect.height() - cur_h) / 2.0;
+    let Some(cur_rect) = Rect::from_xywh((rect.left() + cursor_x).round(), cur_y, 1.5, cur_h) else {
+        return;
+    };
+
+    let mut paint = Paint::default();
+    paint.set_color(Color::from_rgba8(255, 255, 255, 220));
+    paint.anti_alias = false;
+    canvas.fill_rect(cur_rect, &paint, Transform::identity(), None);
+}
+
+pub fn draw_line_edit(
+    canvas: &mut Pixmap,
+    rect: Rect,
+    display_text: &str,
+    editing: Option<&LineEditState>,
+    font_system: &mut FontSystem,
+    swash_cache: &mut SwashCache,
+    font_size: f32,
+    text_color: Color,
+    weight: cosmic_text::Weight,
+) {
+    if let Some(field) = editing {
+        let raw_text = &field.text;
+
+        if let Some((start_byte, end_byte)) = field.selection_byte_range() {
+            let sx = measure_text_prefix_width(raw_text, start_byte, font_size, font_system);
+            let ex = measure_text_prefix_width(raw_text, end_byte, font_size, font_system);
+            draw_text_selection(canvas, rect, sx, ex);
+        }
+
+        let cx = measure_text_prefix_width(raw_text, field.cursor_byte(), font_size, font_system);
+        draw_text_caret(canvas, rect, cx);
+    }
+
+    if !display_text.is_empty() {
+        draw_aligned_text(canvas, display_text, font_system, swash_cache, rect, font_size, text_color, HAlign::Left, (0.0, 0.0), weight);
+    }
 }

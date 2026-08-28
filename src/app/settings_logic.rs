@@ -8,17 +8,14 @@ use crate::types::{
     Annotation, AnnotationShape, SettingsSource, SettingsWidget,
     StepperArrow, ToolSettings, UiPanel, SpecialKey, ToggleField, compute_settings_placement, widgets_for_annotation,
     widgets_for_tool,
+    STEPPER_HOLD_FAST_INTERVAL, STEPPER_HOLD_INITIAL_DELAY, STEPPER_HOLD_REPEAT_INTERVAL, STEPPER_HOLD_ACCEL_AFTER,
 };
 use crate::types::panel::{emit_panel_damage, sync_panel_rect, sync_panel_hover};
 use crate::editor::dirty::{mark_dirty, apply_damage_rects};
 
-use std::time::{Duration, Instant};
-
-// TODO should be moved later on to types/ui.rs
-const STEPPER_HOLD_INITIAL_DELAY: Duration = Duration::from_millis(400);
-const STEPPER_HOLD_REPEAT_INTERVAL: Duration = Duration::from_millis(120);
-const STEPPER_HOLD_ACCEL_AFTER: u32 = 8;
-const STEPPER_HOLD_FAST_INTERVAL: Duration = Duration::from_millis(40);
+use std::time::Instant;
+use std::sync::atomic::{AtomicUsize, Ordering};
+static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 pub fn active_annotation_idx(editor_state: &EditorState) -> Option<usize> {
     if editor_state.selected_tool == Tool::Pick || editor_state.selected_tool == Tool::Text {
@@ -29,6 +26,8 @@ pub fn active_annotation_idx(editor_state: &EditorState) -> Option<usize> {
 }
 
 pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u32) {
+    let call_id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    println!("settings_panel update #{}", call_id);
     let ann_idx = active_annotation_idx(editor_state);
     let selected_ann = ann_idx.and_then(|i| editor_state.annotations.get(i));
 
@@ -47,7 +46,7 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
         editor_state.settings_panel.widgets = new_widgets;
         editor_state.settings_panel.active_source = Some(new_source);
         editor_state.settings_panel.size.0 = editor_state.settings_panel.width();
-        editor_state.settings_panel.values.clear();
+        editor_state.settings_panel.fields.values.clear();
     }
 
     let widgets = editor_state.settings_panel.widgets;
@@ -156,6 +155,7 @@ pub fn tick_stepper_arrow_hold(editor_state: &mut EditorState, dirty_mask: &mut 
     }
 
     apply_stepper_arrow_step(editor_state, hold.widget_idx, hold.arrow, dirty_mask);
+    update_settings_panel(editor_state, dirty_mask);
 
     if let Some(hold) = editor_state.settings_panel.arrow_held.as_mut() {
         hold.repeat_count += 1;
@@ -169,6 +169,10 @@ pub fn handle_settings_text_input(editor_state: &mut EditorState, ch: char, dirt
 
     if editor_state.settings_panel.insert_char(ch) {
         emit_panel_damage(rect, monitor_idx, &mut editor_state.damage_rects, dirty_mask);
+
+        if let Some(widget_idx) = editor_state.settings_panel.fields.editing.as_ref().map(|e| e.key) {
+            live_apply_stepper_field(editor_state, widget_idx, dirty_mask);
+        }
     }
 }
 
@@ -183,6 +187,10 @@ pub fn handle_settings_key_press(editor_state: &mut EditorState, key: SpecialKey
 
     if changed {
         emit_panel_damage(rect, monitor_idx, &mut editor_state.damage_rects, dirty_mask);
+
+        if let Some(widget_idx) = editor_state.settings_panel.fields.editing.as_ref().map(|e| e.key) {
+            live_apply_stepper_field(editor_state, widget_idx, dirty_mask);
+        }
     }
 
     if commit {
@@ -202,18 +210,10 @@ pub fn commit_stepper_text_edit(editor_state: &mut EditorState, dirty_mask: &mut
         emit_panel_damage(rect, monitor_idx, &mut editor_state.damage_rects, dirty_mask);
     }
 
-    let Some(SettingsWidget::Stepper { min, max, .. }) =
-        editor_state.settings_panel.widgets.get(widget_idx)
-    else {
-        return;
-    };
-    let (min, max) = (*min, *max);
-
-    let Ok(parsed) = text.parse::<f32>() else { return };
-    apply_stepper_field(editor_state, parsed.clamp(min, max), dirty_mask);
+    try_apply_stepper_text(editor_state, widget_idx, &text, dirty_mask);
 }
 
-fn commit_settings_change(
+pub fn commit_settings_change(
     editor_state: &mut EditorState,
     changed: bool,
     apply_to_tool: impl FnOnce(&mut ToolSettings),
@@ -231,10 +231,6 @@ fn commit_settings_change(
         rebuild_annotation(editor_state, idx);
     }
 
-    // NB: unlike the sync helpers above, this marks the monitor dirty even
-    // when the panel currently has no rect (e.g. invisible). Left exactly
-    // as it was before this refactor - might be worth checking whether
-    // that's intentional.
     editor_state.settings_panel.dirty = true;
     let monitor_idx = editor_state.settings_panel.monitor_idx;
     if let Some(rect) = editor_state.settings_panel.rect() {
@@ -243,6 +239,35 @@ fn commit_settings_change(
     mark_dirty(dirty_mask, monitor_idx);
 
     apply_damage_rects(editor_state, dirty_mask);
+}
+
+fn try_apply_stepper_text(
+    editor_state: &mut EditorState,
+    widget_idx: usize,
+    text: &str,
+    dirty_mask: &mut u32,
+) -> bool {
+    let Some(SettingsWidget::Stepper { min, max, .. }) =
+        editor_state.settings_panel.widgets.get(widget_idx)
+    else {
+        return false;
+    };
+    let (min, max) = (*min, *max);
+
+    let Ok(parsed) = text.parse::<f32>() else { return false };
+    apply_stepper_field(editor_state, parsed.clamp(min, max), dirty_mask);
+    true
+}
+
+fn live_apply_stepper_field(editor_state: &mut EditorState, widget_idx: usize, dirty_mask: &mut u32) {
+    let Some(text) = editor_state.settings_panel.fields.editing.as_ref()
+        .filter(|e| e.key == widget_idx)
+        .map(|e| e.field.text.clone())
+    else {
+        return;
+    };
+
+    try_apply_stepper_text(editor_state, widget_idx, &text, dirty_mask);
 }
 
 fn apply_stepper_field(editor_state: &mut EditorState, new_value: f32, dirty_mask: &mut u32) {

@@ -2,6 +2,7 @@ mod init;
 mod input;
 mod settings_logic;
 mod toolbar_logic;
+mod color_popover;
 
 use crate::backend::{initialize_capture, initialize_clipboard, initialize_overlay};
 use crate::editor::EditorState;
@@ -13,7 +14,7 @@ use crate::tools::selection::{global_selection_to_local, selection_edges_for_mon
 use crate::types::toolbar::Toolbar;
 use crate::types::{
     DamageRect, UiPanel, OverlayEvent, Placement, PointerState, SelectionEdges,
-    SelectionState, SettingsPanel, ToolSettings,
+    SelectionState, SettingsPanel, ToolSettings, ColorPickerPopover
 };
 use crate::types::click::DoubleClickTracker;
 use crate::utils::{encode_png, get_full_workspace_rect, get_overlapping_monitors, save_to_file};
@@ -79,6 +80,7 @@ pub async fn make_screenshot(
         toolbar: Toolbar::new(),
         settings_panel: SettingsPanel::new(),
         tool_settings: ToolSettings::default(),
+        color_popover: ColorPickerPopover::new(),
         icons_cache,
         annotations: Vec::new(),
         pending: None,
@@ -120,9 +122,9 @@ pub async fn make_screenshot(
     let _save_as_file = true;
 
     loop {
-        let toolbar_animating = editor_state.toolbar.is_animating();
+        let is_animating =  editor_state.toolbar.is_animating() || editor_state.color_popover.is_animating();
         let stepper_holding = editor_state.settings_panel.arrow_held.is_some();
-        let timeout = if toolbar_animating || stepper_holding { 16 } else { -1 };
+        let timeout = if is_animating || stepper_holding { 16 } else { -1 };
 
         let ev = overlay.next_event(timeout)?;
         match ev {
@@ -158,9 +160,14 @@ pub async fn make_screenshot(
         }
 
         tick_panel_animation(&mut editor_state.toolbar, &mut editor_state.damage_rects, &mut dirty_mask);
+        tick_panel_animation(&mut editor_state.color_popover, &mut editor_state.damage_rects, &mut dirty_mask);
         settings_logic::tick_stepper_arrow_hold(&mut editor_state, &mut dirty_mask);
-        settings_logic::update_settings_panel(&mut editor_state, &mut dirty_mask);
-
+        
+        if editor_state.toolbar.is_animating() {
+            settings_logic::update_settings_panel(&mut editor_state, &mut dirty_mask);
+            color_popover::update_color_popover(&mut editor_state, &mut dirty_mask);
+        }
+        
         if dirty_mask != 0 {
             let selection_dirty = editor_state.selection.zone != editor_state.selection.prev_zone;
 
@@ -242,6 +249,13 @@ pub async fn make_screenshot(
                         None
                     };
 
+                    let color_picker = if i==editor_state.color_popover.monitor_idx && editor_state.color_popover.dirty 
+                    && editor_state.color_popover.open {
+                        Some(&mut editor_state.color_popover)
+                    } else {
+                        None
+                    };
+
                     let offset = (
                         editor_state.placements[i].position.0 as f32,
                         editor_state.placements[i].position.1 as f32,
@@ -259,11 +273,12 @@ pub async fn make_screenshot(
                         magnifier: editor_state.magnifier.as_ref(),
                         is_mag_monitor,
                         toolbar,
+                        settings_panel,
+                        color_picker,
                         icons_cache: &editor_state.icons_cache,
                         annotations_layer: &editor_state.annotations_layer[i],
                         offset,
                         annotations_layer_empty: false,
-                        settings_panel,
                         font_system: Some(&mut editor_state.font_system),
                         swash_cache: Some(&mut editor_state.swash_cache),
                     });
@@ -280,6 +295,7 @@ pub async fn make_screenshot(
             editor_state.annotations_dirty = false;
             editor_state.damage_rects.clear();
             editor_state.settings_panel.dirty = false;
+            editor_state.color_popover.dirty = false;
         }
     }
 

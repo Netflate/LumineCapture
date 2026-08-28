@@ -11,6 +11,7 @@ pub mod panel;
 pub mod text_field;
 pub mod tool_settings;
 pub mod click;
+pub mod color_popover; 
 
 pub use annotations::*;
 pub use capture::*;
@@ -25,6 +26,7 @@ pub use panel::*;
 pub use text_field::*;
 pub use tool_settings::*;
 pub use click::*;
+pub use color_popover::*;
 
 use tiny_skia::Rect;
 #[derive(Clone, Copy, Debug)]

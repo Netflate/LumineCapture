@@ -184,6 +184,7 @@ pub fn initial_paint(
                     is_mag_monitor: false,
                     toolbar: None,
                     settings_panel: None,
+                    color_picker: None,
                     icons_cache: icons_cache_ref,
                     offset: (0.0, 0.0),
                     annotations_layer: ann_i,
