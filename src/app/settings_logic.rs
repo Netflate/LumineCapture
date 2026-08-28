@@ -14,8 +14,6 @@ use crate::types::panel::{emit_panel_damage, sync_panel_rect, sync_panel_hover};
 use crate::editor::dirty::{mark_dirty, apply_damage_rects};
 
 use std::time::Instant;
-use std::sync::atomic::{AtomicUsize, Ordering};
-static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 pub fn active_annotation_idx(editor_state: &EditorState) -> Option<usize> {
     if editor_state.selected_tool == Tool::Pick || editor_state.selected_tool == Tool::Text {
@@ -26,8 +24,6 @@ pub fn active_annotation_idx(editor_state: &EditorState) -> Option<usize> {
 }
 
 pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u32) {
-    let call_id = COUNTER.fetch_add(1, Ordering::Relaxed);
-    println!("settings_panel update #{}", call_id);
     let ann_idx = active_annotation_idx(editor_state);
     let selected_ann = ann_idx.and_then(|i| editor_state.annotations.get(i));
 
