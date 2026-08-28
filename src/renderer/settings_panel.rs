@@ -147,6 +147,7 @@ fn draw_settings_content(
                         HAlign::Center,
                         (0.0, 0.0),
                         cosmic_text::Weight::NORMAL,
+                        cosmic_text::Style::Normal,
                     );
                 }
             }
@@ -375,7 +376,7 @@ fn draw_toggle(
                 draw_aligned_text(
                     canvas, label, font_system, swash_cache, label_rect,
                     SETTINGS_LABEL_FONT_SIZE, icon_color, HAlign::Left, (0.0, 0.0),
-                    cosmic_text::Weight::NORMAL,
+                    cosmic_text::Weight::NORMAL, cosmic_text::Style::Normal
                 );
             }
             

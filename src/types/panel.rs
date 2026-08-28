@@ -16,7 +16,7 @@ const fn unit(v: u8) -> f32 {
 }
 
 pub const PANEL_COLOR: tiny_skia::Color = unsafe {
-    tiny_skia::Color::from_rgba_unchecked(unit(13), unit(13), unit(23), unit(250))
+    tiny_skia::Color::from_rgba_unchecked(unit(17), unit(17), unit(27), unit(250))
 };
 pub const SEPARATOR_COLOR: tiny_skia::Color = unsafe {
     tiny_skia::Color::from_rgba_unchecked(unit(255), unit(255), unit(255), unit(255))

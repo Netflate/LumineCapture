@@ -26,16 +26,15 @@ pub const HUE_SLIDER_WIDTH: f32 = 17.0;
 pub const HUE_SLIDER_RADIUS: f32 = SV_SQUARE_RADIUS - 5.0;
 pub const HUE_SLIDER_HEIGHT: f32 = SV_SQUARE_SIZE; 
 
-// ── recent colors ───────────────────────────────────────
-pub const RECENT_LABEL: &str = "Recent Colors";
+// ── recent colors ──────────────────────────────────────
+pub const RECENT_LABEL: &str = "── Palette & Values ───────────";
 pub const RECENT_LABEL_GAP: f32 = 10.0;
 pub const RECENT_LABEL_HEIGHT: f32 = 14.0;
-pub const RECENT_LABEL_FONT_SIZE: f32 = 12.0;
+pub const RECENT_LABEL_FONT_SIZE: f32 = 13.0;
 pub const RECENT_ROW_GAP: f32 = 6.0;
 pub const SWATCH_DIAMETER: f32 = 22.0;
 pub const SWATCH_RADIUS: f32 = SWATCH_DIAMETER / 2.0;
 pub const SWATCH_GAP: f32 = 8.0;
-pub const SWATCH_BORDER: f32 = 1.5;
 pub const MAX_RECENT_COLORS: usize = 6;
 
 // ── hex / rgba input fields ──────────────────────────────

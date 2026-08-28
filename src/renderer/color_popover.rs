@@ -5,7 +5,7 @@ use crate::types::color_popover::{
     FIELD_FONT_SIZE, FIELD_HEIGHT, FIELD_LABEL_WIDTH, HUE_SLIDER_GAP, HUE_SLIDER_WIDTH,
     HUE_SLIDER_HEIGHT, HUE_SLIDER_RADIUS, MARKER_OUTLINE, MARKER_RADIUS, MARKER_STROKE,
     RECENT_LABEL, RECENT_LABEL_FONT_SIZE, RGBA_FIELDS, RGBA_LABEL_WIDTH, SV_SQUARE_SIZE,
-    SV_SQUARE_RADIUS, SWATCH_BORDER, SWATCH_RADIUS, COLORPICKER_RADIUS,
+    SV_SQUARE_RADIUS, SWATCH_RADIUS, COLORPICKER_RADIUS,
 };
 use crate::types::panel::{UiPanel, PANEL_COLOR, ICON_COLOR, DEFAULT_ITEM_BORDER_STROKE};
 use super::paths::{rounded_rect_path, draw_panel_border, draw_item_border};
@@ -94,7 +94,7 @@ fn draw_color_popover_content(
     let (w, h) = color_popover.size;
     let Some(rect) = Rect::from_xywh(0.0, 0.0, w, h) else { return };
 
-    let Some(path) = rounded_rect_path(&rect, 8.0, true, true, true, true) else {
+    let Some(path) = rounded_rect_path(&rect, COLORPICKER_RADIUS, true, true, true, true) else {
         return;
     };
 
@@ -302,53 +302,30 @@ fn draw_recent_colors(
     let label_color = Color::from_rgba8(200, 200, 205, 160);
 
     draw_aligned_text(
-        canvas,
-        RECENT_LABEL,
-        font_system,
-        swash_cache,
-        recent_label_rect(origin),
-        RECENT_LABEL_FONT_SIZE,
-        label_color,
-        HAlign::Left,
-        (0.0, 0.0),
-        Weight::NORMAL,
+        canvas, RECENT_LABEL, font_system, swash_cache,
+        recent_label_rect(origin), RECENT_LABEL_FONT_SIZE, label_color,
+        HAlign::Left, (0.0, 0.0), Weight::NORMAL, 
+        cosmic_text::Style::Oblique
     );
 
     for (idx, color) in color_popover.palette().iter().enumerate() {
         let (cx, cy) = swatch_center(origin, idx);
-        draw_swatch(canvas, cx, cy, *color);
-
         let is_hovered = matches!(color_popover.hovered, Some(ColorPopoverElement::Swatch(i)) if i == idx);
-        draw_item_border(
-            canvas,
-            cx - SWATCH_RADIUS, cy - SWATCH_RADIUS,
-            SWATCH_RADIUS * 2.0, SWATCH_RADIUS * 2.0,
-            SWATCH_RADIUS, COLOR_POPOVER_ITEM_BORDER, is_hovered, false,
-        );
+        draw_swatch(canvas, cx, cy, *color, is_hovered);
     }
 }
 
-fn draw_swatch(pm: &mut Pixmap, cx: f32, cy: f32, color: Color) {
-    let fill_radius = SWATCH_RADIUS - SWATCH_BORDER;
+fn draw_swatch(pm: &mut Pixmap, cx: f32, cy: f32, color: Color, is_hovered: bool) {
+    let radius = if is_hovered { SWATCH_RADIUS + 3.0 } else { SWATCH_RADIUS };
 
     let mut pb = PathBuilder::new();
-    pb.push_circle(cx, cy, fill_radius);
+    pb.push_circle(cx, cy, radius);
     let Some(fill) = pb.finish() else { return };
 
     let mut paint = Paint::default();
     paint.set_color(color);
     paint.anti_alias = true;
     pm.fill_path(&fill, &paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
-
-    let mut border_pb = PathBuilder::new();
-    border_pb.push_circle(cx, cy, fill_radius);
-    if let Some(border_path) = border_pb.finish() {
-        let mut border_paint = Paint::default();
-        border_paint.set_color(Color::from_rgba8(0, 0, 0, 110)); 
-        border_paint.anti_alias = true;
-        let stroke = Stroke { width: SWATCH_BORDER, ..Default::default() };
-        pm.stroke_path(&border_path, &border_paint, &stroke, Transform::identity(), None);
-    }
 }
 
 fn draw_color_fields(
@@ -365,6 +342,7 @@ fn draw_color_fields(
     draw_aligned_text(
         canvas, "Hex", font_system, swash_cache, hex_label_rect,
         FIELD_FONT_SIZE, label_color, HAlign::Left, (0.0, 0.0), Weight::NORMAL,
+        cosmic_text::Style::Normal, 
     );
 
     let hex_rect = hex_field_geom(origin);
@@ -376,6 +354,7 @@ fn draw_color_fields(
         draw_aligned_text(
             canvas, field_label(field), font_system, swash_cache, label_rect,
             FIELD_FONT_SIZE, label_color, HAlign::Left, (0.0, 0.0), Weight::NORMAL,
+            cosmic_text::Style::Normal, 
         );
 
         let field_rect = rgba_field_geom(origin, idx);

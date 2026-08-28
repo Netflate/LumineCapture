@@ -548,6 +548,7 @@ fn draw_numerated_arrow(
         &number.to_string(),
         font_size,
         cosmic_text::Weight::BOLD,
+        cosmic_text::Style::Normal,
     );
 
     let text_pos = (

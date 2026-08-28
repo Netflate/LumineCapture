@@ -72,12 +72,18 @@ pub fn shape_single_line(
     text: &str,
     font_size: f32,
     weight: cosmic_text::Weight,
+    style: cosmic_text::Style, 
 ) -> (Buffer, f32, f32) {
     let line_height = font_size * 1.1;
     let mut buffer = Buffer::new(font_system, Metrics::new(font_size, line_height));
 
     buffer.set_size(None, None);
-    buffer.set_text(text, &Attrs::new().weight(weight), Shaping::Advanced, None);
+    buffer.set_text(
+        text,
+        &Attrs::new().weight(weight).style(style),   
+        Shaping::Advanced,
+        None,
+    );
     buffer.shape_until_scroll(font_system, false);
 
     let mut text_width: f32 = 0.0;
@@ -100,14 +106,15 @@ pub fn draw_aligned_text(
     color: Color,
     align: HAlign,
     offset: (f32, f32),
-    weight: cosmic_text::Weight, 
+    weight: cosmic_text::Weight,
+    style: cosmic_text::Style,        // ← новый параметр
 ) {
     if text.is_empty() {
         return;
     }
 
     let (buffer, text_w, text_h) =
-        shape_single_line(font_system, text, font_size, weight); 
+        shape_single_line(font_system, text, font_size, weight, style);
 
     let px = match align {
         HAlign::Left => rect.left(),
@@ -211,6 +218,6 @@ pub fn draw_line_edit(
     }
 
     if !display_text.is_empty() {
-        draw_aligned_text(canvas, display_text, font_system, swash_cache, rect, font_size, text_color, HAlign::Left, (0.0, 0.0), weight);
+        draw_aligned_text(canvas, display_text, font_system, swash_cache, rect, font_size, text_color, HAlign::Left, (0.0, 0.0), weight, cosmic_text::Style::Normal);
     }
 }

@@ -114,9 +114,9 @@ pub fn panel_border_color(bg: Color) -> Color {
     let luminance = 0.299 * r + 0.587 * g + 0.114 * b;
 
     if luminance > 0.5 {
-        Color::from_rgba8(0, 0, 0, 40)
+        Color::from_rgba8(0, 0, 0, 55)
     } else {
-        Color::from_rgba8(255, 255, 255, 40)
+        Color::from_rgba8(255, 255, 255, 55)
     }
 }
 
