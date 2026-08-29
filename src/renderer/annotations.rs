@@ -2,7 +2,7 @@ use super::paths::{normalized_rect, oval_path};
 use super::text::{draw_text_buffer, shape_single_line};
 use crate::tools::text::render_text_annotation;
 use crate::types::annotations::{
-    Annotation, AnnotationShape, HANDLE_PAD, SHADOW_COLOR, SHADOW_WIDTH_BONUS,
+    Annotation, AnnotationShape, HANDLE_PAD, SHADOW_COLOR, SHADOW_OFFSET, SHADOW_LAYERS, SPREAD_PER_LAYER
 };
 
 use cosmic_text::{Editor, FontSystem, SwashCache};
@@ -10,6 +10,63 @@ use std::collections::HashMap;
 use tiny_skia::{
     Color, FillRule, LineCap, LineJoin, Paint, PathBuilder, Pixmap, Rect, Stroke, Transform,
 };
+
+/// Scales the shadow's own fixed alpha by the annotation color's alpha
+fn shadow_alpha_for(color: Color) -> u8 {
+    (SHADOW_COLOR.3 as f32 * color.alpha()) as u8
+}
+
+fn shadow_color_for(color: Color) -> Color {
+    Color::from_rgba8(
+        SHADOW_COLOR.0,
+        SHADOW_COLOR.1,
+        SHADOW_COLOR.2,
+        shadow_alpha_for(color),
+    )
+}
+
+/// Builds the "real" transform 
+fn transforms_for(offset: (f32, f32)) -> (Transform, Transform) {
+    let transform = Transform::from_translate(-offset.0, -offset.1);
+    let shadow_transform =
+        Transform::from_translate(-offset.0 + SHADOW_OFFSET.0, -offset.1 + SHADOW_OFFSET.1);
+    (transform, shadow_transform)
+}
+
+fn stroke_segment_with_shadow(
+    canvas: &mut Pixmap,
+    path: &tiny_skia::Path,
+    paint: &Paint,
+    stroke: &Stroke,
+    base_shadow_color: Color,
+    transform: Transform,
+    shadow_transform: Transform,
+) {
+    for i in (1..=SHADOW_LAYERS).rev() {
+        let mut layer_stroke = stroke.clone();
+
+        let extra_width = i as f32 * SPREAD_PER_LAYER;
+        layer_stroke.width = stroke.width + extra_width;
+
+        let alpha_factor = 1.0 / (1.0 + (i as f32 * 1.2));
+        let current_alpha = (base_shadow_color.alpha() * alpha_factor).clamp(0.0, 1.0);
+
+        if let Some(layer_color) = Color::from_rgba(
+            base_shadow_color.red(),
+            base_shadow_color.green(),
+            base_shadow_color.blue(),
+            current_alpha,
+        ) {
+            let mut layer_paint = Paint::default();
+            layer_paint.set_color(layer_color);
+            layer_paint.anti_alias = true;
+
+            canvas.stroke_path(path, &layer_paint, &layer_stroke, shadow_transform, None);
+        }
+    }
+
+    canvas.stroke_path(path, paint, stroke, transform, None);
+}
 
 pub fn draw_annotation(
     canvas: &mut Pixmap,
@@ -81,12 +138,13 @@ pub fn draw_annotation(
 
 fn draw_text_box(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32)) {
     let mut paint = Paint::default(); paint.set_color(Color::WHITE); paint.anti_alias = true;
-    let mut shadow_paint = Paint::default(); shadow_paint.set_color(Color::from_rgba8(SHADOW_COLOR.0, SHADOW_COLOR.1, SHADOW_COLOR.2, SHADOW_COLOR.3)); shadow_paint.anti_alias = true;
-    
     let mut stroke = Stroke::default(); stroke.width = 3.0; stroke.line_cap = tiny_skia::LineCap::Round; stroke.line_join = tiny_skia::LineJoin::Round;
-    let mut shadow_stroke = stroke.clone(); shadow_stroke.width = 3.0 + SHADOW_WIDTH_BONUS;
 
+    let base_shadow_color = Color::from_rgba8(SHADOW_COLOR.0, SHADOW_COLOR.1, SHADOW_COLOR.2, SHADOW_COLOR.3);
+
+    // halo instead of real shadow
     let transform = Transform::from_translate(-offset.0, -offset.1);
+    let shadow_transform = transform;
     let pad = (HANDLE_PAD / 2.0) as f32;
     let (l, t, ri, b) = (bbox.left() - pad, bbox.top() - pad, bbox.right() + pad, bbox.bottom() + pad);
 
@@ -97,15 +155,17 @@ fn draw_text_box(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32)) {
     let k = 0.5523_f32;
 
     let mut pb = PathBuilder::new();
-    
+
     pb.move_to(l, t + corner_h); pb.line_to(l, t + r); pb.cubic_to(l, t + r * k, l + r * k, t, l + r, t); pb.line_to(l + corner_w, t);
     pb.move_to(ri - corner_w, t); pb.line_to(ri - r, t); pb.cubic_to(ri - r * k, t, ri, t + r * k, ri, t + r); pb.line_to(ri, t + corner_h);
     pb.move_to(ri, b - corner_h); pb.line_to(ri, b - r); pb.cubic_to(ri, b - r * k, ri - r * k, b, ri - r, b); pb.line_to(ri - corner_w, b);
     pb.move_to(l + corner_w, b); pb.line_to(l + r, b); pb.cubic_to(l + r * k, b, l, b - r * k, l, b - r); pb.line_to(l, b - corner_h);
 
     if let Some(path) = pb.finish() {
-        canvas.stroke_path(&path, &shadow_paint, &shadow_stroke, transform, None);
-        canvas.stroke_path(&path, &paint, &stroke, transform, None);
+        stroke_segment_with_shadow(
+            canvas, &path, &paint, &stroke, base_shadow_color,
+            transform, shadow_transform,
+        );
     }
 }
 
@@ -117,8 +177,6 @@ fn draw_arrow(
     stroke_width: f32,
     offset: (f32, f32),
 ) {
-    let transform = Transform::from_translate(-offset.0, -offset.1);
-
     let dx = end.0 - start.0;
     let dy = end.1 - start.1;
     let len = (dx * dx + dy * dy).sqrt();
@@ -162,7 +220,7 @@ fn draw_arrow(
             stroke_width,
             LineCap::Round,
             LineJoin::Round,
-            transform,
+            offset,
         );
     }
 }
@@ -174,7 +232,6 @@ fn draw_rect(
     stroke_width: f32,
     offset: (f32, f32),
 ) {
-    let transform = Transform::from_translate(-offset.0, -offset.1);
     let path = PathBuilder::from_rect(*rect);
     stroke_with_shadow(
         canvas,
@@ -183,7 +240,7 @@ fn draw_rect(
         stroke_width,
         LineCap::Butt,
         LineJoin::Miter,
-        transform,
+        offset,
     );
 }
 
@@ -194,8 +251,6 @@ fn draw_circle(
     stroke_width: f32,
     offset: (f32, f32),
 ) {
-    let transform = Transform::from_translate(-offset.0, -offset.1);
-
     let cx = (rect.left() + rect.right()) / 2.0;
     let cy = (rect.top() + rect.bottom()) / 2.0;
     let rx = rect.width() / 2.0;
@@ -209,7 +264,7 @@ fn draw_circle(
             stroke_width,
             LineCap::Butt,
             LineJoin::Round,
-            transform,
+            offset,
         );
     }
 }
@@ -222,8 +277,6 @@ fn draw_line(
     stroke_width: f32,
     offset: (f32, f32),
 ) {
-    let transform = Transform::from_translate(-offset.0, -offset.1);
-
     let mut pb = PathBuilder::new();
     pb.move_to(start.0, start.1);
     pb.line_to(end.0, end.1);
@@ -236,7 +289,7 @@ fn draw_line(
             stroke_width,
             LineCap::Round,
             LineJoin::Round,
-            transform,
+            offset,
         );
     }
 }
@@ -251,7 +304,6 @@ fn draw_pen(
     if points.len() < 2 {
         return;
     }
-    let transform = Transform::from_translate(-offset.0, -offset.1);
 
     let mut pb = PathBuilder::new();
     pb.move_to(points[0].0, points[0].1);
@@ -277,7 +329,7 @@ fn draw_pen(
             stroke_width,
             LineCap::Round,
             LineJoin::Round,
-            transform,
+            offset,
         );
     }
 }
@@ -287,26 +339,21 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
     paint.set_color(Color::WHITE);
     paint.anti_alias = true;
 
-    let mut shadow_paint = Paint::default();
-    shadow_paint.set_color(Color::from_rgba8(
-        SHADOW_COLOR.0,
-        SHADOW_COLOR.1,
-        SHADOW_COLOR.2,
-        SHADOW_COLOR.3,
-    ));
-    shadow_paint.anti_alias = true;
-
     let mut stroke = Stroke::default();
     stroke.width = 3.0;
     stroke.line_cap = tiny_skia::LineCap::Round;
     stroke.line_join = tiny_skia::LineJoin::Round;
 
-    let mut shadow_stroke = Stroke::default();
-    shadow_stroke.width = 3.0 + SHADOW_WIDTH_BONUS;
-    shadow_stroke.line_cap = tiny_skia::LineCap::Round;
-    shadow_stroke.line_join = tiny_skia::LineJoin::Round;
+    let base_shadow_color = Color::from_rgba8(
+        SHADOW_COLOR.0,
+        SHADOW_COLOR.1,
+        SHADOW_COLOR.2,
+        SHADOW_COLOR.3,
+    );
 
+    // Eight small, disjoint segments — halo (no offset) instead of a drop shadow.
     let transform = Transform::from_translate(-offset.0, -offset.1);
+    let shadow_transform = transform;
 
     let out_pad = (HANDLE_PAD / 2.0) as f32;
 
@@ -331,16 +378,22 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
     let r = 4.0_f32.min(corner_w * 0.5).min(corner_h * 0.5);
     let k = 0.5523_f32;
 
+    let mut draw_segment = |pb: PathBuilder| {
+        if let Some(path) = pb.finish() {
+            stroke_segment_with_shadow(
+                canvas, &path, &paint, &stroke, base_shadow_color,
+                transform, shadow_transform,
+            );
+        }
+    };
+
     // Top-Left
     let mut pb = PathBuilder::new();
     pb.move_to(l, t + corner_h);
     pb.line_to(l, t + r);
     pb.cubic_to(l, t + r * k, l + r * k, t, l + r, t);
     pb.line_to(l + corner_w, t);
-    if let Some(path) = pb.finish() {
-        canvas.stroke_path(&path, &shadow_paint, &shadow_stroke, transform, None);
-        canvas.stroke_path(&path, &paint, &stroke, transform, None);
-    }
+    draw_segment(pb);
 
     // Top-Right
     let mut pb = PathBuilder::new();
@@ -348,10 +401,7 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
     pb.line_to(ri - r, t);
     pb.cubic_to(ri - r * k, t, ri, t + r * k, ri, t + r);
     pb.line_to(ri, t + corner_h);
-    if let Some(path) = pb.finish() {
-        canvas.stroke_path(&path, &shadow_paint, &shadow_stroke, transform, None);
-        canvas.stroke_path(&path, &paint, &stroke, transform, None);
-    }
+    draw_segment(pb);
 
     // Bottom-Right
     let mut pb = PathBuilder::new();
@@ -359,10 +409,7 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
     pb.line_to(ri, b - r);
     pb.cubic_to(ri, b - r * k, ri - r * k, b, ri - r, b);
     pb.line_to(ri - corner_w, b);
-    if let Some(path) = pb.finish() {
-        canvas.stroke_path(&path, &shadow_paint, &shadow_stroke, transform, None);
-        canvas.stroke_path(&path, &paint, &stroke, transform, None);
-    }
+    draw_segment(pb);
 
     // Bottom-Left
     let mut pb = PathBuilder::new();
@@ -370,46 +417,31 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
     pb.line_to(l + r, b);
     pb.cubic_to(l + r * k, b, l, b - r * k, l, b - r);
     pb.line_to(l, b - corner_h);
-    if let Some(path) = pb.finish() {
-        canvas.stroke_path(&path, &shadow_paint, &shadow_stroke, transform, None);
-        canvas.stroke_path(&path, &paint, &stroke, transform, None);
-    }
+    draw_segment(pb);
 
     // Top middle
     let mut pb = PathBuilder::new();
     pb.move_to(mid_x - mid_hw / 2.0, t);
     pb.line_to(mid_x + mid_hw / 2.0, t);
-    if let Some(path) = pb.finish() {
-        canvas.stroke_path(&path, &shadow_paint, &shadow_stroke, transform, None);
-        canvas.stroke_path(&path, &paint, &stroke, transform, None);
-    }
+    draw_segment(pb);
 
     // Bottom middle
     let mut pb = PathBuilder::new();
     pb.move_to(mid_x - mid_hw / 2.0, b);
     pb.line_to(mid_x + mid_hw / 2.0, b);
-    if let Some(path) = pb.finish() {
-        canvas.stroke_path(&path, &shadow_paint, &shadow_stroke, transform, None);
-        canvas.stroke_path(&path, &paint, &stroke, transform, None);
-    }
+    draw_segment(pb);
 
     // Left middle
     let mut pb = PathBuilder::new();
     pb.move_to(l, mid_y - mid_hh / 2.0);
     pb.line_to(l, mid_y + mid_hh / 2.0);
-    if let Some(path) = pb.finish() {
-        canvas.stroke_path(&path, &shadow_paint, &shadow_stroke, transform, None);
-        canvas.stroke_path(&path, &paint, &stroke, transform, None);
-    }
+    draw_segment(pb);
 
     // Right middle
     let mut pb = PathBuilder::new();
     pb.move_to(ri, mid_y - mid_hh / 2.0);
     pb.line_to(ri, mid_y + mid_hh / 2.0);
-    if let Some(path) = pb.finish() {
-        canvas.stroke_path(&path, &shadow_paint, &shadow_stroke, transform, None);
-        canvas.stroke_path(&path, &paint, &stroke, transform, None);
-    }
+    draw_segment(pb);
 }
 
 fn stroke_with_shadow(
@@ -419,23 +451,9 @@ fn stroke_with_shadow(
     stroke_width: f32,
     line_cap: LineCap,
     line_join: LineJoin,
-    transform: Transform,
+    offset: (f32, f32),
 ) {
-    let mut shadow_paint = Paint::default();
-    shadow_paint.set_color(Color::from_rgba8(
-        SHADOW_COLOR.0,
-        SHADOW_COLOR.1,
-        SHADOW_COLOR.2,
-        SHADOW_COLOR.3,
-    ));
-    shadow_paint.anti_alias = true;
-
-    let mut shadow_stroke = Stroke::default();
-    shadow_stroke.width = stroke_width + SHADOW_WIDTH_BONUS;
-    shadow_stroke.line_cap = line_cap;
-    shadow_stroke.line_join = line_join;
-
-    canvas.stroke_path(path, &shadow_paint, &shadow_stroke, transform, None);
+    let (transform, shadow_transform) = transforms_for(offset);
 
     let mut paint = Paint::default();
     paint.set_color(color);
@@ -446,7 +464,12 @@ fn stroke_with_shadow(
     stroke.line_cap = line_cap;
     stroke.line_join = line_join;
 
-    canvas.stroke_path(path, &paint, &stroke, transform, None);
+    let base_shadow_color = shadow_color_for(color);
+
+    stroke_segment_with_shadow(
+        canvas, path, &paint, &stroke, base_shadow_color,
+        transform, shadow_transform,
+    );
 }
 
 fn contrasting_text_color(circle_color: Color) -> Color {
@@ -473,12 +496,9 @@ fn draw_numerated_arrow(
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
 ) {
-    const SHADOW_OFFSET: (f32, f32) = (0.0, 3.0);
     const CIRCLE_RADIUS_RATIO: f32 = 3.0;
 
-    let transform = Transform::from_translate(-offset.0, -offset.1);
-    let shadow_transform =
-        Transform::from_translate(-offset.0 + SHADOW_OFFSET.0, -offset.1 + SHADOW_OFFSET.1);
+    let (transform, shadow_transform) = transforms_for(offset);
 
     let circle_radius = stroke_width * CIRCLE_RADIUS_RATIO;
 
@@ -491,12 +511,7 @@ fn draw_numerated_arrow(
     fill_paint.anti_alias = true;
 
     let mut shadow_paint = Paint::default();
-    shadow_paint.set_color(Color::from_rgba8(
-        SHADOW_COLOR.0,
-        SHADOW_COLOR.1,
-        SHADOW_COLOR.2,
-        SHADOW_COLOR.3,
-    ));
+    shadow_paint.set_color(shadow_color_for(color));
     shadow_paint.anti_alias = true;
 
     if len > 2.0 {

@@ -7,6 +7,10 @@ use tiny_skia::{Color, Rect};
 pub const HANDLE_PAD: f64 = 20.0;
 pub const SHADOW_COLOR: (u8, u8, u8, u8) = (0, 0, 0, 130);
 pub const SHADOW_WIDTH_BONUS: f32 = 4.0;
+/// Offset of the drop shadow relative to the shape the annotation is
+pub const SHADOW_OFFSET: (f32, f32) = (0.0, 3.0);
+pub const SHADOW_LAYERS: usize = 4;
+pub const SPREAD_PER_LAYER: f32 = 1.5;
 
 #[derive(Clone)]
 pub enum AnnotationShape {
