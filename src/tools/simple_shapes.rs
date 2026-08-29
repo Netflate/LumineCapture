@@ -29,11 +29,14 @@ impl ToolBehavior for SimpleShapeTool {
             };
             ann.update_bbox();
 
+            state.damage_rects.push(DamageZone::Global(ann.bbox));
             state.pending = Some(ann.clone());
             state.prev_pending = Some(ann);
         } else if let Some(ann) = state.pending.take() {
             state.next_id += 1;
             state.push_undo();
+            state.bake_annotation(&ann);
+            state.damage_rects.push(DamageZone::Global(ann.damage_bbox(false)));
             state.annotations.push(ann);
             state.prev_pending = None;
         }
@@ -54,7 +57,6 @@ impl ToolBehavior for SimpleShapeTool {
             ann.update_bbox();
 
             state.damage_rects.push(DamageZone::Global(ann.bbox));
-            state.annotations_dirty = true;
         }
     }
 }

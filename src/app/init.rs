@@ -189,8 +189,14 @@ pub fn initial_paint(
                     offset: (0.0, 0.0),
                     annotations_layer: ann_i,
                     annotations_layer_empty: true,
+                    pending: None,
+                    is_pending_selected: false,
+                    selected_annotation: None,
+                    annotations: &[],
                     font_system: None,
                     swash_cache: None,
+                    text_editors: None,
+                    active_text_id: None,
                 });
             }));
         }

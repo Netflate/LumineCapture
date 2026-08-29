@@ -33,8 +33,6 @@ impl ToolBehavior for PickTool {
                 return;
             }
 
-            state.annotations_dirty = true;
-
             // select empty space > deselect
             if selected_annotation.is_none() {
                 if let Some(old_idx) = state.selected_annotation {
@@ -65,6 +63,7 @@ impl ToolBehavior for PickTool {
                     start_global: state.pointer.global,
                     prev_global: state.pointer.global,
                     orig: ann.clone(),
+                    orig_index: idx,
                 });
                 return;
             }
@@ -89,7 +88,6 @@ impl ToolBehavior for PickTool {
 
     fn on_deactivate(&self, state: &mut EditorState, _dirty_mask: &mut u32) {
         if let Some(idx) = state.selected_annotation {
-            state.annotations_dirty = true;
             state
                 .damage_rects
                 .push(DamageZone::Global(state.annotations[idx].damage_bbox(true)));

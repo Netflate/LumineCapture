@@ -6,7 +6,10 @@ mod settings_panel;
 mod text;
 mod color_popover;
 
-pub use annotations::draw_annotation;
+pub use annotations::{
+    draw_annotation, draw_annotation_handles_only, draw_pen_tail, selection_chrome_pad,
+    visual_pad,
+};
 pub use settings_panel::char_index_for_x;
 pub use magnifier::magnifier_rect;
 pub use paths::{rect_bounds, rounded_rect_path};
@@ -42,8 +45,14 @@ pub struct RenderRequest<'a> {
     // annotations
     pub annotations_layer: &'a Pixmap,
     pub annotations_layer_empty: bool,
+    pub pending: Option<&'a Annotation>,
+    pub is_pending_selected: bool,
+    pub selected_annotation: Option<usize>,
+    pub annotations: &'a [Annotation],
     pub font_system: Option<&'a mut FontSystem>,
     pub swash_cache: Option<&'a mut SwashCache>,
+    pub text_editors: Option<&'a mut HashMap<u64, Editor<'static>>>,
+    pub active_text_id: Option<u64>,
 }
 
 pub fn render_frame(req: &mut RenderRequest) {
@@ -72,6 +81,36 @@ pub fn render_frame(req: &mut RenderRequest) {
                 Transform::identity(),
                 None,
             );
+        }
+    }
+
+    // Dynamic annotations: pending (in-progress drawing or dragging)
+    if let Some(p) = req.pending {
+        if let (Some(font_system), Some(swash_cache), Some(text_editors)) = (
+            req.font_system.as_deref_mut(),
+            req.swash_cache.as_deref_mut(),
+            req.text_editors.as_deref_mut(),
+        ) {
+            annotations::draw_annotation(
+                req.canvas,
+                p,
+                req.offset,
+                false,
+                font_system,
+                swash_cache,
+                text_editors,
+                req.active_text_id,
+            );
+        }
+        if req.is_pending_selected {
+            annotations::draw_annotation_handles_only(req.canvas, p, req.offset);
+        }
+    }
+
+    // Dynamic selection chrome: handles for the currently selected annotation
+    if let Some(idx) = req.selected_annotation {
+        if let Some(ann) = req.annotations.get(idx) {
+            annotations::draw_annotation_handles_only(req.canvas, ann, req.offset);
         }
     }
 
@@ -323,70 +362,70 @@ fn blit_annotations(src: &Pixmap, dst: &mut Pixmap, rect: &Rect) {
     }
 }
 
+/// Точечно зануляет прямоугольник в персистентном layer'е (без anti-alias,
+/// прямая работа со срезами памяти — как `blit_rect`, только пишем нули).
+fn clear_rect_transparent(layer: &mut Pixmap, rect: &Rect) {
+    let (w, h) = (layer.width(), layer.height());
+    let Some((x, y, rw, rh)) = rect_bounds(rect, w, h) else {
+        return;
+    };
+    let stride = (layer.width() * 4) as usize;
+    let row_bytes = rw as usize * 4;
+    let data = layer.data_mut();
+
+    for row in 0..rh {
+        let off = (y + row) as usize * stride + x as usize * 4;
+        data[off..off + row_bytes].fill(0);
+    }
+}
+
+/// Перестраивает annotations layer.
+///
+/// Если передан `dirty_rect` (в локальных координатах layer'а) — чистит и
+/// перерисовывает ТОЛЬКО те аннотации, чей визуальный bbox пересекается
+/// с этой областью.
+///
+/// `None` — полный ребилд (первый кадр, ресайз, safety fallback).
 pub fn rebuild_annotations_layer(
     layer: &mut Pixmap,
     annotations: &[Annotation],
-    pending: Option<&Annotation>,
-    selected: Option<usize>,
     offset: (f32, f32),
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
     text_editors: &mut HashMap<u64, Editor<'static>>,
     active_text_id: Option<u64>,
+    dirty_rect: Option<Rect>,
 ) {
-    layer.fill(tiny_skia::Color::TRANSPARENT);
+    let (lw, lh) = (layer.width() as f32, layer.height() as f32);
 
-    let mon_rect = match Rect::from_xywh(
-        offset.0,
-        offset.1,
-        layer.width() as f32,
-        layer.height() as f32,
-    ) {
-        Some(r) => r,
-        None => return,
+    let Some(base_rect) = dirty_rect.or_else(|| Rect::from_xywh(0.0, 0.0, lw, lh)) else {
+        return;
     };
 
-    let is_visible = |bbox: &Rect| -> bool {
-        let margin = 50.0;
-        let left = bbox.left() - margin;
-        let right = bbox.right() + margin;
-        let top = bbox.top() - margin;
-        let bottom = bbox.bottom() + margin;
-
-        mon_rect.left() < right
-            && mon_rect.right() > left
-            && mon_rect.top() < bottom
-            && mon_rect.bottom() > top
-    };
-
-    for (i, ann) in annotations.iter().enumerate() {
-        if !is_visible(&ann.bbox) {
-            continue;
+    if dirty_rect.is_none() {
+        clear_rect_transparent(layer, &base_rect);
+        for ann in annotations {
+            draw_annotation(
+                layer, ann, offset, false,
+                font_system, swash_cache, text_editors, active_text_id,
+            );
         }
-
-        draw_annotation(
-            layer,
-            ann,
-            offset,
-            selected == Some(i),
-            font_system,
-            swash_cache,
-            text_editors,
-            active_text_id,
-        );
+        return;
     }
 
-    if let Some(p) = pending {
-        if is_visible(&p.bbox) {
+    clear_rect_transparent(layer, &base_rect);
+
+    for ann in annotations {
+        let pad = annotations::visual_pad(ann.stroke_width);
+        let l = ann.bbox.left() - offset.0 - pad;
+        let t = ann.bbox.top() - offset.1 - pad;
+        let r = ann.bbox.right() - offset.0 + pad;
+        let b = ann.bbox.bottom() - offset.1 + pad;
+
+        if l < base_rect.right() && r > base_rect.left() && t < base_rect.bottom() && b > base_rect.top() {
             draw_annotation(
-                layer,
-                p,
-                offset,
-                false,
-                font_system,
-                swash_cache,
-                text_editors,
-                active_text_id,
+                layer, ann, offset, false,
+                font_system, swash_cache, text_editors, active_text_id,
             );
         }
     }

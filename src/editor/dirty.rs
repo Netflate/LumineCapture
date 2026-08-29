@@ -1,7 +1,7 @@
 use crate::editor::{EditorState, DamageZone};
 use crate::renderer::{self};
 use crate::tools::selection::global_selection_to_local;
-use crate::types::annotations::{Annotation, AnnotationShape};
+use crate::types::annotations::Annotation;
 use crate::types::{HANDLE_RADIUS, MagnifierState, Placement};
 use crate::utils::get_overlapping_monitors;
 
@@ -73,39 +73,61 @@ impl EditorState {
     fn calc_damage_zones_dirty(&self, monitor_idx: usize, placement: &Placement) -> Option<Rect> {
         let mut dirty = None;
         let offset = (placement.position.0 as f32, placement.position.1 as f32);
-        let pad = 4.0;
+        let (mw, mh) = (placement.size.0 as f32, placement.size.1 as f32);
 
-        fn global_to_local_padded(global_bbox: &Rect, offset: (f32, f32), pad: f32) -> Option<Rect> {
-            Rect::from_ltrb(
-                global_bbox.left() - offset.0,
-                global_bbox.top() - offset.1,
-                global_bbox.right() - offset.0,
-                global_bbox.bottom() - offset.1,
-            )
-            .and_then(|local| expand_rect(&local, pad))
+        fn global_to_local_padded(
+            global_bbox: &Rect,
+            offset: (f32, f32),
+            pad: f32,
+            mw: f32,
+            mh: f32,
+        ) -> Option<Rect> {
+            let l = global_bbox.left() - offset.0 - pad;
+            let t = global_bbox.top() - offset.1 - pad;
+            let r = global_bbox.right() - offset.0 + pad;
+            let b = global_bbox.bottom() - offset.1 + pad;
+
+            let ix1 = l.max(0.0);
+            let iy1 = t.max(0.0);
+            let ix2 = r.min(mw);
+            let iy2 = b.min(mh);
+
+            if ix2 <= ix1 || iy2 <= iy1 {
+                return None;
+            }
+
+            Rect::from_ltrb(ix1, iy1, ix2, iy2)
         }
 
-        if let Some(ann) = &self.pending
-            && !matches!(ann.shape, AnnotationShape::Pen { .. })
-        {
-            dirty = union_rect(dirty, global_to_local_padded(&ann.bbox, offset, pad));
+        if let Some(ann) = &self.pending {
+            let pad = crate::renderer::visual_pad(ann.stroke_width);
+            dirty = union_rect(dirty, global_to_local_padded(&ann.bbox, offset, pad, mw, mh));
         }
-        if let Some(ann) = &self.prev_pending
-            && !matches!(ann.shape, AnnotationShape::Pen { .. })
-        {
-            dirty = union_rect(dirty, global_to_local_padded(&ann.bbox, offset, pad));
+        if let Some(ann) = &self.prev_pending {
+            let pad = crate::renderer::visual_pad(ann.stroke_width);
+            dirty = union_rect(dirty, global_to_local_padded(&ann.bbox, offset, pad, mw, mh));
         }
-        if let Some(ann) = self.selected_annotation {
-            dirty = union_rect(dirty, global_to_local_padded(&self.annotations[ann].bbox, offset, pad));
+        if let Some(ann_idx) = self.selected_annotation {
+            if let Some(ann) = self.annotations.get(ann_idx) {
+                let pad = crate::renderer::selection_chrome_pad()
+                    .max(crate::renderer::visual_pad(ann.stroke_width));
+                dirty = union_rect(dirty, global_to_local_padded(&ann.bbox, offset, pad, mw, mh));
+            }
         }
 
         for zone in &self.damage_rects {
             match zone {
                 DamageZone::Global(rect) => {
-                    dirty = union_rect(dirty, global_to_local_padded(rect, offset, pad));
+                    dirty = union_rect(dirty, global_to_local_padded(rect, offset, 4.0, mw, mh));
                 }
                 DamageZone::Local { monitor_idx: idx, rect } if *idx == monitor_idx => {
-                    dirty = union_rect(dirty, expand_rect(rect, pad));
+                    let local_clamped = Rect::from_ltrb(
+                        (rect.left() - 4.0).max(0.0),
+                        (rect.top() - 4.0).max(0.0),
+                        (rect.right() + 4.0).min(mw),
+                        (rect.bottom() + 4.0).min(mh),
+                    );
+                    dirty = union_rect(dirty, local_clamped);
                 }
                 DamageZone::Local { .. } => {}
             }
@@ -114,8 +136,36 @@ impl EditorState {
         dirty
     }
 
+    pub fn monitor_layer_dirty_rect(&self, monitor_idx: usize) -> Option<Rect> {
+        let placement = &self.placements[monitor_idx];
+        let offset = (placement.position.0 as f32, placement.position.1 as f32);
+        let (mw, mh) = (placement.size.0 as f32, placement.size.1 as f32);
+        let mut dirty: Option<Rect> = None;
+
+        for rect in &self.layer_damage_rects {
+            let l = rect.left() - offset.0;
+            let t = rect.top() - offset.1;
+            let r = rect.right() - offset.0;
+            let b = rect.bottom() - offset.1;
+
+            let ix1 = l.max(0.0);
+            let iy1 = t.max(0.0);
+            let ix2 = r.min(mw);
+            let iy2 = b.min(mh);
+
+            if ix2 > ix1 && iy2 > iy1 {
+                if let Some(local_r) = Rect::from_ltrb(ix1, iy1, ix2, iy2) {
+                    dirty = union_rect(dirty, Some(local_r));
+                }
+            }
+        }
+
+        dirty
+    }
+
     pub fn record_history_damage(
         damage_rects: &mut Vec<DamageZone>,
+        layer_damage_rects: &mut Vec<Rect>,
         state_a: &[Annotation],
         state_b: &[Annotation],
     ) {
@@ -124,6 +174,7 @@ impl EditorState {
                 && let Some(expanded) = expand_rect(&ann.bbox, ann.stroke_width * 2.0 + 4.0)
             {
                 damage_rects.push(DamageZone::Global(expanded));
+                layer_damage_rects.push(expanded);
             }
         }
 
@@ -132,6 +183,7 @@ impl EditorState {
                 && let Some(expanded) = expand_rect(&ann.bbox, ann.stroke_width * 2.0 + 4.0)
             {
                 damage_rects.push(DamageZone::Global(expanded));
+                layer_damage_rects.push(expanded);
             }
         }
     }
@@ -179,6 +231,15 @@ pub fn is_dirty(mask: u32, idx: usize) -> bool {
 }
 
 pub fn apply_damage_rects(editor_state: &mut EditorState, dirty_mask: &mut u32) {
+    if let Some(ann) = &editor_state.pending {
+        *dirty_mask |= get_overlapping_monitors(&ann.bbox, &editor_state.placements);
+    }
+    if let Some(ann) = &editor_state.prev_pending {
+        *dirty_mask |= get_overlapping_monitors(&ann.bbox, &editor_state.placements);
+    }
+    for rect in &editor_state.layer_damage_rects {
+        *dirty_mask |= get_overlapping_monitors(rect, &editor_state.placements);
+    }
     for zone in &editor_state.damage_rects {
         match zone {
             DamageZone::Global(rect) => {

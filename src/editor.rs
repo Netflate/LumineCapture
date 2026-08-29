@@ -48,6 +48,13 @@ pub struct EditorState {
 
     pub annotations_layer: Vec<Pixmap>,
     pub annotations_dirty: bool,
+
+    // Regions of the persistent annotation layers that must be cleared
+    // and rebuilt. Separate from `damage_rects`, since layer damage
+    // describes what must be rerendered in the cached annotation layer,
+    // while damage_rects describes what must be rerendered on the final canvas.
+    pub layer_damage_rects: Vec<Rect>,
+    pub pending_pen_baked: usize,
     pub font_system: FontSystem,
     pub swash_cache: SwashCache,
     pub text_editors: HashMap<u64, Editor<'static>>,
@@ -64,4 +71,37 @@ pub struct EditorState {
 pub enum DamageZone {
     Global(Rect),
     Local { monitor_idx: usize, rect: Rect },
+}
+
+impl EditorState {
+    // to avoid revbuilding the entire annotation layer like it was implemented before
+    // instead commited annotations are `baked`, so pending new annotations are separate from them 
+    // so there will be absolutely no lags while drawing something on top of 10000th circles
+    pub fn bake_annotation(&mut self, ann: &Annotation) {
+        for (i, placement) in self.placements.iter().enumerate() {
+            let offset = (placement.position.0 as f32, placement.position.1 as f32);
+            let pad = crate::renderer::visual_pad(ann.stroke_width);
+            let visual = Rect::from_ltrb(
+                ann.bbox.left() - offset.0 - pad,
+                ann.bbox.top() - offset.1 - pad,
+                ann.bbox.right() - offset.0 + pad,
+                ann.bbox.bottom() - offset.1 + pad,
+            );
+            let monitor_rect = Rect::from_xywh(0.0, 0.0, placement.size.0 as f32, placement.size.1 as f32);
+            if let (Some(vis), Some(mon)) = (visual, monitor_rect) {
+                if vis.left() < mon.right() && vis.right() > mon.left() && vis.top() < mon.bottom() && vis.bottom() > mon.top() {
+                    crate::renderer::draw_annotation(
+                        &mut self.annotations_layer[i],
+                        ann,
+                        offset,
+                        false,
+                        &mut self.font_system,
+                        &mut self.swash_cache,
+                        &mut self.text_editors,
+                        None,
+                    );
+                }
+            }
+        }
+    }
 }

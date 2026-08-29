@@ -25,10 +25,14 @@ impl ToolBehavior for PenTool {
                 bbox: Rect::from_xywh(pos.0, pos.1, 1.0, 1.0).unwrap(),
             };
             ann.update_bbox();
-            state.pending = Some(ann);
+            state.damage_rects.push(DamageZone::Global(ann.bbox));
+            state.pending = Some(ann.clone());
+            state.prev_pending = Some(ann);
         } else if let Some(ann) = state.pending.take() {
             state.next_id += 1;
             state.push_undo();
+            state.bake_annotation(&ann);
+            state.damage_rects.push(DamageZone::Global(ann.damage_bbox(false)));
             state.annotations.push(ann);
             state.prev_pending = None;
         }
@@ -64,7 +68,6 @@ impl ToolBehavior for PenTool {
                     points.push(smoothed);
 
                     state.damage_rects.push(DamageZone::Global(ann.last_segment_bbox()));
-                    state.annotations_dirty = true;
                 } else {
                     points.push(smoothed);
                 } 

@@ -2,7 +2,7 @@ use super::paths::{normalized_rect, oval_path};
 use super::text::{draw_text_buffer, shape_single_line};
 use crate::tools::text::render_text_annotation;
 use crate::types::annotations::{
-    Annotation, AnnotationShape, HANDLE_PAD, SHADOW_COLOR, SHADOW_OFFSET, SHADOW_LAYERS, SPREAD_PER_LAYER
+    Annotation, AnnotationShape, HANDLE_PAD, SHADOW_COLOR,
 };
 
 use cosmic_text::{Editor, FontSystem, SwashCache};
@@ -11,7 +11,14 @@ use tiny_skia::{
     Color, FillRule, LineCap, LineJoin, Paint, PathBuilder, Pixmap, Rect, Stroke, Transform,
 };
 
-/// Scales the shadow's own fixed alpha by the annotation color's alpha
+/// Offset of the drop shadow relative to the shape it belongs to, in the
+/// same pixel space as `offset`/`transform`. One constant so every shape
+/// casts its shadow the same way.
+const SHADOW_OFFSET: (f32, f32) = (0.0, 3.0);
+
+/// Scales the shadow's own fixed alpha by the annotation color's alpha,
+/// so a half-transparent stroke doesn't end up with a full-opacity shadow
+/// sitting underneath it.
 fn shadow_alpha_for(color: Color) -> u8 {
     (SHADOW_COLOR.3 as f32 * color.alpha()) as u8
 }
@@ -25,12 +32,37 @@ fn shadow_color_for(color: Color) -> Color {
     )
 }
 
-/// Builds the "real" transform 
+/// Builds the "real" transform plus the same transform shifted by
+/// `SHADOW_OFFSET`, from a single viewport `offset`. Keeps every shape's
+/// shadow offset in sync without repeating the translate math.
 fn transforms_for(offset: (f32, f32)) -> (Transform, Transform) {
     let transform = Transform::from_translate(-offset.0, -offset.1);
     let shadow_transform =
         Transform::from_translate(-offset.0 + SHADOW_OFFSET.0, -offset.1 + SHADOW_OFFSET.1);
     (transform, shadow_transform)
+}
+
+const SHADOW_LAYERS: usize = 4;
+const SPREAD_PER_LAYER: f32 = 1.5;
+
+// Only matters for the offset-shadow path (stroke_with_shadow), not halo
+// (draw_text_box / draw_annotation_handles, which don't use SHADOW_OFFSET
+// at all — their layers spread evenly on every side by design).
+//
+// Keep (SHADOW_LAYERS * SPREAD_PER_LAYER) / 2.0 <= SHADOW_OFFSET.1 if you
+// tune these: that's what keeps the widest, faintest layer's natural top
+// overhang from poking above the shape. Currently 4 * 1.5 / 2 = 3.0,
+// exactly matching SHADOW_OFFSET.1 = 3.0 — zero headroom, so don't shrink
+// the offset or grow the spread without adjusting the other side too.
+
+pub fn visual_pad(stroke_width: f32) -> f32 {
+    let max_stroke_extent = (stroke_width + SHADOW_LAYERS as f32 * SPREAD_PER_LAYER) / 2.0;
+    max_stroke_extent + SHADOW_OFFSET.1.abs() + 2.0 
+}
+pub fn selection_chrome_pad() -> f32 {
+    const CHROME_STROKE: f32 = 3.0;
+    let max_stroke_extent = (CHROME_STROKE + SHADOW_LAYERS as f32 * SPREAD_PER_LAYER) / 2.0;
+    (HANDLE_PAD / 2.0) as f32 + max_stroke_extent + 2.0
 }
 
 fn stroke_segment_with_shadow(
@@ -128,11 +160,15 @@ pub fn draw_annotation(
         }
     }
     if selected {
-        if matches!(ann.shape, AnnotationShape::Text { .. }) {
-            draw_text_box(canvas, &ann.bbox, offset);
-        } else {
-            draw_annotation_handles(canvas, &ann.bbox, offset);
-        }
+        draw_annotation_handles_only(canvas, ann, offset);
+    }
+}
+
+pub fn draw_annotation_handles_only(canvas: &mut Pixmap, ann: &Annotation, offset: (f32, f32)) {
+    if matches!(ann.shape, AnnotationShape::Text { .. }) {
+        draw_text_box(canvas, &ann.bbox, offset);
+    } else {
+        draw_annotation_handles(canvas, &ann.bbox, offset);
     }
 }
 
@@ -142,7 +178,8 @@ fn draw_text_box(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32)) {
 
     let base_shadow_color = Color::from_rgba8(SHADOW_COLOR.0, SHADOW_COLOR.1, SHADOW_COLOR.2, SHADOW_COLOR.3);
 
-    // halo instead of real shadow
+    // Selection chrome, not the annotation itself — halo (no offset) reads
+    // better than a drop shadow on a rounded-rect outline.
     let transform = Transform::from_translate(-offset.0, -offset.1);
     let shadow_transform = transform;
     let pad = (HANDLE_PAD / 2.0) as f32;
@@ -318,6 +355,46 @@ fn draw_pen(
             pb.quad_to(curr.0, curr.1, mid.0, mid.1);
         }
         let last = points[points.len() - 1];
+        pb.line_to(last.0, last.1);
+    }
+
+    if let Some(path) = pb.finish() {
+        stroke_with_shadow(
+            canvas,
+            &path,
+            color,
+            stroke_width,
+            LineCap::Round,
+            LineJoin::Round,
+            offset,
+        );
+    }
+}
+
+pub fn draw_pen_tail(
+    canvas: &mut Pixmap,
+    tail: &[(f32, f32)],
+    color: Color,
+    stroke_width: f32,
+    offset: (f32, f32),
+) {
+    if tail.len() < 2 {
+        return;
+    }
+
+    let mut pb = PathBuilder::new();
+    pb.move_to(tail[0].0, tail[0].1);
+
+    if tail.len() == 2 {
+        pb.line_to(tail[1].0, tail[1].1);
+    } else {
+        for i in 1..tail.len() - 1 {
+            let curr = tail[i];
+            let next = tail[i + 1];
+            let mid = ((curr.0 + next.0) / 2.0, (curr.1 + next.1) / 2.0);
+            pb.quad_to(curr.0, curr.1, mid.0, mid.1);
+        }
+        let last = tail[tail.len() - 1];
         pb.line_to(last.0, last.1);
     }
 

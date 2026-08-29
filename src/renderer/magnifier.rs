@@ -48,8 +48,8 @@ pub fn draw_magnifier(canvas: &mut Pixmap, source: &Pixmap, cursor: (f32, f32)) 
 
     overlay_crosshair(&mut zoomed);
 
-    let mut mask = tiny_skia::Mask::new(canvas.width(), canvas.height()).unwrap();
-    if let Some(circle_path) = PathBuilder::from_circle(cx, cy, radius) {
+    let mut mask = tiny_skia::Mask::new(MAG_SIZE, MAG_SIZE).unwrap();
+    if let Some(circle_path) = PathBuilder::from_circle(radius, radius, radius) {
         mask.fill_path(
             &circle_path,
             tiny_skia::FillRule::Winding,
@@ -57,6 +57,7 @@ pub fn draw_magnifier(canvas: &mut Pixmap, source: &Pixmap, cursor: (f32, f32)) 
             Transform::identity(),
         );
     }
+    zoomed.apply_mask(&mask);
 
     canvas.draw_pixmap(
         mag_x as i32,
@@ -64,7 +65,7 @@ pub fn draw_magnifier(canvas: &mut Pixmap, source: &Pixmap, cursor: (f32, f32)) 
         zoomed.as_ref(),
         &PixmapPaint::default(),
         Transform::identity(),
-        Some(&mask),
+        None,
     );
 
     let mut paint = Paint::default();

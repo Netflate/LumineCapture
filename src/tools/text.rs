@@ -244,6 +244,7 @@ impl ToolBehavior for TextTool {
                 .iter()
                 .find(|a| a.id == edit.annotation_id)
             {
+                state.layer_damage_rects.push(prev_ann.damage_bbox(false));
                 state.damage_rects.push(DamageZone::Global(prev_ann.damage_bbox(true)));
             }
             if let Some(editor) = state.text_editors.get_mut(&edit.annotation_id) {
@@ -302,6 +303,7 @@ impl ToolBehavior for TextTool {
         );
 
         state.push_undo();
+        state.layer_damage_rects.push(ann.damage_bbox(false));
         state.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
         state.annotations.push(ann);
 
@@ -329,6 +331,7 @@ impl ToolBehavior for TextTool {
         let id = edit.annotation_id;
 
         if let Some(ann) = state.annotations.iter().find(|a| a.id == id) {
+            state.layer_damage_rects.push(ann.damage_bbox(false));
             state.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
         }
 
@@ -338,10 +341,9 @@ impl ToolBehavior for TextTool {
         }
 
         if let Some(ann) = state.annotations.iter().find(|a| a.id == id) {
+            state.layer_damage_rects.push(ann.damage_bbox(false));
             state.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
         }
-
-        state.annotations_dirty = true;
     }
 
     fn on_key(&self, state: &mut EditorState, key: SpecialKey, _dirty_mask: &mut u32) {
@@ -353,6 +355,7 @@ impl ToolBehavior for TextTool {
         let shift = state.mod_shift;
 
         if let Some(ann) = state.annotations.iter().find(|a| a.id == id) {
+            state.layer_damage_rects.push(ann.damage_bbox(false));
             state.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
         }
 
@@ -370,10 +373,9 @@ impl ToolBehavior for TextTool {
         }
 
         if let Some(ann) = state.annotations.iter().find(|a| a.id == id) {
+            state.layer_damage_rects.push(ann.damage_bbox(false));
             state.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
         }
-
-        state.annotations_dirty = true;
     }
 
     fn on_deactivate(&self, state: &mut EditorState, _dirty_mask: &mut u32) {
@@ -383,6 +385,7 @@ impl ToolBehavior for TextTool {
                 .iter()
                 .find(|a| a.id == edit.annotation_id)
             {
+                state.layer_damage_rects.push(ann.damage_bbox(false));
                 state.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
             }
             if let Some(editor) = state.text_editors.get_mut(&edit.annotation_id) {
@@ -391,7 +394,6 @@ impl ToolBehavior for TextTool {
         }
         state.text_editing = None;
         state.selected_annotation = None;
-        state.annotations_dirty = true;
     }
 }
 

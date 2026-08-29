@@ -94,6 +94,11 @@ pub async fn make_screenshot(
 
         annotations_layer,
         annotations_dirty: false,
+        layer_damage_rects: Vec::new(),
+        // NEW: сколько точек текущего pending-Pen уже вшито в персистентный
+        // layer напрямую (см. tools/pen.rs). Нужно добавить это поле
+        // в саму структуру EditorState.
+        pending_pen_baked: 0,
         font_system,
         swash_cache,
         text_editors: HashMap::new(),
@@ -177,28 +182,7 @@ pub async fn make_screenshot(
         
         if dirty_mask != 0 {
             let selection_dirty = editor_state.selection.zone != editor_state.selection.prev_zone;
-
-            if editor_state.annotations_dirty {
-                let active_text_id = editor_state.text_editing.as_ref().map(|e| e.annotation_id);
-
-                for i in 0..editor_state.base.len() {
-                    let offset = (
-                        editor_state.placements[i].position.0 as f32,
-                        editor_state.placements[i].position.1 as f32,
-                    );
-                    renderer::rebuild_annotations_layer(
-                        &mut editor_state.annotations_layer[i],
-                        &editor_state.annotations,
-                        editor_state.pending.as_ref(),
-                        editor_state.selected_annotation,
-                        offset,
-                        &mut editor_state.font_system,
-                        &mut editor_state.swash_cache,
-                        &mut editor_state.text_editors,
-                        active_text_id,
-                    );
-                }
-            }
+            let active_text_id = editor_state.text_editing.as_ref().map(|e| e.annotation_id);
 
             for i in 0..editor_state.base.len() {
                 if is_dirty(dirty_mask, i) {
@@ -214,6 +198,40 @@ pub async fn make_screenshot(
                     );
 
                     let dirty_rect = editor_state.monitor_dirty_rect(i);
+                    let layer_dirty = editor_state.monitor_layer_dirty_rect(i);
+
+                    if let Some(target_dirty) = layer_dirty {
+                        let offset = (
+                            editor_state.placements[i].position.0 as f32,
+                            editor_state.placements[i].position.1 as f32,
+                        );
+                        renderer::rebuild_annotations_layer(
+                            &mut editor_state.annotations_layer[i],
+                            &editor_state.annotations,
+                            offset,
+                            &mut editor_state.font_system,
+                            &mut editor_state.swash_cache,
+                            &mut editor_state.text_editors,
+                            active_text_id,
+                            Some(target_dirty),
+                        );
+                    } else if editor_state.annotations_dirty {
+                        let offset = (
+                            editor_state.placements[i].position.0 as f32,
+                            editor_state.placements[i].position.1 as f32,
+                        );
+                        renderer::rebuild_annotations_layer(
+                            &mut editor_state.annotations_layer[i],
+                            &editor_state.annotations,
+                            offset,
+                            &mut editor_state.font_system,
+                            &mut editor_state.swash_cache,
+                            &mut editor_state.text_editors,
+                            active_text_id,
+                            None,
+                        );
+                    }
+
                     let damage: Option<DamageRect> = dirty_rect.as_ref().and_then(|r| {
                         renderer::rect_bounds(r, editor_state.base[i].width(), editor_state.base[i].height())
                     });
@@ -299,8 +317,14 @@ pub async fn make_screenshot(
                         annotations_layer: &editor_state.annotations_layer[i],
                         offset,
                         annotations_layer_empty: false,
+                        pending: editor_state.pending.as_ref(),
+                        is_pending_selected: editor_state.ann_drag.is_some(),
+                        selected_annotation: editor_state.selected_annotation,
+                        annotations: &editor_state.annotations,
                         font_system: Some(&mut editor_state.font_system),
                         swash_cache: Some(&mut editor_state.swash_cache),
+                        text_editors: Some(&mut editor_state.text_editors),
+                        active_text_id,
                     });
 
                     overlay.stage_frame(i, editor_state.canvas[i].data(), damage)?;
@@ -314,6 +338,7 @@ pub async fn make_screenshot(
             editor_state.prev_pending = editor_state.pending.clone();
             editor_state.annotations_dirty = false;
             editor_state.damage_rects.clear();
+            editor_state.layer_damage_rects.clear();
             editor_state.settings_panel.dirty = false;
             editor_state.color_popover.dirty = false;
         }

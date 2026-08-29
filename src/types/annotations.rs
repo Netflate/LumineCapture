@@ -52,6 +52,10 @@ pub struct AnnDragState {
     pub start_global: (f64, f64),
     pub prev_global: (f64, f64),
     pub orig: Annotation, // snapshot
+    pub orig_index: usize, 
+    // ^ index of the annotation in the baked list before dragging
+    // since dragging removes the annotation from baked and it becomes pending one
+    
 }
 
 impl AnnotationShape {
@@ -342,42 +346,36 @@ pub fn begin_drag_for_annotation(state: &mut EditorState, idx: usize) {
         start_global: state.pointer.global,
         prev_global: state.pointer.global,
         orig: ann.clone(),
+        orig_index: idx,
     });
 }
 
 pub fn commit_drag_if_changed(state: &mut EditorState) {
-    // mouse up > commit to undo only if something actually changed
-    if let Some(drag) = &state.ann_drag
-        && let Some(idx) = state.selected_annotation
-    {
-        let actually_changed = !matches!(drag.handle, SelectionHandle::None)
-            && state.annotations[idx].bbox != drag.orig.bbox;
+    if let Some(drag) = state.ann_drag.take() {
+        if let Some(ann) = state.pending.take() {
+            let actually_changed = !matches!(drag.handle, SelectionHandle::None)
+                && ann.bbox != drag.orig.bbox;
 
-        if actually_changed {
-            // annotations[idx] already has the new position from on_move
-            // we reconstruct the pre-drag snapshot using drag.orig
-            let pre_drag: Vec<_> = state
-                .annotations
-                .iter()
-                .enumerate()
-                .map(|(i, ann)| {
-                    if i == idx {
-                        drag.orig.clone()
-                    } else {
-                        ann.clone()
-                    }
-                })
-                .collect();
-            state.undo_stack.push(pre_drag);
-            state.redo_stack.clear();
+            let insert_idx = drag.orig_index.min(state.annotations.len());
+            if actually_changed {
+                let mut pre_drag = state.annotations.clone();
+                pre_drag.insert(insert_idx, drag.orig);
+                state.undo_stack.push(pre_drag);
+                state.redo_stack.clear();
+            }
+
+            state.bake_annotation(&ann);
+            state.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
+            state.annotations.insert(insert_idx, ann);
+            state.prev_pending = None;
+            state.selected_annotation = Some(insert_idx);
         }
     }
-    state.ann_drag = None;
 }
 
 pub fn apply_annotation_drag(state: &mut EditorState, global: (f64, f64)) {
-    let (handle, prev_global, start_global) = match &state.ann_drag {
-        Some(drag) => (drag.handle, drag.prev_global, drag.start_global),
+    let (handle, prev_global, start_global, orig_index) = match &state.ann_drag {
+        Some(drag) => (drag.handle, drag.prev_global, drag.start_global, drag.orig_index),
         None => return,
     };
 
@@ -385,36 +383,53 @@ pub fn apply_annotation_drag(state: &mut EditorState, global: (f64, f64)) {
         return;
     }
 
-    let Some(idx) = state.selected_annotation else {
+    // Move the annotation out of baked list while dragging.
+    // The dragged annotation is considered as `pending`, 
+    // and the old baked pixels are removed. This avoids
+    // rebuilding the entire annotation layer on every mouse move.
+    if state.pending.is_none() {
+        if orig_index < state.annotations.len() {
+            let ann = state.annotations.remove(orig_index);
+            state.layer_damage_rects.push(ann.damage_bbox(false));
+            state.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
+            state.pending = Some(ann.clone());
+            state.prev_pending = Some(ann);
+            state.selected_annotation = None;
+        } else {
+            return;
+        }
+    }
+
+    let Some(ann) = state.pending.as_mut() else {
         return;
     };
 
     state
         .damage_rects
-        .push(DamageZone::Global(state.annotations[idx].damage_bbox(true)));
+        .push(DamageZone::Global(ann.damage_bbox(true)));
 
     match handle {
         SelectionHandle::Move => {
             // move: incremental delta from prev_global, no clone needed
             let dx = (global.0 - prev_global.0) as f32;
             let dy = (global.1 - prev_global.1) as f32;
-            state.annotations[idx].translate_mut(dx, dy);
+            ann.translate_mut(dx, dy);
         }
         _ => {
-            if matches!(state.annotations[idx].shape, AnnotationShape::Text { .. }) {
+            if matches!(ann.shape, AnnotationShape::Text { .. }) {
                 // text resize: incremental from prev_global
                 // using separate function since text scales font_size, not coordinates
                 apply_text_resize_incremental(
-                    &mut state.annotations[idx],
+                    ann,
                     handle,
                     prev_global,
                     global,
                 );
-                let ann_id = state.annotations[idx].id;
+                let ann_id = ann.id;
                 let editor = state.text_editors.get_mut(&ann_id);
                 if let Some(ed) = editor {
                     update_text_bbox_inline(
-                        &mut state.annotations[idx],
+                        ann,
                         ed,
                         &mut state.font_system,
                     );
@@ -425,7 +440,7 @@ pub fn apply_annotation_drag(state: &mut EditorState, global: (f64, f64)) {
                 let total_dy = (global.1 - start_global.1) as f32;
                 let orig = state.ann_drag.as_ref().unwrap().orig.clone();
                 apply_shape_resize_from_orig(
-                    &mut state.annotations[idx],
+                    ann,
                     &orig,
                     handle,
                     total_dx,
@@ -437,8 +452,7 @@ pub fn apply_annotation_drag(state: &mut EditorState, global: (f64, f64)) {
 
     state
         .damage_rects
-        .push(DamageZone::Global(state.annotations[idx].damage_bbox(true)));
-    state.annotations_dirty = true;
+        .push(DamageZone::Global(ann.damage_bbox(true)));
 
     if let Some(drag) = state.ann_drag.as_mut() {
         drag.prev_global = global;
@@ -447,6 +461,7 @@ pub fn apply_annotation_drag(state: &mut EditorState, global: (f64, f64)) {
 
 pub fn rebuild_annotation(state: &mut EditorState, idx: usize) {
     let Some(ann) = state.annotations.get(idx) else { return };
+    state.layer_damage_rects.push(ann.damage_bbox(false));
     state.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
 
     let ann_id = ann.id;
@@ -458,6 +473,7 @@ pub fn rebuild_annotation(state: &mut EditorState, idx: usize) {
         state.annotations[idx].update_bbox();
     }
 
+    state.layer_damage_rects.push(state.annotations[idx].damage_bbox(false));
     state.damage_rects.push(DamageZone::Global(state.annotations[idx].damage_bbox(true)));
     state.annotations_dirty = true;
 }
