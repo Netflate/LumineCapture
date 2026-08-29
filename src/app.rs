@@ -157,6 +157,9 @@ pub async fn make_screenshot(
                 editor_state.mod_ctrl = ctrl;
                 editor_state.mod_shift = shift;
             }
+            OverlayEvent::Scroll { delta_x, delta_y } => {
+                input::handle_scroll(&mut editor_state, delta_x, delta_y, &mut dirty_mask);
+            }
         }
 
         tick_panel_animation(&mut editor_state.toolbar, &mut editor_state.damage_rects, &mut dirty_mask);

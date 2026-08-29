@@ -107,7 +107,7 @@ pub fn draw_aligned_text(
     align: HAlign,
     offset: (f32, f32),
     weight: cosmic_text::Weight,
-    style: cosmic_text::Style,        // ← новый параметр
+    style: cosmic_text::Style,        
 ) {
     if text.is_empty() {
         return;

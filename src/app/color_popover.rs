@@ -4,11 +4,14 @@ use crate::types::click::ClickTarget;
 use crate::types::panel::{sync_panel_rect, sync_panel_hover, emit_panel_damage, UiPanel};
 use crate::types::color_popover::{
     ColorField, ColorPopoverElement, COLORPICKER_WIDTH, COLORPICKER_HEIGHT, COLORPICKER_OFFSET, FIELD_FONT_SIZE,
+    step_hex_text,
 };
 use crate::types::text_field::{is_hex_char, is_rgba_channel_char, CursorInit};
 use crate::types::SpecialKey;
 use super::settings_logic::commit_settings_change;
 use tiny_skia::Color;
+
+const FIELD_SCROLL_PIXELS_PER_STEP: f32 = 10.0;
 
 pub fn update_color_popover(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     let old_rect = editor_state.color_popover.rect();
@@ -265,6 +268,51 @@ pub fn handle_color_field_key_press(editor_state: &mut EditorState, key: Special
     if commit {
         commit_color_field_edit(editor_state, dirty_mask);
     }
+}
+
+pub fn step_color_field(
+    editor_state: &mut EditorState,
+    field: ColorField,
+    steps: i32,
+    dirty_mask: &mut u32,
+) {
+    if steps == 0 {
+        return;
+    }
+
+    let current_text = editor_state.color_popover.confirmed_field_text(field);
+
+    let new_text = match field {
+        ColorField::Hex => step_hex_text(&current_text, steps),
+        ColorField::R | ColorField::G | ColorField::B | ColorField::A => {
+            let current: i32 = current_text.trim().parse().unwrap_or(0);
+            (current + steps).clamp(0, 255).to_string()
+        }
+    };
+
+    if apply_color_field_text(editor_state, field, &new_text, true, dirty_mask) {
+        editor_state.color_popover.dirty = true;
+        emit_color_popover_damage(editor_state, dirty_mask);
+
+        editor_state.color_popover.fields.set_editing_text(field, new_text);
+    }
+}
+
+pub fn handle_color_field_scroll(
+    editor_state: &mut EditorState,
+    field: ColorField,
+    delta_y: f32,
+    dirty_mask: &mut u32,
+) {
+    if editor_state.color_popover.fields.editing.as_ref().is_some_and(|e| e.key == field) {
+        return;
+    }
+
+    let steps = editor_state
+        .color_popover
+        .scroll_step(field, delta_y / FIELD_SCROLL_PIXELS_PER_STEP);
+
+    step_color_field(editor_state, field, steps, dirty_mask);
 }
 
 pub fn handle_color_popover_click(editor_state: &mut EditorState, dirty_mask: &mut u32) {

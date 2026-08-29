@@ -14,10 +14,11 @@ use crate::types::panel::UiPanel;
 use crate::types::toolbar::{ToolbarButton, ToolbarItem};
 use crate::types::{
     MAG_FRAME_INTERVAL, MagnifierState, MouseButton, PointerState, SettingsWidget,
-    SpecialKey, ArrowHoldState,
+    SpecialKey, ArrowHoldState, StepperArrow,
 };
 use crate::types::click::ClickTarget;
-use crate::types::text_field::CursorInit;
+use crate::types::text_field::{CursorInit, SCROLL_SENSITIVITY};
+use crate::types::color_popover::ColorField;
 use crate::types::settings_panel::SETTINGS_LABEL_FONT_SIZE;
 use crate::utils::{get_full_workspace_rect, global_point_to_local};
 use crate::editor::dirty::{mark_dirty, apply_damage_rects};
@@ -28,11 +29,12 @@ use super::toolbar_logic::update_toolbar;
 use super::color_popover::{
     update_color_popover, handle_color_popover_click, close_color_popover,
     handle_color_popover_drag, handle_color_popover_release, commit_color_field_edit,
-    handle_color_field_text_input, handle_color_field_key_press,
+    handle_color_field_text_input, handle_color_field_key_press, handle_color_field_scroll,
+    step_color_field,
 };
 use super::settings_logic::{
     update_settings_panel, apply_stepper_arrow_step, commit_stepper_text_edit, handle_settings_key_press,
-    handle_settings_text_input, apply_toggle_field, 
+    handle_settings_text_input, apply_toggle_field, handle_stepper_scroll, sync_stepper_edit_text,
 };
 
 pub fn handle_pointer_move(
@@ -62,7 +64,7 @@ pub fn handle_pointer_move(
     apply_damage_rects(editor_state, dirty_mask);
 }
 
-// ──── hit test with priority: color popover (if open) → toolbar → settings ──────────────────
+// ──── hit test with priority: color popover (if open) -> toolbar -> settings ──────────────────
 
 enum UiHit {
     ColorPopoverInside,
@@ -116,7 +118,7 @@ pub fn handle_pointer_button(
         commit_color_field_edit(editor_state, dirty_mask);
     }
 
-    // ── 1. priority ui hit test: color popover → toolbar → settings ──────────────
+    // ── 1. priority ui hit test: color popover -> toolbar -> settings ──────────────
 
     if is_left_click_pressed {
         let mut ui_hit = hit_test_ui(editor_state, editor_state.pointer.local);
@@ -174,7 +176,7 @@ pub fn handle_pointer_button(
                 let monitor_idx = editor_state.settings_panel.monitor_idx;
                 editor_state.settings_panel.dirty = true;
 
-                // спец-случай только для ColorSwatch: повторный клик закрывает попап
+                // only exception: clicking outside of color swatch closes it, even if on the colorswatch icon itself 
                 if editor_state.settings_panel.selected == Some(widget_idx)
                     && matches!(editor_state.settings_panel.widgets[widget_idx], SettingsWidget::ColorSwatch)
                 {
@@ -332,6 +334,46 @@ pub fn handle_text_input(editor_state: &mut EditorState, ch: char, dirty_mask: &
 }
 
 pub fn handle_key_press(editor_state: &mut EditorState, key: SpecialKey, dirty_mask: &mut u32) {
+    if matches!(key, SpecialKey::Up | SpecialKey::Down) {
+        let sign: i32 = if matches!(key, SpecialKey::Up) { 1 } else { -1 };
+
+        if let Some(field) = editor_state.color_popover.fields.editing.as_ref().map(|e| e.key) {
+            step_color_field(editor_state, field, sign, dirty_mask);
+            apply_damage_rects(editor_state, dirty_mask);
+            return;
+        }
+
+        if let Some(widget_idx) = editor_state.settings_panel.fields.editing.as_ref().map(|e| e.key) {
+            let arrow = if sign > 0 { StepperArrow::Up } else { StepperArrow::Down };
+            apply_stepper_arrow_step(editor_state, widget_idx, arrow, dirty_mask);
+            update_settings_panel(editor_state, dirty_mask);
+            sync_stepper_edit_text(editor_state, widget_idx);
+            apply_damage_rects(editor_state, dirty_mask);
+            return;
+        }
+
+        let local = editor_state.pointer.local;
+
+        if editor_state.color_popover.open
+            && let Some(field) = hit_test_color_scroll_field(editor_state, local)
+        {
+            step_color_field(editor_state, field, sign, dirty_mask);
+            apply_damage_rects(editor_state, dirty_mask);
+            return;
+        }
+
+        if editor_state.settings_panel.visible
+            && let Some(widget_idx) = editor_state.settings_panel.hit_test(local)
+            && matches!(editor_state.settings_panel.widgets.get(widget_idx), Some(SettingsWidget::Stepper { .. }))
+        {
+            let arrow = if sign > 0 { StepperArrow::Up } else { StepperArrow::Down };
+            apply_stepper_arrow_step(editor_state, widget_idx, arrow, dirty_mask);
+            update_settings_panel(editor_state, dirty_mask);
+            apply_damage_rects(editor_state, dirty_mask);
+            return;
+        }
+    }
+
     if editor_state.color_popover.fields.is_editing() {
         handle_color_field_key_press(editor_state, key, dirty_mask);
         return;
@@ -342,4 +384,38 @@ pub fn handle_key_press(editor_state: &mut EditorState, key: SpecialKey, dirty_m
     }
     dispatch_key(editor_state.selected_tool, editor_state, key, dirty_mask);
     apply_damage_rects(editor_state, dirty_mask);
+}
+
+// ──── scroll: hit-test first (color popover fields -> settings stepper), then apply ──────────
+pub fn handle_scroll(editor_state: &mut EditorState, delta_x: f32, delta_y: f32, dirty_mask: &mut u32) {
+    let local = editor_state.pointer.local;
+    let delta_y = delta_y * SCROLL_SENSITIVITY;
+
+    if editor_state.color_popover.open {
+        if let Some(field) = hit_test_color_scroll_field(editor_state, local) {
+            handle_color_field_scroll(editor_state, field, delta_y, dirty_mask);
+            apply_damage_rects(editor_state, dirty_mask);
+            return;
+        }
+    }
+
+    if editor_state.settings_panel.visible {
+        if let Some(widget_idx) = editor_state.settings_panel.hit_test(local)
+            && matches!(editor_state.settings_panel.widgets.get(widget_idx), Some(SettingsWidget::Stepper { .. }))
+        {
+            handle_stepper_scroll(editor_state, widget_idx, delta_y, dirty_mask);
+            apply_damage_rects(editor_state, dirty_mask);
+            return;
+        }
+    }
+
+    let _ = delta_x;
+    apply_damage_rects(editor_state, dirty_mask);
+}
+
+fn hit_test_color_scroll_field(editor_state: &EditorState, local: (f64, f64)) -> Option<ColorField> {
+    if editor_state.color_popover.hex_field_hit(local) {
+        return Some(ColorField::Hex);
+    }
+    editor_state.color_popover.rgba_field_hit(local)
 }

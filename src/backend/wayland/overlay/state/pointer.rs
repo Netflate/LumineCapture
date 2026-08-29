@@ -26,7 +26,6 @@ impl PointerHandler for OverlayState {
                 .iter()
                 .find(|(_, sd)| sd.surface == event.surface)
                 .map(|(id, _)| *id);
-
             match event.kind {
                 PointerEventKind::Enter { serial } => {
                     self.pointer_enter_serial = serial;
@@ -76,7 +75,18 @@ impl PointerHandler for OverlayState {
                         pressed,
                     });
                 }
-                _ => {}
+                
+                PointerEventKind::Axis { horizontal, vertical, .. } => {
+                    let delta_x = horizontal.absolute as f32;
+                    let delta_y = -vertical.absolute as f32;
+
+                    if delta_x != 0.0 || delta_y != 0.0 {
+                        self.events.push_back(OverlayEvent::Scroll {
+                            delta_x,
+                            delta_y,
+                        });
+                    }
+                }
             }
         }
     }

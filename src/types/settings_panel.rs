@@ -162,6 +162,8 @@ pub struct SettingsPanel {
     pub fields: TextFieldGroup<usize>,
     pub arrow_held: Option<ArrowHoldState>,
     pub toggled: HashMap<usize, bool>,
+    pub scroll_accumulator: f32,
+    pub scroll_widget: Option<usize>,
 }
 
 impl SettingsPanel {
@@ -183,6 +185,8 @@ impl SettingsPanel {
             fields: TextFieldGroup::new(),
             arrow_held: None,
             toggled: HashMap::new(),
+            scroll_accumulator: 0.0,
+            scroll_widget: None,
         }
     }
 
@@ -311,6 +315,27 @@ impl SettingsPanel {
         let v = !self.is_toggled(idx);
         self.set_toggled(idx, v);
         v
+    }
+
+    // raw implementation
+    pub fn scroll_step(&mut self, widget_idx: usize, delta: f32) -> i32 {
+        if self.scroll_widget != Some(widget_idx) {
+            self.scroll_widget = Some(widget_idx);
+            self.scroll_accumulator = 0.0;
+        }
+
+        self.scroll_accumulator += delta;
+
+        let mut steps = 0i32;
+        while self.scroll_accumulator >= 1.0 {
+            steps += 1;
+            self.scroll_accumulator -= 1.0;
+        }
+        while self.scroll_accumulator <= -1.0 {
+            steps -= 1;
+            self.scroll_accumulator += 1.0;
+        }
+        steps
     }
 }
 

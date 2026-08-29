@@ -185,6 +185,21 @@ pub fn parse_hex_color(s: &str) -> Option<Color> {
     Some(Color::from_rgba8(r, g, b, a))
 }
 
+pub fn step_hex_text(text: &str, steps: i32) -> String {
+    let trimmed = text.trim().trim_start_matches('#');
+    let width = if trimmed.len() == 8 { 8usize } else { 6usize };
+    let current = u32::from_str_radix(trimmed, 16).unwrap_or(0);
+    let max: u32 = if width == 8 { 0xFFFF_FFFF } else { 0x00FF_FFFF };
+
+    let new_value = if steps >= 0 {
+        current.saturating_add(steps as u32).min(max)
+    } else {
+        current.saturating_sub(steps.unsigned_abs())
+    };
+
+    format!("{:0width$X}", new_value, width = width)
+}
+
 /// default palette when there isn't selection history 
 fn default_palette() -> &'static [Color] {
     static PALETTE: OnceLock<Vec<Color>> = OnceLock::new();
@@ -206,6 +221,7 @@ fn default_palette() -> &'static [Color] {
 pub struct ColorSquareState {
     pub hue: f32,
     pub sv: (f32, f32),
+    pub alpha: u8,
     pub sv_pixmap: Option<Pixmap>, 
     pub sv_dirty: bool,           
     pub dragging: bool,
@@ -216,6 +232,7 @@ impl ColorSquareState {
         Self {
             hue: 0.0,
             sv: (1.0, 1.0),
+            alpha: 255,
             sv_pixmap: None,
             sv_dirty: true,
             dragging: false,
@@ -231,7 +248,8 @@ impl ColorSquareState {
     }
 
     pub fn color(&self) -> Color {
-        hsv_to_color(self.hue, self.sv.0, self.sv.1)
+        let rgb = hsv_to_color(self.hue, self.sv.0, self.sv.1).to_color_u8();
+        Color::from_rgba8(rgb.red(), rgb.green(), rgb.blue(), self.alpha)
     }
 }
 
@@ -355,6 +373,9 @@ pub struct ColorPickerPopover {
     pub recent_colors: Vec<Color>,
 
     pub fields: TextFieldGroup<ColorField>,
+
+    pub scroll_accumulator: f32,
+    pub scroll_field: Option<ColorField>,
 }
 
 impl ColorPickerPopover {
@@ -377,6 +398,8 @@ impl ColorPickerPopover {
             hue_clip_mask: None,
             recent_colors: default_palette().to_vec(),
             fields: TextFieldGroup::new(),
+            scroll_accumulator: 0.0,
+            scroll_field: None,
         }
     }
 
@@ -445,6 +468,7 @@ impl ColorPickerPopover {
         let (h, s, v) = color_to_hsv(color);
         self.sv_square.set_hue(h);
         self.sv_square.sv = (s, v);
+        self.sv_square.alpha = color.to_color_u8().alpha();
     }
 
     pub fn swatch_hit(&self, local: (f64, f64)) -> Option<usize> {
@@ -501,6 +525,14 @@ impl ColorPickerPopover {
         self.fields.value(field).cloned().unwrap_or_default()
     }
 
+    pub fn confirmed_field_text(&self, field: ColorField) -> String {
+        let color = self.sv_square.color();
+        match field {
+            ColorField::Hex => color_to_hex_string(color),
+            _ => color_channel_u8(color, field).to_string(),
+        }
+    }
+
     pub fn sync_field_values(&mut self) {
         let color = self.sv_square.color();
         self.fields.sync_value(ColorField::Hex, color_to_hex_string(color));
@@ -521,6 +553,26 @@ impl ColorPickerPopover {
         let color = color_with_channel(current, field, value);
         self.select_color(color);
         Some(color)
+    }
+
+    pub fn scroll_step(&mut self, field: ColorField, delta: f32) -> i32 {
+        if self.scroll_field != Some(field) {
+            self.scroll_field = Some(field);
+            self.scroll_accumulator = 0.0;
+        }
+
+        self.scroll_accumulator += delta;
+
+        let mut steps = 0i32;
+        while self.scroll_accumulator >= 1.0 {
+            steps += 1;
+            self.scroll_accumulator -= 1.0;
+        }
+        while self.scroll_accumulator <= -1.0 {
+            steps -= 1;
+            self.scroll_accumulator += 1.0;
+        }
+        steps
     }
 }
 

@@ -15,6 +15,8 @@ use crate::editor::dirty::{mark_dirty, apply_damage_rects};
 
 use std::time::Instant;
 
+const STEPPER_SCROLL_PIXELS_PER_STEP: f32 = 10.0;
+
 pub fn active_annotation_idx(editor_state: &EditorState) -> Option<usize> {
     if editor_state.selected_tool == Tool::Pick || editor_state.selected_tool == Tool::Text {
         editor_state.selected_annotation
@@ -360,6 +362,57 @@ pub fn apply_stepper_arrow_step(
     let new_value = (current + delta).clamp(min, max);
 
     apply_stepper_field(editor_state, new_value, dirty_mask);
+}
+
+pub fn sync_stepper_edit_text(editor_state: &mut EditorState, widget_idx: usize) {
+    if !editor_state.settings_panel.fields.editing.as_ref().is_some_and(|e| e.key == widget_idx) {
+        return;
+    }
+
+    let ann_idx = active_annotation_idx(editor_state);
+    let value = match ann_idx.and_then(|i| editor_state.annotations.get(i)) {
+        Some(ann) => match &ann.shape {
+            AnnotationShape::Text { font_size, .. } => *font_size,
+            _ => ann.stroke_width,
+        },
+        None => match editor_state.selected_tool {
+            Tool::Text => editor_state.tool_settings.font_size,
+            _ => editor_state.tool_settings.stroke_width,
+        },
+    };
+
+    editor_state.settings_panel.fields.set_editing_text(widget_idx, format_stepper_number(value));
+    editor_state.settings_panel.dirty = true;
+}
+
+pub fn handle_stepper_scroll(
+    editor_state: &mut EditorState,
+    widget_idx: usize,
+    delta_y: f32,
+    dirty_mask: &mut u32,
+) {
+    if !matches!(editor_state.settings_panel.widgets.get(widget_idx), Some(SettingsWidget::Stepper { .. })) {
+        return;
+    }
+
+    if editor_state.settings_panel.fields.editing.as_ref().is_some_and(|e| e.key == widget_idx) {
+        return;
+    }
+
+    let steps = editor_state
+        .settings_panel
+        .scroll_step(widget_idx, delta_y / STEPPER_SCROLL_PIXELS_PER_STEP);
+
+    if steps == 0 {
+        return;
+    }
+
+    let arrow = if steps > 0 { StepperArrow::Up } else { StepperArrow::Down };
+    for _ in 0..steps.unsigned_abs() {
+        apply_stepper_arrow_step(editor_state, widget_idx, arrow, dirty_mask);
+    }
+
+    update_settings_panel(editor_state, dirty_mask);
 }
 
 fn format_stepper_number(v: f32) -> String {

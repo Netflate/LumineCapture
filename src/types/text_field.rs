@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use crate::types::SpecialKey;
 
+pub const SCROLL_SENSITIVITY: f32 = 4.0;
 #[derive(Debug, Clone, Default)]
 pub struct LineEditState {
     pub text: String,
@@ -278,6 +279,16 @@ impl<K: Eq + Hash + Copy> TextFieldGroup<K> {
 
     pub fn value(&self, key: K) -> Option<&String> {
         self.values.get(&key)
+    }
+
+    // to overwite text while editing
+    // obligatory when changing text using arrows & editing is true
+    pub fn set_editing_text(&mut self, key: K, text: String) {
+        if let Some(edit) = self.editing.as_mut() {
+            if edit.key == key {
+                edit.field = LineEditState::new(text);
+            }
+        }
     }
 }
 

@@ -39,6 +39,7 @@ pub enum OverlayEvent {
     TextInput(char),
     KeyPress(SpecialKey),
     ModifiersChanged { ctrl: bool, shift: bool },
+    Scroll { delta_x: f32, delta_y: f32 },
 }
 
 #[derive(Debug, Clone)]
