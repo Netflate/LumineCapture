@@ -169,21 +169,24 @@ impl EditorState {
         state_a: &[Annotation],
         state_b: &[Annotation],
     ) {
-        for ann in state_a {
-            if !state_b.iter().any(|a| a.id == ann.id)
-                && let Some(expanded) = expand_rect(&ann.bbox, ann.stroke_width * 2.0 + 4.0)
-            {
-                damage_rects.push(DamageZone::Global(expanded));
-                layer_damage_rects.push(expanded);
+        for ann_a in state_a {
+            if let Some(ann_b) = state_b.iter().find(|b| b.id == ann_a.id) {
+                if ann_a != ann_b {
+                    damage_rects.push(DamageZone::Global(ann_a.damage_bbox(true)));
+                    layer_damage_rects.push(ann_a.damage_bbox(false));
+                    damage_rects.push(DamageZone::Global(ann_b.damage_bbox(true)));
+                    layer_damage_rects.push(ann_b.damage_bbox(false));
+                }
+            } else {
+                damage_rects.push(DamageZone::Global(ann_a.damage_bbox(true)));
+                layer_damage_rects.push(ann_a.damage_bbox(false));
             }
         }
 
-        for ann in state_b {
-            if !state_a.iter().any(|a| a.id == ann.id)
-                && let Some(expanded) = expand_rect(&ann.bbox, ann.stroke_width * 2.0 + 4.0)
-            {
-                damage_rects.push(DamageZone::Global(expanded));
-                layer_damage_rects.push(expanded);
+        for ann_b in state_b {
+            if !state_a.iter().any(|a| a.id == ann_b.id) {
+                damage_rects.push(DamageZone::Global(ann_b.damage_bbox(true)));
+                layer_damage_rects.push(ann_b.damage_bbox(false));
             }
         }
     }

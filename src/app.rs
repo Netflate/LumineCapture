@@ -95,9 +95,7 @@ pub async fn make_screenshot(
         annotations_layer,
         annotations_dirty: false,
         layer_damage_rects: Vec::new(),
-        // NEW: сколько точек текущего pending-Pen уже вшито в персистентный
-        // layer напрямую (см. tools/pen.rs). Нужно добавить это поле
-        // в саму структуру EditorState.
+        // Number of points of the current pending Pen already baked into persistent layer
         pending_pen_baked: 0,
         font_system,
         swash_cache,
@@ -143,9 +141,53 @@ pub async fn make_screenshot(
             }
             OverlayEvent::Undo => {
                 editor_state.undo(&mut dirty_mask);
+                settings_logic::update_settings_panel(&mut editor_state, &mut dirty_mask);
+                editor_state.settings_panel.dirty = true;
+                let sp_mon = editor_state.settings_panel.monitor_idx;
+                if let Some(rect) = editor_state.settings_panel.rect() {
+                    editor_state.damage_local(sp_mon, rect);
+                }
+                dirty_mask |= 1 << sp_mon;
+
+                if editor_state.color_popover.open {
+                    if let Some(ann_idx) = settings_logic::active_annotation_idx(&editor_state) {
+                        if let Some(ann) = editor_state.annotations.get(ann_idx) {
+                            editor_state.color_popover.select_color(ann.color);
+                        }
+                    }
+                    color_popover::update_color_popover(&mut editor_state, &mut dirty_mask);
+                    editor_state.color_popover.dirty = true;
+                    let cp_mon = editor_state.color_popover.monitor_idx;
+                    if let Some(rect) = editor_state.color_popover.rect() {
+                        editor_state.damage_local(cp_mon, rect);
+                    }
+                    dirty_mask |= 1 << cp_mon;
+                }
             }
             OverlayEvent::Redo => {
                 editor_state.redo(&mut dirty_mask);
+                settings_logic::update_settings_panel(&mut editor_state, &mut dirty_mask);
+                editor_state.settings_panel.dirty = true;
+                let sp_mon = editor_state.settings_panel.monitor_idx;
+                if let Some(rect) = editor_state.settings_panel.rect() {
+                    editor_state.damage_local(sp_mon, rect);
+                }
+                dirty_mask |= 1 << sp_mon;
+
+                if editor_state.color_popover.open {
+                    if let Some(ann_idx) = settings_logic::active_annotation_idx(&editor_state) {
+                        if let Some(ann) = editor_state.annotations.get(ann_idx) {
+                            editor_state.color_popover.select_color(ann.color);
+                        }
+                    }
+                    color_popover::update_color_popover(&mut editor_state, &mut dirty_mask);
+                    editor_state.color_popover.dirty = true;
+                    let cp_mon = editor_state.color_popover.monitor_idx;
+                    if let Some(rect) = editor_state.color_popover.rect() {
+                        editor_state.damage_local(cp_mon, rect);
+                    }
+                    dirty_mask |= 1 << cp_mon;
+                }
             }
             OverlayEvent::SaveToClipboard => {
                 drop(overlay);

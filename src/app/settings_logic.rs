@@ -109,6 +109,7 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
     );
 
     if editor_state.settings_panel.rect().is_some() {
+        let prev_hover = editor_state.settings_panel.hovered;
         let hovered = editor_state.settings_panel.hit_test(editor_state.pointer.local);
         let hovered_arrow = hovered.and_then(|idx| {
             editor_state
@@ -116,6 +117,15 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
                 .stepper_arrow_hit(idx, editor_state.pointer.local)
                 .map(|arrow| (idx, arrow))
         });
+
+        if hovered != prev_hover && !editor_state.settings_panel.is_editing() {
+            if let Some(snapshot) = editor_state.settings_panel.pre_edit_snapshot.take() {
+                if editor_state.annotations != snapshot {
+                    editor_state.undo_stack.push(snapshot);
+                    editor_state.redo_stack.clear();
+                }
+            }
+        }
 
         sync_panel_hover(
             &mut editor_state.settings_panel,
@@ -128,6 +138,13 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
             let still_on_arrow = hovered_arrow == Some((hold.widget_idx, hold.arrow));
             if !still_on_arrow {
                 editor_state.settings_panel.arrow_held = None;
+            }
+        }
+    } else if !editor_state.settings_panel.is_editing() {
+        if let Some(snapshot) = editor_state.settings_panel.pre_edit_snapshot.take() {
+            if editor_state.annotations != snapshot {
+                editor_state.undo_stack.push(snapshot);
+                editor_state.redo_stack.clear();
             }
         }
     }
@@ -200,6 +217,8 @@ pub fn commit_stepper_text_edit(editor_state: &mut EditorState, dirty_mask: &mut
     let monitor_idx = editor_state.settings_panel.monitor_idx;
     let rect = editor_state.settings_panel.rect();
 
+    let snapshot = editor_state.settings_panel.pre_edit_snapshot.take();
+
     let Some((widget_idx, text)) = editor_state.settings_panel.commit_edit() else {
         return;
     };
@@ -208,12 +227,20 @@ pub fn commit_stepper_text_edit(editor_state: &mut EditorState, dirty_mask: &mut
         emit_panel_damage(rect, monitor_idx, &mut editor_state.damage_rects, dirty_mask);
     }
 
-    try_apply_stepper_text(editor_state, widget_idx, &text, dirty_mask);
+    try_apply_stepper_text(editor_state, widget_idx, &text, false, dirty_mask);
+
+    if let Some(snapshot) = snapshot {
+        if editor_state.annotations != snapshot {
+            editor_state.undo_stack.push(snapshot);
+            editor_state.redo_stack.clear();
+        }
+    }
 }
 
 pub fn commit_settings_change(
     editor_state: &mut EditorState,
     changed: bool,
+    record_undo: bool,
     apply_to_tool: impl FnOnce(&mut ToolSettings),
     apply_to_annotation: impl FnOnce(&mut Annotation),
     dirty_mask: &mut u32,
@@ -225,6 +252,14 @@ pub fn commit_settings_change(
     apply_to_tool(&mut editor_state.tool_settings);
 
     if let Some(idx) = active_annotation_idx(editor_state) {
+        let old_damage = editor_state.annotations[idx].damage_bbox(true);
+        let old_layer_damage = editor_state.annotations[idx].damage_bbox(false);
+        editor_state.damage_rects.push(DamageZone::Global(old_damage));
+        editor_state.layer_damage_rects.push(old_layer_damage);
+
+        if record_undo {
+            editor_state.push_undo();
+        }
         apply_to_annotation(&mut editor_state.annotations[idx]);
         rebuild_annotation(editor_state, idx);
     }
@@ -243,6 +278,7 @@ fn try_apply_stepper_text(
     editor_state: &mut EditorState,
     widget_idx: usize,
     text: &str,
+    record_undo: bool,
     dirty_mask: &mut u32,
 ) -> bool {
     let Some(SettingsWidget::Stepper { min, max, .. }) =
@@ -253,7 +289,7 @@ fn try_apply_stepper_text(
     let (min, max) = (*min, *max);
 
     let Ok(parsed) = text.parse::<f32>() else { return false };
-    apply_stepper_field(editor_state, parsed.clamp(min, max), dirty_mask);
+    apply_stepper_field(editor_state, parsed.clamp(min, max), record_undo, dirty_mask);
     true
 }
 
@@ -265,10 +301,10 @@ fn live_apply_stepper_field(editor_state: &mut EditorState, widget_idx: usize, d
         return;
     };
 
-    try_apply_stepper_text(editor_state, widget_idx, &text, dirty_mask);
+    try_apply_stepper_text(editor_state, widget_idx, &text, false, dirty_mask);
 }
 
-fn apply_stepper_field(editor_state: &mut EditorState, new_value: f32, dirty_mask: &mut u32) {
+fn apply_stepper_field(editor_state: &mut EditorState, new_value: f32, record_undo: bool, dirty_mask: &mut u32) {
     let ann_idx = active_annotation_idx(editor_state);
 
     let is_text = match ann_idx.and_then(|i| editor_state.annotations.get(i)) {
@@ -293,6 +329,7 @@ fn apply_stepper_field(editor_state: &mut EditorState, new_value: f32, dirty_mas
     commit_settings_change(
         editor_state,
         changed,
+        record_undo,
         move |ts| {
             if is_text {
                 ts.font_size = new_value;
@@ -316,7 +353,8 @@ pub fn apply_toggle_field(
 ) {
     commit_settings_change(
         editor_state,
-        true, 
+        true,
+        true,
         move |ts| match field {
             ToggleField::Bold => ts.bold = new_value,
             ToggleField::Italic => ts.italic = new_value,
@@ -339,6 +377,10 @@ pub fn apply_stepper_arrow_step(
     arrow: StepperArrow,
     dirty_mask: &mut u32,
 ) {
+    if editor_state.settings_panel.pre_edit_snapshot.is_none() {
+        editor_state.settings_panel.pre_edit_snapshot = Some(editor_state.annotations.clone());
+    }
+
     let Some(SettingsWidget::Stepper { min, max, step, .. }) =
         editor_state.settings_panel.widgets.get(widget_idx)
     else {
@@ -361,7 +403,7 @@ pub fn apply_stepper_arrow_step(
     let delta = if arrow == StepperArrow::Up { step } else { -step };
     let new_value = (current + delta).clamp(min, max);
 
-    apply_stepper_field(editor_state, new_value, dirty_mask);
+    apply_stepper_field(editor_state, new_value, false, dirty_mask);
 }
 
 pub fn sync_stepper_edit_text(editor_state: &mut EditorState, widget_idx: usize) {
@@ -405,6 +447,10 @@ pub fn handle_stepper_scroll(
 
     if steps == 0 {
         return;
+    }
+
+    if editor_state.settings_panel.pre_edit_snapshot.is_none() {
+        editor_state.settings_panel.pre_edit_snapshot = Some(editor_state.annotations.clone());
     }
 
     let arrow = if steps > 0 { StepperArrow::Up } else { StepperArrow::Down };

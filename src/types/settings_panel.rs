@@ -164,6 +164,7 @@ pub struct SettingsPanel {
     pub toggled: HashMap<usize, bool>,
     pub scroll_accumulator: f32,
     pub scroll_widget: Option<usize>,
+    pub pre_edit_snapshot: Option<Vec<Annotation>>,
 }
 
 impl SettingsPanel {
@@ -187,6 +188,7 @@ impl SettingsPanel {
             toggled: HashMap::new(),
             scroll_accumulator: 0.0,
             scroll_widget: None,
+            pre_edit_snapshot: None,
         }
     }
 

@@ -12,7 +12,7 @@ pub const SHADOW_OFFSET: (f32, f32) = (0.0, 3.0);
 pub const SHADOW_LAYERS: usize = 4;
 pub const SPREAD_PER_LAYER: f32 = 1.5;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum AnnotationShape {
     NumeratedArrow {
         start: (f32, f32),
@@ -72,7 +72,7 @@ impl AnnotationShape {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Annotation {
     pub id: u64,
     pub shape: AnnotationShape,
@@ -307,18 +307,19 @@ impl Annotation {
     }
 
     pub fn damage_bbox(&self, is_selected: bool) -> Rect {
-        if is_selected {
-            let pad = HANDLE_PAD as f32; // if its selected we need to add handlers padding
-            Rect::from_ltrb(
-                self.bbox.left() - pad,
-                self.bbox.top() - pad,
-                self.bbox.right() + pad,
-                self.bbox.bottom() + pad,
-            )
-            .unwrap_or(self.bbox)
+        let pad = if is_selected {
+            crate::renderer::selection_chrome_pad()
+                .max(crate::renderer::visual_pad(self.stroke_width))
         } else {
-            self.bbox
-        }
+            crate::renderer::visual_pad(self.stroke_width)
+        };
+        Rect::from_ltrb(
+            self.bbox.left() - pad,
+            self.bbox.top() - pad,
+            self.bbox.right() + pad,
+            self.bbox.bottom() + pad,
+        )
+        .unwrap_or(self.bbox)
     }
 }
 
@@ -354,7 +355,7 @@ pub fn commit_drag_if_changed(state: &mut EditorState) {
     if let Some(drag) = state.ann_drag.take() {
         if let Some(ann) = state.pending.take() {
             let actually_changed = !matches!(drag.handle, SelectionHandle::None)
-                && ann.bbox != drag.orig.bbox;
+                && ann != drag.orig;
 
             let insert_idx = drag.orig_index.min(state.annotations.len());
             if actually_changed {
@@ -425,15 +426,16 @@ pub fn apply_annotation_drag(state: &mut EditorState, global: (f64, f64)) {
                     prev_global,
                     global,
                 );
-                let ann_id = ann.id;
-                let editor = state.text_editors.get_mut(&ann_id);
-                if let Some(ed) = editor {
-                    update_text_bbox_inline(
-                        ann,
-                        ed,
-                        &mut state.font_system,
-                    );
-                }
+                let editor = crate::tools::text::ensure_text_editor(
+                    ann,
+                    &mut state.text_editors,
+                    &mut state.font_system,
+                );
+                update_text_bbox_inline(
+                    ann,
+                    editor,
+                    &mut state.font_system,
+                );
             } else {
                 // shape resize: always from orig + total delta to avoid accumulated error
                 let total_dx = (global.0 - start_global.0) as f32;
@@ -464,11 +466,13 @@ pub fn rebuild_annotation(state: &mut EditorState, idx: usize) {
     state.layer_damage_rects.push(ann.damage_bbox(false));
     state.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
 
-    let ann_id = ann.id;
     if matches!(state.annotations[idx].shape, AnnotationShape::Text { .. }) {
-        if let Some(editor) = state.text_editors.get_mut(&ann_id) {
-            update_text_bbox_inline(&mut state.annotations[idx], editor, &mut state.font_system);
-        }
+        let editor = crate::tools::text::ensure_text_editor(
+            &state.annotations[idx],
+            &mut state.text_editors,
+            &mut state.font_system,
+        );
+        update_text_bbox_inline(&mut state.annotations[idx], editor, &mut state.font_system);
     } else {
         state.annotations[idx].update_bbox();
     }

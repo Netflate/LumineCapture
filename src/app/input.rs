@@ -231,6 +231,7 @@ pub fn handle_pointer_button(
                                 CursorInit::End
                             };
 
+                            editor_state.settings_panel.pre_edit_snapshot = Some(editor_state.annotations.clone());
                             editor_state.settings_panel.begin_edit(widget_idx, current_value, cursor_init);
                         }
                     }

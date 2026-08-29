@@ -1,5 +1,6 @@
 use crate::types::panel::{AnimatedPanel, HoverablePanel, PanelItem, UiPanel};
 use crate::types::text_field::TextFieldGroup;
+use crate::types::Annotation;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 use tiny_skia::{Color, Mask, Pixmap, Rect};
@@ -376,6 +377,7 @@ pub struct ColorPickerPopover {
 
     pub scroll_accumulator: f32,
     pub scroll_field: Option<ColorField>,
+    pub pre_edit_snapshot: Option<Vec<Annotation>>,
 }
 
 impl ColorPickerPopover {
@@ -400,6 +402,7 @@ impl ColorPickerPopover {
             fields: TextFieldGroup::new(),
             scroll_accumulator: 0.0,
             scroll_field: None,
+            pre_edit_snapshot: None,
         }
     }
 

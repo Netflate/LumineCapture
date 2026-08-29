@@ -362,8 +362,8 @@ fn blit_annotations(src: &Pixmap, dst: &mut Pixmap, rect: &Rect) {
     }
 }
 
-/// Точечно зануляет прямоугольник в персистентном layer'е (без anti-alias,
-/// прямая работа со срезами памяти — как `blit_rect`, только пишем нули).
+/// Clears a rectangle to transparent in the persistent layer without anti-aliasing
+/// by writing zeroes directly to the slice.
 fn clear_rect_transparent(layer: &mut Pixmap, rect: &Rect) {
     let (w, h) = (layer.width(), layer.height());
     let Some((x, y, rw, rh)) = rect_bounds(rect, w, h) else {
@@ -379,13 +379,12 @@ fn clear_rect_transparent(layer: &mut Pixmap, rect: &Rect) {
     }
 }
 
-/// Перестраивает annotations layer.
+/// Rebuilds the annotations layer.
 ///
-/// Если передан `dirty_rect` (в локальных координатах layer'а) — чистит и
-/// перерисовывает ТОЛЬКО те аннотации, чей визуальный bbox пересекается
-/// с этой областью.
+/// If `dirty_rect` is provided (in local layer coordinates), clears and
+/// redraws ONLY annotations whose visual bbox intersects with this area.
 ///
-/// `None` — полный ребилд (первый кадр, ресайз, safety fallback).
+/// `None` indicates a full rebuild (first frame, resize, safety fallback).
 pub fn rebuild_annotations_layer(
     layer: &mut Pixmap,
     annotations: &[Annotation],

@@ -132,18 +132,17 @@ pub fn draw_annotation(
         }
         AnnotationShape::Text { .. } => {
             let is_editing = active_text_id == Some(ann.id);
-            if let Some(editor) = text_editors.get_mut(&ann.id) {
-                let mut pixmap_mut = canvas.as_mut();
-                render_text_annotation(
-                    ann,
-                    editor,
-                    font_system,
-                    swash_cache,
-                    &mut pixmap_mut,
-                    offset,
-                    is_editing,
-                );
-            }
+            let editor = crate::tools::text::ensure_text_editor(ann, text_editors, font_system);
+            let mut pixmap_mut = canvas.as_mut();
+            render_text_annotation(
+                ann,
+                editor,
+                font_system,
+                swash_cache,
+                &mut pixmap_mut,
+                offset,
+                is_editing,
+            );
         }
         AnnotationShape::NumeratedArrow { start, end, number } => {
             draw_numerated_arrow(

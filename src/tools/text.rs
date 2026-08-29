@@ -198,9 +198,22 @@ impl ToolBehavior for TextTool {
                     .find(|a| a.id == prev.annotation_id)
                 {
                     state.damage_rects.push(DamageZone::Global(prev_ann.damage_bbox(true)));
+                    state.layer_damage_rects.push(prev_ann.damage_bbox(false));
                 }
                 if let Some(prev_editor) = state.text_editors.get_mut(&prev.annotation_id) {
                     prev_editor.set_selection(Selection::None);
+                }
+            }
+
+            if let Some(old_idx) = state.selected_annotation {
+                if old_idx != i {
+                    if let Some(old_ann) = state.annotations.get(old_idx) {
+                        state.damage_rects.push(DamageZone::Global(old_ann.damage_bbox(true)));
+                        state.layer_damage_rects.push(old_ann.damage_bbox(false));
+                        if let Some(old_editor) = state.text_editors.get_mut(&old_ann.id) {
+                            old_editor.set_selection(Selection::None);
+                        }
+                    }
                 }
             }
 
@@ -237,18 +250,30 @@ impl ToolBehavior for TextTool {
             return;
         }
 
-        // 2. clicking on empty > remove prev text focus if exists
-        if let Some(edit) = state.text_editing.take() {
-            if let Some(prev_ann) = state
-                .annotations
-                .iter()
-                .find(|a| a.id == edit.annotation_id)
-            {
-                state.layer_damage_rects.push(prev_ann.damage_bbox(false));
-                state.damage_rects.push(DamageZone::Global(prev_ann.damage_bbox(true)));
+        // 2. clicking on empty > remove prev text focus / selection if exists
+        let had_selection = state.selected_annotation.is_some() || state.text_editing.is_some();
+        if had_selection {
+            if let Some(edit) = state.text_editing.take() {
+                if let Some(prev_ann) = state
+                    .annotations
+                    .iter()
+                    .find(|a| a.id == edit.annotation_id)
+                {
+                    state.layer_damage_rects.push(prev_ann.damage_bbox(false));
+                    state.damage_rects.push(DamageZone::Global(prev_ann.damage_bbox(true)));
+                }
+                if let Some(editor) = state.text_editors.get_mut(&edit.annotation_id) {
+                    editor.set_selection(Selection::None);
+                }
             }
-            if let Some(editor) = state.text_editors.get_mut(&edit.annotation_id) {
-                editor.set_selection(Selection::None);
+            if let Some(old_idx) = state.selected_annotation.take() {
+                if let Some(old_ann) = state.annotations.get(old_idx) {
+                    state.layer_damage_rects.push(old_ann.damage_bbox(false));
+                    state.damage_rects.push(DamageZone::Global(old_ann.damage_bbox(true)));
+                    if let Some(editor) = state.text_editors.get_mut(&old_ann.id) {
+                        editor.set_selection(Selection::None);
+                    }
+                }
             }
             state.selected_annotation = None;
             state.annotations_dirty = true;
@@ -325,6 +350,10 @@ impl ToolBehavior for TextTool {
     }
 
     fn on_text(&self, state: &mut EditorState, ch: char, _dirty_mask: &mut u32) {
+        if state.ann_drag.is_some() {
+            return;
+        }
+
         let Some(edit) = state.text_editing.as_ref() else {
             return;
         };
@@ -347,6 +376,10 @@ impl ToolBehavior for TextTool {
     }
 
     fn on_key(&self, state: &mut EditorState, key: SpecialKey, _dirty_mask: &mut u32) {
+        if state.ann_drag.is_some() {
+            return;
+        }
+
         let Some(edit) = state.text_editing.as_ref() else {
             return;
         };
@@ -392,12 +425,34 @@ impl ToolBehavior for TextTool {
                 editor.set_selection(Selection::None);
             }
         }
+        if let Some(old_idx) = state.selected_annotation.take() {
+            if let Some(old_ann) = state.annotations.get(old_idx) {
+                state.layer_damage_rects.push(old_ann.damage_bbox(false));
+                state.damage_rects.push(DamageZone::Global(old_ann.damage_bbox(true)));
+                if let Some(editor) = state.text_editors.get_mut(&old_ann.id) {
+                    editor.set_selection(Selection::None);
+                }
+            }
+        }
         state.text_editing = None;
         state.selected_annotation = None;
+        state.annotations_dirty = true;
     }
 }
 
-// ── Editor -> Annotation ────────────────────────────────────────
+pub fn shape_entire_buffer(
+    buffer: &mut cosmic_text::Buffer,
+    font_system: &mut cosmic_text::FontSystem,
+    prune: bool,
+) {
+    if buffer.lines.is_empty() {
+        return;
+    }
+    let last_line = buffer.lines.len() - 1;
+    let last_index = buffer.lines[last_line].text().len();
+    let end_cursor = cosmic_text::Cursor::new(last_line, last_index);
+    buffer.shape_until_cursor(font_system, end_cursor, prune);
+}
 
 /// Used after any text changement
 fn sync_content_from_editor(
@@ -406,7 +461,9 @@ fn sync_content_from_editor(
     annotations: &mut Vec<Annotation>,
     font_system: &mut cosmic_text::FontSystem,
 ) {
-    editor.shape_as_needed(font_system, false);
+    editor.with_buffer_mut(|buf| {
+        shape_entire_buffer(buf, font_system, false);
+    });
 
     let new_content: String = editor.with_buffer(|buf| {
         buf.lines
@@ -469,12 +526,78 @@ fn sync_content_from_editor(
 /// metrics. This is the one function that needs to know about all three -
 /// commit_settings_change / apply_toggle_field stay generic and just call
 /// rebuild_annotation, which routes here for Text shapes.
-///
-/// Caveat: set_text() re-shapes the whole buffer, which may reset cursor/
-/// selection state inside the Editor if this runs while the user is
-/// actively editing that same annotation's text. Not currently hit by any
-/// caller (typing goes through sync_content_from_editor instead, which
-/// doesn't call this), but worth testing if that ever changes.
+pub fn ensure_text_editor<'a>(
+    ann: &Annotation,
+    text_editors: &'a mut std::collections::HashMap<u64, Editor<'static>>,
+    font_system: &mut cosmic_text::FontSystem,
+) -> &'a mut Editor<'static> {
+    let AnnotationShape::Text {
+        content,
+        font_size,
+        bold,
+        italic,
+        ..
+    } = &ann.shape
+    else {
+        panic!("ensure_text_editor called on non-text annotation");
+    };
+
+    let weight = if *bold { cosmic_text::Weight::BOLD } else { cosmic_text::Weight::NORMAL };
+    let style = if *italic { cosmic_text::Style::Italic } else { cosmic_text::Style::Normal };
+    let metrics = Metrics::new(*font_size, *font_size * 1.2);
+
+    let editor = text_editors.entry(ann.id).or_insert_with(|| {
+        let mut buffer = Buffer::new_empty(metrics);
+        buffer.set_size(None, None);
+        buffer.set_text(
+            content,
+            &Attrs::new().family(Family::SansSerif).weight(weight).style(style),
+            Shaping::Advanced,
+            None,
+        );
+        shape_entire_buffer(&mut buffer, font_system, true);
+        Editor::new(buffer)
+    });
+
+    let (metrics_differ, text_differs, style_differs) = editor.with_buffer(|buf| {
+        let metrics_diff = buf.metrics() != metrics;
+        let mut editor_content = String::new();
+        for (i, line) in buf.lines.iter().enumerate() {
+            if i + 1 < buf.lines.len() {
+                editor_content.push_str(line.text());
+                editor_content.push('\n');
+            } else {
+                editor_content.push_str(line.text());
+            }
+        }
+        let text_diff = editor_content != *content;
+        let style_diff = if let Some(first_line) = buf.lines.first() {
+            let def = first_line.attrs_list().defaults();
+            def.weight != weight || def.style != style
+        } else {
+            false
+        };
+        (metrics_diff, text_diff, style_diff)
+    });
+
+    if metrics_differ || text_differs || style_differs {
+        editor.with_buffer_mut(|buf| {
+            if metrics_differ {
+                buf.set_metrics(metrics);
+            }
+            buf.set_text(
+                content,
+                &Attrs::new().family(Family::SansSerif).weight(weight).style(style),
+                Shaping::Advanced,
+                None,
+            );
+            shape_entire_buffer(buf, font_system, true);
+        });
+    }
+
+    editor
+}
+
 pub fn update_text_bbox_inline(
     ann: &mut Annotation,
     editor: &mut Editor<'static>,
@@ -508,9 +631,8 @@ pub fn update_text_bbox_inline(
             Shaping::Advanced,
             None,
         );
+        shape_entire_buffer(buf, font_system, true);
     });
-
-    editor.shape_as_needed(font_system, false);
 
     let (w, h) = editor.with_buffer(|buf| {
         let lh = buf.metrics().line_height;
@@ -559,7 +681,9 @@ pub fn render_text_annotation(
         (transparent, transparent)
     };
 
-    editor.shape_as_needed(font_system, false);
+    editor.with_buffer_mut(|buf| {
+        shape_entire_buffer(buf, font_system, false);
+    });
 
     let p_width = pixmap.width() as i32;
     let p_height = pixmap.height() as i32;

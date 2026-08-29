@@ -1,7 +1,8 @@
+use cosmic_text::Edit;
 use crate::editor::{EditorState, DamageZone};
 use crate::tools::ToolBehavior;
 use crate::types::{
-    AnnDragState, MouseButton, SelectionHandle,
+    AnnDragState, MouseButton, SelectionHandle, SpecialKey,
     annotations::{apply_annotation_drag, begin_drag_for_annotation, commit_drag_if_changed},
 };
 
@@ -36,26 +37,45 @@ impl ToolBehavior for PickTool {
             // select empty space > deselect
             if selected_annotation.is_none() {
                 if let Some(old_idx) = state.selected_annotation {
-                    state
-                        .damage_rects
-                        .push(DamageZone::Global(state.annotations[old_idx].damage_bbox(true)));
+                    if let Some(old_ann) = state.annotations.get(old_idx) {
+                        state
+                            .damage_rects
+                            .push(DamageZone::Global(old_ann.damage_bbox(true)));
+                        state
+                            .layer_damage_rects
+                            .push(old_ann.damage_bbox(false));
+                        if let Some(editor) = state.text_editors.get_mut(&old_ann.id) {
+                            editor.set_selection(cosmic_text::Selection::None);
+                        }
+                    }
                 }
                 state.selected_annotation = None;
                 state.ann_drag = None;
+                state.text_editing = None;
+                state.annotations_dirty = true;
                 return;
             }
 
             // select a different annotation -> switch selection, no undo commit
             if state.selected_annotation != selected_annotation {
                 if let Some(old_idx) = state.selected_annotation {
-                    state
-                        .damage_rects
-                        .push(DamageZone::Global(state.annotations[old_idx].damage_bbox(true)));
+                    if let Some(old_ann) = state.annotations.get(old_idx) {
+                        state
+                            .damage_rects
+                            .push(DamageZone::Global(old_ann.damage_bbox(true)));
+                        state
+                            .layer_damage_rects
+                            .push(old_ann.damage_bbox(false));
+                        if let Some(editor) = state.text_editors.get_mut(&old_ann.id) {
+                            editor.set_selection(cosmic_text::Selection::None);
+                        }
+                    }
                 }
                 state.selected_annotation = selected_annotation;
                 let idx = selected_annotation.unwrap();
                 let ann = &state.annotations[idx];
                 state.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
+                state.text_editing = None;
 
                 // always start as Move when switching selection
                 state.ann_drag = Some(AnnDragState {
@@ -84,6 +104,22 @@ impl ToolBehavior for PickTool {
         _dirty_mask: &mut u32,
     ) {
         apply_annotation_drag(state, global);
+    }
+
+    fn on_key(&self, state: &mut EditorState, key: SpecialKey, dirty_mask: &mut u32) {
+        if matches!(key, SpecialKey::Delete | SpecialKey::Backspace) {
+            if let Some(idx) = state.selected_annotation.take() {
+                if idx < state.annotations.len() {
+                    state.push_undo();
+                    let ann = state.annotations.remove(idx);
+                    state.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
+                    state.layer_damage_rects.push(ann.damage_bbox(false));
+                    state.ann_drag = None;
+                    state.annotations_dirty = true;
+                    *dirty_mask = u32::MAX;
+                }
+            }
+        }
     }
 
     fn on_deactivate(&self, state: &mut EditorState, _dirty_mask: &mut u32) {
