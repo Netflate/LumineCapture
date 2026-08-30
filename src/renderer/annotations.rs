@@ -21,7 +21,7 @@ fn shadow_alpha_for(color: Color) -> u8 {
     (SHADOW_COLOR.3 as f32 * color.alpha()) as u8
 }
 
-fn shadow_color_for(color: Color) -> Color {
+pub fn shadow_color_for(color: Color) -> Color {
     Color::from_rgba8(
         SHADOW_COLOR.0,
         SHADOW_COLOR.1,
@@ -110,23 +110,23 @@ pub fn draw_annotation(
 ) {
     match &ann.shape {
         AnnotationShape::Arrow { start, end } => {
-            draw_arrow(canvas, *start, *end, ann.color, ann.stroke_width, offset);
+            draw_arrow(canvas, *start, *end, ann.color, ann.stroke_width, offset, ann.shadow_color);
         }
         AnnotationShape::Rectangle { start, end } => {
             if let Some(rect) = normalized_rect(*start, *end) {
-                draw_rect(canvas, &rect, ann.color, ann.stroke_width, offset);
+                draw_rect(canvas, &rect, ann.color, ann.stroke_width, offset, ann.shadow_color);
             }
         }
         AnnotationShape::Circle { start, end } => {
             if let Some(rect) = normalized_rect(*start, *end) {
-                draw_circle(canvas, &rect, ann.color, ann.stroke_width, offset);
+                draw_circle(canvas, &rect, ann.color, ann.stroke_width, offset, ann.shadow_color);
             }
         }
         AnnotationShape::Line { start, end } => {
-            draw_line(canvas, *start, *end, ann.color, ann.stroke_width, offset);
+            draw_line(canvas, *start, *end, ann.color, ann.stroke_width, offset, ann.shadow_color);
         }
         AnnotationShape::Pen { points } => {
-            draw_pen(canvas, points, ann.color, ann.stroke_width, offset);
+            draw_pen(canvas, points, ann.color, ann.stroke_width, offset, ann.shadow_color);
         }
         AnnotationShape::Text { .. } => {
             let is_editing = active_text_id == Some(ann.id);
@@ -151,6 +151,7 @@ pub fn draw_annotation(
                 ann.color,
                 ann.stroke_width,
                 offset,
+                ann.shadow_color,
                 font_system,
                 swash_cache,
             );
@@ -242,6 +243,7 @@ fn draw_arrow(
     color: Color,
     stroke_width: f32,
     offset: (f32, f32),
+    shadow_color: Color,
 ) {
     let dx = end.0 - start.0;
     let dy = end.1 - start.1;
@@ -287,6 +289,7 @@ fn draw_arrow(
             LineCap::Round,
             LineJoin::Round,
             offset,
+            shadow_color,
         );
     }
 }
@@ -297,6 +300,7 @@ fn draw_rect(
     color: Color,
     stroke_width: f32,
     offset: (f32, f32),
+    shadow_color: Color,
 ) {
     let path = PathBuilder::from_rect(*rect);
     stroke_with_shadow(
@@ -307,6 +311,7 @@ fn draw_rect(
         LineCap::Butt,
         LineJoin::Miter,
         offset,
+        shadow_color,
     );
 }
 
@@ -316,6 +321,7 @@ fn draw_circle(
     color: Color,
     stroke_width: f32,
     offset: (f32, f32),
+    shadow_color: Color,
 ) {
     let cx = (rect.left() + rect.right()) / 2.0;
     let cy = (rect.top() + rect.bottom()) / 2.0;
@@ -331,6 +337,7 @@ fn draw_circle(
             LineCap::Butt,
             LineJoin::Round,
             offset,
+            shadow_color,
         );
     }
 }
@@ -342,6 +349,7 @@ fn draw_line(
     color: Color,
     stroke_width: f32,
     offset: (f32, f32),
+    shadow_color: Color,
 ) {
     let mut pb = PathBuilder::new();
     pb.move_to(start.0, start.1);
@@ -356,6 +364,7 @@ fn draw_line(
             LineCap::Round,
             LineJoin::Round,
             offset,
+            shadow_color,
         );
     }
 }
@@ -366,6 +375,7 @@ fn draw_pen(
     color: Color,
     stroke_width: f32,
     offset: (f32, f32),
+    shadow_color: Color,
 ) {
     if points.is_empty() {
         return;
@@ -374,7 +384,7 @@ fn draw_pen(
     let transform = Transform::from_translate(-offset.0, -offset.1);
     // 1. drawing a halo around the full path
     let mut halo_paint = Paint::default();
-    halo_paint.set_color(shadow_color_for(color));
+    halo_paint.set_color(shadow_color);
     halo_paint.anti_alias = true;
     let mut halo_stroke = Stroke::default();
     halo_stroke.width = stroke_width + 3.0; 
@@ -646,6 +656,7 @@ fn stroke_with_shadow(
     line_cap: LineCap,
     line_join: LineJoin,
     offset: (f32, f32),
+    shadow_color: Color,
 ) {
     let (transform, shadow_transform) = transforms_for(offset);
 
@@ -658,7 +669,7 @@ fn stroke_with_shadow(
     stroke.line_cap = line_cap;
     stroke.line_join = line_join;
 
-    let base_shadow_color = shadow_color_for(color);
+    let base_shadow_color = shadow_color;
 
     stroke_segment_with_shadow(
         canvas,
@@ -691,6 +702,7 @@ fn draw_numerated_arrow(
     color: Color,
     stroke_width: f32,
     offset: (f32, f32),
+    shadow_color: Color,
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
 ) {
@@ -709,7 +721,7 @@ fn draw_numerated_arrow(
     fill_paint.anti_alias = true;
 
     let mut shadow_paint = Paint::default();
-    shadow_paint.set_color(shadow_color_for(color));
+    shadow_paint.set_color(shadow_color);
     shadow_paint.anti_alias = true;
 
     if len > 2.0 {

@@ -1,4 +1,5 @@
 use crate::editor::{DamageZone, EditorState};
+use crate::renderer::shadow_color_for;
 use crate::tools::ToolBehavior;
 use crate::types::annotations::{
     apply_annotation_drag, begin_drag_for_annotation, commit_drag_if_changed,
@@ -343,6 +344,7 @@ impl ToolBehavior for TextTool {
                 italic,
             },
             color: Color::from_rgba8(255, 255, 255, 255),
+            shadow_color: shadow_color_for(Color::from_rgba8(255, 255, 255, 255)),
             stroke_width: 0.0,
             bbox: Rect::from_xywh(pos.0, pos.1, 10.0, metrics.line_height).unwrap(),
         };

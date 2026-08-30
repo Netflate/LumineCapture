@@ -1,4 +1,5 @@
 use crate::editor::{DamageZone, EditorState};
+use crate::renderer::shadow_color_for;
 use crate::tools::ToolBehavior;
 use crate::types::MouseButton;
 use crate::types::annotations::{Annotation, AnnotationShape};
@@ -42,6 +43,7 @@ impl ToolBehavior for NumeratedArrowTool {
                     number: next_number,
                 },
                 color: state.tool_settings.color,
+                shadow_color: shadow_color_for(state.tool_settings.color),
                 stroke_width: state.tool_settings.stroke_width,
                 bbox: Rect::from_xywh(pos.0, pos.1, 1.0, 1.0).unwrap(),
             };

@@ -1,4 +1,5 @@
 use crate::editor::{DamageZone, EditorState};
+use crate::renderer::shadow_color_for;
 use crate::tools::ToolBehavior;
 use crate::types::MouseButton;
 use crate::types::annotations::{Annotation, AnnotationShape};
@@ -20,10 +21,12 @@ impl ToolBehavior for SimpleShapeTool {
     ) {
         let pos = (state.pointer.global.0 as f32, state.pointer.global.1 as f32);
         if pressed {
+            let color = self.color;
             let mut ann = Annotation {
                 id: state.next_id,
                 shape: (self.make_shape)(pos, pos),
-                color: self.color,
+                color,
+                shadow_color: shadow_color_for(color),
                 stroke_width: self.stroke_width,
                 bbox: Rect::from_xywh(pos.0, pos.1, 1.0, 1.0).unwrap(),
             };

@@ -76,6 +76,7 @@ pub struct Annotation {
     pub id: u64,
     pub shape: AnnotationShape,
     pub color: Color,
+    pub shadow_color: Color,
     pub stroke_width: f32,
     pub bbox: Rect,
 }

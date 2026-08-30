@@ -8,7 +8,7 @@ mod toolbar;
 
 pub use annotations::{
     draw_annotation, draw_annotation_handles_only, draw_pen_active_tail, draw_pen_tail,
-    selection_chrome_pad, stroke_pen_segment, visual_pad,
+    selection_chrome_pad, shadow_color_for, stroke_pen_segment, visual_pad,
 };
 pub use magnifier::magnifier_rect;
 pub use paths::{rect_bounds, rounded_rect_path};
@@ -437,6 +437,25 @@ pub fn rebuild_annotations_layer(
 
     clear_rect_transparent(layer, &base_rect);
 
+    // Determine the integer bounds of the dirty rect within the layer.
+    let lw = layer.width();
+    let lh = layer.height();
+    let x0 = (base_rect.left().floor() as i32).clamp(0, lw as i32) as u32;
+    let y0 = (base_rect.top().floor() as i32).clamp(0, lh as i32) as u32;
+    let x1 = (base_rect.right().ceil() as i32).clamp(0, lw as i32) as u32;
+    let y1 = (base_rect.bottom().ceil() as i32).clamp(0, lh as i32) as u32;
+    let tw = x1.saturating_sub(x0);
+    let th = y1.saturating_sub(y0);
+
+    // Allocate a clean temporary pixmap the size of the dirty rect.
+    // Annotations are drawn into it with an offset that maps global
+    // coordinates into temp-pixmap-local space, keeping shadow blending
+    // identical to a full-rebuild (always transparent background).
+    let Some(mut tmp) = Pixmap::new(tw.max(1), th.max(1)) else {
+        return;
+    };
+    let tmp_offset = (offset.0 + x0 as f32, offset.1 + y0 as f32);
+
     for ann in annotations {
         let pad = annotations::visual_pad(ann.stroke_width);
         let l = ann.bbox.left() - offset.0 - pad;
@@ -450,9 +469,9 @@ pub fn rebuild_annotations_layer(
             && b > base_rect.top()
         {
             draw_annotation(
-                layer,
+                &mut tmp,
                 ann,
-                offset,
+                tmp_offset,
                 false,
                 font_system,
                 swash_cache,
@@ -461,4 +480,14 @@ pub fn rebuild_annotations_layer(
             );
         }
     }
+
+    // Composite the temp pixmap back into the real layer at the correct position.
+    layer.draw_pixmap(
+        x0 as i32,
+        y0 as i32,
+        tmp.as_ref(),
+        &tiny_skia::PixmapPaint::default(),
+        tiny_skia::Transform::identity(),
+        None,
+    );
 }
