@@ -1,9 +1,11 @@
-use crate::editor::{EditorState, DamageZone};
+use crate::editor::{DamageZone, EditorState};
 use crate::tools::ToolBehavior;
 use crate::types::annotations::{
     apply_annotation_drag, begin_drag_for_annotation, commit_drag_if_changed,
 };
-use crate::types::{Annotation, AnnotationShape, MouseButton, SpecialKey, TextEditState, ClickTarget};
+use crate::types::{
+    Annotation, AnnotationShape, ClickTarget, MouseButton, SpecialKey, TextEditState,
+};
 
 use cosmic_text::{
     Action, Attrs, Buffer, Edit, Editor, Family, Metrics, Motion, Selection, Shaping, SwashCache,
@@ -197,7 +199,9 @@ impl ToolBehavior for TextTool {
                     .iter()
                     .find(|a| a.id == prev.annotation_id)
                 {
-                    state.damage_rects.push(DamageZone::Global(prev_ann.damage_bbox(true)));
+                    state
+                        .damage_rects
+                        .push(DamageZone::Global(prev_ann.damage_bbox(true)));
                     state.layer_damage_rects.push(prev_ann.damage_bbox(false));
                 }
                 if let Some(prev_editor) = state.text_editors.get_mut(&prev.annotation_id) {
@@ -208,7 +212,9 @@ impl ToolBehavior for TextTool {
             if let Some(old_idx) = state.selected_annotation {
                 if old_idx != i {
                     if let Some(old_ann) = state.annotations.get(old_idx) {
-                        state.damage_rects.push(DamageZone::Global(old_ann.damage_bbox(true)));
+                        state
+                            .damage_rects
+                            .push(DamageZone::Global(old_ann.damage_bbox(true)));
                         state.layer_damage_rects.push(old_ann.damage_bbox(false));
                         if let Some(old_editor) = state.text_editors.get_mut(&old_ann.id) {
                             old_editor.set_selection(Selection::None);
@@ -217,7 +223,9 @@ impl ToolBehavior for TextTool {
                 }
             }
 
-            state.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
+            state
+                .damage_rects
+                .push(DamageZone::Global(ann.damage_bbox(true)));
 
             let ann_id = ann.id;
             let AnnotationShape::Text { start, .. } = &ann.shape else {
@@ -233,9 +241,15 @@ impl ToolBehavior for TextTool {
 
             if let Some(editor) = state.text_editors.get_mut(&ann_id) {
                 let click_action = if is_double {
-                    Action::DoubleClick { x: local_x, y: local_y }
+                    Action::DoubleClick {
+                        x: local_x,
+                        y: local_y,
+                    }
                 } else {
-                    Action::Click { x: local_x, y: local_y }
+                    Action::Click {
+                        x: local_x,
+                        y: local_y,
+                    }
                 };
                 editor.action(&mut state.font_system, click_action);
             }
@@ -260,7 +274,9 @@ impl ToolBehavior for TextTool {
                     .find(|a| a.id == edit.annotation_id)
                 {
                     state.layer_damage_rects.push(prev_ann.damage_bbox(false));
-                    state.damage_rects.push(DamageZone::Global(prev_ann.damage_bbox(true)));
+                    state
+                        .damage_rects
+                        .push(DamageZone::Global(prev_ann.damage_bbox(true)));
                 }
                 if let Some(editor) = state.text_editors.get_mut(&edit.annotation_id) {
                     editor.set_selection(Selection::None);
@@ -269,7 +285,9 @@ impl ToolBehavior for TextTool {
             if let Some(old_idx) = state.selected_annotation.take() {
                 if let Some(old_ann) = state.annotations.get(old_idx) {
                     state.layer_damage_rects.push(old_ann.damage_bbox(false));
-                    state.damage_rects.push(DamageZone::Global(old_ann.damage_bbox(true)));
+                    state
+                        .damage_rects
+                        .push(DamageZone::Global(old_ann.damage_bbox(true)));
                     if let Some(editor) = state.text_editors.get_mut(&old_ann.id) {
                         editor.set_selection(Selection::None);
                     }
@@ -289,8 +307,16 @@ impl ToolBehavior for TextTool {
         let italic = state.tool_settings.italic;
         let metrics = Metrics::new(font_size, font_size * 1.2);
 
-        let weight = if bold { cosmic_text::Weight::BOLD } else { cosmic_text::Weight::NORMAL };
-        let style = if italic { cosmic_text::Style::Italic } else { cosmic_text::Style::Normal };
+        let weight = if bold {
+            cosmic_text::Weight::BOLD
+        } else {
+            cosmic_text::Weight::NORMAL
+        };
+        let style = if italic {
+            cosmic_text::Style::Italic
+        } else {
+            cosmic_text::Style::Normal
+        };
 
         let mut buffer = Buffer::new_empty(metrics);
         buffer.set_size(None, None);
@@ -329,7 +355,9 @@ impl ToolBehavior for TextTool {
 
         state.push_undo();
         state.layer_damage_rects.push(ann.damage_bbox(false));
-        state.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
+        state
+            .damage_rects
+            .push(DamageZone::Global(ann.damage_bbox(true)));
         state.annotations.push(ann);
 
         state.text_editing = Some(TextEditState {
@@ -340,12 +368,7 @@ impl ToolBehavior for TextTool {
         state.annotations_dirty = true;
     }
 
-    fn on_move(
-        &self,
-        state: &mut EditorState,
-        global: (f64, f64),
-        _dirty_mask: &mut u32,
-    ) {
+    fn on_move(&self, state: &mut EditorState, global: (f64, f64), _dirty_mask: &mut u32) {
         apply_annotation_drag(state, global);
     }
 
@@ -361,7 +384,9 @@ impl ToolBehavior for TextTool {
 
         if let Some(ann) = state.annotations.iter().find(|a| a.id == id) {
             state.layer_damage_rects.push(ann.damage_bbox(false));
-            state.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
+            state
+                .damage_rects
+                .push(DamageZone::Global(ann.damage_bbox(true)));
         }
 
         if let Some(editor) = state.text_editors.get_mut(&id) {
@@ -371,7 +396,9 @@ impl ToolBehavior for TextTool {
 
         if let Some(ann) = state.annotations.iter().find(|a| a.id == id) {
             state.layer_damage_rects.push(ann.damage_bbox(false));
-            state.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
+            state
+                .damage_rects
+                .push(DamageZone::Global(ann.damage_bbox(true)));
         }
     }
 
@@ -389,7 +416,9 @@ impl ToolBehavior for TextTool {
 
         if let Some(ann) = state.annotations.iter().find(|a| a.id == id) {
             state.layer_damage_rects.push(ann.damage_bbox(false));
-            state.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
+            state
+                .damage_rects
+                .push(DamageZone::Global(ann.damage_bbox(true)));
         }
 
         if let Some(editor) = state.text_editors.get_mut(&id) {
@@ -407,7 +436,9 @@ impl ToolBehavior for TextTool {
 
         if let Some(ann) = state.annotations.iter().find(|a| a.id == id) {
             state.layer_damage_rects.push(ann.damage_bbox(false));
-            state.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
+            state
+                .damage_rects
+                .push(DamageZone::Global(ann.damage_bbox(true)));
         }
     }
 
@@ -419,7 +450,9 @@ impl ToolBehavior for TextTool {
                 .find(|a| a.id == edit.annotation_id)
             {
                 state.layer_damage_rects.push(ann.damage_bbox(false));
-                state.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
+                state
+                    .damage_rects
+                    .push(DamageZone::Global(ann.damage_bbox(true)));
             }
             if let Some(editor) = state.text_editors.get_mut(&edit.annotation_id) {
                 editor.set_selection(Selection::None);
@@ -428,7 +461,9 @@ impl ToolBehavior for TextTool {
         if let Some(old_idx) = state.selected_annotation.take() {
             if let Some(old_ann) = state.annotations.get(old_idx) {
                 state.layer_damage_rects.push(old_ann.damage_bbox(false));
-                state.damage_rects.push(DamageZone::Global(old_ann.damage_bbox(true)));
+                state
+                    .damage_rects
+                    .push(DamageZone::Global(old_ann.damage_bbox(true)));
                 if let Some(editor) = state.text_editors.get_mut(&old_ann.id) {
                     editor.set_selection(Selection::None);
                 }
@@ -542,8 +577,16 @@ pub fn ensure_text_editor<'a>(
         panic!("ensure_text_editor called on non-text annotation");
     };
 
-    let weight = if *bold { cosmic_text::Weight::BOLD } else { cosmic_text::Weight::NORMAL };
-    let style = if *italic { cosmic_text::Style::Italic } else { cosmic_text::Style::Normal };
+    let weight = if *bold {
+        cosmic_text::Weight::BOLD
+    } else {
+        cosmic_text::Weight::NORMAL
+    };
+    let style = if *italic {
+        cosmic_text::Style::Italic
+    } else {
+        cosmic_text::Style::Normal
+    };
     let metrics = Metrics::new(*font_size, *font_size * 1.2);
 
     let editor = text_editors.entry(ann.id).or_insert_with(|| {
@@ -551,7 +594,10 @@ pub fn ensure_text_editor<'a>(
         buffer.set_size(None, None);
         buffer.set_text(
             content,
-            &Attrs::new().family(Family::SansSerif).weight(weight).style(style),
+            &Attrs::new()
+                .family(Family::SansSerif)
+                .weight(weight)
+                .style(style),
             Shaping::Advanced,
             None,
         );
@@ -587,7 +633,10 @@ pub fn ensure_text_editor<'a>(
             }
             buf.set_text(
                 content,
-                &Attrs::new().family(Family::SansSerif).weight(weight).style(style),
+                &Attrs::new()
+                    .family(Family::SansSerif)
+                    .weight(weight)
+                    .style(style),
                 Shaping::Advanced,
                 None,
             );
@@ -618,8 +667,16 @@ pub fn update_text_bbox_inline(
     let fallback_h = current_font_size * 1.2;
 
     let new_metrics = Metrics::new(current_font_size, current_font_size * 1.2);
-    let weight = if *bold { cosmic_text::Weight::BOLD } else { cosmic_text::Weight::NORMAL };
-    let style = if *italic { cosmic_text::Style::Italic } else { cosmic_text::Style::Normal };
+    let weight = if *bold {
+        cosmic_text::Weight::BOLD
+    } else {
+        cosmic_text::Weight::NORMAL
+    };
+    let style = if *italic {
+        cosmic_text::Style::Italic
+    } else {
+        cosmic_text::Style::Normal
+    };
 
     editor.with_buffer_mut(|buf| {
         if buf.metrics() != new_metrics {
@@ -627,7 +684,10 @@ pub fn update_text_bbox_inline(
         }
         buf.set_text(
             content,
-            &Attrs::new().family(Family::SansSerif).weight(weight).style(style),
+            &Attrs::new()
+                .family(Family::SansSerif)
+                .weight(weight)
+                .style(style),
             Shaping::Advanced,
             None,
         );

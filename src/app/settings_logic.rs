@@ -1,17 +1,17 @@
-// settings panel animation and positioning logic 
-// TODO: need to comment a lot of stuff here before forgetting details 
+// settings panel animation and positioning logic
+// TODO: need to comment a lot of stuff here before forgetting details
 
-use crate::editor::{EditorState, DamageZone};
+use crate::editor::dirty::{apply_damage_rects, mark_dirty};
+use crate::editor::{DamageZone, EditorState};
 use crate::tools::Tool;
 use crate::types::annotations::rebuild_annotation;
+use crate::types::panel::{emit_panel_damage, sync_panel_hover, sync_panel_rect};
 use crate::types::{
-    Annotation, AnnotationShape, SettingsSource, SettingsWidget,
-    StepperArrow, ToolSettings, UiPanel, SpecialKey, ToggleField, compute_settings_placement, widgets_for_annotation,
-    widgets_for_tool,
-    STEPPER_HOLD_FAST_INTERVAL, STEPPER_HOLD_INITIAL_DELAY, STEPPER_HOLD_REPEAT_INTERVAL, STEPPER_HOLD_ACCEL_AFTER,
+    Annotation, AnnotationShape, STEPPER_HOLD_ACCEL_AFTER, STEPPER_HOLD_FAST_INTERVAL,
+    STEPPER_HOLD_INITIAL_DELAY, STEPPER_HOLD_REPEAT_INTERVAL, SettingsSource, SettingsWidget,
+    SpecialKey, StepperArrow, ToggleField, ToolSettings, UiPanel, compute_settings_placement,
+    widgets_for_annotation, widgets_for_tool,
 };
-use crate::types::panel::{emit_panel_damage, sync_panel_rect, sync_panel_hover};
-use crate::editor::dirty::{mark_dirty, apply_damage_rects};
 
 use std::time::Instant;
 
@@ -61,7 +61,9 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
                         _ => editor_state.tool_settings.stroke_width,
                     },
                 };
-                editor_state.settings_panel.sync_value(idx, format_stepper_number(value));
+                editor_state
+                    .settings_panel
+                    .sync_value(idx, format_stepper_number(value));
             }
             SettingsWidget::Toggle { field, .. } => {
                 let value = match selected_ann {
@@ -110,7 +112,9 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
 
     if editor_state.settings_panel.rect().is_some() {
         let prev_hover = editor_state.settings_panel.hovered;
-        let hovered = editor_state.settings_panel.hit_test(editor_state.pointer.local);
+        let hovered = editor_state
+            .settings_panel
+            .hit_test(editor_state.pointer.local);
         let hovered_arrow = hovered.and_then(|idx| {
             editor_state
                 .settings_panel
@@ -151,7 +155,9 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
 }
 
 pub fn tick_stepper_arrow_hold(editor_state: &mut EditorState, dirty_mask: &mut u32) {
-    let Some(hold) = editor_state.settings_panel.arrow_held else { return };
+    let Some(hold) = editor_state.settings_panel.arrow_held else {
+        return;
+    };
     let now = Instant::now();
 
     let next_due = if hold.repeat_count == 0 {
@@ -180,20 +186,39 @@ pub fn tick_stepper_arrow_hold(editor_state: &mut EditorState, dirty_mask: &mut 
 
 pub fn handle_settings_text_input(editor_state: &mut EditorState, ch: char, dirty_mask: &mut u32) {
     let monitor_idx = editor_state.settings_panel.monitor_idx;
-    let Some(rect) = editor_state.settings_panel.rect() else { return };
+    let Some(rect) = editor_state.settings_panel.rect() else {
+        return;
+    };
 
     if editor_state.settings_panel.insert_char(ch) {
-        emit_panel_damage(rect, monitor_idx, &mut editor_state.damage_rects, dirty_mask);
+        emit_panel_damage(
+            rect,
+            monitor_idx,
+            &mut editor_state.damage_rects,
+            dirty_mask,
+        );
 
-        if let Some(widget_idx) = editor_state.settings_panel.fields.editing.as_ref().map(|e| e.key) {
+        if let Some(widget_idx) = editor_state
+            .settings_panel
+            .fields
+            .editing
+            .as_ref()
+            .map(|e| e.key)
+        {
             live_apply_stepper_field(editor_state, widget_idx, dirty_mask);
         }
     }
 }
 
-pub fn handle_settings_key_press(editor_state: &mut EditorState, key: SpecialKey, dirty_mask: &mut u32) {
+pub fn handle_settings_key_press(
+    editor_state: &mut EditorState,
+    key: SpecialKey,
+    dirty_mask: &mut u32,
+) {
     let monitor_idx = editor_state.settings_panel.monitor_idx;
-    let Some(rect) = editor_state.settings_panel.rect() else { return };
+    let Some(rect) = editor_state.settings_panel.rect() else {
+        return;
+    };
 
     let ctrl = editor_state.mod_ctrl;
     let shift = editor_state.mod_shift;
@@ -201,9 +226,20 @@ pub fn handle_settings_key_press(editor_state: &mut EditorState, key: SpecialKey
     let (changed, commit) = editor_state.settings_panel.handle_key(key, ctrl, shift);
 
     if changed {
-        emit_panel_damage(rect, monitor_idx, &mut editor_state.damage_rects, dirty_mask);
+        emit_panel_damage(
+            rect,
+            monitor_idx,
+            &mut editor_state.damage_rects,
+            dirty_mask,
+        );
 
-        if let Some(widget_idx) = editor_state.settings_panel.fields.editing.as_ref().map(|e| e.key) {
+        if let Some(widget_idx) = editor_state
+            .settings_panel
+            .fields
+            .editing
+            .as_ref()
+            .map(|e| e.key)
+        {
             live_apply_stepper_field(editor_state, widget_idx, dirty_mask);
         }
     }
@@ -224,7 +260,12 @@ pub fn commit_stepper_text_edit(editor_state: &mut EditorState, dirty_mask: &mut
     };
 
     if let Some(rect) = rect {
-        emit_panel_damage(rect, monitor_idx, &mut editor_state.damage_rects, dirty_mask);
+        emit_panel_damage(
+            rect,
+            monitor_idx,
+            &mut editor_state.damage_rects,
+            dirty_mask,
+        );
     }
 
     try_apply_stepper_text(editor_state, widget_idx, &text, false, dirty_mask);
@@ -254,7 +295,9 @@ pub fn commit_settings_change(
     if let Some(idx) = active_annotation_idx(editor_state) {
         let old_damage = editor_state.annotations[idx].damage_bbox(true);
         let old_layer_damage = editor_state.annotations[idx].damage_bbox(false);
-        editor_state.damage_rects.push(DamageZone::Global(old_damage));
+        editor_state
+            .damage_rects
+            .push(DamageZone::Global(old_damage));
         editor_state.layer_damage_rects.push(old_layer_damage);
 
         if record_undo {
@@ -267,7 +310,9 @@ pub fn commit_settings_change(
     editor_state.settings_panel.dirty = true;
     let monitor_idx = editor_state.settings_panel.monitor_idx;
     if let Some(rect) = editor_state.settings_panel.rect() {
-        editor_state.damage_rects.push(DamageZone::Local { monitor_idx, rect });
+        editor_state
+            .damage_rects
+            .push(DamageZone::Local { monitor_idx, rect });
     }
     mark_dirty(dirty_mask, monitor_idx);
 
@@ -288,13 +333,28 @@ fn try_apply_stepper_text(
     };
     let (min, max) = (*min, *max);
 
-    let Ok(parsed) = text.parse::<f32>() else { return false };
-    apply_stepper_field(editor_state, parsed.clamp(min, max), record_undo, dirty_mask);
+    let Ok(parsed) = text.parse::<f32>() else {
+        return false;
+    };
+    apply_stepper_field(
+        editor_state,
+        parsed.clamp(min, max),
+        record_undo,
+        dirty_mask,
+    );
     true
 }
 
-fn live_apply_stepper_field(editor_state: &mut EditorState, widget_idx: usize, dirty_mask: &mut u32) {
-    let Some(text) = editor_state.settings_panel.fields.editing.as_ref()
+fn live_apply_stepper_field(
+    editor_state: &mut EditorState,
+    widget_idx: usize,
+    dirty_mask: &mut u32,
+) {
+    let Some(text) = editor_state
+        .settings_panel
+        .fields
+        .editing
+        .as_ref()
         .filter(|e| e.key == widget_idx)
         .map(|e| e.field.text.clone())
     else {
@@ -304,7 +364,12 @@ fn live_apply_stepper_field(editor_state: &mut EditorState, widget_idx: usize, d
     try_apply_stepper_text(editor_state, widget_idx, &text, false, dirty_mask);
 }
 
-fn apply_stepper_field(editor_state: &mut EditorState, new_value: f32, record_undo: bool, dirty_mask: &mut u32) {
+fn apply_stepper_field(
+    editor_state: &mut EditorState,
+    new_value: f32,
+    record_undo: bool,
+    dirty_mask: &mut u32,
+) {
     let ann_idx = active_annotation_idx(editor_state);
 
     let is_text = match ann_idx.and_then(|i| editor_state.annotations.get(i)) {
@@ -317,11 +382,13 @@ fn apply_stepper_field(editor_state: &mut EditorState, new_value: f32, record_un
             AnnotationShape::Text { font_size, .. } => *font_size,
             _ => ann.stroke_width,
         },
-        None => if is_text {
-            editor_state.tool_settings.font_size
-        } else {
-            editor_state.tool_settings.stroke_width
-        },
+        None => {
+            if is_text {
+                editor_state.tool_settings.font_size
+            } else {
+                editor_state.tool_settings.stroke_width
+            }
+        }
     };
 
     let changed = (current - new_value).abs() > f32::EPSILON;
@@ -400,14 +467,24 @@ pub fn apply_stepper_arrow_step(
         },
     };
 
-    let delta = if arrow == StepperArrow::Up { step } else { -step };
+    let delta = if arrow == StepperArrow::Up {
+        step
+    } else {
+        -step
+    };
     let new_value = (current + delta).clamp(min, max);
 
     apply_stepper_field(editor_state, new_value, false, dirty_mask);
 }
 
 pub fn sync_stepper_edit_text(editor_state: &mut EditorState, widget_idx: usize) {
-    if !editor_state.settings_panel.fields.editing.as_ref().is_some_and(|e| e.key == widget_idx) {
+    if !editor_state
+        .settings_panel
+        .fields
+        .editing
+        .as_ref()
+        .is_some_and(|e| e.key == widget_idx)
+    {
         return;
     }
 
@@ -423,7 +500,10 @@ pub fn sync_stepper_edit_text(editor_state: &mut EditorState, widget_idx: usize)
         },
     };
 
-    editor_state.settings_panel.fields.set_editing_text(widget_idx, format_stepper_number(value));
+    editor_state
+        .settings_panel
+        .fields
+        .set_editing_text(widget_idx, format_stepper_number(value));
     editor_state.settings_panel.dirty = true;
 }
 
@@ -433,11 +513,20 @@ pub fn handle_stepper_scroll(
     delta_y: f32,
     dirty_mask: &mut u32,
 ) {
-    if !matches!(editor_state.settings_panel.widgets.get(widget_idx), Some(SettingsWidget::Stepper { .. })) {
+    if !matches!(
+        editor_state.settings_panel.widgets.get(widget_idx),
+        Some(SettingsWidget::Stepper { .. })
+    ) {
         return;
     }
 
-    if editor_state.settings_panel.fields.editing.as_ref().is_some_and(|e| e.key == widget_idx) {
+    if editor_state
+        .settings_panel
+        .fields
+        .editing
+        .as_ref()
+        .is_some_and(|e| e.key == widget_idx)
+    {
         return;
     }
 
@@ -453,7 +542,11 @@ pub fn handle_stepper_scroll(
         editor_state.settings_panel.pre_edit_snapshot = Some(editor_state.annotations.clone());
     }
 
-    let arrow = if steps > 0 { StepperArrow::Up } else { StepperArrow::Down };
+    let arrow = if steps > 0 {
+        StepperArrow::Up
+    } else {
+        StepperArrow::Down
+    };
     for _ in 0..steps.unsigned_abs() {
         apply_stepper_arrow_step(editor_state, widget_idx, arrow, dirty_mask);
     }

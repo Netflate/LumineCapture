@@ -9,9 +9,8 @@ use usvg::Tree;
 
 use crate::tools::Tool;
 use crate::types::{
-    AnnDragState, Annotation, MagnifierState, Placement, PointerState, SelectionState,
-    TextEditState, Toolbar, SettingsPanel, ToolSettings, DoubleClickTracker,
-    ClickTarget, ColorPickerPopover,
+    AnnDragState, Annotation, ClickTarget, ColorPickerPopover, DoubleClickTracker, MagnifierState,
+    Placement, PointerState, SelectionState, SettingsPanel, TextEditState, ToolSettings, Toolbar,
 };
 
 pub struct EditorState {
@@ -30,7 +29,7 @@ pub struct EditorState {
     pub selection: SelectionState,
     pub icons_cache: HashMap<&'static str, Tree>,
     pub damage_rects: Vec<DamageZone>,
-    
+
     pub toolbar: Toolbar,
     pub settings_panel: SettingsPanel,
     pub color_popover: ColorPickerPopover,
@@ -75,7 +74,7 @@ pub enum DamageZone {
 
 impl EditorState {
     // to avoid revbuilding the entire annotation layer like it was implemented before
-    // instead commited annotations are `baked`, so pending new annotations are separate from them 
+    // instead commited annotations are `baked`, so pending new annotations are separate from them
     // so there will be absolutely no lags while drawing something on top of 10000th circles
     pub fn bake_annotation(&mut self, ann: &Annotation) {
         for (i, placement) in self.placements.iter().enumerate() {
@@ -87,9 +86,14 @@ impl EditorState {
                 ann.bbox.right() - offset.0 + pad,
                 ann.bbox.bottom() - offset.1 + pad,
             );
-            let monitor_rect = Rect::from_xywh(0.0, 0.0, placement.size.0 as f32, placement.size.1 as f32);
+            let monitor_rect =
+                Rect::from_xywh(0.0, 0.0, placement.size.0 as f32, placement.size.1 as f32);
             if let (Some(vis), Some(mon)) = (visual, monitor_rect) {
-                if vis.left() < mon.right() && vis.right() > mon.left() && vis.top() < mon.bottom() && vis.bottom() > mon.top() {
+                if vis.left() < mon.right()
+                    && vis.right() > mon.left()
+                    && vis.top() < mon.bottom()
+                    && vis.bottom() > mon.top()
+                {
                     crate::renderer::draw_annotation(
                         &mut self.annotations_layer[i],
                         ann,

@@ -1,8 +1,8 @@
-use crate::types::panel::{PANEL_COLOR, BUTTON_HOVERED, BUTTON_SELECTED};
+use crate::types::panel::{BUTTON_HOVERED, BUTTON_SELECTED, PANEL_COLOR};
 
-use tiny_skia::{PathBuilder, Paint, Pixmap, Rect, Transform, Color, Stroke};
-use usvg::Tree;
 use std::collections::HashMap;
+use tiny_skia::{Color, Paint, PathBuilder, Pixmap, Rect, Stroke, Transform};
+use usvg::Tree;
 
 pub fn rounded_rect_path(
     rect: &Rect,
@@ -122,7 +122,10 @@ pub fn panel_border_color(bg: Color) -> Color {
 
 pub fn draw_item_border(
     canvas: &mut Pixmap,
-    x: f32, y: f32, w: f32, h: f32,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
     radius: f32,
     stroke_width: f32,
     is_hovered: bool,
@@ -130,12 +133,21 @@ pub fn draw_item_border(
 ) {
     let inset = stroke_width / 2.0;
     let Some(inset_rect) = Rect::from_xywh(
-        x + inset, y + inset,
-        (w - stroke_width).max(0.1), (h - stroke_width).max(0.1),
-    ) else { return };
+        x + inset,
+        y + inset,
+        (w - stroke_width).max(0.1),
+        (h - stroke_width).max(0.1),
+    ) else {
+        return;
+    };
 
-    let r = (radius - inset).max(0.0).min(inset_rect.width() / 2.0).min(inset_rect.height() / 2.0);
-    let Some(path) = rounded_rect_path(&inset_rect, r, true, true, true, true) else { return };
+    let r = (radius - inset)
+        .max(0.0)
+        .min(inset_rect.width() / 2.0)
+        .min(inset_rect.height() / 2.0);
+    let Some(path) = rounded_rect_path(&inset_rect, r, true, true, true, true) else {
+        return;
+    };
 
     let mut paint = Paint::default();
     paint.set_color(if is_selected {
@@ -147,11 +159,22 @@ pub fn draw_item_border(
     });
     paint.anti_alias = true;
 
-    let stroke = Stroke { width: stroke_width, ..Default::default() };
+    let stroke = Stroke {
+        width: stroke_width,
+        ..Default::default()
+    };
     canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
 }
 
-pub fn draw_panel_border(canvas: &mut Pixmap, x: f32, y: f32, w: f32, h: f32, radius: f32, opacity: f32) {
+pub fn draw_panel_border(
+    canvas: &mut Pixmap,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    radius: f32,
+    opacity: f32,
+) {
     const BORDER_WIDTH: f32 = 1.0;
     const K: f32 = 0.5522847498;
 
@@ -171,23 +194,18 @@ pub fn draw_panel_border(canvas: &mut Pixmap, x: f32, y: f32, w: f32, h: f32, ra
 
     pb.line_to(bx + bw - r, by + bh);
     pb.cubic_to(
-        bx + bw - r + kr, by + bh,
-        bx + bw, by + bh - r + kr,
-        bx + bw, by + bh - r,
+        bx + bw - r + kr,
+        by + bh,
+        bx + bw,
+        by + bh - r + kr,
+        bx + bw,
+        by + bh - r,
     );
 
     pb.line_to(bx + bw, by + r);
-    pb.cubic_to(
-        bx + bw, by + r - kr,
-        bx + bw - r + kr, by,
-        bx + bw - r, by,
-    );
+    pb.cubic_to(bx + bw, by + r - kr, bx + bw - r + kr, by, bx + bw - r, by);
     pb.line_to(bx + r, by);
-    pb.cubic_to(
-        bx + r - kr, by,
-        bx, by + r - kr,
-        bx, by + r,
-    );
+    pb.cubic_to(bx + r - kr, by, bx, by + r - kr, bx, by + r);
     pb.close();
 
     let Some(path) = pb.finish() else { return };
@@ -216,15 +234,23 @@ pub fn draw_svg_icon(
     y: f32,
     tint: usvg::Color,
 ) {
-    let Some(rtree) = icons_cache.get(svg_str) else { return };
+    let Some(rtree) = icons_cache.get(svg_str) else {
+        return;
+    };
 
     let scale_x = icon_size / rtree.size().width();
     let scale_y = icon_size / rtree.size().height();
 
     let px_size = icon_size.ceil().max(1.0) as u32;
-    let Some(mut icon_pixmap) = Pixmap::new(px_size, px_size) else { return };
+    let Some(mut icon_pixmap) = Pixmap::new(px_size, px_size) else {
+        return;
+    };
 
-    resvg::render(rtree, Transform::from_scale(scale_x, scale_y), &mut icon_pixmap.as_mut());
+    resvg::render(
+        rtree,
+        Transform::from_scale(scale_x, scale_y),
+        &mut icon_pixmap.as_mut(),
+    );
     tint_pixmap(&mut icon_pixmap, tint);
 
     canvas.draw_pixmap(

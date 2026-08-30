@@ -1,5 +1,5 @@
-use tiny_skia::Rect;
 use std::time::{Duration, Instant};
+use tiny_skia::Rect;
 
 use crate::editor::DamageZone;
 use crate::editor::dirty::mark_dirty;
@@ -10,27 +10,35 @@ pub trait PanelItem {
     fn is_button(&self) -> bool;
 }
 
-// UI Layout Constants used in both toolbar and settings panel, and probably in other panels too 
+// UI Layout Constants used in both toolbar and settings panel, and probably in other panels too
 const fn unit(v: u8) -> f32 {
     v as f32 / 255.0
 }
 
-pub const PANEL_COLOR: tiny_skia::Color = unsafe {
-    tiny_skia::Color::from_rgba_unchecked(unit(17), unit(17), unit(27), unit(250))
-};
-pub const SEPARATOR_COLOR: tiny_skia::Color = unsafe {
-    tiny_skia::Color::from_rgba_unchecked(unit(255), unit(255), unit(255), unit(255))
-};
-pub const BUTTON_HOVERED: tiny_skia::Color = unsafe {
-    tiny_skia::Color::from_rgba_unchecked(unit(159), unit(48), unit(215), unit(255))
-};
-pub const BUTTON_SELECTED: tiny_skia::Color = unsafe {
-    tiny_skia::Color::from_rgba_unchecked(unit(215), unit(132), unit(255), unit(255))
-};
+pub const PANEL_COLOR: tiny_skia::Color =
+    unsafe { tiny_skia::Color::from_rgba_unchecked(unit(17), unit(17), unit(27), unit(250)) };
+pub const SEPARATOR_COLOR: tiny_skia::Color =
+    unsafe { tiny_skia::Color::from_rgba_unchecked(unit(255), unit(255), unit(255), unit(255)) };
+pub const BUTTON_HOVERED: tiny_skia::Color =
+    unsafe { tiny_skia::Color::from_rgba_unchecked(unit(159), unit(48), unit(215), unit(255)) };
+pub const BUTTON_SELECTED: tiny_skia::Color =
+    unsafe { tiny_skia::Color::from_rgba_unchecked(unit(215), unit(132), unit(255), unit(255)) };
 
-pub const ICON_COLOR: usvg::Color = usvg::Color { red: 255, green: 255, blue: 255 };
-pub const ICON_HOVERED: usvg::Color = usvg::Color { red: 159, green: 48, blue: 215 };
-pub const ICON_SELECTED: usvg::Color = usvg::Color { red: 215, green: 132, blue: 255 };
+pub const ICON_COLOR: usvg::Color = usvg::Color {
+    red: 255,
+    green: 255,
+    blue: 255,
+};
+pub const ICON_HOVERED: usvg::Color = usvg::Color {
+    red: 159,
+    green: 48,
+    blue: 215,
+};
+pub const ICON_SELECTED: usvg::Color = usvg::Color {
+    red: 215,
+    green: 132,
+    blue: 255,
+};
 
 pub const DEFAULT_ITEM_BORDER_STROKE: f32 = 1.0;
 pub trait UiPanel {
@@ -103,7 +111,7 @@ pub fn sync_panel_rect<P: UiPanel>(
     true
 }
 
-/// A panel that tracks what's hovered. 
+/// A panel that tracks what's hovered.
 /// Toolbar's hover is a button index; SettingsPanel's is a
 /// button index and a stepper arrow, both fit as 'Self::Hover', so
 /// 'sync_panel_hover' works for anything without caring what type it is
@@ -139,7 +147,7 @@ pub fn sync_panel_hover<P: HoverablePanel>(
 // ==========================================
 //
 // One abstract function 'tick_panel_animation' for every animated panel.
-// answers to how much time passed, how many fixed steps to simulate this frame, 
+// answers to how much time passed, how many fixed steps to simulate this frame,
 // and what damage rect to emit if anything moved
 
 pub trait AnimatedPanel: UiPanel {
@@ -209,8 +217,10 @@ pub fn tick_panel_animation<P: AnimatedPanel>(
 
     let union = match (old_rect, new_rect) {
         (Some(a), Some(b)) => Rect::from_ltrb(
-            a.left().min(b.left()), a.top().min(b.top()),
-            a.right().max(b.right()), a.bottom().max(b.bottom()),
+            a.left().min(b.left()),
+            a.top().min(b.top()),
+            a.right().max(b.right()),
+            a.bottom().max(b.bottom()),
         ),
         (Some(a), None) | (None, Some(a)) => Some(a),
         (None, None) => None,

@@ -1,10 +1,10 @@
-// toolbar's animation and positioning logic 
+// toolbar's animation and positioning logic
 
 use crate::editor::EditorState;
 use crate::tools::selection::global_selection_to_local;
-use crate::types::toolbar::{TOOLBAR_OFFSET, TOOLBAR_TRANSITION_OFFSET, ToolbarPlacementKind};
 use crate::types::UiPanel;
-use crate::types::panel::{sync_panel_rect, sync_panel_hover};
+use crate::types::panel::{sync_panel_hover, sync_panel_rect};
+use crate::types::toolbar::{TOOLBAR_OFFSET, TOOLBAR_TRANSITION_OFFSET, ToolbarPlacementKind};
 
 use tiny_skia::Rect;
 
@@ -28,7 +28,9 @@ pub fn update_toolbar(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     let entering_idle_fresh = new_kind == ToolbarPlacementKind::Idle
         && (old_kind != Some(ToolbarPlacementKind::Idle) || old_monitor != target_monitor);
 
-    if entering_idle_fresh && editor_state.toolbar.render_pos != (target_position.0, target_position.1)  {
+    if entering_idle_fresh
+        && editor_state.toolbar.render_pos != (target_position.0, target_position.1)
+    {
         editor_state.toolbar.render_pos = (target_position.0, -editor_state.toolbar.size.1);
     } else if old_monitor != target_monitor || old_position != target_position {
         let start_pos = editor_state.toolbar.compute_transition_start(
@@ -67,13 +69,22 @@ pub fn update_toolbar(editor_state: &mut EditorState, dirty_mask: &mut u32) {
 
     if editor_state.toolbar.rect().is_some() {
         let hovered = editor_state.toolbar.hit_test(editor_state.pointer.local);
-        sync_panel_hover(&mut editor_state.toolbar, hovered, &mut editor_state.damage_rects, dirty_mask);
+        sync_panel_hover(
+            &mut editor_state.toolbar,
+            hovered,
+            &mut editor_state.damage_rects,
+            dirty_mask,
+        );
     }
 }
 
 fn compute_toolbar_placement(editor_state: &EditorState) -> (usize, (f32, f32), bool) {
     if editor_state.tool_active {
-        return (editor_state.toolbar.monitor_idx, editor_state.toolbar.position, true);
+        return (
+            editor_state.toolbar.monitor_idx,
+            editor_state.toolbar.position,
+            true,
+        );
     }
 
     let Some(sel) = editor_state.selection.zone else {
@@ -96,8 +107,7 @@ fn compute_toolbar_placement(editor_state: &EditorState) -> (usize, (f32, f32), 
     let margin = TOOLBAR_OFFSET;
 
     let sel_center_x = (local_sel.left() + local_sel.right()) / 2.0;
-    let pos_x = (sel_center_x - tb_w / 2.0)
-        .clamp(0.0, (placement.size.0 as f32 - tb_w).max(0.0));
+    let pos_x = (sel_center_x - tb_w / 2.0).clamp(0.0, (placement.size.0 as f32 - tb_w).max(0.0));
 
     let above_y = local_sel.top() - tb_h - margin;
     let pos_y = if above_y >= 0.0 {

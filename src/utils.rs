@@ -40,12 +40,12 @@ pub fn encode_png(pixmap: &Pixmap) -> Vec<u8> {
     use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 
     let mut png_bytes = Vec::new();
-    
+
     let rgba = pixmap.data();
 
     let encoder =
         PngEncoder::new_with_quality(&mut png_bytes, CompressionType::Fast, FilterType::Adaptive);
-    
+
     encoder
         .write_image(
             rgba,
@@ -242,9 +242,9 @@ pub fn swizzle_rect(pixels: &mut [u8], total_width: u32, x: u32, y: u32, w: u32,
     for row in y..(y + h) {
         let row_start = (row as usize) * stride + start_byte;
         let row_end = row_start + width_bytes;
-        
+
         let row_pixels = &mut pixels[row_start..row_end];
-        
+
         for chunk in row_pixels.chunks_exact_mut(4) {
             chunk.swap(0, 2);
         }

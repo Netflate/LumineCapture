@@ -12,11 +12,18 @@ impl Profiler {
     pub fn new() -> Self {
         let enabled = std::env::var_os("LUMINE_PROFILE").is_some();
         let now = Instant::now();
-        Self { t0: now, last: now, enabled, lines: Vec::new() }
+        Self {
+            t0: now,
+            last: now,
+            enabled,
+            lines: Vec::new(),
+        }
     }
 
     pub fn mark(&mut self, label: &str) {
-        if !self.enabled { return; }
+        if !self.enabled {
+            return;
+        }
         let now = Instant::now();
         self.lines.push(format!(
             "[{:>6.2}ms] (+{:>5.2}ms) {label}",
@@ -27,7 +34,9 @@ impl Profiler {
     }
 
     pub fn mark_external(&mut self, label: &str, elapsed_since_t0: Duration) {
-        if !self.enabled { return; }
+        if !self.enabled {
+            return;
+        }
         self.lines.push(format!(
             "[{:>6.2}ms] (thread)   {label}",
             elapsed_since_t0.as_secs_f64() * 1000.0,
@@ -35,7 +44,9 @@ impl Profiler {
     }
 
     pub fn dump(&self) {
-        if !self.enabled || self.lines.is_empty() { return; }
+        if !self.enabled || self.lines.is_empty() {
+            return;
+        }
         eprintln!("--- timing ---\n{}", self.lines.join("\n"));
     }
 

@@ -1,11 +1,11 @@
-use std::time::{Duration, Instant};
 use crate::types::color_popover::ColorField;
+use std::time::{Duration, Instant};
 
 pub const DOUBLE_CLICK_MS: u64 = 400;
 pub const DOUBLE_CLICK_DIST: f32 = 6.0;
 
 /// A double-click is counted only if all of:
-/// 1. Both clicks occur on the exact same target 
+/// 1. Both clicks occur on the exact same target
 /// 2. Time elapsed between the two clicks is less than `DOUBLE_CLICK_MS`.
 /// 3. Distance between the two clicks is within `DOUBLE_CLICK_DIST`.
 #[derive(Debug, Default)]
@@ -20,13 +20,13 @@ impl<T: PartialEq + Copy> DoubleClickTracker<T> {
 
     /// Registers a single click on a `target` at a specific position `pos`.
     ///
-    /// The `pos` coordinates can be either local or global. The tracker only 
-    /// calculates relative distance, so the coordinate system doesn't matter 
+    /// The `pos` coordinates can be either local or global. The tracker only
+    /// calculates relative distance, so the coordinate system doesn't matter
     /// as long as the caller is consistent.
     ///
     /// # Returns
     /// * `true` if this click completes a valid double-click sequence.
-    /// * `false` if it is the first click, took too long, moved too far, 
+    /// * `false` if it is the first click, took too long, moved too far,
     ///   or was on a different target.
     pub fn register(&mut self, target: T, pos: (f32, f32)) -> bool {
         let now = Instant::now();
@@ -35,9 +35,9 @@ impl<T: PartialEq + Copy> DoubleClickTracker<T> {
                 && now.duration_since(t) < Duration::from_millis(DOUBLE_CLICK_MS)
                 && dist(prev_pos, pos) <= DOUBLE_CLICK_DIST
         });
-        
+
         self.last = Some((now, target, pos));
-        
+
         is_double
     }
 
@@ -59,7 +59,7 @@ fn dist(a: (f32, f32), b: (f32, f32)) -> f32 {
 
 /// Identifiers for interactive objects that support double-click tracking.
 ///
-/// This serves as the target type `T` for the `DoubleClickTracker`, allowing 
+/// This serves as the target type `T` for the `DoubleClickTracker`, allowing
 /// the system to distinguish between clicks on different UI elements or annotations
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClickTarget {

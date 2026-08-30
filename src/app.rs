@@ -1,8 +1,8 @@
+mod color_popover;
 mod init;
 mod input;
 mod settings_logic;
 mod toolbar_logic;
-mod color_popover;
 
 use crate::backend::{initialize_capture, initialize_clipboard, initialize_overlay};
 use crate::editor::EditorState;
@@ -11,14 +11,14 @@ use crate::profiler::Profiler;
 use crate::renderer;
 use crate::tools::Tool;
 use crate::tools::selection::{global_selection_to_local, selection_edges_for_monitor};
+use crate::types::click::DoubleClickTracker;
+use crate::types::panel::{AnimatedPanel, tick_panel_animation};
 use crate::types::toolbar::Toolbar;
 use crate::types::{
-    DamageRect, UiPanel, OverlayEvent, Placement, PointerState, SelectionEdges,
-    SelectionState, SettingsPanel, ToolSettings, ColorPickerPopover
+    ColorPickerPopover, DamageRect, OverlayEvent, Placement, PointerState, SelectionEdges,
+    SelectionState, SettingsPanel, ToolSettings, UiPanel,
 };
-use crate::types::click::DoubleClickTracker;
 use crate::utils::{encode_png, get_full_workspace_rect, get_overlapping_monitors, save_to_file};
-use crate::types::panel::{tick_panel_animation, AnimatedPanel};
 
 use cosmic_text::{FontSystem, SwashCache};
 use std::collections::HashMap;
@@ -125,9 +125,14 @@ pub async fn make_screenshot(
     let _save_as_file = true;
 
     loop {
-        let is_animating =  editor_state.toolbar.is_animating() || editor_state.color_popover.is_animating();
+        let is_animating =
+            editor_state.toolbar.is_animating() || editor_state.color_popover.is_animating();
         let stepper_holding = editor_state.settings_panel.arrow_held.is_some();
-        let timeout = if is_animating || stepper_holding { 16 } else { -1 };
+        let timeout = if is_animating || stepper_holding {
+            16
+        } else {
+            -1
+        };
 
         let ev = overlay.next_event(timeout)?;
         match ev {
@@ -209,10 +214,18 @@ pub async fn make_screenshot(
             }
         }
 
-        tick_panel_animation(&mut editor_state.toolbar, &mut editor_state.damage_rects, &mut dirty_mask);
-        tick_panel_animation(&mut editor_state.color_popover, &mut editor_state.damage_rects, &mut dirty_mask);
+        tick_panel_animation(
+            &mut editor_state.toolbar,
+            &mut editor_state.damage_rects,
+            &mut dirty_mask,
+        );
+        tick_panel_animation(
+            &mut editor_state.color_popover,
+            &mut editor_state.damage_rects,
+            &mut dirty_mask,
+        );
         settings_logic::tick_stepper_arrow_hold(&mut editor_state, &mut dirty_mask);
-        
+
         if editor_state.toolbar.is_animating() {
             if editor_state.settings_panel.visible {
                 settings_logic::update_settings_panel(&mut editor_state, &mut dirty_mask);
@@ -221,7 +234,7 @@ pub async fn make_screenshot(
                 color_popover::update_color_popover(&mut editor_state, &mut dirty_mask);
             }
         }
-        
+
         if dirty_mask != 0 {
             let selection_dirty = editor_state.selection.zone != editor_state.selection.prev_zone;
             let active_text_id = editor_state.text_editing.as_ref().map(|e| e.annotation_id);
@@ -275,7 +288,11 @@ pub async fn make_screenshot(
                     }
 
                     let damage: Option<DamageRect> = dirty_rect.as_ref().and_then(|r| {
-                        renderer::rect_bounds(r, editor_state.base[i].width(), editor_state.base[i].height())
+                        renderer::rect_bounds(
+                            r,
+                            editor_state.base[i].width(),
+                            editor_state.base[i].height(),
+                        )
                     });
 
                     if i == editor_state.toolbar.monitor_idx
@@ -283,16 +300,21 @@ pub async fn make_screenshot(
                         && let Some(dirty) = dirty_rect.as_ref()
                         && let Some(tb_r) = editor_state.toolbar.rect()
                     {
-                        let intersects = dirty.left() < tb_r.right() && dirty.right() > tb_r.left()
-                            && dirty.top() < tb_r.bottom() && dirty.bottom() > tb_r.top();
+                        let intersects = dirty.left() < tb_r.right()
+                            && dirty.right() > tb_r.left()
+                            && dirty.top() < tb_r.bottom()
+                            && dirty.bottom() > tb_r.top();
                         if intersects {
                             editor_state.toolbar.dirty = true;
                         }
                     }
 
-                    let toolbar = if i == editor_state.toolbar.monitor_idx && editor_state.toolbar.dirty {
-                        Some(&mut editor_state.toolbar)
-                    } else { None };
+                    let toolbar =
+                        if i == editor_state.toolbar.monitor_idx && editor_state.toolbar.dirty {
+                            Some(&mut editor_state.toolbar)
+                        } else {
+                            None
+                        };
 
                     if i == editor_state.settings_panel.monitor_idx
                         && editor_state.settings_panel.visible
@@ -300,8 +322,10 @@ pub async fn make_screenshot(
                         && let Some(dirty) = dirty_rect.as_ref()
                         && let Some(sp_r) = editor_state.settings_panel.rect()
                     {
-                        let intersects = dirty.left() < sp_r.right() && dirty.right() > sp_r.left()
-                            && dirty.top() < sp_r.bottom() && dirty.bottom() > sp_r.top();
+                        let intersects = dirty.left() < sp_r.right()
+                            && dirty.right() > sp_r.left()
+                            && dirty.top() < sp_r.bottom()
+                            && dirty.bottom() > sp_r.top();
                         if intersects {
                             editor_state.settings_panel.dirty = true;
                         }
@@ -322,15 +346,19 @@ pub async fn make_screenshot(
                         && let Some(dirty) = dirty_rect.as_ref()
                         && let Some(cp_r) = editor_state.color_popover.rect()
                     {
-                        let intersects = dirty.left() < cp_r.right() && dirty.right() > cp_r.left()
-                            && dirty.top() < cp_r.bottom() && dirty.bottom() > cp_r.top();
+                        let intersects = dirty.left() < cp_r.right()
+                            && dirty.right() > cp_r.left()
+                            && dirty.top() < cp_r.bottom()
+                            && dirty.bottom() > cp_r.top();
                         if intersects {
                             editor_state.color_popover.dirty = true;
                         }
                     }
 
-                    let color_picker = if i==editor_state.color_popover.monitor_idx && editor_state.color_popover.dirty 
-                    && editor_state.color_popover.open {
+                    let color_picker = if i == editor_state.color_popover.monitor_idx
+                        && editor_state.color_popover.dirty
+                        && editor_state.color_popover.open
+                    {
                         Some(&mut editor_state.color_popover)
                     } else {
                         None

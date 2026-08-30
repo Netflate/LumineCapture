@@ -12,8 +12,8 @@ use std::os::unix::io::AsFd;
 pub mod state;
 
 use crate::backend::ScreenOverlay;
-use crate::types::{DamageRect, Output, OverlayEvent};
 use crate::backend::wayland::utils::surface::SurfaceData;
+use crate::types::{DamageRect, Output, OverlayEvent};
 
 pub struct WaylandOverlay {
     pub connection: wayland_client::Connection,
@@ -21,7 +21,7 @@ pub struct WaylandOverlay {
 }
 
 impl WaylandOverlay {
-    pub fn new(connection: wayland_client::Connection) -> Result<Self, Box<dyn std::error::Error>> {        
+    pub fn new(connection: wayland_client::Connection) -> Result<Self, Box<dyn std::error::Error>> {
         let rt = state::OverlayRunTime::new(&connection)?;
 
         Ok(Self {
@@ -36,7 +36,10 @@ impl ScreenOverlay for WaylandOverlay {
         let rt = &mut self.runtime;
         let qh = rt.event_queue.handle();
 
-        let outputs_snapshot: Vec<_> = rt.state.outputs.iter()
+        let outputs_snapshot: Vec<_> = rt
+            .state
+            .outputs
+            .iter()
             .map(|o| (o.wl_output.clone(), o.info.logical_size.unwrap_or((0, 0))))
             .collect();
 
@@ -56,38 +59,45 @@ impl ScreenOverlay for WaylandOverlay {
             let window = rt.state.xdg_shell.create_window(
                 surface.clone(),
                 smithay_client_toolkit::shell::xdg::window::WindowDecorations::None,
-                &qh
+                &qh,
             );
             window.set_title("lumine-capture");
             window.set_app_id("lumine-capture");
             window.set_fullscreen(Some(&wl_output));
 
             // handle fractional scaling calculations for HiDPI setups
-            let frac_scale = rt.state.frac.as_ref()
+            let frac_scale = rt
+                .state
+                .frac
+                .as_ref()
                 .expect("no fractional scale manager")
                 .get_fractional_scale(&surface, &qh, ());
             rt.state.frac_scale = Some(frac_scale);
 
             surface.commit();
 
-            rt.state.surfaces.insert(i, SurfaceData {
-                surface, window,
-                shm_buffer: None,
-                transparent_buffer: None,
-                width: w,
-                height: h,
-            });
+            rt.state.surfaces.insert(
+                i,
+                SurfaceData {
+                    surface,
+                    window,
+                    shm_buffer: None,
+                    transparent_buffer: None,
+                    width: w,
+                    height: h,
+                },
+            );
         }
 
         while rt.state.surfaces.values().any(|sd| sd.shm_buffer.is_none()) {
             // freezes untill WindowHandler create necessary buffers in utils/compositor_shm_xdg.rs
-            // if we continue without waiting compositor response, app will crash 
+            // if we continue without waiting compositor response, app will crash
             rt.event_queue.roundtrip(&mut rt.state)?;
         }
 
         Ok(&rt.state.outputs)
     }
-    
+
     fn stage_frame(
         &mut self,
         monitor_idx: usize,
@@ -103,27 +113,33 @@ impl ScreenOverlay for WaylandOverlay {
 
         let pool = &mut rt.state.pool;
 
-        let buffer = sd.shm_buffer.as_mut().ok_or("SHM buffer is not configured yet")?;
+        let buffer = sd
+            .shm_buffer
+            .as_mut()
+            .ok_or("SHM buffer is not configured yet")?;
 
         // optimization: only upload and redraw the modified area
         if let Some((x, y, w, h)) = damage {
             if x == 0 && y == 0 && w == sd.width && h == sd.height {
                 buffer.write_pixels(pool, pixels);
                 sd.surface.attach(Some(buffer.wl_buffer()), 0, 0);
-                sd.surface.damage_buffer(0, 0, sd.width as i32, sd.height as i32);
+                sd.surface
+                    .damage_buffer(0, 0, sd.width as i32, sd.height as i32);
             } else {
                 buffer.write_pixels_rect(pool, pixels, sd.width, (x, y, w, h));
                 sd.surface.attach(Some(buffer.wl_buffer()), 0, 0);
-                sd.surface.damage_buffer(x as i32, y as i32, w as i32, h as i32);
+                sd.surface
+                    .damage_buffer(x as i32, y as i32, w as i32, h as i32);
             }
         } else {
             // fallback to full frame redraw
             buffer.write_pixels(pool, pixels);
             sd.surface.attach(Some(buffer.wl_buffer()), 0, 0);
-            sd.surface.damage_buffer(0, 0, sd.width as i32, sd.height as i32);
+            sd.surface
+                .damage_buffer(0, 0, sd.width as i32, sd.height as i32);
         }
-        
-        sd.surface.commit();        
+
+        sd.surface.commit();
         Ok(())
     }
 

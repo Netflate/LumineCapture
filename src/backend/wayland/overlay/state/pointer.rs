@@ -75,16 +75,18 @@ impl PointerHandler for OverlayState {
                         pressed,
                     });
                 }
-                
-                PointerEventKind::Axis { horizontal, vertical, .. } => {
+
+                PointerEventKind::Axis {
+                    horizontal,
+                    vertical,
+                    ..
+                } => {
                     let delta_x = horizontal.absolute as f32;
                     let delta_y = -vertical.absolute as f32;
 
                     if delta_x != 0.0 || delta_y != 0.0 {
-                        self.events.push_back(OverlayEvent::Scroll {
-                            delta_x,
-                            delta_y,
-                        });
+                        self.events
+                            .push_back(OverlayEvent::Scroll { delta_x, delta_y });
                     }
                 }
             }

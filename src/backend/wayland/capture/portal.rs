@@ -69,12 +69,18 @@ fn reconcile_streams(
         ordered[idx] = Some(stream);
     }
 
-    Ok(ordered.into_iter().map(|s| s.expect("reconcile: slot left empty despite length check")).collect())
+    Ok(ordered
+        .into_iter()
+        .map(|s| s.expect("reconcile: slot left empty despite length check"))
+        .collect())
 }
 
 #[async_trait]
 impl CaptureMethod for PortalMethod {
-    async fn capture_frame(&self, outputs: &[Output]) -> Result<CaptureResult, Box<dyn std::error::Error>> {
+    async fn capture_frame(
+        &self,
+        outputs: &[Output],
+    ) -> Result<CaptureResult, Box<dyn std::error::Error>> {
         let proxy = Screencast::new().await?;
         let session = proxy.create_session(Default::default()).await?;
 

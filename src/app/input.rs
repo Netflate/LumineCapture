@@ -1,41 +1,42 @@
-// Processing of pointer and keyboard events: translating 
+// Processing of pointer and keyboard events: translating
 // coordinates into local/global, dispatching to the active tool,
 
 // priority hits in Toolbar/SettingsPanel. logic of the Toolbar/SettingsPanel
 // (what to show, where to commit changes) is in toolbar_logic.rs / settings_logic.rs,
 // only event routing and update_pointer/update_magnifier as their direct side effects
 
-use crate::editor::{EditorState, DamageZone};
+use crate::editor::dirty::{apply_damage_rects, mark_dirty};
+use crate::editor::{DamageZone, EditorState};
 use crate::renderer::char_index_for_x;
 use crate::tools::{
     Tool, dispatch_button, dispatch_deactivate, dispatch_key, dispatch_move, dispatch_text,
 };
+use crate::types::click::ClickTarget;
+use crate::types::color_popover::ColorField;
 use crate::types::panel::UiPanel;
+use crate::types::settings_panel::SETTINGS_LABEL_FONT_SIZE;
+use crate::types::text_field::{CursorInit, SCROLL_SENSITIVITY};
 use crate::types::toolbar::{ToolbarButton, ToolbarItem};
 use crate::types::{
-    MAG_FRAME_INTERVAL, MagnifierState, MouseButton, PointerState, SettingsWidget,
-    SpecialKey, ArrowHoldState, StepperArrow,
+    ArrowHoldState, MAG_FRAME_INTERVAL, MagnifierState, MouseButton, PointerState, SettingsWidget,
+    SpecialKey, StepperArrow,
 };
-use crate::types::click::ClickTarget;
-use crate::types::text_field::{CursorInit, SCROLL_SENSITIVITY};
-use crate::types::color_popover::ColorField;
-use crate::types::settings_panel::SETTINGS_LABEL_FONT_SIZE;
 use crate::utils::{get_full_workspace_rect, global_point_to_local};
-use crate::editor::dirty::{mark_dirty, apply_damage_rects};
 
 use std::time::Instant;
 
-use super::toolbar_logic::update_toolbar;
 use super::color_popover::{
-    update_color_popover, handle_color_popover_click, close_color_popover,
-    handle_color_popover_drag, handle_color_popover_release, commit_color_field_edit,
-    handle_color_field_text_input, handle_color_field_key_press, handle_color_field_scroll,
-    step_color_field,
+    close_color_popover, commit_color_field_edit, handle_color_field_key_press,
+    handle_color_field_scroll, handle_color_field_text_input, handle_color_popover_click,
+    handle_color_popover_drag, handle_color_popover_release, step_color_field,
+    update_color_popover,
 };
 use super::settings_logic::{
-    update_settings_panel, apply_stepper_arrow_step, commit_stepper_text_edit, handle_settings_key_press,
-    handle_settings_text_input, apply_toggle_field, handle_stepper_scroll, sync_stepper_edit_text,
+    apply_stepper_arrow_step, apply_toggle_field, commit_stepper_text_edit,
+    handle_settings_key_press, handle_settings_text_input, handle_stepper_scroll,
+    sync_stepper_edit_text, update_settings_panel,
 };
+use super::toolbar_logic::update_toolbar;
 
 pub fn handle_pointer_move(
     editor_state: &mut EditorState,
@@ -50,7 +51,12 @@ pub fn handle_pointer_move(
     );
     let (current_monitor_idx, local_x, local_y) =
         global_point_to_local(&editor_state.placements, global, monitor_idx, (x, y));
-    update_pointer(editor_state, current_monitor_idx, (local_x, local_y), global);
+    update_pointer(
+        editor_state,
+        current_monitor_idx,
+        (local_x, local_y),
+        global,
+    );
     update_magnifier(editor_state, dirty_mask);
     dispatch_move(editor_state.selected_tool, editor_state, global, dirty_mask);
     update_toolbar(editor_state, dirty_mask);
@@ -126,7 +132,6 @@ pub fn handle_pointer_button(
         if let UiHit::ColorPopoverOutside = ui_hit {
             close_color_popover(editor_state, dirty_mask);
             ui_hit = hit_test_ui(editor_state, editor_state.pointer.local);
-
         }
 
         match ui_hit {
@@ -143,19 +148,25 @@ pub fn handle_pointer_button(
                     match btn {
                         ToolbarButton::Tool(tool) => {
                             if editor_state.selection.zone.is_none() && *tool != Tool::Selection {
-                                editor_state.selection.zone = get_full_workspace_rect(&editor_state.placements);
+                                editor_state.selection.zone =
+                                    get_full_workspace_rect(&editor_state.placements);
                                 for i in 0..editor_state.placements.len() {
                                     mark_dirty(dirty_mask, i);
                                 }
                             } else if *tool == Tool::Selection
-                                && editor_state.selection.zone == get_full_workspace_rect(&editor_state.placements)
+                                && editor_state.selection.zone
+                                    == get_full_workspace_rect(&editor_state.placements)
                             {
                                 editor_state.selection.zone = None;
                                 for i in 0..editor_state.placements.len() {
                                     mark_dirty(dirty_mask, i);
                                 }
                             }
-                            dispatch_deactivate(editor_state.selected_tool, editor_state, dirty_mask);
+                            dispatch_deactivate(
+                                editor_state.selected_tool,
+                                editor_state,
+                                dirty_mask,
+                            );
                             editor_state.selected_tool = *tool;
                             editor_state.toolbar.selected = Some(tb_button);
                             editor_state.toolbar.dirty = true;
@@ -176,9 +187,12 @@ pub fn handle_pointer_button(
                 let monitor_idx = editor_state.settings_panel.monitor_idx;
                 editor_state.settings_panel.dirty = true;
 
-                // only exception: clicking outside of color swatch closes it, even if on the colorswatch icon itself 
+                // only exception: clicking outside of color swatch closes it, even if on the colorswatch icon itself
                 if editor_state.settings_panel.selected == Some(widget_idx)
-                    && matches!(editor_state.settings_panel.widgets[widget_idx], SettingsWidget::ColorSwatch)
+                    && matches!(
+                        editor_state.settings_panel.widgets[widget_idx],
+                        SettingsWidget::ColorSwatch
+                    )
                 {
                     editor_state.color_popover.open = false;
                     editor_state.settings_panel.selected = None;
@@ -189,13 +203,16 @@ pub fn handle_pointer_button(
 
                 editor_state.settings_panel.selected = Some(widget_idx);
 
-
                 match editor_state.settings_panel.widgets[widget_idx] {
                     SettingsWidget::Stepper { .. } => {
-                        if let Some(arrow) = editor_state.settings_panel.stepper_arrow_hit(widget_idx, editor_state.pointer.local) {
+                        if let Some(arrow) = editor_state
+                            .settings_panel
+                            .stepper_arrow_hit(widget_idx, editor_state.pointer.local)
+                        {
                             apply_stepper_arrow_step(editor_state, widget_idx, arrow, dirty_mask);
                             editor_state.settings_panel.arrow_held = Some(ArrowHoldState {
-                                widget_idx, arrow,
+                                widget_idx,
+                                arrow,
                                 started_at: Instant::now(),
                                 last_step_at: Instant::now(),
                                 repeat_count: 0,
@@ -218,7 +235,9 @@ pub fn handle_pointer_button(
 
                             let cursor_init = if is_double_click {
                                 CursorInit::SelectAll
-                            } else if let Some(text_x) = editor_state.settings_panel.widget_text_x(widget_idx) {
+                            } else if let Some(text_x) =
+                                editor_state.settings_panel.widget_text_x(widget_idx)
+                            {
                                 let click_x = editor_state.pointer.local.0 as f32 - text_x;
                                 let idx = char_index_for_x(
                                     &current_value,
@@ -231,8 +250,13 @@ pub fn handle_pointer_button(
                                 CursorInit::End
                             };
 
-                            editor_state.settings_panel.pre_edit_snapshot = Some(editor_state.annotations.clone());
-                            editor_state.settings_panel.begin_edit(widget_idx, current_value, cursor_init);
+                            editor_state.settings_panel.pre_edit_snapshot =
+                                Some(editor_state.annotations.clone());
+                            editor_state.settings_panel.begin_edit(
+                                widget_idx,
+                                current_value,
+                                cursor_init,
+                            );
                         }
                     }
                     SettingsWidget::Toggle { field, .. } => {
@@ -251,7 +275,9 @@ pub fn handle_pointer_button(
                 mark_dirty(dirty_mask, monitor_idx);
 
                 if let Some(rect) = editor_state.settings_panel.rect() {
-                    editor_state.damage_rects.push(DamageZone::Local { monitor_idx, rect });
+                    editor_state
+                        .damage_rects
+                        .push(DamageZone::Local { monitor_idx, rect });
                 }
 
                 apply_damage_rects(editor_state, dirty_mask);
@@ -269,12 +295,20 @@ pub fn handle_pointer_button(
         let monitor_idx = editor_state.toolbar.monitor_idx;
 
         if let Some(rect) = editor_state.settings_panel.rect() {
-            editor_state.damage_rects.push(DamageZone::Local { monitor_idx, rect });
+            editor_state
+                .damage_rects
+                .push(DamageZone::Local { monitor_idx, rect });
         }
         mark_dirty(dirty_mask, monitor_idx);
     }
 
-    dispatch_button(editor_state.selected_tool, editor_state, button, pressed, dirty_mask);
+    dispatch_button(
+        editor_state.selected_tool,
+        editor_state,
+        button,
+        pressed,
+        dirty_mask,
+    );
 
     if matches!(button, MouseButton::Left) && !pressed {
         update_toolbar(editor_state, dirty_mask);
@@ -317,7 +351,10 @@ fn update_magnifier(editor_state: &mut EditorState, dirty_mask: &mut u32) {
         editor_state.prev_magnifier = None;
     }
 
-    editor_state.magnifier = Some(MagnifierState { monitor_idx, pos: local });
+    editor_state.magnifier = Some(MagnifierState {
+        monitor_idx,
+        pos: local,
+    });
     mark_dirty(dirty_mask, monitor_idx);
 }
 
@@ -338,14 +375,30 @@ pub fn handle_key_press(editor_state: &mut EditorState, key: SpecialKey, dirty_m
     if matches!(key, SpecialKey::Up | SpecialKey::Down) {
         let sign: i32 = if matches!(key, SpecialKey::Up) { 1 } else { -1 };
 
-        if let Some(field) = editor_state.color_popover.fields.editing.as_ref().map(|e| e.key) {
+        if let Some(field) = editor_state
+            .color_popover
+            .fields
+            .editing
+            .as_ref()
+            .map(|e| e.key)
+        {
             step_color_field(editor_state, field, sign, dirty_mask);
             apply_damage_rects(editor_state, dirty_mask);
             return;
         }
 
-        if let Some(widget_idx) = editor_state.settings_panel.fields.editing.as_ref().map(|e| e.key) {
-            let arrow = if sign > 0 { StepperArrow::Up } else { StepperArrow::Down };
+        if let Some(widget_idx) = editor_state
+            .settings_panel
+            .fields
+            .editing
+            .as_ref()
+            .map(|e| e.key)
+        {
+            let arrow = if sign > 0 {
+                StepperArrow::Up
+            } else {
+                StepperArrow::Down
+            };
             apply_stepper_arrow_step(editor_state, widget_idx, arrow, dirty_mask);
             update_settings_panel(editor_state, dirty_mask);
             sync_stepper_edit_text(editor_state, widget_idx);
@@ -365,9 +418,16 @@ pub fn handle_key_press(editor_state: &mut EditorState, key: SpecialKey, dirty_m
 
         if editor_state.settings_panel.visible
             && let Some(widget_idx) = editor_state.settings_panel.hit_test(local)
-            && matches!(editor_state.settings_panel.widgets.get(widget_idx), Some(SettingsWidget::Stepper { .. }))
+            && matches!(
+                editor_state.settings_panel.widgets.get(widget_idx),
+                Some(SettingsWidget::Stepper { .. })
+            )
         {
-            let arrow = if sign > 0 { StepperArrow::Up } else { StepperArrow::Down };
+            let arrow = if sign > 0 {
+                StepperArrow::Up
+            } else {
+                StepperArrow::Down
+            };
             apply_stepper_arrow_step(editor_state, widget_idx, arrow, dirty_mask);
             update_settings_panel(editor_state, dirty_mask);
             apply_damage_rects(editor_state, dirty_mask);
@@ -388,7 +448,12 @@ pub fn handle_key_press(editor_state: &mut EditorState, key: SpecialKey, dirty_m
 }
 
 // ──── scroll: hit-test first (color popover fields -> settings stepper), then apply ──────────
-pub fn handle_scroll(editor_state: &mut EditorState, delta_x: f32, delta_y: f32, dirty_mask: &mut u32) {
+pub fn handle_scroll(
+    editor_state: &mut EditorState,
+    delta_x: f32,
+    delta_y: f32,
+    dirty_mask: &mut u32,
+) {
     let local = editor_state.pointer.local;
     let delta_y = delta_y * SCROLL_SENSITIVITY;
 
@@ -402,7 +467,10 @@ pub fn handle_scroll(editor_state: &mut EditorState, delta_x: f32, delta_y: f32,
 
     if editor_state.settings_panel.visible {
         if let Some(widget_idx) = editor_state.settings_panel.hit_test(local)
-            && matches!(editor_state.settings_panel.widgets.get(widget_idx), Some(SettingsWidget::Stepper { .. }))
+            && matches!(
+                editor_state.settings_panel.widgets.get(widget_idx),
+                Some(SettingsWidget::Stepper { .. })
+            )
         {
             handle_stepper_scroll(editor_state, widget_idx, delta_y, dirty_mask);
             apply_damage_rects(editor_state, dirty_mask);
@@ -414,7 +482,10 @@ pub fn handle_scroll(editor_state: &mut EditorState, delta_x: f32, delta_y: f32,
     apply_damage_rects(editor_state, dirty_mask);
 }
 
-fn hit_test_color_scroll_field(editor_state: &EditorState, local: (f64, f64)) -> Option<ColorField> {
+fn hit_test_color_scroll_field(
+    editor_state: &EditorState,
+    local: (f64, f64),
+) -> Option<ColorField> {
     if editor_state.color_popover.hex_field_hit(local) {
         return Some(ColorField::Hex);
     }

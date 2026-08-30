@@ -1,9 +1,7 @@
 use super::paths::{normalized_rect, oval_path};
 use super::text::{draw_text_buffer, shape_single_line};
 use crate::tools::text::render_text_annotation;
-use crate::types::annotations::{
-    Annotation, AnnotationShape, HANDLE_PAD, SHADOW_COLOR,
-};
+use crate::types::annotations::{Annotation, AnnotationShape, HANDLE_PAD, SHADOW_COLOR};
 
 use cosmic_text::{Editor, FontSystem, SwashCache};
 use std::collections::HashMap;
@@ -57,7 +55,7 @@ const SPREAD_PER_LAYER: f32 = 1.5;
 
 pub fn visual_pad(stroke_width: f32) -> f32 {
     let max_stroke_extent = (stroke_width + SHADOW_LAYERS as f32 * SPREAD_PER_LAYER) / 2.0;
-    max_stroke_extent + SHADOW_OFFSET.1.abs() + 2.0 
+    max_stroke_extent + SHADOW_OFFSET.1.abs() + 2.0
 }
 pub fn selection_chrome_pad() -> f32 {
     const CHROME_STROKE: f32 = 3.0;
@@ -172,17 +170,32 @@ pub fn draw_annotation_handles_only(canvas: &mut Pixmap, ann: &Annotation, offse
 }
 
 fn draw_text_box(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32)) {
-    let mut paint = Paint::default(); paint.set_color(Color::WHITE); paint.anti_alias = true;
-    let mut stroke = Stroke::default(); stroke.width = 3.0; stroke.line_cap = tiny_skia::LineCap::Round; stroke.line_join = tiny_skia::LineJoin::Round;
+    let mut paint = Paint::default();
+    paint.set_color(Color::WHITE);
+    paint.anti_alias = true;
+    let mut stroke = Stroke::default();
+    stroke.width = 3.0;
+    stroke.line_cap = tiny_skia::LineCap::Round;
+    stroke.line_join = tiny_skia::LineJoin::Round;
 
-    let base_shadow_color = Color::from_rgba8(SHADOW_COLOR.0, SHADOW_COLOR.1, SHADOW_COLOR.2, SHADOW_COLOR.3);
+    let base_shadow_color = Color::from_rgba8(
+        SHADOW_COLOR.0,
+        SHADOW_COLOR.1,
+        SHADOW_COLOR.2,
+        SHADOW_COLOR.3,
+    );
 
     // Selection chrome, not the annotation itself — halo (no offset) reads
     // better than a drop shadow on a rounded-rect outline.
     let transform = Transform::from_translate(-offset.0, -offset.1);
     let shadow_transform = transform;
     let pad = (HANDLE_PAD / 2.0) as f32;
-    let (l, t, ri, b) = (bbox.left() - pad, bbox.top() - pad, bbox.right() + pad, bbox.bottom() + pad);
+    let (l, t, ri, b) = (
+        bbox.left() - pad,
+        bbox.top() - pad,
+        bbox.right() + pad,
+        bbox.bottom() + pad,
+    );
 
     let (w, h) = (ri - l, b - t);
     let corner_w = (w * 0.20).clamp(8.0_f32.min(w * 0.5), w * 0.5);
@@ -192,15 +205,32 @@ fn draw_text_box(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32)) {
 
     let mut pb = PathBuilder::new();
 
-    pb.move_to(l, t + corner_h); pb.line_to(l, t + r); pb.cubic_to(l, t + r * k, l + r * k, t, l + r, t); pb.line_to(l + corner_w, t);
-    pb.move_to(ri - corner_w, t); pb.line_to(ri - r, t); pb.cubic_to(ri - r * k, t, ri, t + r * k, ri, t + r); pb.line_to(ri, t + corner_h);
-    pb.move_to(ri, b - corner_h); pb.line_to(ri, b - r); pb.cubic_to(ri, b - r * k, ri - r * k, b, ri - r, b); pb.line_to(ri - corner_w, b);
-    pb.move_to(l + corner_w, b); pb.line_to(l + r, b); pb.cubic_to(l + r * k, b, l, b - r * k, l, b - r); pb.line_to(l, b - corner_h);
+    pb.move_to(l, t + corner_h);
+    pb.line_to(l, t + r);
+    pb.cubic_to(l, t + r * k, l + r * k, t, l + r, t);
+    pb.line_to(l + corner_w, t);
+    pb.move_to(ri - corner_w, t);
+    pb.line_to(ri - r, t);
+    pb.cubic_to(ri - r * k, t, ri, t + r * k, ri, t + r);
+    pb.line_to(ri, t + corner_h);
+    pb.move_to(ri, b - corner_h);
+    pb.line_to(ri, b - r);
+    pb.cubic_to(ri, b - r * k, ri - r * k, b, ri - r, b);
+    pb.line_to(ri - corner_w, b);
+    pb.move_to(l + corner_w, b);
+    pb.line_to(l + r, b);
+    pb.cubic_to(l + r * k, b, l, b - r * k, l, b - r);
+    pb.line_to(l, b - corner_h);
 
     if let Some(path) = pb.finish() {
         stroke_segment_with_shadow(
-            canvas, &path, &paint, &stroke, base_shadow_color,
-            transform, shadow_transform,
+            canvas,
+            &path,
+            &paint,
+            &stroke,
+            base_shadow_color,
+            transform,
+            shadow_transform,
         );
     }
 }
@@ -240,7 +270,7 @@ fn draw_arrow(
     );
 
     let mut pb = PathBuilder::new();
-    
+
     pb.move_to(start.0, start.1);
     pb.line_to(tip.0, tip.1);
 
@@ -457,8 +487,13 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
     let mut draw_segment = |pb: PathBuilder| {
         if let Some(path) = pb.finish() {
             stroke_segment_with_shadow(
-                canvas, &path, &paint, &stroke, base_shadow_color,
-                transform, shadow_transform,
+                canvas,
+                &path,
+                &paint,
+                &stroke,
+                base_shadow_color,
+                transform,
+                shadow_transform,
             );
         }
     };
@@ -543,16 +578,20 @@ fn stroke_with_shadow(
     let base_shadow_color = shadow_color_for(color);
 
     stroke_segment_with_shadow(
-        canvas, path, &paint, &stroke, base_shadow_color,
-        transform, shadow_transform,
+        canvas,
+        path,
+        &paint,
+        &stroke,
+        base_shadow_color,
+        transform,
+        shadow_transform,
     );
 }
 
 fn contrasting_text_color(circle_color: Color) -> Color {
     // Perceived luminance (ITU-R BT.601)
-    let luminance = 0.299 * circle_color.red()
-        + 0.587 * circle_color.green()
-        + 0.114 * circle_color.blue();
+    let luminance =
+        0.299 * circle_color.red() + 0.587 * circle_color.green() + 0.114 * circle_color.blue();
 
     if luminance > 0.55 {
         Color::BLACK
@@ -615,13 +654,25 @@ fn draw_numerated_arrow(
         pb.close();
 
         if let Some(path) = pb.finish() {
-            canvas.fill_path(&path, &shadow_paint, FillRule::Winding, shadow_transform, None);
+            canvas.fill_path(
+                &path,
+                &shadow_paint,
+                FillRule::Winding,
+                shadow_transform,
+                None,
+            );
             canvas.fill_path(&path, &fill_paint, FillRule::Winding, transform, None);
         }
     }
 
     if let Some(circle) = oval_path(start.0, start.1, circle_radius, circle_radius) {
-        canvas.fill_path(&circle, &shadow_paint, FillRule::Winding, shadow_transform, None);
+        canvas.fill_path(
+            &circle,
+            &shadow_paint,
+            FillRule::Winding,
+            shadow_transform,
+            None,
+        );
         canvas.fill_path(&circle, &fill_paint, FillRule::Winding, transform, None);
     }
 
@@ -642,10 +693,7 @@ fn draw_numerated_arrow(
         cosmic_text::Style::Normal,
     );
 
-    let text_pos = (
-        start.0 - text_width / 2.0,
-        start.1 - text_height / 2.0,
-    );
+    let text_pos = (start.0 - text_width / 2.0, start.1 - text_height / 2.0);
 
     let text_color = contrasting_text_color(color);
 

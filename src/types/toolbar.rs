@@ -1,6 +1,6 @@
 use crate::tools::Tool;
-use crate::types::panel::{AnimatedPanel, HoverablePanel, PanelItem, UiPanel};
 use crate::types::Placement;
+use crate::types::panel::{AnimatedPanel, HoverablePanel, PanelItem, UiPanel};
 use std::time::{Duration, Instant};
 use tiny_skia::{Pixmap, Rect};
 
@@ -13,7 +13,7 @@ pub const TOOLBAR_TRANSITION_OFFSET: f32 = 340.0; // max cap on the transition e
 
 pub const TOOLBAR_HEIGHT: f32 = 42.0;
 pub const TOOLBAR_OFFSET: f32 = 5.0;
-pub const TOOLBAR_PADDING: f32 = 8.0; 
+pub const TOOLBAR_PADDING: f32 = 8.0;
 
 pub const BUTTON_CELL_SIZE: f32 = 35.0;
 const SEPARATOR_CELL_SIZE: f32 = 20.0;
@@ -64,12 +64,24 @@ impl Default for Toolbar {
 impl UiPanel for Toolbar {
     type Item = ToolbarItem;
 
-    fn render_pos(&self) -> (f32, f32) { self.render_pos }
-    fn size(&self) -> (f32, f32) { self.size }
-    fn items(&self) -> &[Self::Item] { self.items }
-    fn padding(&self) -> f32 { TOOLBAR_PADDING }
-    fn monitor_idx(&self) -> usize { self.monitor_idx }
-    fn set_dirty(&mut self) { self.dirty = true; }
+    fn render_pos(&self) -> (f32, f32) {
+        self.render_pos
+    }
+    fn size(&self) -> (f32, f32) {
+        self.size
+    }
+    fn items(&self) -> &[Self::Item] {
+        self.items
+    }
+    fn padding(&self) -> f32 {
+        TOOLBAR_PADDING
+    }
+    fn monitor_idx(&self) -> usize {
+        self.monitor_idx
+    }
+    fn set_dirty(&mut self) {
+        self.dirty = true;
+    }
 
     // Same pattern as SettingsPanel: once fully faded out there's nothing
     // to hit-test or damage, so say so explicitly here instead of every
@@ -86,16 +98,28 @@ impl UiPanel for Toolbar {
 
 impl HoverablePanel for Toolbar {
     type Hover = Option<usize>;
-    fn hovered(&self) -> Self::Hover { self.hovered }
-    fn set_hovered(&mut self, hover: Self::Hover) { self.hovered = hover; }
+    fn hovered(&self) -> Self::Hover {
+        self.hovered
+    }
+    fn set_hovered(&mut self, hover: Self::Hover) {
+        self.hovered = hover;
+    }
 }
 
 impl AnimatedPanel for Toolbar {
-    fn last_tick(&self) -> Option<Instant> { self.last_tick }
-    fn set_last_tick(&mut self, at: Instant) { self.last_tick = Some(at); }
+    fn last_tick(&self) -> Option<Instant> {
+        self.last_tick
+    }
+    fn set_last_tick(&mut self, at: Instant) {
+        self.last_tick = Some(at);
+    }
 
-    fn anim_interval(&self) -> Duration { TOOLBAR_ANIM_INTERVAL }
-    fn anim_dt(&self) -> f32 { TOOLBAR_ANIM_DT }
+    fn anim_interval(&self) -> Duration {
+        TOOLBAR_ANIM_INTERVAL
+    }
+    fn anim_dt(&self) -> f32 {
+        TOOLBAR_ANIM_DT
+    }
 
     fn is_animating(&self) -> bool {
         let target_opacity = if self.interferes { 0.0 } else { 1.0 };

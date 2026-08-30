@@ -43,12 +43,7 @@ pub trait ToolBehavior {
         pressed: bool,
         dirty_mask: &mut u32,
     );
-    fn on_move(
-        &self,
-        state: &mut EditorState,
-        global: (f64, f64),
-        dirty_mask: &mut u32,
-    );
+    fn on_move(&self, state: &mut EditorState, global: (f64, f64), dirty_mask: &mut u32);
     fn on_deactivate(&self, _state: &mut EditorState, _dirty_mask: &mut u32) {}
     fn on_text(&self, _state: &mut EditorState, _ch: char, _dirty_mask: &mut u32) {}
     fn on_key(&self, _state: &mut EditorState, _key: SpecialKey, _dirty_mask: &mut u32) {}
@@ -68,9 +63,7 @@ pub fn dispatch_move(
         Tool::Pick => PickTool.on_move(state, global, dirty_mask),
         Tool::Text => TextTool.on_move(state, global, dirty_mask),
         Tool::Pen => PenTool.on_move(state, global, dirty_mask),
-        Tool::NumeratedArrow => {
-            NumeratedArrowTool.on_move(state, global, dirty_mask)
-        }
+        Tool::NumeratedArrow => NumeratedArrowTool.on_move(state, global, dirty_mask),
 
         Tool::Rectangle | Tool::Arrow | Tool::Circle | Tool::Line => {
             let color = state.tool_settings.color;

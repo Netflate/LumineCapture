@@ -69,8 +69,7 @@ impl OverlayRunTime {
         let shm = Shm::bind(&globals, &qh)?;
         let compositor_state =
             smithay_client_toolkit::compositor::CompositorState::bind(&globals, &qh)?;
-        let xdg_shell =
-            smithay_client_toolkit::shell::xdg::XdgShell::bind(&globals, &qh)?;
+        let xdg_shell = smithay_client_toolkit::shell::xdg::XdgShell::bind(&globals, &qh)?;
         let seat = smithay_client_toolkit::seat::SeatState::new(&globals, &qh);
         let cursor_shape_manager =
             smithay_client_toolkit::seat::pointer::cursor_shape::CursorShapeManager::bind(

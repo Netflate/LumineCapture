@@ -1,4 +1,4 @@
-use crate::editor::{EditorState, DamageZone};
+use crate::editor::{DamageZone, EditorState};
 use crate::renderer::{self};
 use crate::tools::selection::global_selection_to_local;
 use crate::types::annotations::Annotation;
@@ -39,15 +39,21 @@ impl EditorState {
             .as_ref()
             .and_then(|sel| global_selection_to_local(sel, placement));
 
-        if let Some(r) = local_sel.as_ref().and_then(|sel| expand_rect(sel, selection_pad)) {
+        if let Some(r) = local_sel
+            .as_ref()
+            .and_then(|sel| expand_rect(sel, selection_pad))
+        {
             dirty = union_rect(dirty, Some(r));
         }
-        if let Some(r) = prev_local.as_ref().and_then(|sel| expand_rect(sel, selection_pad)) {
+        if let Some(r) = prev_local
+            .as_ref()
+            .and_then(|sel| expand_rect(sel, selection_pad))
+        {
             dirty = union_rect(dirty, Some(r));
         }
         dirty
     }
-    
+
     fn calc_magnifier_dirty(&self, monitor_idx: usize, placement: &Placement) -> Option<Rect> {
         let mut dirty = None;
         let (mw, mh) = (placement.size.0 as f32, placement.size.1 as f32);
@@ -101,17 +107,26 @@ impl EditorState {
 
         if let Some(ann) = &self.pending {
             let pad = crate::renderer::visual_pad(ann.stroke_width);
-            dirty = union_rect(dirty, global_to_local_padded(&ann.bbox, offset, pad, mw, mh));
+            dirty = union_rect(
+                dirty,
+                global_to_local_padded(&ann.bbox, offset, pad, mw, mh),
+            );
         }
         if let Some(ann) = &self.prev_pending {
             let pad = crate::renderer::visual_pad(ann.stroke_width);
-            dirty = union_rect(dirty, global_to_local_padded(&ann.bbox, offset, pad, mw, mh));
+            dirty = union_rect(
+                dirty,
+                global_to_local_padded(&ann.bbox, offset, pad, mw, mh),
+            );
         }
         if let Some(ann_idx) = self.selected_annotation {
             if let Some(ann) = self.annotations.get(ann_idx) {
                 let pad = crate::renderer::selection_chrome_pad()
                     .max(crate::renderer::visual_pad(ann.stroke_width));
-                dirty = union_rect(dirty, global_to_local_padded(&ann.bbox, offset, pad, mw, mh));
+                dirty = union_rect(
+                    dirty,
+                    global_to_local_padded(&ann.bbox, offset, pad, mw, mh),
+                );
             }
         }
 
@@ -120,7 +135,10 @@ impl EditorState {
                 DamageZone::Global(rect) => {
                     dirty = union_rect(dirty, global_to_local_padded(rect, offset, 4.0, mw, mh));
                 }
-                DamageZone::Local { monitor_idx: idx, rect } if *idx == monitor_idx => {
+                DamageZone::Local {
+                    monitor_idx: idx,
+                    rect,
+                } if *idx == monitor_idx => {
                     let local_clamped = Rect::from_ltrb(
                         (rect.left() - 4.0).max(0.0),
                         (rect.top() - 4.0).max(0.0),
@@ -199,7 +217,8 @@ impl EditorState {
     }
 
     pub fn damage_local(&mut self, monitor_idx: usize, rect: Rect) {
-        self.damage_rects.push(DamageZone::Local { monitor_idx, rect });
+        self.damage_rects
+            .push(DamageZone::Local { monitor_idx, rect });
     }
 }
 

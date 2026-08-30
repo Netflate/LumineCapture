@@ -1,15 +1,15 @@
-use tiny_skia::{Pixmap, Rect};
 use crate::editor::EditorState;
 use crate::tools::Tool;
-use crate::types::panel::{HoverablePanel, PanelItem, UiPanel};
-use crate::types::toolbar::TOOLBAR_OFFSET;
-use crate::types::text_field::{is_stepper_char, TextFieldGroup};
-use crate::types::SpecialKey;
 use crate::types::CursorInit;
+use crate::types::SpecialKey;
 use crate::types::annotations::{Annotation, AnnotationShape};
+use crate::types::panel::{HoverablePanel, PanelItem, UiPanel};
+use crate::types::text_field::{TextFieldGroup, is_stepper_char};
+use crate::types::toolbar::TOOLBAR_OFFSET;
+use tiny_skia::{Pixmap, Rect};
 
 use std::collections::HashMap;
-use std::time::{Instant, Duration};
+use std::time::{Duration, Instant};
 
 pub const SETTINGS_PANEL_HEIGHT: f32 = 42.0;
 pub const SETTINGS_PADDING: f32 = 8.0;
@@ -42,8 +42,17 @@ pub enum ToggleVisual {
 #[derive(Debug, Clone)]
 pub enum SettingsWidget {
     ColorSwatch,
-    Stepper { label: &'static str, min: f32, max: f32, step: f32, unit: &'static str },
-    Toggle { visual: ToggleVisual, field: ToggleField },
+    Stepper {
+        label: &'static str,
+        min: f32,
+        max: f32,
+        step: f32,
+        unit: &'static str,
+    },
+    Toggle {
+        visual: ToggleVisual,
+        field: ToggleField,
+    },
     Label(&'static str),
     Separator,
 }
@@ -77,23 +86,53 @@ pub enum ToggleField {
 
 pub fn widgets_for_tool(tool: Tool) -> &'static [SettingsWidget] {
     match tool {
-        Tool::Pen | Tool::Line | Tool::Arrow | Tool::NumeratedArrow =>  &[
+        Tool::Pen | Tool::Line | Tool::Arrow | Tool::NumeratedArrow => &[
             SettingsWidget::ColorSwatch,
             SettingsWidget::Separator,
-            SettingsWidget::Stepper { label: "", min: 1.0, max: 40.0, step: 1.0, unit: "px" },
+            SettingsWidget::Stepper {
+                label: "",
+                min: 1.0,
+                max: 40.0,
+                step: 1.0,
+                unit: "px",
+            },
         ],
         Tool::Text => &[
             SettingsWidget::ColorSwatch,
             SettingsWidget::Separator,
-            SettingsWidget::Stepper { label: "", min: 8.0, max: 72.0, step: 1.0, unit: "px" },
+            SettingsWidget::Stepper {
+                label: "",
+                min: 8.0,
+                max: 72.0,
+                step: 1.0,
+                unit: "px",
+            },
             SettingsWidget::Separator,
-                SettingsWidget::Toggle { visual: ToggleVisual::Icon { svg: crate::types::icons::BOLD, icon_size: 16.0 }, field: ToggleField::Bold },
-                SettingsWidget::Toggle { visual: ToggleVisual::Icon { svg: crate::types::icons::ITALIC, icon_size: 16.0 }, field: ToggleField::Italic },
+            SettingsWidget::Toggle {
+                visual: ToggleVisual::Icon {
+                    svg: crate::types::icons::BOLD,
+                    icon_size: 16.0,
+                },
+                field: ToggleField::Bold,
+            },
+            SettingsWidget::Toggle {
+                visual: ToggleVisual::Icon {
+                    svg: crate::types::icons::ITALIC,
+                    icon_size: 16.0,
+                },
+                field: ToggleField::Italic,
+            },
         ],
         Tool::Rectangle | Tool::Circle => &[
             SettingsWidget::ColorSwatch,
             SettingsWidget::Separator,
-            SettingsWidget::Stepper { label: "", min: 1.0, max: 40.0, step: 1.0, unit: "px" },
+            SettingsWidget::Stepper {
+                label: "",
+                min: 1.0,
+                max: 40.0,
+                step: 1.0,
+                unit: "px",
+            },
         ],
         _ => &[],
     }
@@ -120,7 +159,9 @@ impl PanelItem for SettingsWidget {
             SettingsWidget::Toggle { visual, .. } => match visual {
                 ToggleVisual::Icon { .. } => SETTINGS_ICON_BUTTON_SIZE,
                 ToggleVisual::Checkbox { label } => {
-                    SETTINGS_CHECKBOX_BOX_SIZE + SETTINGS_CHECKBOX_LABEL_GAP + label.len() as f32 * 7.0
+                    SETTINGS_CHECKBOX_BOX_SIZE
+                        + SETTINGS_CHECKBOX_LABEL_GAP
+                        + label.len() as f32 * 7.0
                 }
             },
             SettingsWidget::Label(text) => text.len() as f32 * 7.0 + 8.0,
@@ -231,7 +272,10 @@ impl SettingsPanel {
     }
 
     pub fn stepper_arrow_hit(&self, widget_idx: usize, local: (f64, f64)) -> Option<StepperArrow> {
-        if !matches!(self.widgets.get(widget_idx), Some(SettingsWidget::Stepper { .. })) {
+        if !matches!(
+            self.widgets.get(widget_idx),
+            Some(SettingsWidget::Stepper { .. })
+        ) {
             return None;
         }
         let (item_x, item_y, item_w, item_h) = self.widget_local_rect(widget_idx)?;
@@ -245,7 +289,11 @@ impl SettingsPanel {
         }
 
         let mid_y = item_y + item_h / 2.0;
-        Some(if py < mid_y { StepperArrow::Up } else { StepperArrow::Down })
+        Some(if py < mid_y {
+            StepperArrow::Up
+        } else {
+            StepperArrow::Down
+        })
     }
 
     // ── editing input fields ─────────────────────────────────────────
@@ -305,7 +353,6 @@ impl SettingsPanel {
         None
     }
 
-
     pub fn is_toggled(&self, idx: usize) -> bool {
         self.toggled.get(&idx).copied().unwrap_or(false)
     }
@@ -344,12 +391,24 @@ impl SettingsPanel {
 impl UiPanel for SettingsPanel {
     type Item = SettingsWidget;
 
-    fn render_pos(&self) -> (f32, f32) { self.render_pos }
-    fn size(&self) -> (f32, f32) { self.size }
-    fn items(&self) -> &[Self::Item] { self.widgets }
-    fn padding(&self) -> f32 { SETTINGS_PADDING }
-    fn monitor_idx(&self) -> usize { self.monitor_idx }
-    fn set_dirty(&mut self) { self.dirty = true; }
+    fn render_pos(&self) -> (f32, f32) {
+        self.render_pos
+    }
+    fn size(&self) -> (f32, f32) {
+        self.size
+    }
+    fn items(&self) -> &[Self::Item] {
+        self.widgets
+    }
+    fn padding(&self) -> f32 {
+        SETTINGS_PADDING
+    }
+    fn monitor_idx(&self) -> usize {
+        self.monitor_idx
+    }
+    fn set_dirty(&mut self) {
+        self.dirty = true;
+    }
 
     fn rect(&self) -> Option<Rect> {
         if !self.visible {
@@ -364,7 +423,9 @@ impl UiPanel for SettingsPanel {
 impl HoverablePanel for SettingsPanel {
     type Hover = (Option<usize>, Option<(usize, StepperArrow)>);
 
-    fn hovered(&self) -> Self::Hover { (self.hovered, self.hovered_arrow) }
+    fn hovered(&self) -> Self::Hover {
+        (self.hovered, self.hovered_arrow)
+    }
     fn set_hovered(&mut self, hover: Self::Hover) {
         self.hovered = hover.0;
         self.hovered_arrow = hover.1;

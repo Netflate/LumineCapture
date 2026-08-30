@@ -1,4 +1,4 @@
-use crate::editor::{EditorState, DamageZone};
+use crate::editor::{DamageZone, EditorState};
 use crate::tools::ToolBehavior;
 use crate::types::{MouseButton, Placement, SelectionEdges, SelectionHandle};
 use crate::utils::{apply_handle_drag, hit_test_rect_handle, make_rect};
@@ -88,13 +88,8 @@ impl ToolBehavior for SelectionTool {
             state.selection.set_drag(SelectionHandle::None, None, None);
         }
     }
-    
-    fn on_move(
-        &self,
-        state: &mut EditorState,
-        global: (f64, f64),
-        _dirty_mask: &mut u32, 
-    ) {
+
+    fn on_move(&self, state: &mut EditorState, global: (f64, f64), _dirty_mask: &mut u32) {
         let old_sel = state.selection.zone;
         let mut selection_changed = false;
 
@@ -127,4 +122,3 @@ impl ToolBehavior for SelectionTool {
         }
     }
 }
-

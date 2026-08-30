@@ -12,7 +12,7 @@ use wayland_client::protocol::wl_surface;
 pub struct SurfaceData {
     pub window: smithay_client_toolkit::shell::xdg::window::Window,
     pub surface: wl_surface::WlSurface,
-    
+
     pub shm_buffer: Option<ShmBuffer>,
     pub transparent_buffer: Option<ShmBuffer>,
 

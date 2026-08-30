@@ -1,4 +1,4 @@
-use crate::editor::{EditorState, DamageZone};
+use crate::editor::{DamageZone, EditorState};
 use crate::tools::ToolBehavior;
 use crate::types::MouseButton;
 use crate::types::annotations::{Annotation, AnnotationShape};
@@ -32,18 +32,15 @@ impl ToolBehavior for PenTool {
             state.next_id += 1;
             state.push_undo();
             state.bake_annotation(&ann);
-            state.damage_rects.push(DamageZone::Global(ann.damage_bbox(false)));
+            state
+                .damage_rects
+                .push(DamageZone::Global(ann.damage_bbox(false)));
             state.annotations.push(ann);
             state.prev_pending = None;
         }
     }
 
-    fn on_move(
-        &self,
-        state: &mut EditorState,
-        _global: (f64, f64),
-        _dirty_mask: &mut u32,
-    ) {
+    fn on_move(&self, state: &mut EditorState, _global: (f64, f64), _dirty_mask: &mut u32) {
         let raw_pos = (state.pointer.global.0 as f32, state.pointer.global.1 as f32);
 
         if let Some(ann) = state.pending.as_mut() {
@@ -67,10 +64,12 @@ impl ToolBehavior for PenTool {
                     }
                     points.push(smoothed);
 
-                    state.damage_rects.push(DamageZone::Global(ann.last_segment_bbox()));
+                    state
+                        .damage_rects
+                        .push(DamageZone::Global(ann.last_segment_bbox()));
                 } else {
                     points.push(smoothed);
-                } 
+                }
             };
             ann.update_bbox();
         }

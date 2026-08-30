@@ -1,23 +1,22 @@
 mod annotations;
+mod color_popover;
 mod magnifier;
 mod paths;
-mod toolbar;
 mod settings_panel;
 mod text;
-mod color_popover;
+mod toolbar;
 
 pub use annotations::{
-    draw_annotation, draw_annotation_handles_only, draw_pen_tail, selection_chrome_pad,
-    visual_pad,
+    draw_annotation, draw_annotation_handles_only, draw_pen_tail, selection_chrome_pad, visual_pad,
 };
-pub use settings_panel::char_index_for_x;
 pub use magnifier::magnifier_rect;
 pub use paths::{rect_bounds, rounded_rect_path};
+pub use settings_panel::char_index_for_x;
 
 use crate::types::annotations::Annotation;
-use crate::types::toolbar::Toolbar;
-use crate::types::settings_panel::SettingsPanel;
 use crate::types::color_popover::ColorPickerPopover;
+use crate::types::settings_panel::SettingsPanel;
+use crate::types::toolbar::Toolbar;
 use crate::types::{MagnifierState, SelectionEdges};
 use cosmic_text::{Editor, FontSystem, SwashCache};
 use std::collections::HashMap;
@@ -75,7 +74,8 @@ pub fn render_frame(req: &mut RenderRequest) {
             blit_annotations(req.annotations_layer, req.canvas, dirty);
         } else {
             req.canvas.draw_pixmap(
-                0, 0,
+                0,
+                0,
                 req.annotations_layer.as_ref(),
                 &tiny_skia::PixmapPaint::default(),
                 Transform::identity(),
@@ -129,7 +129,10 @@ pub fn render_frame(req: &mut RenderRequest) {
     if let Some(settings) = req.settings_panel.as_deref_mut()
         && settings.dirty
     {
-        match (req.font_system.as_deref_mut(), req.swash_cache.as_deref_mut()) {
+        match (
+            req.font_system.as_deref_mut(),
+            req.swash_cache.as_deref_mut(),
+        ) {
             (Some(font_system), Some(swash_cache)) => {
                 settings_panel::draw_settings_panel(
                     req.canvas,
@@ -148,7 +151,10 @@ pub fn render_frame(req: &mut RenderRequest) {
     if let Some(color_picker) = req.color_picker.as_deref_mut()
         && color_picker.dirty
     {
-        match (req.font_system.as_deref_mut(), req.swash_cache.as_deref_mut()) {
+        match (
+            req.font_system.as_deref_mut(),
+            req.swash_cache.as_deref_mut(),
+        ) {
             (Some(font_system), Some(swash_cache)) => {
                 color_popover::draw_color_popover(
                     req.canvas,
@@ -169,18 +175,17 @@ pub fn render_frame(req: &mut RenderRequest) {
 /// SELECTION + DIMMING  ////
 // **************************/
 pub fn init_dimming(dimmed: &mut Pixmap, base: &Pixmap, selection: &Option<Rect>) {
-
     match selection {
-    None => {
-        let src = base.data();
-        let dst = dimmed.data_mut();
+        None => {
+            let src = base.data();
+            let dst = dimmed.data_mut();
 
-        for (s, d) in src.chunks_exact(4).zip(dst.chunks_exact_mut(4)) {
-            d[0] = ((s[0] as u16 * 115 + 127) / 255) as u8;
-            d[1] = ((s[1] as u16 * 115 + 127) / 255) as u8;
-            d[2] = ((s[2] as u16 * 115 + 127) / 255) as u8;
-            d[3] = s[3];
-        }
+            for (s, d) in src.chunks_exact(4).zip(dst.chunks_exact_mut(4)) {
+                d[0] = ((s[0] as u16 * 115 + 127) / 255) as u8;
+                d[1] = ((s[1] as u16 * 115 + 127) / 255) as u8;
+                d[2] = ((s[2] as u16 * 115 + 127) / 255) as u8;
+                d[3] = s[3];
+            }
         }
         Some(sel) => {
             // just in case if somehow something going to be selected with init in the future
@@ -188,7 +193,6 @@ pub fn init_dimming(dimmed: &mut Pixmap, base: &Pixmap, selection: &Option<Rect>
             draw_dimming(dimmed, &Some(*sel), base.width(), base.height());
         }
     }
-
 }
 
 fn draw_selection_border(canvas: &mut Pixmap, sel: &Rect, edges: Option<&SelectionEdges>) {
@@ -405,8 +409,14 @@ pub fn rebuild_annotations_layer(
         clear_rect_transparent(layer, &base_rect);
         for ann in annotations {
             draw_annotation(
-                layer, ann, offset, false,
-                font_system, swash_cache, text_editors, active_text_id,
+                layer,
+                ann,
+                offset,
+                false,
+                font_system,
+                swash_cache,
+                text_editors,
+                active_text_id,
             );
         }
         return;
@@ -421,10 +431,20 @@ pub fn rebuild_annotations_layer(
         let r = ann.bbox.right() - offset.0 + pad;
         let b = ann.bbox.bottom() - offset.1 + pad;
 
-        if l < base_rect.right() && r > base_rect.left() && t < base_rect.bottom() && b > base_rect.top() {
+        if l < base_rect.right()
+            && r > base_rect.left()
+            && t < base_rect.bottom()
+            && b > base_rect.top()
+        {
             draw_annotation(
-                layer, ann, offset, false,
-                font_system, swash_cache, text_editors, active_text_id,
+                layer,
+                ann,
+                offset,
+                false,
+                font_system,
+                swash_cache,
+                text_editors,
+                active_text_id,
             );
         }
     }

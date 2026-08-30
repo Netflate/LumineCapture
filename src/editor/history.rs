@@ -1,4 +1,4 @@
-use crate::editor::{EditorState, DamageZone};
+use crate::editor::{DamageZone, EditorState};
 
 impl EditorState {
     pub fn push_undo(&mut self) {
@@ -10,10 +10,12 @@ impl EditorState {
         // If a drag of an existing annotation is currently happening, cancel it and restore original
         if let Some(drag) = self.ann_drag.take() {
             if let Some(ann) = self.pending.take() {
-                self.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
+                self.damage_rects
+                    .push(DamageZone::Global(ann.damage_bbox(true)));
                 self.layer_damage_rects.push(ann.damage_bbox(false));
                 let insert_idx = drag.orig_index.min(self.annotations.len());
-                self.damage_rects.push(DamageZone::Global(drag.orig.damage_bbox(true)));
+                self.damage_rects
+                    .push(DamageZone::Global(drag.orig.damage_bbox(true)));
                 self.layer_damage_rects.push(drag.orig.damage_bbox(false));
                 self.bake_annotation(&drag.orig);
                 self.annotations.insert(insert_idx, drag.orig);
@@ -27,7 +29,8 @@ impl EditorState {
 
         // If a new pending shape is in progress, cancel it
         if let Some(ann) = self.pending.take() {
-            self.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
+            self.damage_rects
+                .push(DamageZone::Global(ann.damage_bbox(true)));
             self.prev_pending = None;
             self.selected_annotation = None;
             self.annotations_dirty = true;
@@ -49,14 +52,16 @@ impl EditorState {
             }
         }
 
-        let selected_id = self.selected_annotation
+        let selected_id = self
+            .selected_annotation
             .and_then(|sel_idx| self.annotations.get(sel_idx))
             .map(|ann| ann.id);
 
         if let Some(prev_state) = self.undo_stack.pop() {
             if let Some(sel_idx) = self.selected_annotation {
                 if let Some(ann) = self.annotations.get(sel_idx) {
-                    self.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
+                    self.damage_rects
+                        .push(DamageZone::Global(ann.damage_bbox(true)));
                 }
             }
             Self::record_history_damage(
@@ -71,7 +76,9 @@ impl EditorState {
             if let Some(sel_id) = selected_id {
                 if let Some(new_idx) = self.annotations.iter().position(|a| a.id == sel_id) {
                     self.selected_annotation = Some(new_idx);
-                    self.damage_rects.push(DamageZone::Global(self.annotations[new_idx].damage_bbox(true)));
+                    self.damage_rects.push(DamageZone::Global(
+                        self.annotations[new_idx].damage_bbox(true),
+                    ));
                 } else {
                     self.selected_annotation = None;
                 }
@@ -117,14 +124,16 @@ impl EditorState {
             }
         }
 
-        let selected_id = self.selected_annotation
+        let selected_id = self
+            .selected_annotation
             .and_then(|sel_idx| self.annotations.get(sel_idx))
             .map(|ann| ann.id);
 
         if let Some(next_state) = self.redo_stack.pop() {
             if let Some(sel_idx) = self.selected_annotation {
                 if let Some(ann) = self.annotations.get(sel_idx) {
-                    self.damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
+                    self.damage_rects
+                        .push(DamageZone::Global(ann.damage_bbox(true)));
                 }
             }
             Self::record_history_damage(
@@ -140,7 +149,9 @@ impl EditorState {
             if let Some(sel_id) = selected_id {
                 if let Some(new_idx) = self.annotations.iter().position(|a| a.id == sel_id) {
                     self.selected_annotation = Some(new_idx);
-                    self.damage_rects.push(DamageZone::Global(self.annotations[new_idx].damage_bbox(true)));
+                    self.damage_rects.push(DamageZone::Global(
+                        self.annotations[new_idx].damage_bbox(true),
+                    ));
                 } else {
                     self.selected_annotation = None;
                 }

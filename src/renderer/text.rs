@@ -1,8 +1,8 @@
 use cosmic_text::{Attrs, Buffer, FontSystem, Metrics, Shaping, SwashCache, SwashContent};
 use tiny_skia::{Color, Paint, Pixmap, PixmapPaint, PremultipliedColorU8, Rect, Transform};
 
-use crate::types::text_field::LineEditState;
 use super::paths::rounded_rect_path;
+use crate::types::text_field::LineEditState;
 
 pub enum HAlign {
     Left,
@@ -72,7 +72,7 @@ pub fn shape_single_line(
     text: &str,
     font_size: f32,
     weight: cosmic_text::Weight,
-    style: cosmic_text::Style, 
+    style: cosmic_text::Style,
 ) -> (Buffer, f32, f32) {
     let line_height = font_size * 1.1;
     let mut buffer = Buffer::new(font_system, Metrics::new(font_size, line_height));
@@ -80,7 +80,7 @@ pub fn shape_single_line(
     buffer.set_size(None, None);
     buffer.set_text(
         text,
-        &Attrs::new().weight(weight).style(style),   
+        &Attrs::new().weight(weight).style(style),
         Shaping::Advanced,
         None,
     );
@@ -107,14 +107,13 @@ pub fn draw_aligned_text(
     align: HAlign,
     offset: (f32, f32),
     weight: cosmic_text::Weight,
-    style: cosmic_text::Style,        
+    style: cosmic_text::Style,
 ) {
     if text.is_empty() {
         return;
     }
 
-    let (buffer, text_w, text_h) =
-        shape_single_line(font_system, text, font_size, weight, style);
+    let (buffer, text_w, text_h) = shape_single_line(font_system, text, font_size, weight, style);
 
     let px = match align {
         HAlign::Left => rect.left(),
@@ -122,17 +121,33 @@ pub fn draw_aligned_text(
     };
     let py = rect.top() + (rect.height() - text_h) / 2.0;
 
-    draw_text_buffer(canvas, &buffer, font_system, swash_cache, (px, py), color, offset);
+    draw_text_buffer(
+        canvas,
+        &buffer,
+        font_system,
+        swash_cache,
+        (px, py),
+        color,
+        offset,
+    );
 }
 
 // ── common input field stuff ─────────────────────────────────────
 pub fn draw_input_box(canvas: &mut Pixmap, rect: Rect, radius: f32) {
-    let Some(path) = rounded_rect_path(&rect, radius, true, true, true, true) else { return };
+    let Some(path) = rounded_rect_path(&rect, radius, true, true, true, true) else {
+        return;
+    };
 
     let mut fill_paint = Paint::default();
     fill_paint.set_color(Color::from_rgba8(255, 255, 255, 18));
     fill_paint.anti_alias = true;
-    canvas.fill_path(&path, &fill_paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
+    canvas.fill_path(
+        &path,
+        &fill_paint,
+        tiny_skia::FillRule::Winding,
+        Transform::identity(),
+        None,
+    );
 }
 
 pub fn measure_text_prefix_width(
@@ -170,7 +185,12 @@ pub fn measure_text_prefix_width(
 pub fn draw_text_selection(canvas: &mut Pixmap, rect: Rect, start_x: f32, end_x: f32) {
     let sel_h = rect.height() * 0.75;
     let sel_y = rect.top() + (rect.height() - sel_h) / 2.0;
-    let Some(sel_rect) = Rect::from_xywh(rect.left() + start_x, sel_y, (end_x - start_x).max(1.0), sel_h) else {
+    let Some(sel_rect) = Rect::from_xywh(
+        rect.left() + start_x,
+        sel_y,
+        (end_x - start_x).max(1.0),
+        sel_h,
+    ) else {
         return;
     };
 
@@ -183,7 +203,8 @@ pub fn draw_text_selection(canvas: &mut Pixmap, rect: Rect, start_x: f32, end_x:
 pub fn draw_text_caret(canvas: &mut Pixmap, rect: Rect, cursor_x: f32) {
     let cur_h = rect.height() * 0.75;
     let cur_y = rect.top() + (rect.height() - cur_h) / 2.0;
-    let Some(cur_rect) = Rect::from_xywh((rect.left() + cursor_x).round(), cur_y, 1.5, cur_h) else {
+    let Some(cur_rect) = Rect::from_xywh((rect.left() + cursor_x).round(), cur_y, 1.5, cur_h)
+    else {
         return;
     };
 
@@ -218,6 +239,18 @@ pub fn draw_line_edit(
     }
 
     if !display_text.is_empty() {
-        draw_aligned_text(canvas, display_text, font_system, swash_cache, rect, font_size, text_color, HAlign::Left, (0.0, 0.0), weight, cosmic_text::Style::Normal);
+        draw_aligned_text(
+            canvas,
+            display_text,
+            font_system,
+            swash_cache,
+            rect,
+            font_size,
+            text_color,
+            HAlign::Left,
+            (0.0, 0.0),
+            weight,
+            cosmic_text::Style::Normal,
+        );
     }
 }

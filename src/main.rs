@@ -1,11 +1,11 @@
 mod app;
 pub mod backend;
 pub mod editor;
+pub mod profiler;
 pub mod renderer;
 pub mod tools;
 pub mod types;
 pub mod utils;
-pub mod profiler; 
 
 #[tokio::main]
 

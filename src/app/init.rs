@@ -1,13 +1,13 @@
-// Contains all of EditorState initialization logic, including building base pixmaps 
-// from captured frames, rendering layers, monitor placements, toolbar icon cache, 
+// Contains all of EditorState initialization logic, including building base pixmaps
+// from captured frames, rendering layers, monitor placements, toolbar icon cache,
 // and performing the initial paint before entering the main event loop
 
 use crate::backend::ScreenOverlay;
 use crate::editor::EditorState;
 use crate::profiler::Profiler;
 use crate::renderer;
-use crate::types::toolbar::{ToolbarItem, ToolbarButton};
-use crate::types::{icons, MonitorFrame, Output, Placement};
+use crate::types::toolbar::{ToolbarButton, ToolbarItem};
+use crate::types::{MonitorFrame, Output, Placement, icons};
 
 use std::collections::HashMap;
 use tiny_skia::{Pixmap, PixmapPaint, Transform};
@@ -97,14 +97,20 @@ pub fn build_layers(base_pixmaps: &[Pixmap]) -> (Vec<Pixmap>, Vec<Pixmap>, Vec<P
 }
 
 pub fn build_placements(outputs: &[Output]) -> Vec<Placement> {
-    outputs.iter().map(|o| Placement {
-        position: o.info.logical_position.unwrap_or(o.info.location),
-        size: o.info.logical_size.unwrap_or_else(|| {
-            o.info.modes.iter().find(|m| m.current)
-                .map(|m| m.dimensions)
-                .unwrap_or((0, 0))
-        }),
-    }).collect()
+    outputs
+        .iter()
+        .map(|o| Placement {
+            position: o.info.logical_position.unwrap_or(o.info.location),
+            size: o.info.logical_size.unwrap_or_else(|| {
+                o.info
+                    .modes
+                    .iter()
+                    .find(|m| m.current)
+                    .map(|m| m.dimensions)
+                    .unwrap_or((0, 0))
+            }),
+        })
+        .collect()
 }
 
 pub fn load_icons_cache() -> HashMap<&'static str, Tree> {

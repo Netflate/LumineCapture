@@ -1,11 +1,10 @@
-use super::paths::{rounded_rect_path, draw_panel_border, draw_svg_icon};
+use super::paths::{draw_panel_border, draw_svg_icon, rounded_rect_path};
 use crate::types::UiPanel;
-use crate::types::panel::{
-    ICON_COLOR, SEPARATOR_COLOR, PANEL_COLOR, BUTTON_HOVERED, BUTTON_SELECTED,
-    PanelItem
-};
-use crate::types::toolbar::{TOOLBAR_PADDING, ToolbarButton, Toolbar, ToolbarItem};
 use crate::types::icons::get_svg_for_tool;
+use crate::types::panel::{
+    BUTTON_HOVERED, BUTTON_SELECTED, ICON_COLOR, PANEL_COLOR, PanelItem, SEPARATOR_COLOR,
+};
+use crate::types::toolbar::{TOOLBAR_PADDING, Toolbar, ToolbarButton, ToolbarItem};
 use std::collections::HashMap;
 use tiny_skia::{BlendMode, FilterQuality, Paint, Pixmap, PixmapPaint, Rect, Transform};
 use usvg::Tree;
@@ -15,8 +14,10 @@ pub fn draw_toolbar(
     toolbar: &mut Toolbar,
     icons_cache: &HashMap<&'static str, Tree>,
 ) {
-    let Some(tb_rect) = toolbar.rect() else { return };
-    
+    let Some(tb_rect) = toolbar.rect() else {
+        return;
+    };
+
     let x = tb_rect.left();
     let y = tb_rect.top();
     let (w, h) = toolbar.size;
@@ -93,39 +94,57 @@ fn draw_toolbar_content(
     for (index, item) in toolbar.items.iter().enumerate() {
         let cell_size = item.size();
         match item {
-        ToolbarItem::Button(button) => {
-            if toolbar.selected == Some(index) || toolbar.hovered == Some(index) {
-                if let Some(cell_rect) = Rect::from_xywh(current_x, bg_y, cell_size, bg_h) {
-                    if let Some(cell_path) = rounded_rect_path(&cell_rect, 4.0, true, true, true, true) {
-                        let mut cell_paint = Paint::default();
-                        let color = if toolbar.selected == Some(index) {
-                            BUTTON_SELECTED
-                        } else {
-                            BUTTON_HOVERED
-                        };
-                        cell_paint.set_color(color);
-                        cell_paint.anti_alias = true;
-                        canvas.fill_path(&cell_path, &cell_paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
+            ToolbarItem::Button(button) => {
+                if toolbar.selected == Some(index) || toolbar.hovered == Some(index) {
+                    if let Some(cell_rect) = Rect::from_xywh(current_x, bg_y, cell_size, bg_h) {
+                        if let Some(cell_path) =
+                            rounded_rect_path(&cell_rect, 4.0, true, true, true, true)
+                        {
+                            let mut cell_paint = Paint::default();
+                            let color = if toolbar.selected == Some(index) {
+                                BUTTON_SELECTED
+                            } else {
+                                BUTTON_HOVERED
+                            };
+                            cell_paint.set_color(color);
+                            cell_paint.anti_alias = true;
+                            canvas.fill_path(
+                                &cell_path,
+                                &cell_paint,
+                                tiny_skia::FillRule::Winding,
+                                Transform::identity(),
+                                None,
+                            );
+                        }
                     }
                 }
+
+                let ToolbarButton::Tool(tool) = button;
+                let (svg_str, icon_size) = get_svg_for_tool(*tool);
+
+                let icon_x = current_x + (cell_size - icon_size) / 2.0;
+                let icon_y = rect.top() + (h - icon_size) / 2.0;
+
+                draw_svg_icon(
+                    canvas,
+                    icons_cache,
+                    svg_str,
+                    icon_size,
+                    icon_x,
+                    icon_y,
+                    ICON_COLOR,
+                );
             }
-
-            let ToolbarButton::Tool(tool) = button;
-            let (svg_str, icon_size) = get_svg_for_tool(*tool);
-
-            let icon_x = current_x + (cell_size - icon_size) / 2.0;
-            let icon_y = rect.top() + (h - icon_size) / 2.0;
-
-            draw_svg_icon(canvas, icons_cache, svg_str, icon_size, icon_x, icon_y, ICON_COLOR);
-        }
             ToolbarItem::Seperator => {
                 let sep_w = 2.0;
-                let sep_h = h * 0.5; 
+                let sep_h = h * 0.5;
                 let sep_x = current_x + (cell_size - sep_w) / 2.0;
                 let sep_y = rect.top() + (h - sep_h) / 2.0;
 
                 if let Some(sep_rect) = Rect::from_xywh(sep_x, sep_y, sep_w, sep_h) {
-                    if let Some(sep_path) = rounded_rect_path(&sep_rect, 1.0, true, true, true, true) {
+                    if let Some(sep_path) =
+                        rounded_rect_path(&sep_rect, 1.0, true, true, true, true)
+                    {
                         let mut sep_paint = Paint::default();
                         sep_paint.set_color(SEPARATOR_COLOR);
                         sep_paint.anti_alias = true;

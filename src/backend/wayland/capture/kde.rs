@@ -8,12 +8,12 @@ use std::os::fd::{AsFd, OwnedFd};
 
 use async_trait::async_trait;
 use tokio::sync::OnceCell;
-use zbus::{proxy, Connection};
 use zbus::zvariant::{Fd, OwnedValue, Value};
+use zbus::{Connection, proxy};
 
 use crate::backend::CaptureMethod;
-use crate::utils::swizzle_all;
 use crate::types::{CaptureResult, MonitorFrame, Output, StreamInfo};
+use crate::utils::swizzle_all;
 
 // async_trait requires the whole future graph to be Send; std::error::Error
 // alone isn't Send, so all internal helpers use this bound instead and only
@@ -40,7 +40,9 @@ pub struct KdeMethod {
 
 impl KdeMethod {
     pub fn new() -> Self {
-        Self { conn: OnceCell::new() }
+        Self {
+            conn: OnceCell::new(),
+        }
     }
 }
 
@@ -48,7 +50,7 @@ impl KdeMethod {
 async fn capture_one_screen(
     proxy: &ScreenShot2Proxy<'_>,
     output_name: &str,
-    dimensions: Option<(usize, usize)>, 
+    dimensions: Option<(usize, usize)>,
 ) -> Result<(Vec<u8>, u32, u32), BoxErr> {
     let (read_fd, write_fd): (OwnedFd, OwnedFd) = nix::unistd::pipe()?;
 
@@ -56,7 +58,7 @@ async fn capture_one_screen(
         use std::io::Read;
         let mut buf = match dimensions {
             Some((w, h)) => Vec::with_capacity(w.saturating_mul(h).saturating_mul(4)),
-            None => Vec::new(), 
+            None => Vec::new(),
         };
         std::fs::File::from(read_fd).read_to_end(&mut buf)?;
         Ok(buf)
@@ -66,7 +68,7 @@ async fn capture_one_screen(
     options.insert("include-decoration", Value::from(true));
     options.insert("include-shadow", Value::from(true));
     options.insert("native-resolution", Value::from(true));
-    
+
     let result = proxy
         .capture_screen(output_name, HashMap::new(), Fd::from(write_fd.as_fd()))
         .await;
@@ -76,11 +78,17 @@ async fn capture_one_screen(
     let metadata = result?;
     let mut raw = read_task.await??;
 
-    let width = metadata.get("width").and_then(|v| u32::try_from(v.clone()).ok())
+    let width = metadata
+        .get("width")
+        .and_then(|v| u32::try_from(v.clone()).ok())
         .ok_or(format!("no 'width' for output '{output_name}'"))?;
-    let height = metadata.get("height").and_then(|v| u32::try_from(v.clone()).ok())
+    let height = metadata
+        .get("height")
+        .and_then(|v| u32::try_from(v.clone()).ok())
         .ok_or(format!("no 'height' for output '{output_name}'"))?;
-    let stride = metadata.get("stride").and_then(|v| u32::try_from(v.clone()).ok())
+    let stride = metadata
+        .get("stride")
+        .and_then(|v| u32::try_from(v.clone()).ok())
         .unwrap_or(width * 4);
 
     let row_bytes = (width * 4) as usize;
@@ -108,7 +116,7 @@ async fn capture_one_screen(
         dst.copy_from_slice(src);
     }
     swizzle_all(&mut tight);
-    
+
     Ok((tight, width, height))
 }
 
@@ -116,15 +124,21 @@ async fn capture_one_screen(
 impl CaptureMethod for KdeMethod {
     async fn capture_frame(&self, outputs: &[Output]) -> Result<CaptureResult, Box<dyn Error>> {
         let inner = async {
-            let conn = self.conn.get_or_try_init(|| async { Connection::session().await.map_err(BoxErr::from) }).await?;
+            let conn = self
+                .conn
+                .get_or_try_init(|| async { Connection::session().await.map_err(BoxErr::from) })
+                .await?;
             let proxy = ScreenShot2Proxy::new(conn).await?;
 
-            // one CaptureScreen call per monitor, all concurrent 
+            // one CaptureScreen call per monitor, all concurrent
             let futs = outputs.iter().map(|o| {
                 let proxy = proxy.clone();
                 let name = o.info.name.clone().unwrap_or_default();
-                
-                let dimensions = o.info.modes.iter()
+
+                let dimensions = o
+                    .info
+                    .modes
+                    .iter()
                     .find(|m| m.current)
                     .or_else(|| o.info.modes.first())
                     .map(|m| (m.dimensions.0 as usize, m.dimensions.1 as usize));
@@ -138,13 +152,21 @@ impl CaptureMethod for KdeMethod {
 
         // try_join_all preserves input order, so results[i] <-> outputs[i] —
         // no reconciliation step needed, unlike the portal backend
-        let frames = results.into_iter().zip(outputs).map(|((pixels, w, h), o)| MonitorFrame {
-            pixels,
-            pw_width: w,
-            pw_height: h,
-            pw_stride: w * 4,
-            info: StreamInfo { node_id: 0, size: o.info.logical_size, position: o.info.logical_position },
-        }).collect();
+        let frames = results
+            .into_iter()
+            .zip(outputs)
+            .map(|((pixels, w, h), o)| MonitorFrame {
+                pixels,
+                pw_width: w,
+                pw_height: h,
+                pw_stride: w * 4,
+                info: StreamInfo {
+                    node_id: 0,
+                    size: o.info.logical_size,
+                    position: o.info.logical_position,
+                },
+            })
+            .collect();
 
         Ok(CaptureResult { frames })
     }

@@ -1,6 +1,6 @@
+use crate::types::Annotation;
 use crate::types::panel::{AnimatedPanel, HoverablePanel, PanelItem, UiPanel};
 use crate::types::text_field::TextFieldGroup;
-use crate::types::Annotation;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 use tiny_skia::{Color, Mask, Pixmap, Rect};
@@ -19,13 +19,13 @@ pub const MARKER_RADIUS: f32 = 10.0;
 pub const MARKER_STROKE: f32 = 2.0;
 pub const MARKER_OUTLINE: f32 = 0.1;
 
-pub const COLOR_POPOVER_ITEM_BORDER: f32 = 2.0; 
+pub const COLOR_POPOVER_ITEM_BORDER: f32 = 2.0;
 // ^ USED only for sv-square, hue-slider, swatches, not for hex/rgba fields
 // input and etc use usual item border constant from types/panel.rs
 pub const HUE_SLIDER_GAP: f32 = 12.0;
 pub const HUE_SLIDER_WIDTH: f32 = 17.0;
 pub const HUE_SLIDER_RADIUS: f32 = SV_SQUARE_RADIUS - 5.0;
-pub const HUE_SLIDER_HEIGHT: f32 = SV_SQUARE_SIZE; 
+pub const HUE_SLIDER_HEIGHT: f32 = SV_SQUARE_SIZE;
 
 // ── recent colors ──────────────────────────────────────
 pub const RECENT_LABEL: &str = "── Palette & Values ───────────";
@@ -57,9 +57,15 @@ pub const COLORPICKER_HEIGHT: f32 = RGBA_ROW_OFFSET + FIELD_HEIGHT + COLORPICKER
 pub enum ColorPickerItem {}
 
 impl PanelItem for ColorPickerItem {
-    fn size(&self) -> f32 { match *self {} }
-    fn trailing_padding(&self) -> f32 { match *self {} }
-    fn is_button(&self) -> bool { match *self {} }
+    fn size(&self) -> f32 {
+        match *self {}
+    }
+    fn trailing_padding(&self) -> f32 {
+        match *self {}
+    }
+    fn is_button(&self) -> bool {
+        match *self {}
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -121,7 +127,11 @@ pub fn color_to_hsv(c: Color) -> (f32, f32, f32) {
         60.0 * (((r - g) / delta) + 4.0)
     };
 
-    let s = if max <= f32::EPSILON { 0.0 } else { delta / max };
+    let s = if max <= f32::EPSILON {
+        0.0
+    } else {
+        delta / max
+    };
     let v = max;
 
     (h.rem_euclid(360.0), s, v)
@@ -161,7 +171,13 @@ pub fn color_to_hex_string(c: Color) -> String {
     if c8.alpha() == 255 {
         format!("{:02X}{:02X}{:02X}", c8.red(), c8.green(), c8.blue())
     } else {
-        format!("{:02X}{:02X}{:02X}{:02X}", c8.red(), c8.green(), c8.blue(), c8.alpha())
+        format!(
+            "{:02X}{:02X}{:02X}{:02X}",
+            c8.red(),
+            c8.green(),
+            c8.blue(),
+            c8.alpha()
+        )
     }
 }
 
@@ -201,7 +217,7 @@ pub fn step_hex_text(text: &str, steps: i32) -> String {
     format!("{:0width$X}", new_value, width = width)
 }
 
-/// default palette when there isn't selection history 
+/// default palette when there isn't selection history
 fn default_palette() -> &'static [Color] {
     static PALETTE: OnceLock<Vec<Color>> = OnceLock::new();
     PALETTE.get_or_init(|| {
@@ -223,8 +239,8 @@ pub struct ColorSquareState {
     pub hue: f32,
     pub sv: (f32, f32),
     pub alpha: u8,
-    pub sv_pixmap: Option<Pixmap>, 
-    pub sv_dirty: bool,           
+    pub sv_pixmap: Option<Pixmap>,
+    pub sv_dirty: bool,
     pub dragging: bool,
 }
 
@@ -313,7 +329,10 @@ pub fn rgba_row_top(content_origin_y: f32) -> f32 {
 }
 
 pub fn hex_label_pos(content_origin: (f32, f32)) -> (f32, f32) {
-    (content_origin.0 + COLORPICKER_PADDING, hex_row_top(content_origin.1))
+    (
+        content_origin.0 + COLORPICKER_PADDING,
+        hex_row_top(content_origin.1),
+    )
 }
 
 pub fn hex_field_geom(content_origin: (f32, f32)) -> Rect {
@@ -337,8 +356,13 @@ pub fn rgba_slot_origin(content_origin: (f32, f32), idx: usize) -> (f32, f32) {
 pub fn rgba_field_geom(content_origin: (f32, f32), idx: usize) -> Rect {
     let (slot_x, slot_y) = rgba_slot_origin(content_origin, idx);
     let total_w = rgba_field_total_width();
-    Rect::from_xywh(slot_x + RGBA_LABEL_WIDTH, slot_y, (total_w - RGBA_LABEL_WIDTH).max(1.0), FIELD_HEIGHT)
-        .expect("rgba field rect")
+    Rect::from_xywh(
+        slot_x + RGBA_LABEL_WIDTH,
+        slot_y,
+        (total_w - RGBA_LABEL_WIDTH).max(1.0),
+        FIELD_HEIGHT,
+    )
+    .expect("rgba field rect")
 }
 
 fn point_in_rect(local: (f64, f64), rect: Rect) -> bool {
@@ -407,7 +431,9 @@ impl ColorPickerPopover {
     }
 
     pub fn hit_test(&self, local: (f64, f64)) -> bool {
-        let Some(rect) = self.rect() else { return false };
+        let Some(rect) = self.rect() else {
+            return false;
+        };
         point_in_rect(local, rect)
     }
 
@@ -422,11 +448,14 @@ impl ColorPickerPopover {
     }
 
     pub fn sv_square_hit(&self, local: (f64, f64)) -> bool {
-        self.sv_square_rect().is_some_and(|r| point_in_rect(local, r))
+        self.sv_square_rect()
+            .is_some_and(|r| point_in_rect(local, r))
     }
 
     pub fn set_sv_from_local(&mut self, local: (f64, f64)) {
-        let Some(rect) = self.sv_square_rect() else { return };
+        let Some(rect) = self.sv_square_rect() else {
+            return;
+        };
         let px = local.0 as f32;
         let py = local.1 as f32;
         let s = ((px - rect.left()) / rect.width()).clamp(0.0, 1.0);
@@ -442,16 +471,22 @@ impl ColorPickerPopover {
     }
 
     pub fn hue_slider_hit(&self, local: (f64, f64)) -> bool {
-        let Some(rect) = self.hue_slider_rect() else { return false };
+        let Some(rect) = self.hue_slider_rect() else {
+            return false;
+        };
         let px = local.0 as f32;
         let py = local.1 as f32;
         let bleed = (marker_visual_radius() - HUE_SLIDER_WIDTH / 2.0).max(0.0);
-        px >= rect.left() - bleed && px <= rect.right() + bleed
-            && py >= rect.top() && py <= rect.bottom()
+        px >= rect.left() - bleed
+            && px <= rect.right() + bleed
+            && py >= rect.top()
+            && py <= rect.bottom()
     }
 
     pub fn set_hue_from_local(&mut self, local: (f64, f64)) {
-        let Some(rect) = self.hue_slider_rect() else { return };
+        let Some(rect) = self.hue_slider_rect() else {
+            return;
+        };
         let hue = hue_from_pointer_y(rect.top(), local.1 as f32);
         self.sv_square.set_hue(hue);
     }
@@ -497,7 +532,8 @@ impl ColorPickerPopover {
     }
 
     pub fn hex_field_hit(&self, local: (f64, f64)) -> bool {
-        self.hex_field_rect().is_some_and(|r| point_in_rect(local, r))
+        self.hex_field_rect()
+            .is_some_and(|r| point_in_rect(local, r))
     }
 
     pub fn rgba_field_rect(&self, field: ColorField) -> Option<Rect> {
@@ -507,9 +543,10 @@ impl ColorPickerPopover {
     }
 
     pub fn rgba_field_hit(&self, local: (f64, f64)) -> Option<ColorField> {
-        RGBA_FIELDS
-            .into_iter()
-            .find(|f| self.rgba_field_rect(*f).is_some_and(|r| point_in_rect(local, r)))
+        RGBA_FIELDS.into_iter().find(|f| {
+            self.rgba_field_rect(*f)
+                .is_some_and(|r| point_in_rect(local, r))
+        })
     }
 
     pub fn field_rect(&self, field: ColorField) -> Option<Rect> {
@@ -538,9 +575,11 @@ impl ColorPickerPopover {
 
     pub fn sync_field_values(&mut self) {
         let color = self.sv_square.color();
-        self.fields.sync_value(ColorField::Hex, color_to_hex_string(color));
+        self.fields
+            .sync_value(ColorField::Hex, color_to_hex_string(color));
         for field in RGBA_FIELDS {
-            self.fields.sync_value(field, color_channel_u8(color, field).to_string());
+            self.fields
+                .sync_value(field, color_channel_u8(color, field).to_string());
         }
     }
 
@@ -582,12 +621,24 @@ impl ColorPickerPopover {
 impl UiPanel for ColorPickerPopover {
     type Item = ColorPickerItem;
 
-    fn render_pos(&self) -> (f32, f32) { self.render_pos }
-    fn size(&self) -> (f32, f32) { self.size }
-    fn items(&self) -> &[Self::Item] { &[] }
-    fn padding(&self) -> f32 { COLORPICKER_PADDING }
-    fn monitor_idx(&self) -> usize { self.monitor_idx }
-    fn set_dirty(&mut self) { self.dirty = true; }
+    fn render_pos(&self) -> (f32, f32) {
+        self.render_pos
+    }
+    fn size(&self) -> (f32, f32) {
+        self.size
+    }
+    fn items(&self) -> &[Self::Item] {
+        &[]
+    }
+    fn padding(&self) -> f32 {
+        COLORPICKER_PADDING
+    }
+    fn monitor_idx(&self) -> usize {
+        self.monitor_idx
+    }
+    fn set_dirty(&mut self) {
+        self.dirty = true;
+    }
 
     fn rect(&self) -> Option<Rect> {
         if self.opacity <= 0.0 {
@@ -601,16 +652,28 @@ impl UiPanel for ColorPickerPopover {
 
 impl HoverablePanel for ColorPickerPopover {
     type Hover = Option<ColorPopoverElement>;
-    fn hovered(&self) -> Self::Hover { self.hovered }
-    fn set_hovered(&mut self, hover: Self::Hover) { self.hovered = hover; }
+    fn hovered(&self) -> Self::Hover {
+        self.hovered
+    }
+    fn set_hovered(&mut self, hover: Self::Hover) {
+        self.hovered = hover;
+    }
 }
 
 impl AnimatedPanel for ColorPickerPopover {
-    fn last_tick(&self) -> Option<Instant> { self.last_tick }
-    fn set_last_tick(&mut self, at: Instant) { self.last_tick = Some(at); }
+    fn last_tick(&self) -> Option<Instant> {
+        self.last_tick
+    }
+    fn set_last_tick(&mut self, at: Instant) {
+        self.last_tick = Some(at);
+    }
 
-    fn anim_interval(&self) -> Duration { COLORPICKER_ANIM_INTERVAL }
-    fn anim_dt(&self) -> f32 { COLORPICKER_ANIM_DT }
+    fn anim_interval(&self) -> Duration {
+        COLORPICKER_ANIM_INTERVAL
+    }
+    fn anim_dt(&self) -> f32 {
+        COLORPICKER_ANIM_DT
+    }
 
     fn is_animating(&self) -> bool {
         let target = if self.open { 1.0 } else { 0.0 };
