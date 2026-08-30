@@ -197,7 +197,7 @@ pub fn handle_pointer_button(
                 if editor_state.settings_panel.selected == Some(widget_idx)
                     && matches!(
                         editor_state.settings_panel.widgets[widget_idx],
-                        SettingsWidget::ColorSwatch
+                        SettingsWidget::ColorSwatch 
                     )
                 {
                     editor_state.color_popover.open = false;

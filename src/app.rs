@@ -239,6 +239,11 @@ pub async fn make_screenshot(
             let selection_dirty = editor_state.selection.zone != editor_state.selection.prev_zone;
             let active_text_id = editor_state.text_editing.as_ref().map(|e| e.annotation_id);
 
+            let current_color = settings_logic::active_annotation_idx(&editor_state)
+                .and_then(|idx| editor_state.annotations.get(idx))
+                .map(|ann| ann.color)
+                .unwrap_or(editor_state.tool_settings.color);
+
             for i in 0..editor_state.base.len() {
                 if is_dirty(dirty_mask, i) {
                     let is_mag_monitor = editor_state
@@ -382,6 +387,7 @@ pub async fn make_screenshot(
                         is_mag_monitor,
                         toolbar,
                         settings_panel,
+                        current_color,
                         color_picker,
                         icons_cache: &editor_state.icons_cache,
                         annotations_layer: &editor_state.annotations_layer[i],

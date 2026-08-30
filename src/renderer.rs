@@ -39,6 +39,7 @@ pub struct RenderRequest<'a> {
     pub is_mag_monitor: bool,
     pub toolbar: Option<&'a mut Toolbar>,
     pub settings_panel: Option<&'a mut SettingsPanel>,
+    pub current_color: Color,
     pub color_picker: Option<&'a mut ColorPickerPopover>,
     pub icons_cache: &'a HashMap<&'static str, Tree>,
     pub offset: (f32, f32),
@@ -150,6 +151,7 @@ pub fn render_frame(req: &mut RenderRequest) {
                 settings_panel::draw_settings_panel(
                     req.canvas,
                     settings,
+                    req.current_color,
                     req.icons_cache,
                     font_system,
                     swash_cache,

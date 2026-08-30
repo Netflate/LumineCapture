@@ -1,6 +1,7 @@
 use crate::types::Annotation;
 use crate::types::panel::{AnimatedPanel, HoverablePanel, PanelItem, ScrollAccumulator, UiPanel};
 use crate::types::text_field::TextFieldGroup;
+use crate::types::tool_settings::DEFAULT_COLOR;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 use tiny_skia::{Color, Mask, Pixmap, Rect};
@@ -246,10 +247,12 @@ pub struct ColorSquareState {
 
 impl ColorSquareState {
     pub fn new() -> Self {
+        let (h, s, v) = color_to_hsv(DEFAULT_COLOR);
+        let alpha = DEFAULT_COLOR.to_color_u8().alpha();
         Self {
-            hue: 0.0,
-            sv: (1.0, 1.0),
-            alpha: 255,
+            hue: h,
+            sv: (s, v),
+            alpha,
             sv_pixmap: None,
             sv_dirty: true,
             dragging: false,

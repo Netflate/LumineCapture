@@ -22,6 +22,7 @@ use usvg::Tree;
 pub fn draw_settings_panel(
     canvas: &mut Pixmap,
     panel: &mut SettingsPanel,
+    current_color: Color,
     icons_cache: &HashMap<&'static str, Tree>,
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
@@ -61,6 +62,7 @@ pub fn draw_settings_panel(
     draw_settings_content(
         &mut panel_pixmap,
         panel,
+        current_color,
         icons_cache,
         font_system,
         swash_cache,
@@ -87,6 +89,7 @@ pub fn draw_settings_panel(
 fn draw_settings_content(
     canvas: &mut Pixmap,
     panel: &SettingsPanel,
+    current_color: Color,
     icons_cache: &HashMap<&'static str, Tree>,
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
@@ -129,6 +132,7 @@ fn draw_settings_content(
                     item_h,
                     is_hovered,
                     is_selected,
+                    current_color,
                 );
             }
             SettingsWidget::Stepper { label, unit, .. } => {
@@ -220,6 +224,7 @@ fn draw_color_swatch(
     h: f32,
     is_hovered: bool,
     is_selected: bool,
+    color: Color,
 ) {
     draw_item_border(
         canvas,
@@ -241,9 +246,7 @@ fn draw_color_swatch(
     pb.push_circle(cx, cy, circle_r);
     if let Some(circle_path) = pb.finish() {
         let mut swatch_paint = Paint::default();
-        let skia_icon_color =
-            Color::from_rgba8(ICON_COLOR.red, ICON_COLOR.green, ICON_COLOR.blue, 255);
-        swatch_paint.set_color(skia_icon_color);
+        swatch_paint.set_color(color);
         swatch_paint.anti_alias = true;
         canvas.fill_path(
             &circle_path,

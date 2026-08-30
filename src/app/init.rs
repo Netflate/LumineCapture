@@ -8,7 +8,7 @@ use crate::profiler::Profiler;
 use crate::renderer;
 use crate::types::toolbar::{ToolbarButton, ToolbarItem};
 use crate::types::{MonitorFrame, Output, Placement, icons};
-
+use crate::types::tool_settings::DEFAULT_COLOR;
 use std::collections::HashMap;
 use tiny_skia::{Pixmap, PixmapPaint, Transform};
 use usvg::Tree;
@@ -203,6 +203,7 @@ pub fn initial_paint(
                     swash_cache: None,
                     text_editors: None,
                     active_text_id: None,
+                    current_color: DEFAULT_COLOR,
                 });
             }));
         }
