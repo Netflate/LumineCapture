@@ -40,7 +40,7 @@ fn transforms_for(offset: (f32, f32)) -> (Transform, Transform) {
     (transform, shadow_transform)
 }
 
-const SHADOW_LAYERS: usize = 4;
+const SHADOW_LAYERS: usize = 2;
 const SPREAD_PER_LAYER: f32 = 1.5;
 
 // Only matters for the offset-shadow path (stroke_with_shadow), not halo
@@ -484,75 +484,59 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
     let r = 4.0_f32.min(corner_w * 0.5).min(corner_h * 0.5);
     let k = 0.5523_f32;
 
-    let mut draw_segment = |pb: PathBuilder| {
-        if let Some(path) = pb.finish() {
-            stroke_segment_with_shadow(
-                canvas,
-                &path,
-                &paint,
-                &stroke,
-                base_shadow_color,
-                transform,
-                shadow_transform,
-            );
-        }
-    };
+    let mut pb = PathBuilder::new();
 
     // Top-Left
-    let mut pb = PathBuilder::new();
     pb.move_to(l, t + corner_h);
     pb.line_to(l, t + r);
     pb.cubic_to(l, t + r * k, l + r * k, t, l + r, t);
     pb.line_to(l + corner_w, t);
-    draw_segment(pb);
 
     // Top-Right
-    let mut pb = PathBuilder::new();
     pb.move_to(ri - corner_w, t);
     pb.line_to(ri - r, t);
     pb.cubic_to(ri - r * k, t, ri, t + r * k, ri, t + r);
     pb.line_to(ri, t + corner_h);
-    draw_segment(pb);
 
     // Bottom-Right
-    let mut pb = PathBuilder::new();
     pb.move_to(ri, b - corner_h);
     pb.line_to(ri, b - r);
     pb.cubic_to(ri, b - r * k, ri - r * k, b, ri - r, b);
     pb.line_to(ri - corner_w, b);
-    draw_segment(pb);
 
     // Bottom-Left
-    let mut pb = PathBuilder::new();
     pb.move_to(l + corner_w, b);
     pb.line_to(l + r, b);
     pb.cubic_to(l + r * k, b, l, b - r * k, l, b - r);
     pb.line_to(l, b - corner_h);
-    draw_segment(pb);
 
     // Top middle
-    let mut pb = PathBuilder::new();
     pb.move_to(mid_x - mid_hw / 2.0, t);
     pb.line_to(mid_x + mid_hw / 2.0, t);
-    draw_segment(pb);
 
     // Bottom middle
-    let mut pb = PathBuilder::new();
     pb.move_to(mid_x - mid_hw / 2.0, b);
     pb.line_to(mid_x + mid_hw / 2.0, b);
-    draw_segment(pb);
 
     // Left middle
-    let mut pb = PathBuilder::new();
     pb.move_to(l, mid_y - mid_hh / 2.0);
     pb.line_to(l, mid_y + mid_hh / 2.0);
-    draw_segment(pb);
 
     // Right middle
-    let mut pb = PathBuilder::new();
     pb.move_to(ri, mid_y - mid_hh / 2.0);
     pb.line_to(ri, mid_y + mid_hh / 2.0);
-    draw_segment(pb);
+
+    if let Some(path) = pb.finish() {
+        stroke_segment_with_shadow(
+            canvas,
+            &path,
+            &paint,
+            &stroke,
+            base_shadow_color,
+            transform,
+            shadow_transform,
+        );
+    }
 }
 
 fn stroke_with_shadow(
