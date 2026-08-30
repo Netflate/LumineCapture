@@ -1,5 +1,5 @@
 use crate::types::Annotation;
-use crate::types::panel::{AnimatedPanel, HoverablePanel, PanelItem, UiPanel};
+use crate::types::panel::{AnimatedPanel, HoverablePanel, PanelItem, ScrollAccumulator, UiPanel};
 use crate::types::text_field::TextFieldGroup;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
@@ -396,12 +396,14 @@ pub struct ColorPickerPopover {
     pub hue_clip_mask: Option<Mask>,
 
     pub recent_colors: Vec<Color>,
-
     pub fields: TextFieldGroup<ColorField>,
-
-    pub scroll_accumulator: f32,
-    pub scroll_field: Option<ColorField>,
     pub pre_edit_snapshot: Option<Vec<Annotation>>,
+
+    /// Scroll accumulator for scrollable fields (hex/rgba)
+    /// Keeps scroll fractional state separate from raw events to avoid
+    /// processing every single scroll event, trackpad or mouse wheel held
+    /// will flood thousands of events that would freeze 
+    pub scroll: ScrollAccumulator<ColorField>,
 }
 
 impl ColorPickerPopover {
@@ -424,8 +426,7 @@ impl ColorPickerPopover {
             hue_clip_mask: None,
             recent_colors: default_palette().to_vec(),
             fields: TextFieldGroup::new(),
-            scroll_accumulator: 0.0,
-            scroll_field: None,
+            scroll: ScrollAccumulator::new(),
             pre_edit_snapshot: None,
         }
     }
@@ -597,24 +598,21 @@ impl ColorPickerPopover {
         Some(color)
     }
 
+    /// Accumulate a fractional scroll `delta` (already in "steps", not raw
+    /// pixels) for the given field and return how many whole steps have
+    /// accumulated since the last call (may be negative). Switching fields
+    /// discards the leftover from the previous one.
+    ///
+    /// Delegates to [`ScrollAccumulator`], see its docs for the two
+    /// flood-prevention safeguards (rate limit + step cap).
     pub fn scroll_step(&mut self, field: ColorField, delta: f32) -> i32 {
-        if self.scroll_field != Some(field) {
-            self.scroll_field = Some(field);
-            self.scroll_accumulator = 0.0;
-        }
+        self.scroll.step(field, delta)
+    }
 
-        self.scroll_accumulator += delta;
-
-        let mut steps = 0i32;
-        while self.scroll_accumulator >= 1.0 {
-            steps += 1;
-            self.scroll_accumulator -= 1.0;
-        }
-        while self.scroll_accumulator <= -1.0 {
-            steps -= 1;
-            self.scroll_accumulator += 1.0;
-        }
-        steps
+    /// scroll reset. Call on any non-scroll user action
+    /// (click, key press) so stale queued events don't trigger afterwards
+    pub fn cancel_scroll(&mut self) {
+        self.scroll.cancel();
     }
 }
 

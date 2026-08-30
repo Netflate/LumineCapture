@@ -3,7 +3,7 @@ use crate::tools::Tool;
 use crate::types::CursorInit;
 use crate::types::SpecialKey;
 use crate::types::annotations::{Annotation, AnnotationShape};
-use crate::types::panel::{HoverablePanel, PanelItem, UiPanel};
+use crate::types::panel::{HoverablePanel, PanelItem, ScrollAccumulator, UiPanel};
 use crate::types::text_field::{TextFieldGroup, is_stepper_char};
 use crate::types::toolbar::TOOLBAR_OFFSET;
 use tiny_skia::{Pixmap, Rect};
@@ -203,9 +203,13 @@ pub struct SettingsPanel {
     pub fields: TextFieldGroup<usize>,
     pub arrow_held: Option<ArrowHoldState>,
     pub toggled: HashMap<usize, bool>,
-    pub scroll_accumulator: f32,
-    pub scroll_widget: Option<usize>,
     pub pre_edit_snapshot: Option<Vec<Annotation>>,
+
+    /// Scroll accumulator for scrollable fields (hex/rgba)
+    /// Keeps scroll fractional state separate from raw events to avoid
+    /// processing every single scroll event, trackpad or mouse wheel held
+    /// will flood thousands of events that would freeze 
+    pub scroll: ScrollAccumulator<usize>,
 }
 
 impl SettingsPanel {
@@ -227,8 +231,7 @@ impl SettingsPanel {
             fields: TextFieldGroup::new(),
             arrow_held: None,
             toggled: HashMap::new(),
-            scroll_accumulator: 0.0,
-            scroll_widget: None,
+            scroll: ScrollAccumulator::new(),
             pre_edit_snapshot: None,
         }
     }
@@ -366,25 +369,21 @@ impl SettingsPanel {
         v
     }
 
-    // raw implementation
+    /// Accumulate a fractional scroll `delta` (already in "steps", not raw
+    /// pixels) for the given field and return how many whole steps have
+    /// accumulated since the last call (may be negative). Switching fields
+    /// discards the leftover from the previous one.
+    ///
+    /// Delegates to [`ScrollAccumulator`], see its docs for the two
+    /// flood-prevention safeguards (rate limit + step cap)
     pub fn scroll_step(&mut self, widget_idx: usize, delta: f32) -> i32 {
-        if self.scroll_widget != Some(widget_idx) {
-            self.scroll_widget = Some(widget_idx);
-            self.scroll_accumulator = 0.0;
-        }
+        self.scroll.step(widget_idx, delta)
+    }
 
-        self.scroll_accumulator += delta;
-
-        let mut steps = 0i32;
-        while self.scroll_accumulator >= 1.0 {
-            steps += 1;
-            self.scroll_accumulator -= 1.0;
-        }
-        while self.scroll_accumulator <= -1.0 {
-            steps -= 1;
-            self.scroll_accumulator += 1.0;
-        }
-        steps
+    /// scroll reset. Call on any non-scroll user action
+    /// (click, key press) so stale queued events don't trigger afterwards
+    pub fn cancel_scroll(&mut self) {
+        self.scroll.cancel();
     }
 }
 

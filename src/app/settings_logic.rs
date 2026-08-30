@@ -1,4 +1,4 @@
-// settings panel animation and positioning logic
+// Settings panel animation and positioning logic.
 // TODO: need to comment a lot of stuff here before forgetting details
 
 use crate::editor::dirty::{apply_damage_rects, mark_dirty};

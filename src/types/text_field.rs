@@ -1,25 +1,22 @@
-use crate::types::SpecialKey;
 /// another text engine, but unlike tool/text.rs, this is for simple single-line text input fields
 /// so i couldn't use the same functions in both files, since tool one is for rich text and use editor
 use std::collections::HashMap;
 use std::hash::Hash;
+use crate::types::SpecialKey;
 
 pub const SCROLL_SENSITIVITY: f32 = 4.0;
+
 #[derive(Debug, Clone, Default)]
 pub struct LineEditState {
     pub text: String,
-    pub cursor: usize,
-    pub selection_anchor: Option<usize>,
+    pub cursor: usize,                  
+    pub selection_anchor: Option<usize>, 
 }
 
 impl LineEditState {
     pub fn new(text: String) -> Self {
         let cursor = text.chars().count();
-        Self {
-            text,
-            cursor,
-            selection_anchor: None,
-        }
+        Self { text, cursor, selection_anchor: None }
     }
 
     pub fn insert(&mut self, ch: char) {
@@ -180,10 +177,7 @@ pub struct TextFieldGroup<K: Eq + Hash + Copy> {
 
 impl<K: Eq + Hash + Copy> TextFieldGroup<K> {
     pub fn new() -> Self {
-        Self {
-            values: HashMap::new(),
-            editing: None,
-        }
+        Self { values: HashMap::new(), editing: None }
     }
 
     pub fn begin_edit(&mut self, key: K, initial_text: String, cursor: CursorInit) {
@@ -218,9 +212,7 @@ impl<K: Eq + Hash + Copy> TextFieldGroup<K> {
     }
 
     pub fn insert_char(&mut self, ch: char, allowed: impl Fn(char) -> bool) -> bool {
-        let Some(edit) = self.editing.as_mut() else {
-            return false;
-        };
+        let Some(edit) = self.editing.as_mut() else { return false };
         if !allowed(ch) {
             return false;
         }
@@ -235,9 +227,7 @@ impl<K: Eq + Hash + Copy> TextFieldGroup<K> {
         shift: bool,
         allowed: impl Fn(char) -> bool,
     ) -> (bool, bool) {
-        let Some(edit) = self.editing.as_mut() else {
-            return (false, false);
-        };
+        let Some(edit) = self.editing.as_mut() else { return (false, false) };
 
         if ctrl {
             match key {
@@ -271,30 +261,12 @@ impl<K: Eq + Hash + Copy> TextFieldGroup<K> {
 
         match key {
             SpecialKey::Enter => (false, true),
-            SpecialKey::Left => {
-                edit.field.move_left(shift);
-                (true, false)
-            }
-            SpecialKey::Right => {
-                edit.field.move_right(shift);
-                (true, false)
-            }
-            SpecialKey::Home => {
-                edit.field.move_home(shift);
-                (true, false)
-            }
-            SpecialKey::End => {
-                edit.field.move_end(shift);
-                (true, false)
-            }
-            SpecialKey::Backspace => {
-                edit.field.backspace();
-                (true, false)
-            }
-            SpecialKey::Delete => {
-                edit.field.delete_forward();
-                (true, false)
-            }
+            SpecialKey::Left => { edit.field.move_left(shift); (true, false) }
+            SpecialKey::Right => { edit.field.move_right(shift); (true, false) }
+            SpecialKey::Home => { edit.field.move_home(shift); (true, false) }
+            SpecialKey::End => { edit.field.move_end(shift); (true, false) }
+            SpecialKey::Backspace => { edit.field.backspace(); (true, false) }
+            SpecialKey::Delete => { edit.field.delete_forward(); (true, false) }
             _ => (false, false),
         }
     }
@@ -310,8 +282,11 @@ impl<K: Eq + Hash + Copy> TextFieldGroup<K> {
         self.values.get(&key)
     }
 
-    // to overwite text while editing
-    // obligatory when changing text using arrows & editing is true
+    /// overwites editing buffer (text + cursor at end, selection cleared), 
+    /// even if the same key is being edited.
+    /// User can type anything (including non-number), arrow key will still step
+    /// from last confirmed value and replace buffer with result 
+    /// otherwise on commit old stuff text will overwrite what arrow key applied.
     pub fn set_editing_text(&mut self, key: K, text: String) {
         if let Some(edit) = self.editing.as_mut() {
             if edit.key == key {

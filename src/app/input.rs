@@ -108,6 +108,12 @@ pub fn handle_pointer_button(
     pressed: bool,
     dirty_mask: &mut u32,
 ) {
+    // to not stack a lot of scroll events
+    // any other action cancels the scroll in progress
+    // so that user can do anything afterwards, wiithout waiting for the scroll to finish
+    editor_state.settings_panel.cancel_scroll();
+    editor_state.color_popover.cancel_scroll();
+
     let is_left_click_pressed = matches!(button, MouseButton::Left) && pressed;
 
     // releasing left click stops stepper repeat or acceleration if it was started (click + hold)
@@ -372,6 +378,12 @@ pub fn handle_text_input(editor_state: &mut EditorState, ch: char, dirty_mask: &
 }
 
 pub fn handle_key_press(editor_state: &mut EditorState, key: SpecialKey, dirty_mask: &mut u32) {
+    // to not stack a lot of scroll events
+    // any other action cancels the scroll in progress
+    // so that user can do anything afterwards, wiithout waiting for the scroll to finish
+    editor_state.settings_panel.cancel_scroll();
+    editor_state.color_popover.cancel_scroll();
+
     if matches!(key, SpecialKey::Up | SpecialKey::Down) {
         let sign: i32 = if matches!(key, SpecialKey::Up) { 1 } else { -1 };
 

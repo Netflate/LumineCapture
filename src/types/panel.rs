@@ -230,3 +230,101 @@ pub fn tick_panel_animation<P: AnimatedPanel>(
         damage_rects.push(DamageZone::Local { monitor_idx, rect });
     }
 }
+
+// ==========================================
+// Scroll accumulator
+// ==========================================
+//
+// Shared rate-limited scroll accumulator used by panels that support
+// scroll-to-step behaviour (exp: color fields, stepper widgets).
+// (its implemented for the first place when scrolling using trackpad or holding mouse wheel, 
+// since that floods thousands of events that would freeze the app) 
+// 1. **Rate limit** : any event arriving sooner than `MIN_INTERVAL` after the
+//    last *processed* event is dropped entirely, without accumulation.
+//    This is nearly free (just one `Instant` comparison) and prevents every
+//    raw event from triggering a full apply + rebuild + damage cycle.
+//
+// 2. **Step cap** : even if many fractional steps accumulated, at most
+//    `MAX_STEPS_PER_CALL` whole steps are returned per call. The remainder
+//    is discarded rather than carried forward to avoid a "debt" that would
+//    keep firing long after the user stopped scrolling.
+
+/// Rate-limited scroll accumulator.
+///
+/// `K` is the "slot" key, aka the widget or field the scroll targets.
+/// Switching to a different key resets the leftover accumulator.
+pub struct ScrollAccumulator<K: PartialEq> {
+    /// The key whose scroll is currently being accumulated.
+    pub current_key: Option<K>,
+    /// Fractional steps not yet converted to whole steps.
+    pub accumulator: f32,
+    /// When the last event was actually processed (not rate-limited away).
+    pub last_processed: Option<Instant>,
+}
+
+impl<K: PartialEq> ScrollAccumulator<K> {
+    pub fn new() -> Self {
+        Self {
+            current_key: None,
+            accumulator: 0.0,
+            last_processed: None,
+        }
+    }
+
+    /// Feed a fractional `delta` (in steps, not raw pixels) for the given
+    /// `key` and return the number of whole steps to apply (may be negative).
+    pub fn step(&mut self, key: K, delta: f32) -> i32 {
+        const MIN_INTERVAL: Duration = Duration::from_millis(12);
+        const MAX_STEPS_PER_CALL: i32 = 3;
+
+        // Switching target: discard leftover from the previous slot.
+        if self.current_key.as_ref() != Some(&key) {
+            self.current_key = Some(key);
+            self.accumulator = 0.0;
+            self.last_processed = None;
+        }
+
+        // Direction reversal: don't let the leftover from the previous
+        // direction "absorb" the new one — reset and start fresh.
+        if delta != 0.0
+            && self.accumulator != 0.0
+            && self.accumulator.signum() != delta.signum()
+        {
+            self.accumulator = 0.0;
+        }
+
+        // Rate limit: drop events that arrive too quickly.
+        if let Some(last) = self.last_processed {
+            if Instant::now().duration_since(last) < MIN_INTERVAL {
+                return 0;
+            }
+        }
+        self.last_processed = Some(Instant::now());
+
+        self.accumulator += delta;
+
+        let mut steps = 0i32;
+        while self.accumulator >= 1.0 && steps < MAX_STEPS_PER_CALL {
+            steps += 1;
+            self.accumulator -= 1.0;
+        }
+        while self.accumulator <= -1.0 && steps > -MAX_STEPS_PER_CALL {
+            steps -= 1;
+            self.accumulator += 1.0;
+        }
+        // Remaining accumulator still exceeds a full step: discard it
+        // rather than carrying rest into future calls.
+        if self.accumulator.abs() > 1.0 {
+            self.accumulator = 0.0;
+        }
+        steps
+    }
+
+    /// scroll-inertia reset. Call on any non-scroll user action
+    /// (click, key press) so stale queued events don't fire afterwards.
+    pub fn cancel(&mut self) {
+        self.current_key = None;
+        self.accumulator = 0.0;
+        self.last_processed = None;
+    }
+}
