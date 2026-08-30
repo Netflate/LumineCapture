@@ -33,6 +33,7 @@ impl EditorState {
                 .push(DamageZone::Global(ann.damage_bbox(true)));
             self.prev_pending = None;
             self.selected_annotation = None;
+            self.pending_pen_baked = 0;
             self.annotations_dirty = true;
             *dirty_mask = u32::MAX;
             return;

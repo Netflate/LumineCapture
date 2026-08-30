@@ -170,6 +170,46 @@ impl Annotation {
         }
     }
 
+    pub fn pen_active_tail_bbox(&self) -> Rect {
+        let pad = crate::renderer::visual_pad(self.stroke_width);
+        match &self.shape {
+            AnnotationShape::Pen { points } if points.len() >= 3 => {
+                let p_prev = points[points.len() - 2];
+                let p_last = points[points.len() - 1];
+                let mid = ((p_prev.0 + p_last.0) / 2.0, (p_prev.1 + p_last.1) / 2.0);
+                Rect::from_ltrb(
+                    mid.0.min(p_last.0) - pad,
+                    mid.1.min(p_last.1) - pad,
+                    mid.0.max(p_last.0) + pad,
+                    mid.1.max(p_last.1) + pad,
+                )
+                .unwrap_or(self.bbox)
+            }
+            AnnotationShape::Pen { points } if points.len() == 2 => {
+                let p0 = points[0];
+                let p1 = points[1];
+                Rect::from_ltrb(
+                    p0.0.min(p1.0) - pad,
+                    p0.1.min(p1.1) - pad,
+                    p0.0.max(p1.0) + pad,
+                    p0.1.max(p1.1) + pad,
+                )
+                .unwrap_or(self.bbox)
+            }
+            AnnotationShape::Pen { points } if points.len() == 1 => {
+                let p0 = points[0];
+                Rect::from_ltrb(
+                    p0.0 - pad,
+                    p0.1 - pad,
+                    p0.0 + pad,
+                    p0.1 + pad,
+                )
+                .unwrap_or(self.bbox)
+            }
+            _ => self.damage_bbox(false),
+        }
+    }
+
     pub fn translate_mut(&mut self, dx: f32, dy: f32) {
         match &mut self.shape {
             AnnotationShape::NumeratedArrow { start, end, .. }

@@ -105,19 +105,24 @@ impl EditorState {
             Rect::from_ltrb(ix1, iy1, ix2, iy2)
         }
 
-        if let Some(ann) = &self.pending {
-            let pad = crate::renderer::visual_pad(ann.stroke_width);
-            dirty = union_rect(
-                dirty,
-                global_to_local_padded(&ann.bbox, offset, pad, mw, mh),
-            );
-        }
-        if let Some(ann) = &self.prev_pending {
-            let pad = crate::renderer::visual_pad(ann.stroke_width);
-            dirty = union_rect(
-                dirty,
-                global_to_local_padded(&ann.bbox, offset, pad, mw, mh),
-            );
+        let is_pen_drawing =
+            self.selected_tool == crate::tools::Tool::Pen && self.ann_drag.is_none();
+
+        if !is_pen_drawing {
+            if let Some(ann) = &self.pending {
+                let pad = crate::renderer::visual_pad(ann.stroke_width);
+                dirty = union_rect(
+                    dirty,
+                    global_to_local_padded(&ann.bbox, offset, pad, mw, mh),
+                );
+            }
+            if let Some(ann) = &self.prev_pending {
+                let pad = crate::renderer::visual_pad(ann.stroke_width);
+                dirty = union_rect(
+                    dirty,
+                    global_to_local_padded(&ann.bbox, offset, pad, mw, mh),
+                );
+            }
         }
         if let Some(ann_idx) = self.selected_annotation {
             if let Some(ann) = self.annotations.get(ann_idx) {
@@ -253,11 +258,16 @@ pub fn is_dirty(mask: u32, idx: usize) -> bool {
 }
 
 pub fn apply_damage_rects(editor_state: &mut EditorState, dirty_mask: &mut u32) {
-    if let Some(ann) = &editor_state.pending {
-        *dirty_mask |= get_overlapping_monitors(&ann.bbox, &editor_state.placements);
-    }
-    if let Some(ann) = &editor_state.prev_pending {
-        *dirty_mask |= get_overlapping_monitors(&ann.bbox, &editor_state.placements);
+    let is_pen_drawing =
+        editor_state.selected_tool == crate::tools::Tool::Pen && editor_state.ann_drag.is_none();
+
+    if !is_pen_drawing {
+        if let Some(ann) = &editor_state.pending {
+            *dirty_mask |= get_overlapping_monitors(&ann.bbox, &editor_state.placements);
+        }
+        if let Some(ann) = &editor_state.prev_pending {
+            *dirty_mask |= get_overlapping_monitors(&ann.bbox, &editor_state.placements);
+        }
     }
     for rect in &editor_state.layer_damage_rects {
         *dirty_mask |= get_overlapping_monitors(rect, &editor_state.placements);

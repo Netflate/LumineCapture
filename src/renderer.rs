@@ -7,7 +7,8 @@ mod text;
 mod toolbar;
 
 pub use annotations::{
-    draw_annotation, draw_annotation_handles_only, draw_pen_tail, selection_chrome_pad, visual_pad,
+    draw_annotation, draw_annotation_handles_only, draw_pen_active_tail, draw_pen_tail,
+    selection_chrome_pad, stroke_pen_segment, visual_pad,
 };
 pub use magnifier::magnifier_rect;
 pub use paths::{rect_bounds, rounded_rect_path};
@@ -91,16 +92,28 @@ pub fn render_frame(req: &mut RenderRequest) {
             req.swash_cache.as_deref_mut(),
             req.text_editors.as_deref_mut(),
         ) {
-            annotations::draw_annotation(
-                req.canvas,
-                p,
-                req.offset,
-                false,
-                font_system,
-                swash_cache,
-                text_editors,
-                req.active_text_id,
-            );
+            if !req.is_pending_selected
+                && let crate::types::AnnotationShape::Pen { points } = &p.shape
+            {
+                annotations::draw_pen_active_tail(
+                    req.canvas,
+                    points,
+                    p.color,
+                    p.stroke_width,
+                    req.offset,
+                );
+            } else {
+                annotations::draw_annotation(
+                    req.canvas,
+                    p,
+                    req.offset,
+                    false,
+                    font_system,
+                    swash_cache,
+                    text_editors,
+                    req.active_text_id,
+                );
+            }
         }
         if req.is_pending_selected {
             annotations::draw_annotation_handles_only(req.canvas, p, req.offset);
@@ -358,10 +371,10 @@ fn blit_annotations(src: &Pixmap, dst: &mut Pixmap, rect: &Rect) {
                 continue;
             }
             let inv = 255 - sa;
-            d[0] = ((s[0] as u32 * sa + d[0] as u32 * inv) / 255) as u8;
-            d[1] = ((s[1] as u32 * sa + d[1] as u32 * inv) / 255) as u8;
-            d[2] = ((s[2] as u32 * sa + d[2] as u32 * inv) / 255) as u8;
-            d[3] = (sa + (d[3] as u32 * inv / 255)) as u8;
+            d[0] = (s[0] as u32 + (d[0] as u32 * inv + 127) / 255).min(255) as u8;
+            d[1] = (s[1] as u32 + (d[1] as u32 * inv + 127) / 255).min(255) as u8;
+            d[2] = (s[2] as u32 + (d[2] as u32 * inv + 127) / 255).min(255) as u8;
+            d[3] = (sa + (d[3] as u32 * inv + 127) / 255).min(255) as u8;
         }
     }
 }

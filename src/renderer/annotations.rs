@@ -367,7 +367,40 @@ fn draw_pen(
     stroke_width: f32,
     offset: (f32, f32),
 ) {
-    if points.len() < 2 {
+    if points.is_empty() {
+        return;
+    }
+
+    let transform = Transform::from_translate(-offset.0, -offset.1);
+    // 1. drawing a halo around the full path
+    let mut halo_paint = Paint::default();
+    halo_paint.set_color(shadow_color_for(color));
+    halo_paint.anti_alias = true;
+    let mut halo_stroke = Stroke::default();
+    halo_stroke.width = stroke_width + 3.0; 
+    halo_stroke.line_cap = LineCap::Round;
+    halo_stroke.line_join = LineJoin::Round;
+
+    // 2. normal stroke paint
+    let mut paint = Paint::default();
+    paint.set_color(color);
+    paint.anti_alias = true;
+    let mut stroke = Stroke::default();
+    stroke.width = stroke_width;
+    stroke.line_cap = LineCap::Round;
+    stroke.line_join = LineJoin::Round;
+
+    if points.len() == 1 {
+        let p = points[0];
+        let mut pb = PathBuilder::new();
+        pb.move_to(p.0, p.1);
+        pb.line_to(p.0, p.1);
+        if let Some(path) = pb.finish() {
+            // draw halo first
+            canvas.stroke_path(&path, &halo_paint, &halo_stroke, transform, None);
+            // then normal stroke
+            canvas.stroke_path(&path, &paint, &stroke, transform, None);
+        }
         return;
     }
 
@@ -388,15 +421,80 @@ fn draw_pen(
     }
 
     if let Some(path) = pb.finish() {
-        stroke_with_shadow(
-            canvas,
-            &path,
-            color,
-            stroke_width,
-            LineCap::Round,
-            LineJoin::Round,
-            offset,
-        );
+        // draw halo first
+        canvas.stroke_path(&path, &halo_paint, &halo_stroke, transform, None);
+        // then normal stroke
+        canvas.stroke_path(&path, &paint, &stroke, transform, None);
+    }
+}
+
+pub fn stroke_pen_segment(
+    canvas: &mut Pixmap,
+    path: &tiny_skia::Path,
+    color: Color,
+    stroke_width: f32,
+    offset: (f32, f32),
+) {
+    let transform = Transform::from_translate(-offset.0, -offset.1);
+    let mut paint = Paint::default();
+    paint.set_color(color);
+    paint.anti_alias = true;
+    let mut stroke = Stroke::default();
+    stroke.width = stroke_width;
+    stroke.line_cap = LineCap::Round;
+    stroke.line_join = LineJoin::Round;
+
+    canvas.stroke_path(path, &paint, &stroke, transform, None);
+}
+
+pub fn draw_pen_active_tail(
+    canvas: &mut Pixmap,
+    points: &[(f32, f32)],
+    color: Color,
+    stroke_width: f32,
+    offset: (f32, f32),
+) {
+    if points.is_empty() {
+        return;
+    }
+    let transform = Transform::from_translate(-offset.0, -offset.1);
+    let mut paint = Paint::default();
+    paint.set_color(color);
+    paint.anti_alias = true;
+    let mut stroke = Stroke::default();
+    stroke.width = stroke_width;
+    stroke.line_cap = LineCap::Round;
+    stroke.line_join = LineJoin::Round;
+
+    if points.len() == 1 {
+        let p = points[0];
+        let mut pb = PathBuilder::new();
+        pb.move_to(p.0, p.1);
+        pb.line_to(p.0, p.1);
+        if let Some(path) = pb.finish() {
+            canvas.stroke_path(&path, &paint, &stroke, transform, None);
+        }
+        return;
+    }
+    if points.len() == 2 {
+        let mut pb = PathBuilder::new();
+        pb.move_to(points[0].0, points[0].1);
+        pb.line_to(points[1].0, points[1].1);
+        if let Some(path) = pb.finish() {
+            canvas.stroke_path(&path, &paint, &stroke, transform, None);
+        }
+        return;
+    }
+
+    let p_prev = points[points.len() - 2];
+    let p_last = points[points.len() - 1];
+    let mid = ((p_prev.0 + p_last.0) / 2.0, (p_prev.1 + p_last.1) / 2.0);
+
+    let mut pb = PathBuilder::new();
+    pb.move_to(mid.0, mid.1);
+    pb.line_to(p_last.0, p_last.1);
+    if let Some(path) = pb.finish() {
+        canvas.stroke_path(&path, &paint, &stroke, transform, None);
     }
 }
 
@@ -410,6 +508,15 @@ pub fn draw_pen_tail(
     if tail.len() < 2 {
         return;
     }
+
+    let transform = Transform::from_translate(-offset.0, -offset.1);
+    let mut paint = Paint::default();
+    paint.set_color(color);
+    paint.anti_alias = true;
+    let mut stroke = Stroke::default();
+    stroke.width = stroke_width;
+    stroke.line_cap = LineCap::Round;
+    stroke.line_join = LineJoin::Round;
 
     let mut pb = PathBuilder::new();
     pb.move_to(tail[0].0, tail[0].1);
@@ -428,15 +535,7 @@ pub fn draw_pen_tail(
     }
 
     if let Some(path) = pb.finish() {
-        stroke_with_shadow(
-            canvas,
-            &path,
-            color,
-            stroke_width,
-            LineCap::Round,
-            LineJoin::Round,
-            offset,
-        );
+        canvas.stroke_path(&path, &paint, &stroke, transform, None);
     }
 }
 

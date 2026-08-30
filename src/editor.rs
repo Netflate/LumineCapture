@@ -4,7 +4,7 @@ pub mod history;
 use cosmic_text::{Editor, FontSystem, SwashCache};
 use std::collections::HashMap;
 use std::time::Instant;
-use tiny_skia::{Pixmap, Rect};
+use tiny_skia::{Color, PathBuilder, Pixmap, Rect};
 use usvg::Tree;
 
 use crate::tools::Tool;
@@ -107,5 +107,62 @@ impl EditorState {
                 }
             }
         }
+    }
+
+    pub fn bake_pen_segment(
+        &mut self,
+        start: (f32, f32),
+        control: Option<(f32, f32)>,
+        end: (f32, f32),
+        color: Color,
+        stroke_width: f32,
+    ) -> Rect {
+        let mut pb = PathBuilder::new();
+        pb.move_to(start.0, start.1);
+        if let Some(ctrl) = control {
+            pb.quad_to(ctrl.0, ctrl.1, end.0, end.1);
+        } else {
+            pb.line_to(end.0, end.1);
+        }
+
+        let pad = crate::renderer::visual_pad(stroke_width);
+        let min_x = start.0.min(end.0).min(control.map(|c| c.0).unwrap_or(start.0)) - pad;
+        let min_y = start.1.min(end.1).min(control.map(|c| c.1).unwrap_or(start.1)) - pad;
+        let max_x = start.0.max(end.0).max(control.map(|c| c.0).unwrap_or(start.0)) + pad;
+        let max_y = start.1.max(end.1).max(control.map(|c| c.1).unwrap_or(start.1)) + pad;
+        let segment_bbox = Rect::from_ltrb(min_x, min_y, max_x, max_y).unwrap_or_else(|| {
+            Rect::from_xywh(start.0 - pad, start.1 - pad, pad * 2.0, pad * 2.0).unwrap()
+        });
+
+        if let Some(path) = pb.finish() {
+            for (i, placement) in self.placements.iter().enumerate() {
+                let offset = (placement.position.0 as f32, placement.position.1 as f32);
+                let visual = Rect::from_ltrb(
+                    segment_bbox.left() - offset.0,
+                    segment_bbox.top() - offset.1,
+                    segment_bbox.right() - offset.0,
+                    segment_bbox.bottom() - offset.1,
+                );
+                let monitor_rect =
+                    Rect::from_xywh(0.0, 0.0, placement.size.0 as f32, placement.size.1 as f32);
+                if let (Some(vis), Some(mon)) = (visual, monitor_rect) {
+                    if vis.left() < mon.right()
+                        && vis.right() > mon.left()
+                        && vis.top() < mon.bottom()
+                        && vis.bottom() > mon.top()
+                    {
+                        crate::renderer::stroke_pen_segment(
+                            &mut self.annotations_layer[i],
+                            &path,
+                            color,
+                            stroke_width,
+                            offset,
+                        );
+                    }
+                }
+            }
+        }
+
+        segment_bbox
     }
 }
