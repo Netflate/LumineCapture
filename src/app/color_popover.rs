@@ -396,16 +396,6 @@ pub fn handle_color_field_scroll(
     delta_y: f32,
     dirty_mask: &mut u32,
 ) {
-    if editor_state
-        .color_popover
-        .fields
-        .editing
-        .as_ref()
-        .is_some_and(|e| e.key == field)
-    {
-        return;
-    }
-
     let steps = editor_state
         .color_popover
         .scroll_step(field, delta_y / FIELD_SCROLL_PIXELS_PER_STEP);
@@ -420,6 +410,7 @@ pub fn handle_color_popover_click(editor_state: &mut EditorState, dirty_mask: &m
         editor_state.color_popover.pre_edit_snapshot = Some(editor_state.annotations.clone());
         editor_state.color_popover.sv_square.dragging = true;
         editor_state.color_popover.set_sv_from_local(local);
+        editor_state.color_popover.sync_field_values();
         editor_state.color_popover.dirty = true;
         emit_color_popover_damage(editor_state, dirty_mask);
 
@@ -432,6 +423,7 @@ pub fn handle_color_popover_click(editor_state: &mut EditorState, dirty_mask: &m
         editor_state.color_popover.pre_edit_snapshot = Some(editor_state.annotations.clone());
         editor_state.color_popover.hue_dragging = true;
         editor_state.color_popover.set_hue_from_local(local);
+        editor_state.color_popover.sync_field_values();
         editor_state.color_popover.dirty = true;
         emit_color_popover_damage(editor_state, dirty_mask);
 
@@ -444,6 +436,7 @@ pub fn handle_color_popover_click(editor_state: &mut EditorState, dirty_mask: &m
         if let Some(color) = editor_state.color_popover.palette().get(idx).copied() {
             editor_state.color_popover.select_color(color);
             editor_state.color_popover.record_used_color(color);
+            editor_state.color_popover.sync_field_values();
             editor_state.color_popover.dirty = true;
             emit_color_popover_damage(editor_state, dirty_mask);
             apply_color_selection(editor_state, color, true, dirty_mask);

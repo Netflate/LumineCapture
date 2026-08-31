@@ -270,6 +270,9 @@ pub fn commit_stepper_text_edit(editor_state: &mut EditorState, dirty_mask: &mut
 
     try_apply_stepper_text(editor_state, widget_idx, &text, false, dirty_mask);
 
+    update_settings_panel(editor_state, dirty_mask);
+    apply_damage_rects(editor_state, dirty_mask);
+
     if let Some(snapshot) = snapshot {
         if editor_state.annotations != snapshot {
             editor_state.undo_stack.push(snapshot);
@@ -520,16 +523,6 @@ pub fn handle_stepper_scroll(
         return;
     }
 
-    if editor_state
-        .settings_panel
-        .fields
-        .editing
-        .as_ref()
-        .is_some_and(|e| e.key == widget_idx)
-    {
-        return;
-    }
-
     let steps = editor_state
         .settings_panel
         .scroll_step(widget_idx, delta_y / STEPPER_SCROLL_PIXELS_PER_STEP);
@@ -552,6 +545,8 @@ pub fn handle_stepper_scroll(
     }
 
     update_settings_panel(editor_state, dirty_mask);
+
+    sync_stepper_edit_text(editor_state, widget_idx);
 }
 
 fn format_stepper_number(v: f32) -> String {

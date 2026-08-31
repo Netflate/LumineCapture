@@ -231,6 +231,7 @@ pub fn handle_pointer_button(
                             .stepper_arrow_hit(widget_idx, editor_state.pointer.local)
                         {
                             apply_stepper_arrow_step(editor_state, widget_idx, arrow, dirty_mask);
+                            update_settings_panel(editor_state, dirty_mask);
                             editor_state.settings_panel.arrow_held = Some(ArrowHoldState {
                                 widget_idx,
                                 arrow,
