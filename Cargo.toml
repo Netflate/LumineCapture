@@ -40,9 +40,17 @@ usvg = "0.47.0"
 zune-core = "0.5.1"
 zune-png = "0.5.2"
 
+# ocr - PaddleOCR (PP-OCRv5) via ONNX Runtime; models in assets/models/
+oar-ocr = "0.9"
+
 # utilities
 chrono = { version = "0.4", features = ["clock"] }
 strum = { version = "0.28", features = ["derive"] }
+
+# optimize dependencies in dev builds too. ONNX Runtime's glue and image
+# decode/resize are +-2x slower without it; recompiles of this crate are unaffected.
+[profile.dev.package."*"]
+opt-level = 3
 
 #[profile.dev]
 #opt-level = 1 
