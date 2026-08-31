@@ -1,1 +1,7 @@
 /target
+
+# OCR models
+/assets/models/
+
+# OCR text dumps
+/ocr_*.txt

@@ -1,6 +1,7 @@
 mod app;
 pub mod backend;
 pub mod editor;
+pub mod ocr;
 pub mod profiler;
 pub mod renderer;
 pub mod tools;
