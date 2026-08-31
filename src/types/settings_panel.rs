@@ -236,13 +236,15 @@ impl SettingsPanel {
         }
     }
 
-    pub fn hit_test(&self, local: (f64, f64)) -> Option<usize> {
-        let rect = self.rect()?;
+    pub fn hit_test(&self, local: (f64, f64)) -> (bool, Option<usize>) {
+        let Some(rect) = self.rect() else {
+            return (false, None);
+        };
         let px = local.0 as f32;
         let py = local.1 as f32;
 
         if py < rect.top() || py > rect.bottom() || px < rect.left() || px > rect.right() {
-            return None;
+            return (false, None);
         }
 
         let mut current_x = rect.left() + SETTINGS_PADDING;
@@ -250,11 +252,11 @@ impl SettingsPanel {
             let w = widget.size();
             let right = current_x + w;
             if px >= current_x && px <= right {
-                return if widget.is_button() { Some(idx) } else { None };
+                return if widget.is_button() { (true, Some(idx)) } else { (true, None) };
             }
             current_x += w + widget.trailing_padding();
         }
-        None
+        (true, None)
     }
 
     fn widget_local_rect(&self, widget_idx: usize) -> Option<(f32, f32, f32, f32)> {

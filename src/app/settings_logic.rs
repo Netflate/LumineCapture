@@ -112,7 +112,7 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
 
     if editor_state.settings_panel.rect().is_some() {
         let prev_hover = editor_state.settings_panel.hovered;
-        let hovered = editor_state
+        let (_, hovered) = editor_state
             .settings_panel
             .hit_test(editor_state.pointer.local);
         let hovered_arrow = hovered.and_then(|idx| {

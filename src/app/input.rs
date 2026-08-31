@@ -75,12 +75,15 @@ pub fn handle_pointer_move(
 enum UiHit {
     ColorPopoverInside,
     ColorPopoverOutside,
-    Toolbar(usize),
-    Settings(usize),
+    ToolbarItem(usize),
+    ToolbarBackground,
+    SettingsItem(usize),
+    SettingsBackground,
     None,
 }
 
 fn hit_test_ui(editor_state: &EditorState, local: (f64, f64)) -> UiHit {
+    // 1. Color Popover
     if editor_state.color_popover.open {
         return if editor_state.color_popover.hit_test(local) {
             UiHit::ColorPopoverInside
@@ -89,48 +92,51 @@ fn hit_test_ui(editor_state: &EditorState, local: (f64, f64)) -> UiHit {
         };
     }
 
-    if let Some(idx) = editor_state.toolbar.hit_test(local) {
-        return UiHit::Toolbar(idx);
+    // 2. Toolbar (`(bool, Option<usize>)`)
+    let (in_toolbar, tb_item) = editor_state.toolbar.hit_test(local);
+    if in_toolbar {
+        return match tb_item {
+            Some(idx) => UiHit::ToolbarItem(idx),
+            None => UiHit::ToolbarBackground,
+        };
     }
 
-    if editor_state.settings_panel.visible
-        && let Some(idx) = editor_state.settings_panel.hit_test(local)
-    {
-        return UiHit::Settings(idx);
+    // 3. Settings Panel (`(bool, Option<usize>)`)
+    if editor_state.settings_panel.visible {
+        let (in_settings, widget_idx) = editor_state.settings_panel.hit_test(local);
+        if in_settings {
+            return match widget_idx {
+                Some(idx) => UiHit::SettingsItem(idx),
+                None => UiHit::SettingsBackground,
+            };
+        }
     }
 
     UiHit::None
 }
-
 pub fn handle_pointer_button(
     editor_state: &mut EditorState,
     button: MouseButton,
     pressed: bool,
     dirty_mask: &mut u32,
 ) {
-    // to not stack a lot of scroll events
-    // any other action cancels the scroll in progress
-    // so that user can do anything afterwards, wiithout waiting for the scroll to finish
     editor_state.settings_panel.cancel_scroll();
     editor_state.color_popover.cancel_scroll();
 
     let is_left_click_pressed = matches!(button, MouseButton::Left) && pressed;
 
-    // releasing left click stops stepper repeat or acceleration if it was started (click + hold)
     if matches!(button, MouseButton::Left) && !pressed {
         editor_state.settings_panel.arrow_held = None;
         handle_color_popover_release(editor_state, dirty_mask);
     }
-    // any left click anywhere first closes current stepper editing (commits value)
     if is_left_click_pressed && editor_state.settings_panel.is_editing() {
         commit_stepper_text_edit(editor_state, dirty_mask);
     }
-    // same for color popover fields: any left click anywhere first commits current field edit
     if is_left_click_pressed && editor_state.color_popover.fields.is_editing() {
         commit_color_field_edit(editor_state, dirty_mask);
     }
 
-    // ── 1. priority ui hit test: color popover -> toolbar -> settings ──────────────
+    // ── 1. priority ui hit test ──────────────────────────────────────────────
 
     if is_left_click_pressed {
         let mut ui_hit = hit_test_ui(editor_state, editor_state.pointer.local);
@@ -144,10 +150,15 @@ pub fn handle_pointer_button(
             UiHit::ColorPopoverInside => {
                 handle_color_popover_click(editor_state, dirty_mask);
                 apply_damage_rects(editor_state, dirty_mask);
-                return;
+                return; 
             }
             UiHit::ColorPopoverOutside => unreachable!("popover is closed at this point"),
-            UiHit::Toolbar(tb_button) => {
+
+            UiHit::ToolbarBackground => {
+                return; 
+            }
+
+            UiHit::ToolbarItem(tb_button) => {
                 editor_state.settings_panel.selected = None;
 
                 if let Some(ToolbarItem::Button(btn)) = editor_state.toolbar.items.get(tb_button) {
@@ -187,17 +198,21 @@ pub fn handle_pointer_button(
 
                     apply_damage_rects(editor_state, dirty_mask);
                 }
-                return;
+                return; 
             }
-            UiHit::Settings(widget_idx) => {
+
+            UiHit::SettingsBackground => {
+                return; 
+            }
+
+            UiHit::SettingsItem(widget_idx) => {
                 let monitor_idx = editor_state.settings_panel.monitor_idx;
                 editor_state.settings_panel.dirty = true;
-
                 // only exception: clicking outside of color swatch closes it, even if on the colorswatch icon itself
                 if editor_state.settings_panel.selected == Some(widget_idx)
                     && matches!(
                         editor_state.settings_panel.widgets[widget_idx],
-                        SettingsWidget::ColorSwatch 
+                        SettingsWidget::ColorSwatch
                     )
                 {
                     editor_state.color_popover.open = false;
@@ -289,11 +304,12 @@ pub fn handle_pointer_button(
                 apply_damage_rects(editor_state, dirty_mask);
                 return;
             }
+
             UiHit::None => {}
         }
     }
 
-    // ── 2. if not anything related to ui, then dispatching event to tool ─────────────────────────────────────────────────────────────
+    // ── 2. dispatch event to active tool ─────────────────────────────────────
 
     if is_left_click_pressed {
         editor_state.settings_panel.dirty = true;
@@ -429,7 +445,7 @@ pub fn handle_key_press(editor_state: &mut EditorState, key: SpecialKey, dirty_m
         }
 
         if editor_state.settings_panel.visible
-            && let Some(widget_idx) = editor_state.settings_panel.hit_test(local)
+            && let (_, Some(widget_idx)) = editor_state.settings_panel.hit_test(local)
             && matches!(
                 editor_state.settings_panel.widgets.get(widget_idx),
                 Some(SettingsWidget::Stepper { .. })
@@ -478,7 +494,7 @@ pub fn handle_scroll(
     }
 
     if editor_state.settings_panel.visible {
-        if let Some(widget_idx) = editor_state.settings_panel.hit_test(local)
+        if let (_, Some(widget_idx)) = editor_state.settings_panel.hit_test(local)
             && matches!(
                 editor_state.settings_panel.widgets.get(widget_idx),
                 Some(SettingsWidget::Stepper { .. })

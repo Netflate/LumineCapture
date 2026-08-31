@@ -191,15 +191,18 @@ impl Toolbar {
             })
     }
 
-    /// Hit-tests a local point against the toolbar's current render rect
-    /// and returns the index of the button item under it, if any.
-    pub fn hit_test(&self, local: (f64, f64)) -> Option<usize> {
-        let rect = self.rect()?;
+    /// hit-tests a local point against the toolbar's current render rect
+    /// Returns (is_inside, option_of_button_index).
+    pub fn hit_test(&self, local: (f64, f64)) -> (bool, Option<usize>) {
+        let Some(rect) = self.rect() else {
+            return (false, None);
+        };
+
         let px = local.0 as f32;
         let py = local.1 as f32;
 
         if py < rect.top() || py > rect.bottom() || px < rect.left() || px > rect.right() {
-            return None;
+            return (false, None);
         }
 
         let mut current_x = rect.left() + TOOLBAR_PADDING;
@@ -208,13 +211,14 @@ impl Toolbar {
             let item_right = current_x + item_w;
             if px >= current_x && px <= item_right {
                 return match item {
-                    ToolbarItem::Button(_) => Some(idx),
-                    ToolbarItem::Seperator => None,
+                    ToolbarItem::Button(_) => (true, Some(idx)),
+                    ToolbarItem::Seperator => (true, None),
                 };
             }
             current_x += item_w + item.trailing_padding();
         }
-        None
+
+        (true, None)
     }
 
     /// Computes the render_pos to start a transition animation from when the
