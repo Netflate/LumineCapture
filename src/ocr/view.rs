@@ -8,8 +8,8 @@
 
 use tiny_skia::Rect;
 
-use super::layout::{self, Block};
 use super::OcrLine;
+use super::layout::{self, Block};
 
 /// Vertical slack before a drag is allowed to leave its anchor block.
 const VERTICAL_SLACK: f32 = 10.0;
@@ -25,12 +25,12 @@ struct Caret {
     ch: usize,
 }
 
-/// Block chrome for the renderer.
-pub struct BlockOverlay {
+/// One plate for the renderer to draw. A block is the unit a double-click
+/// selects, so it is also the unit that gets a box - a line that ended up in no
+/// group of its own is a block of one and still gets one.
+pub struct BlockPlate {
     pub bounds: Rect,
     pub hovered: bool,
-    /// Only multi-line blocks get a box; a lone line gets an underline.
-    pub multiline: bool,
 }
 
 /// A line's selected span, for the renderer.
@@ -47,6 +47,9 @@ pub struct LineSelection {
 #[derive(Default)]
 pub struct OcrView {
     pub lines: Vec<OcrLine>,
+    /// The scanned area (global). Shaded as a whole so it is obvious what was
+    /// read - and, when no selection was drawn, which monitor it came from.
+    region: Option<Rect>,
     blocks: Vec<Block>,
     /// line index -> block index
     block_of: Vec<usize>,
@@ -63,6 +66,16 @@ pub struct OcrView {
 }
 
 impl OcrView {
+    /// Remember the area a scan covers. Set when recognition starts, so the
+    /// progress overlay and the finished result shade the same rectangle.
+    pub fn set_region(&mut self, region: Rect) {
+        self.region = Some(region);
+    }
+
+    pub fn region(&self) -> Option<Rect> {
+        self.region
+    }
+
     /// Group lines into blocks and work out the reading order.
     pub fn set_lines(&mut self, lines: Vec<OcrLine>) {
         let blocks = layout::group_blocks(&lines);
@@ -153,26 +166,19 @@ impl OcrView {
 
     // ── what the renderer draws ──────────────────────────────────────────────
 
-    /// Block chrome, in block order.
-    pub fn block_overlays(&self) -> impl Iterator<Item = BlockOverlay> + '_ {
-        let hovered_block = self.hovered.map(|l| self.block_of[l]);
-        self.blocks.iter().enumerate().map(move |(i, b)| BlockOverlay {
-            bounds: b.bounds,
+    pub fn block_plates(&self) -> impl Iterator<Item = BlockPlate> + '_ {
+        let hovered_block = self.hovered.map(|line| self.block_of[line]);
+        self.blocks.iter().enumerate().map(move |(i, block)| BlockPlate {
+            bounds: block.bounds,
             hovered: Some(i) == hovered_block,
-            multiline: b.lines.len() > 1,
         })
     }
 
-    /// Whether line `i` sits in a boxed (multi-line) block.
-    pub fn line_boxed(&self, i: usize) -> bool {
-        self.block_of
-            .get(i)
-            .and_then(|&bi| self.blocks.get(bi))
-            .is_some_and(|b| b.lines.len() > 1)
-    }
-
-    pub fn is_hovered(&self, i: usize) -> bool {
-        self.hovered == Some(i)
+    /// Bounds of the block under the pointer, the area a hover change repaints.
+    fn hover_bounds(&self) -> Option<Rect> {
+        let line = self.hovered?;
+        let &bi = self.block_of.get(line)?;
+        self.blocks.get(bi).map(|b| b.bounds)
     }
 
     /// Selected span on line `i`, or `None` if untouched. Middle lines give
@@ -189,33 +195,42 @@ impl OcrView {
         })
     }
 
-    /// Bounding box of everything recognized. Interaction damages this whole
-    /// area so the region is re-blitted from the dimmed layer before the
-    /// overlay is redrawn and the translucent fills can't stack up.
+    /// Everything the overlay covers: the shaded region plus any text that
+    /// spilled outside it. Used when the whole overlay has to be repainted -
+    /// results arriving, the tool being left.
     pub fn bounds(&self) -> Option<Rect> {
         self.blocks
             .iter()
-            .fold(None, |acc, b| layout::union_rect(acc, b.bounds))
+            .map(|b| b.bounds)
+            .chain(self.region)
+            .fold(None, layout::union_rect)
     }
 
     // ── changing the selection ───────────────────────────────────────────────
 
-    /// Move the hover highlight. Returns whether anything changed.
-    pub fn set_hovered(&mut self, line: Option<usize>) -> bool {
+    // Every mutator reports the area that has to be repainted rather than a
+    // bare `changed` flag: the overlay is translucent, so the caller has to
+    // restore exactly that area from the dim layer before it is drawn again.
+    // Repainting the whole result instead would mean filling the entire
+    // scanned region on every mouse move.
+
+    /// Move the hover highlight. Returns the area to repaint.
+    pub fn set_hovered(&mut self, line: Option<usize>) -> Option<Rect> {
         if self.hovered == line {
-            return false;
+            return None;
         }
+        let old = self.hover_bounds();
         self.hovered = line;
-        true
+        union(old, self.hover_bounds())
     }
 
     /// Start a drag selection at the caret nearest the pointer.
-    pub fn begin_drag(&mut self, pointer: (f64, f64)) {
-        let Some(caret) = self.caret_at(pointer, false) else {
-            return;
-        };
+    pub fn begin_drag(&mut self, pointer: (f64, f64)) -> Option<Rect> {
+        let caret = self.caret_at(pointer, false)?;
+        let old = self.sel_bounds(self.sel);
         self.anchor_block = self.block_of.get(caret.line).copied();
         self.sel = Some((caret, caret));
+        union(old, self.sel_bounds(self.sel))
     }
 
     /// Expands the selection to the nearest line position under the mouse.
@@ -225,64 +240,68 @@ impl OcrView {
     ///
     /// Once the mouse moves past the top or bottom of the block, selection flows 
     /// normally in reading order.
-    pub fn extend_drag(&mut self, pointer: (f64, f64)) -> bool {
-        let Some((anchor, _)) = self.sel else {
-            return false;
-        };
-        let Some(focus) = self.caret_at(pointer, true) else {
-            return false;
-        };
+    pub fn extend_drag(&mut self, pointer: (f64, f64)) -> Option<Rect> {
+        let (anchor, _) = self.sel?;
+        let focus = self.caret_at(pointer, true)?;
         let next = Some((anchor, focus));
         if self.sel == next {
-            return false;
+            return None;
         }
+        let old = self.sel_bounds(self.sel);
         self.sel = next;
-        true
+        union(old, self.sel_bounds(self.sel))
     }
 
     /// Select the whole block a line belongs to (double-click).
-    pub fn select_block(&mut self, line: usize) -> bool {
-        let Some(&bi) = self.block_of.get(line) else {
-            return false;
-        };
+    pub fn select_block(&mut self, line: usize) -> Option<Rect> {
+        let &bi = self.block_of.get(line)?;
         let block = &self.blocks[bi];
         let (Some(&first), Some(&last)) = (block.lines.first(), block.lines.last()) else {
-            return false;
+            return None;
         };
         self.anchor_block = Some(bi);
         self.set_span(first, last)
     }
 
-    pub fn select_all(&mut self) -> bool {
+    pub fn select_all(&mut self) -> Option<Rect> {
         self.anchor_block = None;
         let (Some(&first), Some(&last)) = (self.order.first(), self.order.last()) else {
-            return false;
+            return None;
         };
         self.set_span(first, last)
     }
 
-    pub fn deselect(&mut self) -> bool {
+    pub fn deselect(&mut self) -> Option<Rect> {
         self.anchor_block = None;
-        let changed = self.sel.is_some();
+        let old = self.sel_bounds(self.sel);
         self.sel = None;
-        changed
+        old
     }
 
     /// Select from the start of `first` to the end of `last`.
-    fn set_span(&mut self, first: usize, last: usize) -> bool {
+    fn set_span(&mut self, first: usize, last: usize) -> Option<Rect> {
         let next = Some((
-            Caret {
-                line: first,
-                ch: 0,
-            },
+            Caret { line: first, ch: 0 },
             Caret {
                 line: last,
                 ch: self.lines[last].char_count(),
             },
         ));
-        let changed = self.sel != next;
+        if self.sel == next {
+            return None;
+        }
+        let old = self.sel_bounds(self.sel);
         self.sel = next;
-        changed
+        union(old, self.sel_bounds(next))
+    }
+
+    /// Bounds of every line a caret pair touches.
+    fn sel_bounds(&self, sel: Option<(Caret, Caret)>) -> Option<Rect> {
+        let (a, b) = self.ordered(sel)?;
+        let (lo, hi) = (self.rank[a.line], self.rank[b.line]);
+        self.order[lo..=hi]
+            .iter()
+            .fold(None, |acc, &li| layout::union_rect(acc, self.lines[li].bounds))
     }
 
     // ── reading the selection out ────────────────────────────────────────────
@@ -343,6 +362,13 @@ impl OcrView {
 
     fn caret_key(&self, c: Caret) -> (usize, usize) {
         (self.rank.get(c.line).copied().unwrap_or(0), c.ch)
+    }
+}
+
+fn union(a: Option<Rect>, b: Option<Rect>) -> Option<Rect> {
+    match (a, b) {
+        (Some(a), Some(b)) => layout::union_rect(Some(a), b),
+        (some, None) | (None, some) => some,
     }
 }
 

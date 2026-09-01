@@ -12,6 +12,7 @@ pub use annotations::{
     selection_chrome_pad, shadow_color_for, stroke_pen_segment, visual_pad,
 };
 pub use magnifier::magnifier_rect;
+pub use ocr::scan_badge_rect;
 pub use paths::{rect_bounds, rounded_rect_path};
 pub use settings_panel::char_index_for_x;
 
@@ -57,6 +58,9 @@ pub struct RenderRequest<'a> {
     pub active_text_id: Option<u64>,
     // OCR tool: recognized lines + selection overlay
     pub ocr_view: Option<&'a crate::ocr::OcrView>,
+    /// OCR tool: region being scanned (global) + spinner animation, while a
+    /// recognition is working
+    pub ocr_scan: Option<(Rect, f32)>,
     /// Intro fade. `Some(strength)` rebuilds the whole dim layer from `base` at
     /// that strength (0 = untouched, 1 = fully dimmed) and repaints the whole
     /// monitor; `None` is the normal incremental path.
@@ -159,8 +163,22 @@ pub fn render_frame(req: &mut RenderRequest) {
         }
     }
 
+    // Clipped to the dirty rect: everything the overlay paints is translucent,
+    // so anything drawn outside the area just restored from `dimmed` would
+    // stack a second layer on top of last frame's.
     if let Some(view) = req.ocr_view {
-        ocr::draw_ocr_overlay(req.canvas, view, req.offset);
+        ocr::draw_ocr_overlay(req.canvas, view, req.offset, dirty_rect);
+    }
+
+    if let Some((region, phase)) = req.ocr_scan {
+        ocr::draw_ocr_scan(
+            req.canvas,
+            region,
+            phase,
+            req.offset,
+            req.icons_cache,
+            dirty_rect,
+        );
     }
 
     if req.is_mag_monitor

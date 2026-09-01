@@ -1,121 +1,251 @@
-// Temporary overlay for the OCR tool (selection box, text block outlines, highlights).
-// 
-// Redraws on every mouse move over a freshly cleared background so transparent colors
-// don't stack up.
+// Overlay for the OCR tool: the shaded scan region, a plate behind every
+// recognized line, the selection on top, and the progress badge that stands in
+// for all of it while recognition is still running.
 //
-// Performance note: Text blocks are outlined instead of filled because filling large
-// areas on every move caused severe lag for almost invisible visual feedback. Hovering
-// brightens the outline instead.
+// Everything here is translucent and everything here is transient - it is
+// repainted from the dim layer on every pointer move. Two rules keep that cheap
+// and keep the washes from stacking up:
+//
+//   * `clip` is the area the caller has just restored from the dim layer, and
+//     everything is painted into a scratch pixmap covering exactly that area,
+//     which is then composited once. Shapes keep their true geometry - the
+//     pixmap's own bounds do the cutting - and nothing lands outside the damage
+//     the tool reported.
+//   * the scratch pixmap starts transparent, so the washes composite against
+//     each other exactly as they would drawn straight onto the canvas.
 
-use tiny_skia::{Color, FillRule, Paint, Path, PathBuilder, Pixmap, Rect, Stroke, Transform};
+use std::collections::HashMap;
+use tiny_skia::{Color, FillRule, Paint, Pixmap, Rect, Transform};
+use usvg::Tree;
 
+use super::paths::{draw_panel_border, draw_svg_icon, rect_bounds, rounded_rect_path};
 use crate::ocr::OcrView;
+use crate::types::icons;
+use crate::types::panel::{BUTTON_SELECTED, ICON_COLOR};
 
-const BLOCK_BORDER: (u8, u8, u8, u8) = (150, 180, 255, 48);
-const BLOCK_BORDER_HOVER: (u8, u8, u8, u8) = (170, 200, 255, 110);
-const UNDERLINE: (u8, u8, u8, u8) = (255, 255, 255, 56);
-const HOVER_FILL: (u8, u8, u8, u8) = (255, 255, 255, 30);
-const SELECT_FILL: (u8, u8, u8, u8) = (96, 152, 255, 120);
+/// Wash over the whole scanned area. Deliberately paired with `PLATE` below: the
+/// shade pushes the screenshot back and the plate lifts the text roughly back to
+/// where it started, so the lines read as the foreground without the region ever
+/// getting as dark as the overlay dim outside it.
+const REGION_SHADE: (u8, u8, u8, u8) = (10, 8, 20, 72);
 
-pub fn draw_ocr_overlay(canvas: &mut Pixmap, view: &OcrView, offset: (f32, f32)) {
-    let (cw, ch) = (canvas.width() as f32, canvas.height() as f32);
-    let to_local = |r: Rect| -> Option<Rect> {
-        let local = Rect::from_ltrb(
-            r.left() - offset.0,
-            r.top() - offset.1,
-            r.right() - offset.0,
-            r.bottom() - offset.1,
-        )?;
-        (local.right() >= 0.0 && local.left() <= cw && local.bottom() >= 0.0 && local.top() <= ch)
-            .then_some(local)
+/// Plate behind a block of text.
+const PLATE: (u8, u8, u8, u8) = (255, 255, 255, 40);
+const PLATE_HOVER: (u8, u8, u8, u8) = (255, 255, 255, 78);
+
+const SELECT_FILL: (u8, u8, u8, u8) = (96, 152, 255, 130);
+
+/// Grown around a block's own bounds so the plate reads as a box around the
+/// text rather than a tight box on it.
+const PLATE_PAD_X: f32 = 5.0;
+const PLATE_PAD_Y: f32 = 3.0;
+const PLATE_RADIUS: f32 = 5.0;
+
+// ── progress badge ──────────────────────────────────────────────────────────
+
+const BADGE_SIZE: f32 = 62.0;
+const BADGE_RADIUS: f32 = 17.0;
+const BADGE_BG: (u8, u8, u8, u8) = (17, 17, 27, 250);
+const BADGE_ICON_SIZE: f32 = 30.0;
+/// Sweeps per second, counting there and back as two.
+const SCAN_RATE: f32 = 1.15;
+const SCAN_WIDTH: f32 = 2.5;
+
+pub fn draw_ocr_overlay(
+    canvas: &mut Pixmap,
+    view: &OcrView,
+    offset: (f32, f32),
+    clip: Option<&Rect>,
+) {
+    let Some(mut painter) = Painter::new(canvas, offset, clip) else {
+        return;
     };
 
-    // Block chrome first, beneath the per-line washes.
-    let mut smooth = Paint {
-        anti_alias: true,
-        ..Paint::default()
-    };
-    let hairline = Stroke {
-        width: 1.0,
-        ..Stroke::default()
-    };
-    for block in view.block_overlays() {
-        if !block.multiline {
-            continue;
-        }
-        let Some(local) = to_local(block.bounds) else {
-            continue;
-        };
-        let radius = (local.height() * 0.12).clamp(3.0, 8.0);
-        let Some(path) = rounded_rect(local, radius) else {
-            continue;
-        };
-        smooth.set_color(color(if block.hovered {
-            BLOCK_BORDER_HOVER
-        } else {
-            BLOCK_BORDER
-        }));
-        canvas.stroke_path(&path, &smooth, &hairline, Transform::identity(), None);
+    if let Some(region) = view.region() {
+        painter.fill(region, 0.0, REGION_SHADE);
     }
 
-    let mut flat = Paint {
-        anti_alias: false,
-        ..Paint::default()
-    };
-    for (i, line) in view.lines.iter().enumerate() {
-        let Some(local) = to_local(line.bounds) else {
+    for plate in view.block_plates() {
+        let Some(bounds) = pad(plate.bounds, PLATE_PAD_X, PLATE_PAD_Y) else {
             continue;
         };
-        if let Some(sel) = view.line_selection(i) {
-            // At least a hairline wide, so an empty span still reads as a caret.
-            let span = Rect::from_ltrb(sel.x.0, sel.y.0, sel.x.1.max(sel.x.0 + 1.0), sel.y.1);
-            if let Some(local) = span.and_then(&to_local) {
-                fill_rect(canvas, local, SELECT_FILL, &mut flat);
-            }
-        } else if view.is_hovered(i) {
-            fill_rect(canvas, local, HOVER_FILL, &mut flat);
-        } else if !view.line_boxed(i)
-            && let Some(underline) =
-                Rect::from_xywh(local.left(), local.bottom() - 1.0, local.width(), 1.0)
-        {
-            fill_rect(canvas, underline, UNDERLINE, &mut flat);
-        }
+        let color = if plate.hovered { PLATE_HOVER } else { PLATE };
+        painter.fill(bounds, PLATE_RADIUS, color);
     }
+
+    for i in 0..view.lines.len() {
+        let Some(sel) = view.line_selection(i) else {
+            continue;
+        };
+        // At least a hairline wide, so an empty span still reads as a caret.
+        let Some(span) = Rect::from_ltrb(
+            sel.x.0,
+            sel.y.0 - PLATE_PAD_Y,
+            sel.x.1.max(sel.x.0 + 1.0),
+            sel.y.1 + PLATE_PAD_Y,
+        ) else {
+            continue;
+        };
+        painter.fill(span, 2.0, SELECT_FILL);
+    }
+
+    painter.finish(canvas);
 }
 
-fn color(c: (u8, u8, u8, u8)) -> Color {
-    Color::from_rgba8(c.0, c.1, c.2, c.3)
-}
+/// Progress badge, centred in the region being scanned: the tool's own icon with
+/// a bar sweeping back and forth across it. Only the badge animates - the shade
+/// underneath it is painted once, when the scan starts, and simply survives on
+/// the canvas because nothing damages it until results land.
+pub fn draw_ocr_scan(
+    canvas: &mut Pixmap,
+    region: Rect,
+    phase: f32,
+    offset: (f32, f32),
+    icons_cache: &HashMap<&'static str, Tree>,
+    clip: Option<&Rect>,
+) {
+    let Some(mut painter) = Painter::new(canvas, offset, clip) else {
+        return;
+    };
+    painter.fill(region, 0.0, REGION_SHADE);
 
-fn fill_rect(canvas: &mut Pixmap, rect: Rect, c: (u8, u8, u8, u8), paint: &mut Paint) {
-    paint.set_color(color(c));
-    canvas.fill_path(
-        &PathBuilder::from_rect(rect),
-        paint,
-        FillRule::Winding,
-        Transform::identity(),
-        None,
+    let badge = scan_badge_rect(region);
+    painter.fill(badge, BADGE_RADIUS, BADGE_BG);
+
+    let left = badge.left() - offset.0;
+    let top = badge.top() - offset.1;
+    let (bx, by) = painter.to_buf((left, top));
+    draw_panel_border(&mut painter.buf, bx, by, BADGE_SIZE, BADGE_SIZE, BADGE_RADIUS, 1.0);
+    draw_svg_icon(
+        &mut painter.buf,
+        icons_cache,
+        icons::OCR,
+        BADGE_ICON_SIZE,
+        bx + (BADGE_SIZE - BADGE_ICON_SIZE) / 2.0,
+        by + (BADGE_SIZE - BADGE_ICON_SIZE) / 2.0,
+        ICON_COLOR,
     );
+
+    // Ping-pong, eased at both ends so the bar decelerates into each turn
+    // instead of snapping back.
+    let swing = (phase * SCAN_RATE).rem_euclid(2.0);
+    let t = if swing > 1.0 { 2.0 - swing } else { swing };
+    let t = t * t * (3.0 - 2.0 * t);
+
+    let track = BADGE_ICON_SIZE + 6.0;
+    let x = left + (BADGE_SIZE - track) / 2.0 + t * track;
+    let bar_top = top + (BADGE_SIZE - track) / 2.0;
+
+    let c = BUTTON_SELECTED.to_color_u8();
+    let half = SCAN_WIDTH / 2.0;
+    if let Some(bar) = Rect::from_ltrb(x - half, bar_top, x + half, bar_top + track) {
+        painter.fill_local(bar, half, (c.red(), c.green(), c.blue(), 255));
+    }
+
+    painter.finish(canvas);
 }
 
-/// A rectangle with rounded corners, clamped so the radius never exceeds half
-/// the shorter side. Falls back to a plain rect when there's no room to round.
-fn rounded_rect(rect: Rect, radius: f32) -> Option<Path> {
-    let r = radius.min(rect.width() / 2.0).min(rect.height() / 2.0);
-    if r <= 0.0 {
-        return Some(PathBuilder::from_rect(rect));
+/// Where the badge sits, in global coordinates. The tool damages exactly this
+/// rectangle each frame, so it has to agree with what is drawn.
+pub fn scan_badge_rect(region: Rect) -> Rect {
+    let cx = region.left() + region.width() / 2.0;
+    let cy = region.top() + region.height() / 2.0;
+    Rect::from_xywh(
+        cx - BADGE_SIZE / 2.0,
+        cy - BADGE_SIZE / 2.0,
+        BADGE_SIZE,
+        BADGE_SIZE,
+    )
+    .unwrap_or(region)
+}
+
+// ── clipped painting ────────────────────────────────────────────────────────
+
+struct Painter {
+    buf: Pixmap,
+    origin: (f32, f32),
+    offset: (f32, f32),
+}
+
+impl Painter {
+    fn new(canvas: &Pixmap, offset: (f32, f32), clip: Option<&Rect>) -> Option<Self> {
+        let (w, h) = (canvas.width(), canvas.height());
+        let (x, y, cw, ch) = match clip {
+            Some(c) => rect_bounds(c, w, h)?,
+            None => (0, 0, w, h),
+        };
+        Some(Self {
+            buf: Pixmap::new(cw, ch)?,
+            origin: (x as f32, y as f32),
+            offset,
+        })
     }
-    let (l, t, ri, b) = (rect.left(), rect.top(), rect.right(), rect.bottom());
-    let mut pb = PathBuilder::new();
-    pb.move_to(l + r, t);
-    pb.line_to(ri - r, t);
-    pb.quad_to(ri, t, ri, t + r);
-    pb.line_to(ri, b - r);
-    pb.quad_to(ri, b, ri - r, b);
-    pb.line_to(l + r, b);
-    pb.quad_to(l, b, l, b - r);
-    pb.line_to(l, t + r);
-    pb.quad_to(l, t, l + r, t);
-    pb.close();
-    pb.finish()
+
+    fn fill(&mut self, rect: Rect, radius: f32, color: (u8, u8, u8, u8)) {
+        let Some(local) = Rect::from_ltrb(
+            rect.left() - self.offset.0,
+            rect.top() - self.offset.1,
+            rect.right() - self.offset.0,
+            rect.bottom() - self.offset.1,
+        ) else {
+            return;
+        };
+        self.fill_local(local, radius, color);
+    }
+
+    fn fill_local(&mut self, rect: Rect, radius: f32, color: (u8, u8, u8, u8)) {
+        let Some(rect) = Rect::from_ltrb(
+            rect.left() - self.origin.0,
+            rect.top() - self.origin.1,
+            rect.right() - self.origin.0,
+            rect.bottom() - self.origin.1,
+        ) else {
+            return;
+        };
+        if rect.right() <= 0.0
+            || rect.bottom() <= 0.0
+            || rect.left() >= self.buf.width() as f32
+            || rect.top() >= self.buf.height() as f32
+        {
+            return;
+        }
+
+        let mut paint = Paint::default();
+        paint.set_color(Color::from_rgba8(color.0, color.1, color.2, color.3));
+        paint.anti_alias = radius > 0.0;
+
+        let path = if radius > 0.0 {
+            rounded_rect_path(&rect, radius, true, true, true, true)
+        } else {
+            Some(tiny_skia::PathBuilder::from_rect(rect))
+        };
+        let Some(path) = path else { return };
+
+        self.buf
+            .fill_path(&path, &paint, FillRule::Winding, Transform::identity(), None);
+    }
+
+    fn to_buf(&self, local: (f32, f32)) -> (f32, f32) {
+        (local.0 - self.origin.0, local.1 - self.origin.1)
+    }
+
+    fn finish(self, canvas: &mut Pixmap) {
+        canvas.draw_pixmap(
+            self.origin.0 as i32,
+            self.origin.1 as i32,
+            self.buf.as_ref(),
+            &tiny_skia::PixmapPaint::default(),
+            Transform::identity(),
+            None,
+        );
+    }
+}
+
+fn pad(rect: Rect, x: f32, y: f32) -> Option<Rect> {
+    Rect::from_ltrb(
+        rect.left() - x,
+        rect.top() - y,
+        rect.right() + x,
+        rect.bottom() + y,
+    )
 }
