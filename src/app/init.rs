@@ -204,6 +204,7 @@ pub fn initial_paint(
                     text_editors: None,
                     active_text_id: None,
                     current_color: DEFAULT_COLOR,
+                    ocr_view: None,
                 });
             }));
         }

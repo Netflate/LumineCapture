@@ -22,6 +22,7 @@ const SEPARATOR_CELL_SIZE: f32 = 20.0;
 pub const TOOLBAR_ITEMS: &[ToolbarItem] = &[
     ToolbarItem::Button(ToolbarButton::Tool(Tool::Selection)),
     ToolbarItem::Button(ToolbarButton::Tool(Tool::Pick)),
+    ToolbarItem::Button(ToolbarButton::Tool(Tool::Ocr)),
     ToolbarItem::Seperator,
     ToolbarItem::Button(ToolbarButton::Tool(Tool::Text)),
     ToolbarItem::Button(ToolbarButton::Tool(Tool::Pen)),

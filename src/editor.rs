@@ -63,6 +63,11 @@ pub struct EditorState {
 
     pub mod_ctrl: bool,
     pub mod_shift: bool,
+
+    // OCR engine and its recognition jobs
+    pub ocr: crate::ocr::OcrRuntime,
+    // recognized lines and the selection over them
+    pub ocr_view: crate::ocr::OcrView,
 }
 
 // types.rs

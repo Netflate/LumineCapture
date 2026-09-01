@@ -1,6 +1,7 @@
 mod annotations;
 mod color_popover;
 mod magnifier;
+mod ocr;
 mod paths;
 mod settings_panel;
 mod text;
@@ -54,6 +55,8 @@ pub struct RenderRequest<'a> {
     pub swash_cache: Option<&'a mut SwashCache>,
     pub text_editors: Option<&'a mut HashMap<u64, Editor<'static>>>,
     pub active_text_id: Option<u64>,
+    // OCR tool: recognized lines + selection overlay
+    pub ocr_view: Option<&'a crate::ocr::OcrView>,
 }
 
 pub fn render_frame(req: &mut RenderRequest) {
@@ -126,6 +129,10 @@ pub fn render_frame(req: &mut RenderRequest) {
         if let Some(ann) = req.annotations.get(idx) {
             annotations::draw_annotation_handles_only(req.canvas, ann, req.offset);
         }
+    }
+
+    if let Some(view) = req.ocr_view {
+        ocr::draw_ocr_overlay(req.canvas, view, req.offset);
     }
 
     if req.is_mag_monitor

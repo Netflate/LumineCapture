@@ -106,6 +106,9 @@ pub async fn make_screenshot(
         mod_shift: false,
 
         click_tracker: DoubleClickTracker::new(),
+
+        ocr: crate::ocr::OcrRuntime::new(),
+        ocr_view: crate::ocr::OcrView::default(),
     };
     prof.mark("editor_state built");
 
@@ -128,11 +131,15 @@ pub async fn make_screenshot(
         let is_animating =
             editor_state.toolbar.is_animating() || editor_state.color_popover.is_animating();
         let stepper_holding = editor_state.settings_panel.arrow_held.is_some();
-        let timeout = if is_animating || stepper_holding {
+        let timeout = if is_animating || stepper_holding || editor_state.ocr.is_busy() {
             16
         } else {
             -1
         };
+
+        if let Some(result) = editor_state.ocr.poll() {
+            crate::tools::ocr::finish_ocr(&mut editor_state, result, &mut dirty_mask);
+        }
 
         let ev = overlay.next_event(timeout)?;
         match ev {
@@ -401,6 +408,11 @@ pub async fn make_screenshot(
                         swash_cache: Some(&mut editor_state.swash_cache),
                         text_editors: Some(&mut editor_state.text_editors),
                         active_text_id,
+                        ocr_view: if editor_state.ocr_view.is_active() {
+                            Some(&editor_state.ocr_view)
+                        } else {
+                            None
+                        },
                     });
 
                     overlay.stage_frame(i, editor_state.canvas[i].data(), damage)?;

@@ -9,7 +9,8 @@ use crate::editor::dirty::{apply_damage_rects, mark_dirty};
 use crate::editor::{DamageZone, EditorState};
 use crate::renderer::char_index_for_x;
 use crate::tools::{
-    Tool, dispatch_button, dispatch_deactivate, dispatch_key, dispatch_move, dispatch_text,
+    Tool, dispatch_activate, dispatch_button, dispatch_deactivate, dispatch_key, dispatch_move,
+    dispatch_text,
 };
 use crate::types::click::ClickTarget;
 use crate::types::color_popover::ColorField;
@@ -164,7 +165,16 @@ pub fn handle_pointer_button(
                 if let Some(ToolbarItem::Button(btn)) = editor_state.toolbar.items.get(tb_button) {
                     match btn {
                         ToolbarButton::Tool(tool) => {
-                            if editor_state.selection.zone.is_none() && *tool != Tool::Selection {
+                            // ocr falls back to the monitor under the cursor,
+                            // so it doesn't want a forced full-workspace one
+
+                            // TODO:  better handling  of  cross  monitor ocr
+                            // i think there must be a visual indicator, that 
+                            // ocr worked in ONE monitor, but  not  the other
+                            if editor_state.selection.zone.is_none()
+                                && *tool != Tool::Selection
+                                && *tool != Tool::Ocr
+                            {
                                 editor_state.selection.zone =
                                     get_full_workspace_rect(&editor_state.placements);
                                 for i in 0..editor_state.placements.len() {
@@ -187,6 +197,7 @@ pub fn handle_pointer_button(
                             editor_state.selected_tool = *tool;
                             editor_state.toolbar.selected = Some(tb_button);
                             editor_state.toolbar.dirty = true;
+                            dispatch_activate(*tool, editor_state, dirty_mask);
                         }
                     }
                     update_toolbar(editor_state, dirty_mask);

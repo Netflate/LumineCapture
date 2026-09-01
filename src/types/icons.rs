@@ -10,6 +10,7 @@ pub const PEN: &str = include_str!("../../assets/icons/pen.svg");
 pub const LINE: &str = include_str!("../../assets/icons/line.svg");
 pub const PICK: &str = include_str!("../../assets/icons/cursor.svg");
 pub const NUMERATED_ARROW: &str = include_str!("../../assets/icons/numerated_arrow.svg");
+pub const OCR: &str = include_str!("../../assets/icons/ocr.svg");
 pub const ITALIC: &str = include_str!("../../assets/icons/italic.svg");
 pub const BOLD: &str = include_str!("../../assets/icons/bold.svg");
 // svg icon sizes
@@ -27,6 +28,7 @@ pub fn get_svg_for_tool(tool: Tool) -> (&'static str, f32) {
         Tool::Rectangle => (RECTANGLE, DEFAULT_ICON_SIZE),
         Tool::Circle => (CIRCLE, DEFAULT_ICON_SIZE - 6.0),
         Tool::NumeratedArrow => (NUMERATED_ARROW, DEFAULT_ICON_SIZE - 6.0),
+        Tool::Ocr => (OCR, DEFAULT_ICON_SIZE - 7.0),
     }
 }
 

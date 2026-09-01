@@ -1,4 +1,5 @@
 pub mod numerated_arrow;
+pub mod ocr;
 pub mod pen;
 pub mod pick;
 pub mod selection;
@@ -7,6 +8,7 @@ pub mod text;
 
 use crate::editor::EditorState;
 use crate::tools::numerated_arrow::NumeratedArrowTool;
+use crate::tools::ocr::OcrTool;
 use crate::tools::pen::PenTool;
 use crate::tools::pick::PickTool;
 use crate::tools::selection::SelectionTool;
@@ -30,6 +32,7 @@ pub enum Tool {
     Text,
     Pick,
     NumeratedArrow,
+    Ocr,
 }
 
 // ==========================================
@@ -44,6 +47,7 @@ pub trait ToolBehavior {
         dirty_mask: &mut u32,
     );
     fn on_move(&self, state: &mut EditorState, global: (f64, f64), dirty_mask: &mut u32);
+    fn on_activate(&self, _state: &mut EditorState, _dirty_mask: &mut u32) {}
     fn on_deactivate(&self, _state: &mut EditorState, _dirty_mask: &mut u32) {}
     fn on_text(&self, _state: &mut EditorState, _ch: char, _dirty_mask: &mut u32) {}
     fn on_key(&self, _state: &mut EditorState, _key: SpecialKey, _dirty_mask: &mut u32) {}
@@ -64,6 +68,7 @@ pub fn dispatch_move(
         Tool::Text => TextTool.on_move(state, global, dirty_mask),
         Tool::Pen => PenTool.on_move(state, global, dirty_mask),
         Tool::NumeratedArrow => NumeratedArrowTool.on_move(state, global, dirty_mask),
+        Tool::Ocr => OcrTool.on_move(state, global, dirty_mask),
 
         Tool::Rectangle | Tool::Arrow | Tool::Circle | Tool::Line => {
             let color = state.tool_settings.color;
@@ -98,6 +103,7 @@ pub fn dispatch_button(
         Tool::Text => TextTool.on_button(state, button, pressed, dirty_mask),
         Tool::Pen => PenTool.on_button(state, button, pressed, dirty_mask),
         Tool::NumeratedArrow => NumeratedArrowTool.on_button(state, button, pressed, dirty_mask),
+        Tool::Ocr => OcrTool.on_button(state, button, pressed, dirty_mask),
 
         Tool::Rectangle | Tool::Arrow | Tool::Circle | Tool::Line => {
             let color = state.tool_settings.color;
@@ -119,11 +125,20 @@ pub fn dispatch_button(
     }
 }
 
+// runs when a tool becomes the active one (Ocr uses it to start recognition)
+// yet its still a `Tool`, since after ocr user can highlight  text and  copy 
+pub fn dispatch_activate(tool: Tool, state: &mut EditorState, dirty_mask: &mut u32) {
+    if tool == Tool::Ocr {
+        OcrTool.on_activate(state, dirty_mask)
+    }
+}
+
 // for now it only cancels active selection
 pub fn dispatch_deactivate(tool: Tool, state: &mut EditorState, dirty_mask: &mut u32) {
     match tool {
         Tool::Pick => PickTool.on_deactivate(state, dirty_mask),
         Tool::Text => TextTool.on_deactivate(state, dirty_mask),
+        Tool::Ocr => OcrTool.on_deactivate(state, dirty_mask),
         _ => {}
     }
 }
@@ -138,6 +153,7 @@ pub fn dispatch_key(tool: Tool, state: &mut EditorState, key: SpecialKey, dirty_
     match tool {
         Tool::Pick => PickTool.on_key(state, key, dirty_mask),
         Tool::Text => TextTool.on_key(state, key, dirty_mask),
+        Tool::Ocr => OcrTool.on_key(state, key, dirty_mask),
         _ => {}
     }
 }

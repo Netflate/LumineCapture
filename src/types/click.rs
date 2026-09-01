@@ -66,4 +66,5 @@ pub enum ClickTarget {
     SettingsWidget(usize),
     TextAnnotation(u64),
     ColorField(ColorField),
+    OcrLine(usize),
 }
