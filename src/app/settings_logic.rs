@@ -7,10 +7,10 @@ use crate::tools::Tool;
 use crate::types::annotations::rebuild_annotation;
 use crate::types::panel::{emit_panel_damage, sync_panel_hover, sync_panel_rect};
 use crate::types::{
-    Annotation, AnnotationShape, STEPPER_HOLD_ACCEL_AFTER, STEPPER_HOLD_FAST_INTERVAL,
-    STEPPER_HOLD_INITIAL_DELAY, STEPPER_HOLD_REPEAT_INTERVAL, SettingsSource, SettingsWidget,
-    SpecialKey, StepperArrow, ToggleField, ToolSettings, UiPanel, compute_settings_placement,
-    widgets_for_annotation, widgets_for_tool,
+    Annotation, AnnotationShape, OCR_SCANNING_WIDGETS, STEPPER_HOLD_ACCEL_AFTER,
+    STEPPER_HOLD_FAST_INTERVAL, STEPPER_HOLD_INITIAL_DELAY, STEPPER_HOLD_REPEAT_INTERVAL,
+    SettingsAction, SettingsSource, SettingsWidget, SpecialKey, StepperArrow, ToggleField,
+    ToolSettings, UiPanel, compute_settings_placement, widgets_for_annotation, widgets_for_tool,
 };
 
 use std::time::Instant;
@@ -29,12 +29,18 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
     let ann_idx = active_annotation_idx(editor_state);
     let selected_ann = ann_idx.and_then(|i| editor_state.annotations.get(i));
 
+    // A running scan owns the panel outright: its buttons act on a result that
+    // isn't there yet.
+    let scanning = editor_state.selected_tool == Tool::Ocr && editor_state.ocr.is_busy();
+
     let new_widgets = match selected_ann {
+        _ if scanning => OCR_SCANNING_WIDGETS,
         Some(ann) => widgets_for_annotation(ann),
         None => widgets_for_tool(editor_state.selected_tool),
     };
 
     let new_source = match selected_ann {
+        _ if scanning => SettingsSource::OcrScanning,
         Some(ann) => SettingsSource::Annotation(ann.id),
         None => SettingsSource::Tool(editor_state.selected_tool),
     };
@@ -152,6 +158,20 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
             }
         }
     }
+}
+
+/// Run a one-shot panel button. Kept here rather than in `input` so the panel's
+/// buttons stay next to the rest of its behaviour.
+pub fn run_settings_action(
+    editor_state: &mut EditorState,
+    action: SettingsAction,
+    dirty_mask: &mut u32,
+) {
+    match action {
+        SettingsAction::OcrRescan => crate::tools::ocr::restart_ocr(editor_state, dirty_mask),
+        SettingsAction::OcrCopyAll => crate::tools::ocr::copy_all(editor_state, dirty_mask),
+    }
+    update_settings_panel(editor_state, dirty_mask);
 }
 
 pub fn tick_stepper_arrow_hold(editor_state: &mut EditorState, dirty_mask: &mut u32) {

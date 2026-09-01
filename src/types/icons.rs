@@ -13,6 +13,8 @@ pub const NUMERATED_ARROW: &str = include_str!("../../assets/icons/numerated_arr
 pub const OCR: &str = include_str!("../../assets/icons/ocr.svg");
 pub const ITALIC: &str = include_str!("../../assets/icons/italic.svg");
 pub const BOLD: &str = include_str!("../../assets/icons/bold.svg");
+pub const RETRY: &str = include_str!("../../assets/icons/retry.svg");
+pub const COPY: &str = include_str!("../../assets/icons/copy.svg");
 // svg icon sizes
 const DEFAULT_ICON_SIZE: f32 = BUTTON_CELL_SIZE - 4.0;
 
@@ -34,4 +36,23 @@ pub fn get_svg_for_tool(tool: Tool) -> (&'static str, f32) {
 
 /// Icons not tied to any Tool (e.g. SettingsWidget::Toggle icons).
 /// Add every new ToggleVisual::Icon svg here so load_icons_cache() preloads it.
-pub const EXTRA_ICONS: &[&str] = &[ITALIC, BOLD];
+pub const EXTRA_ICONS: &[&str] = &[ITALIC, BOLD, RETRY, COPY];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use strum::IntoEnumIterator;
+
+    /// `load_icons_cache` parses every icon with `expect`, so inccorrent one is
+    /// a panic on launch rather than a missing glyph. Catch it here instead.
+    #[test]
+    fn every_icon_parses() {
+        let opt = usvg::Options::default();
+        let all = Tool::iter()
+            .map(|tool| get_svg_for_tool(tool).0)
+            .chain(EXTRA_ICONS.iter().copied());
+        for svg in all {
+            usvg::Tree::from_str(svg, &opt).expect("embedded icon must parse");
+        }
+    }
+}

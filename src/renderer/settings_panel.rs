@@ -135,6 +135,29 @@ fn draw_settings_content(
                     current_color,
                 );
             }
+            SettingsWidget::Action { svg, icon_size, .. } => {
+                draw_item_border(
+                    canvas,
+                    current_x,
+                    item_y,
+                    item_w,
+                    item_h,
+                    4.0,
+                    DEFAULT_ITEM_BORDER_STROKE,
+                    is_hovered,
+                    is_selected,
+                );
+                let tint = if is_hovered { ICON_HOVERED } else { ICON_COLOR };
+                draw_svg_icon(
+                    canvas,
+                    icons_cache,
+                    svg,
+                    *icon_size,
+                    current_x + (item_w - icon_size) / 2.0,
+                    item_y + (item_h - icon_size) / 2.0,
+                    tint,
+                );
+            }
             SettingsWidget::Stepper { label, unit, .. } => {
                 let display_text = stepper_display_text(panel, index, label, unit);
                 draw_stepper(

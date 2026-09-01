@@ -39,9 +39,22 @@ pub enum ToggleVisual {
     Checkbox { label: &'static str },
 }
 
+/// A one-shot action button. No value of its own, it just runs
+/// something. see aswell `settings_logic::run_settings_action`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsAction {
+    OcrRescan,
+    OcrCopyAll,
+}
+
 #[derive(Debug, Clone)]
 pub enum SettingsWidget {
     ColorSwatch,
+    Action {
+        action: SettingsAction,
+        svg: &'static str,
+        icon_size: f32,
+    },
     Stepper {
         label: &'static str,
         min: f32,
@@ -76,6 +89,7 @@ pub struct ArrowHoldState {
 pub enum SettingsSource {
     Tool(Tool),
     Annotation(u64),
+    OcrScanning,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -134,9 +148,33 @@ pub fn widgets_for_tool(tool: Tool) -> &'static [SettingsWidget] {
                 unit: "px",
             },
         ],
+        Tool::Ocr => OCR_WIDGETS,
         _ => &[],
     }
 }
+
+/// What the panel offers once text has been read. The hint is the answer to
+/// "how do I read something else": dragging on empty space inside the tool
+/// boxes out a new region - on this screen or any other - and reads it on
+/// release, so nothing has to be re-picked from the toolbar.
+pub const OCR_WIDGETS: &[SettingsWidget] = &[
+    SettingsWidget::Action {
+        action: SettingsAction::OcrRescan,
+        svg: crate::types::icons::RETRY,
+        icon_size: 16.0,
+    },
+    SettingsWidget::Action {
+        action: SettingsAction::OcrCopyAll,
+        svg: crate::types::icons::COPY,
+        icon_size: 15.0,
+    },
+    SettingsWidget::Separator,
+    SettingsWidget::Label("Drag a new box to read another area"),
+];
+
+/// Shown while the worker thread is busy; the progress badge sits over the
+/// region itself, this just keeps the panel from advertising dead buttons.
+pub const OCR_SCANNING_WIDGETS: &[SettingsWidget] = &[SettingsWidget::Label("Reading text...")];
 
 pub fn widgets_for_annotation(ann: &Annotation) -> &'static [SettingsWidget] {
     match &ann.shape {
@@ -155,6 +193,7 @@ impl PanelItem for SettingsWidget {
     fn size(&self) -> f32 {
         match self {
             SettingsWidget::ColorSwatch => SETTINGS_SWATCH_SIZE,
+            SettingsWidget::Action { .. } => SETTINGS_ICON_BUTTON_SIZE,
             SettingsWidget::Stepper { .. } => SETTINGS_STEPPER_WIDTH,
             SettingsWidget::Toggle { visual, .. } => match visual {
                 ToggleVisual::Icon { .. } => SETTINGS_ICON_BUTTON_SIZE,
@@ -164,7 +203,7 @@ impl PanelItem for SettingsWidget {
                         + label.len() as f32 * 7.0
                 }
             },
-            SettingsWidget::Label(text) => text.len() as f32 * 7.0 + 8.0,
+            SettingsWidget::Label(text) => text.chars().count() as f32 * 7.0 + 8.0,
             SettingsWidget::Separator => SETTINGS_SEPARATOR_SIZE,
         }
     }
@@ -180,6 +219,7 @@ impl PanelItem for SettingsWidget {
         matches!(
             self,
             SettingsWidget::ColorSwatch
+                | SettingsWidget::Action { .. }
                 | SettingsWidget::Stepper { .. }
                 | SettingsWidget::Toggle { .. }
         )
