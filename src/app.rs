@@ -109,6 +109,9 @@ pub async fn make_screenshot(
 
         ocr: crate::ocr::OcrRuntime::new(),
         ocr_view: crate::ocr::OcrView::default(),
+        ocr_redrag: false,
+        ocr_redrag_from: None,
+        ocr_scan_started: None,
 
         dim_strength: 0.0,
         dim_fade_start: None,
@@ -147,6 +150,10 @@ pub async fn make_screenshot(
 
         if let Some(result) = editor_state.ocr.poll() {
             crate::tools::ocr::finish_ocr(&mut editor_state, result, &mut dirty_mask);
+            settings_logic::update_settings_panel(&mut editor_state, &mut dirty_mask);
+        }
+        if editor_state.ocr.is_busy() {
+            crate::tools::ocr::tick_scan_badge(&mut editor_state, &mut dirty_mask);
         }
 
         let ev = overlay.next_event(timeout)?;
@@ -256,6 +263,10 @@ pub async fn make_screenshot(
             let selection_dirty = editor_state.selection.zone != editor_state.selection.prev_zone;
             let active_text_id = editor_state.text_editing.as_ref().map(|e| e.annotation_id);
 
+            let scan_badge = editor_state.ocr_scan_started.and_then(|started| {
+                Some((editor_state.ocr_view.region()?, started.elapsed().as_secs_f32()))
+            });
+
             let current_color = settings_logic::active_annotation_idx(&editor_state)
                 .and_then(|idx| editor_state.annotations.get(idx))
                 .map(|ann| ann.color)
@@ -263,10 +274,13 @@ pub async fn make_screenshot(
 
             for i in 0..editor_state.base.len() {
                 if is_dirty(dirty_mask, i) {
-                    let is_mag_monitor = editor_state
-                        .magnifier
-                        .as_ref()
-                        .is_some_and(|m| m.monitor_idx == i);
+                    // No loupe while reading text: it sits right where the
+                    // pointer is selecting and hides the line under it.
+                    let is_mag_monitor = editor_state.selected_tool != Tool::Ocr
+                        && editor_state
+                            .magnifier
+                            .as_ref()
+                            .is_some_and(|m| m.monitor_idx == i);
 
                     let (local_sel, prev_local, edges) = selection_render_info(
                         &editor_state.selection.zone,
@@ -432,6 +446,7 @@ pub async fn make_screenshot(
                         } else {
                             None
                         },
+                        ocr_scan: scan_badge,
                         dim_fade,
                     });
 

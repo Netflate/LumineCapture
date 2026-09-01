@@ -207,6 +207,7 @@ pub fn initial_paint(
                     active_text_id: None,
                     current_color: DEFAULT_COLOR,
                     ocr_view: None,
+                    ocr_scan: None,
                     dim_fade: None,
                 });
             }));

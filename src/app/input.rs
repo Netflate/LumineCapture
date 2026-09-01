@@ -35,7 +35,7 @@ use super::color_popover::{
 use super::settings_logic::{
     apply_stepper_arrow_step, apply_toggle_field, commit_stepper_text_edit,
     handle_settings_key_press, handle_settings_text_input, handle_stepper_scroll,
-    sync_stepper_edit_text, update_settings_panel,
+    run_settings_action, sync_stepper_edit_text, update_settings_panel,
 };
 use super::toolbar_logic::update_toolbar;
 
@@ -298,6 +298,10 @@ pub fn handle_pointer_button(
                     }
                     SettingsWidget::ColorSwatch => {
                         editor_state.color_popover.open = !editor_state.color_popover.open;
+                    }
+                    SettingsWidget::Action { action, .. } => {
+                        editor_state.settings_panel.selected = None;
+                        run_settings_action(editor_state, action, dirty_mask);
                     }
                     _ => {}
                 }

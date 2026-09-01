@@ -68,6 +68,17 @@ pub struct EditorState {
     pub ocr: crate::ocr::OcrRuntime,
     // recognized lines and the selection over them
     pub ocr_view: crate::ocr::OcrView,
+    /// Set when the user drags to select a new OCR area. It saves the original
+    /// selection from before the drag started.
+    ///
+    /// When the drag ends, OCR only re-runs if the box size actually changed.
+    /// This prevents a simple click from clearing the current result.
+    pub ocr_redrag: bool,
+    pub ocr_redrag_from: Option<Rect>,
+
+    /// When the running recognition started, driving the progress badge's spin.
+    /// `None` whenever nothing is in flight.
+    pub ocr_scan_started: Option<Instant>,
 
     /// Intro fade: the overlay darkens from nothing to full over `app::DIM_FADE`
     /// instead of slamming on with the first frame. 1.0 once it has finished,
