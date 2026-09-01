@@ -241,11 +241,11 @@ pub async fn make_screenshot(
         );
         settings_logic::tick_stepper_arrow_hold(&mut editor_state, &mut dirty_mask);
 
-        if editor_state.toolbar.is_animating() {
+        if editor_state.toolbar.is_animating() || editor_state.color_popover.is_animating() {
             if editor_state.settings_panel.visible {
                 settings_logic::update_settings_panel(&mut editor_state, &mut dirty_mask);
             }
-            if editor_state.color_popover.open {
+            if editor_state.color_popover.is_visible() {
                 color_popover::update_color_popover(&mut editor_state, &mut dirty_mask);
             }
         }
@@ -366,7 +366,7 @@ pub async fn make_screenshot(
                     };
 
                     if i == editor_state.color_popover.monitor_idx
-                        && editor_state.color_popover.open
+                        && editor_state.color_popover.is_visible()
                         && !editor_state.color_popover.dirty
                         && let Some(dirty) = dirty_rect.as_ref()
                         && let Some(cp_r) = editor_state.color_popover.rect()
@@ -382,7 +382,7 @@ pub async fn make_screenshot(
 
                     let color_picker = if i == editor_state.color_popover.monitor_idx
                         && editor_state.color_popover.dirty
-                        && editor_state.color_popover.open
+                        && editor_state.color_popover.is_visible()
                     {
                         Some(&mut editor_state.color_popover)
                     } else {

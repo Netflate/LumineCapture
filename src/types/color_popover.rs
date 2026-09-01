@@ -434,6 +434,10 @@ impl ColorPickerPopover {
         }
     }
 
+    pub fn is_visible(&self) -> bool {
+        self.open || self.opacity > 0.0
+    }
+
     pub fn hit_test(&self, local: (f64, f64)) -> bool {
         let Some(rect) = self.rect() else {
             return false;

@@ -17,7 +17,11 @@ pub fn update_color_popover(editor_state: &mut EditorState, dirty_mask: &mut u32
     let old_rect = editor_state.color_popover.rect();
     let old_monitor = editor_state.color_popover.monitor_idx;
 
-    if editor_state.color_popover.open {
+    // Placed off the settings panel, which is itself placed off the toolbar's
+    // animated position - so re-placing here every frame is what makes the
+    // popover travel with the toolbar. It keeps tracking while fading out too,
+    // otherwise it would detach and sit there for the length of the fade.
+    if editor_state.color_popover.is_visible() {
         let (pos, monitor_idx) = compute_color_popover_placement(editor_state);
         editor_state.color_popover.position = pos;
         editor_state.color_popover.render_pos = pos;
