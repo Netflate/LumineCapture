@@ -5,7 +5,7 @@
 // from the high-level Wayland protocol handlers ('state/compositor_shm_layer.rs')
 // reminder: each output has its own surface
 
-use crate::utils::swizzle_all;
+use crate::utils::copy_swizzled;
 use smithay_client_toolkit::shm::slot::{Buffer, SlotPool};
 use wayland_client::protocol::{wl_buffer, wl_shm};
 pub struct ShmBuffer {
@@ -37,9 +37,7 @@ impl ShmBuffer {
         if let Some(canvas) = pool.canvas(&self.buffer) {
             let len = pixels.len().min(canvas.len());
 
-            canvas[..len].copy_from_slice(&pixels[..len]);
-
-            swizzle_all(&mut canvas[..len]);
+            copy_swizzled(&mut canvas[..len], &pixels[..len]);
         }
     }
 
@@ -64,11 +62,10 @@ impl ShmBuffer {
                 let sx = x as usize;
                 let off = sy * stride + sx * 4;
 
-                let dst_slice = &mut dst[off..off + row_bytes];
-
-                dst_slice.copy_from_slice(&pixels[off..off + row_bytes]);
-
-                swizzle_all(dst_slice);
+                copy_swizzled(
+                    &mut dst[off..off + row_bytes],
+                    &pixels[off..off + row_bytes],
+                );
             }
         }
     }

@@ -258,6 +258,22 @@ pub fn swizzle_all(pixels: &mut [u8]) {
     }
 }
 
+/// Copies into a shm canvas with R/B already swapped, in a single pass.
+///
+/// Copying first and swizzling the canvas afterwards leaves the buffer holding
+/// un-swapped bytes for the length of the second pass, and there is no
+/// wl_buffer.release tracking here - so a compositor sampling in that window
+/// shows a frame with red and blue exchanged. One pass per pixel means the
+/// buffer only ever holds correct colors.
+pub fn copy_swizzled(dst: &mut [u8], src: &[u8]) {
+    for (d, s) in dst.chunks_exact_mut(4).zip(src.chunks_exact(4)) {
+        d[0] = s[2];
+        d[1] = s[1];
+        d[2] = s[0];
+        d[3] = s[3];
+    }
+}
+
 pub fn intersect_area(a: &Rect, b: &Rect) -> f32 {
     let left = a.left().max(b.left());
     let right = a.right().min(b.right());
