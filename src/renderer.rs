@@ -57,14 +57,42 @@ pub struct RenderRequest<'a> {
     pub active_text_id: Option<u64>,
     // OCR tool: recognized lines + selection overlay
     pub ocr_view: Option<&'a crate::ocr::OcrView>,
+    /// Intro fade. `Some(strength)` rebuilds the whole dim layer from `base` at
+    /// that strength (0 = untouched, 1 = fully dimmed) and repaints the whole
+    /// monitor; `None` is the normal incremental path.
+    pub dim_fade: Option<f32>,
 }
 
 pub fn render_frame(req: &mut RenderRequest) {
-    if req.selection_dirty {
-        update_dimming_delta(req.dimmed, req.base, req.prev_selection, req.selection);
-    }
+    // fade repaints the whole dim layer every frame, so it also forces a
+    // whole-monitor repaint
+    // TODO: should be there an option to disable or enable 
+    let dirty_rect = match req.dim_fade {
+        Some(strength) => {
+            init_dimming(
+                req.dimmed,
+                req.base,
+                req.selection,
+                req.selection_edges,
+                strength,
+            );
+            None
+        }
+        None => {
+            if req.selection_dirty {
+                update_dimming_delta(
+                    req.dimmed,
+                    req.base,
+                    req.prev_selection,
+                    req.selection,
+                    req.selection_edges,
+                );
+            }
+            req.dirty_rect
+        }
+    };
 
-    if let Some(dirty) = req.dirty_rect {
+    if let Some(dirty) = dirty_rect {
         blit_rect(req.dimmed, req.canvas, dirty);
     } else {
         req.canvas.data_mut().copy_from_slice(req.dimmed.data());
@@ -75,7 +103,7 @@ pub fn render_frame(req: &mut RenderRequest) {
     }
 
     if !req.annotations_layer_empty {
-        if let Some(dirty) = req.dirty_rect {
+        if let Some(dirty) = dirty_rect {
             blit_annotations(req.annotations_layer, req.canvas, dirty);
         } else {
             req.canvas.draw_pixmap(
@@ -196,24 +224,53 @@ pub fn render_frame(req: &mut RenderRequest) {
 // ***************************/
 /// SELECTION + DIMMING  ////
 // **************************/
-pub fn init_dimming(dimmed: &mut Pixmap, base: &Pixmap, selection: &Option<Rect>) {
-    match selection {
-        None => {
-            let src = base.data();
-            let dst = dimmed.data_mut();
+//
+// The dim layer is `base` layer but darkened everywhere except inside the selection
+// 
+// The bright rectangle's corners are rounded to the *inner* edge of the
+// selection border, so the border doesn't have a hard-edged hole.
+// rounded corners are only visual, the screenshot result won't have such corners
+//
+/// Black laid over everything outside the selection, at full strength.
+const DIM_ALPHA: f32 = 140.0;
+/// Corner radius of the selection border, measured on its outer edge.
+const SELECTION_RADIUS: f32 = 8.0;
+const SELECTION_STROKE: f32 = 2.0;
+/// Radius of the bright area
+const HOLE_RADIUS: f32 = SELECTION_RADIUS - SELECTION_STROKE / 2.0;
 
-            for (s, d) in src.chunks_exact(4).zip(dst.chunks_exact_mut(4)) {
-                d[0] = ((s[0] as u16 * 115 + 127) / 255) as u8;
-                d[1] = ((s[1] as u16 * 115 + 127) / 255) as u8;
-                d[2] = ((s[2] as u16 * 115 + 127) / 255) as u8;
-                d[3] = s[3];
-            }
-        }
-        Some(sel) => {
-            // just in case if somehow something going to be selected with init in the future
-            dimmed.data_mut().copy_from_slice(base.data());
-            draw_dimming(dimmed, &Some(*sel), base.width(), base.height());
-        }
+/// `base_channel -> dimmed_channel` at `strength` (0 = untouched, 1 = full dim).
+fn dim_lut(strength: f32) -> [u8; 256] {
+    let keep = 255.0 - DIM_ALPHA * strength.clamp(0.0, 1.0);
+    let mut lut = [0u8; 256];
+    for (value, slot) in lut.iter_mut().enumerate() {
+        *slot = (value as f32 * keep / 255.0 + 0.5) as u8;
+    }
+    lut
+}
+
+pub fn init_dimming(
+    dimmed: &mut Pixmap,
+    base: &Pixmap,
+    selection: Option<&Rect>,
+    edges: Option<&SelectionEdges>,
+    strength: f32,
+) {
+    let lut = dim_lut(strength);
+    for (s, d) in base
+        .data()
+        .chunks_exact(4)
+        .zip(dimmed.data_mut().chunks_exact_mut(4))
+    {
+        d[0] = lut[s[0] as usize];
+        d[1] = lut[s[1] as usize];
+        d[2] = lut[s[2] as usize];
+        d[3] = s[3];
+    }
+
+    if let Some(sel) = selection {
+        blit_rect(base, dimmed, sel);
+        dim_hole_corners(dimmed, sel, edges, strength);
     }
 }
 
@@ -221,8 +278,10 @@ fn draw_selection_border(canvas: &mut Pixmap, sel: &Rect, edges: Option<&Selecti
     let mut paint = Paint::default();
     paint.set_color(Color::WHITE);
     paint.anti_alias = true;
-    let mut stroke = Stroke::default();
-    stroke.width = 2.0;
+    let stroke = Stroke {
+        width: SELECTION_STROKE,
+        ..Stroke::default()
+    };
 
     if let Some(edges) = edges {
         let half = stroke.width / 2.0;
@@ -236,25 +295,82 @@ fn draw_selection_border(canvas: &mut Pixmap, sel: &Rect, edges: Option<&Selecti
 
         if let Some(path) = rounded_rect_path(
             &outer,
-            8.0,
-            edges.top,
-            edges.right,
-            edges.bottom,
-            edges.left,
+            SELECTION_RADIUS,
+            edges.top && edges.left,
+            edges.top && edges.right,
+            edges.bottom && edges.right,
+            edges.bottom && edges.left,
         ) {
             canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
         }
     }
 }
 
-fn draw_dimming(canvas: &mut Pixmap, selection: &Option<Rect>, w: u32, h: u32) {
-    let mut paint = Paint::default();
-    paint.set_color(Color::from_rgba8(0, 0, 0, 140));
+/// Darken the four corners between the sharp rectangle and the rounded border.
+/// Each corner is very small (at most `HOLE_RADIUS` square), so this is fast
+/// and uses almost no performance.
+///
+/// A corner is only rounded if both sides are visible screen edges. If the
+/// selection goes off the edge of the monitor, that corner stays flat.
+fn dim_hole_corners(
+    canvas: &mut Pixmap,
+    sel: &Rect,
+    edges: Option<&SelectionEdges>,
+    strength: f32,
+) {
+    let Some(edges) = edges else { return };
+    let radius = HOLE_RADIUS.min(sel.width() / 2.0).min(sel.height() / 2.0);
+    if radius <= 0.0 {
+        return;
+    }
 
-    match selection {
-        None => {
-            let rect = Rect::from_xywh(0.0, 0.0, w as f32, h as f32).unwrap();
-            let path = PathBuilder::from_rect(rect);
+    let mut paint = Paint::default();
+    paint.set_color(Color::from_rgba8(
+        0,
+        0,
+        0,
+        (DIM_ALPHA * strength.clamp(0.0, 1.0)) as u8,
+    ));
+    paint.anti_alias = true;
+
+    // corner point, then the direction the rectangle's interior lies in
+    let corners = [
+        (edges.top && edges.left, (sel.left(), sel.top()), (1.0, 1.0)),
+        (
+            edges.top && edges.right,
+            (sel.right(), sel.top()),
+            (-1.0, 1.0),
+        ),
+        (
+            edges.bottom && edges.right,
+            (sel.right(), sel.bottom()),
+            (-1.0, -1.0),
+        ),
+        (
+            edges.bottom && edges.left,
+            (sel.left(), sel.bottom()),
+            (1.0, -1.0),
+        ),
+    ];
+
+    const K: f32 = 0.5523;
+    for (rounded, (cx, cy), (sx, sy)) in corners {
+        if !rounded {
+            continue;
+        }
+        let mut pb = PathBuilder::new();
+        pb.move_to(cx, cy);
+        pb.line_to(cx + sx * radius, cy);
+        pb.cubic_to(
+            cx + sx * radius * (1.0 - K),
+            cy,
+            cx,
+            cy + sy * radius * (1.0 - K),
+            cx,
+            cy + sy * radius,
+        );
+        pb.close();
+        if let Some(path) = pb.finish() {
             canvas.fill_path(
                 &path,
                 &paint,
@@ -262,29 +378,6 @@ fn draw_dimming(canvas: &mut Pixmap, selection: &Option<Rect>, w: u32, h: u32) {
                 Transform::identity(),
                 None,
             );
-        }
-        Some(sel) => {
-            let rects = [
-                Rect::from_xywh(0.0, 0.0, w as f32, sel.top()),
-                Rect::from_xywh(0.0, sel.bottom(), w as f32, h as f32 - sel.bottom()),
-                Rect::from_xywh(0.0, sel.top(), sel.left(), sel.height()),
-                Rect::from_xywh(sel.right(), sel.top(), w as f32 - sel.right(), sel.height()),
-            ];
-            for rect in rects {
-                if let Some(r) = rect
-                    && r.width() > 0.0
-                    && r.height() > 0.0
-                {
-                    let path = PathBuilder::from_rect(r);
-                    canvas.fill_path(
-                        &path,
-                        &paint,
-                        tiny_skia::FillRule::Winding,
-                        Transform::identity(),
-                        None,
-                    );
-                }
-            }
         }
     }
 }
@@ -294,35 +387,45 @@ fn update_dimming_delta(
     base: &Pixmap,
     prev: Option<&Rect>,
     next: Option<&Rect>,
+    edges: Option<&SelectionEdges>,
 ) {
     if let Some(old) = prev {
-        dim_rect(dimmed, old);
+        dim_rect(dimmed, base, old);
     }
     if let Some(cur) = next {
         blit_rect(base, dimmed, cur);
+        dim_hole_corners(dimmed, cur, edges, 1.0);
     }
 }
 
-fn dim_rect(canvas: &mut Pixmap, rect: &Rect) {
-    let (w, h) = (canvas.width(), canvas.height());
+/// Reset `rect` to full dimming using the `base` image.
+///
+/// Redraw it instead of painting over it because rounded corners leave
+/// semi-transparent pixels behind. Painting over them again would make
+/// those pixels too dark.
+fn dim_rect(dimmed: &mut Pixmap, base: &Pixmap, rect: &Rect) {
+    let (w, h) = (dimmed.width(), dimmed.height());
     let Some((x, y, rw, rh)) = rect_bounds(rect, w, h) else {
         return;
     };
 
-    let Some(r) = Rect::from_xywh(x as f32, y as f32, rw as f32, rh as f32) else {
-        return;
-    };
+    let lut = dim_lut(1.0);
+    let stride = (w * 4) as usize;
+    let row_bytes = rw as usize * 4;
+    let src = base.data();
+    let dst = dimmed.data_mut();
 
-    let mut paint = Paint::default();
-    paint.set_color(Color::from_rgba8(0, 0, 0, 140));
-    let path = PathBuilder::from_rect(r);
-    canvas.fill_path(
-        &path,
-        &paint,
-        tiny_skia::FillRule::Winding,
-        Transform::identity(),
-        None,
-    );
+    for row in 0..rh {
+        let off = (y + row) as usize * stride + x as usize * 4;
+        let src_row = &src[off..off + row_bytes];
+        let dst_row = &mut dst[off..off + row_bytes];
+        for (s, d) in src_row.chunks_exact(4).zip(dst_row.chunks_exact_mut(4)) {
+            d[0] = lut[s[0] as usize];
+            d[1] = lut[s[1] as usize];
+            d[2] = lut[s[2] as usize];
+            d[3] = s[3];
+        }
+    }
 }
 
 fn blit_rect(src: &Pixmap, dst: &mut Pixmap, rect: &Rect) {

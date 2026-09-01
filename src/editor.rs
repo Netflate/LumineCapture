@@ -68,6 +68,12 @@ pub struct EditorState {
     pub ocr: crate::ocr::OcrRuntime,
     // recognized lines and the selection over them
     pub ocr_view: crate::ocr::OcrView,
+
+    /// Intro fade: the overlay darkens from nothing to full over `app::DIM_FADE`
+    /// instead of slamming on with the first frame. 1.0 once it has finished,
+    /// and every monitor re-dims from `base` each frame until then.
+    pub dim_strength: f32,
+    pub dim_fade_start: Option<Instant>,
 }
 
 // types.rs

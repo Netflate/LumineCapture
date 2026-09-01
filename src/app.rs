@@ -109,6 +109,9 @@ pub async fn make_screenshot(
 
         ocr: crate::ocr::OcrRuntime::new(),
         ocr_view: crate::ocr::OcrView::default(),
+
+        dim_strength: 0.0,
+        dim_fade_start: None,
     };
     prof.mark("editor_state built");
 
@@ -122,6 +125,10 @@ pub async fn make_screenshot(
     init::initial_paint(&mut editor_state, &mut overlay, &mut prof)?;
     prof.dump();
 
+    // The first frame is the bare screenshot; the dim rolls in from here, so the
+    // overlay arrives instead of slamming on.
+    editor_state.dim_fade_start = Some(std::time::Instant::now());
+
     let mut dirty_mask: u32 = 0;
 
     let mut save_to_clipboard = false;
@@ -131,7 +138,8 @@ pub async fn make_screenshot(
         let is_animating =
             editor_state.toolbar.is_animating() || editor_state.color_popover.is_animating();
         let stepper_holding = editor_state.settings_panel.arrow_held.is_some();
-        let timeout = if is_animating || stepper_holding || editor_state.ocr.is_busy() {
+        let fading_in = editor_state.dim_strength < 1.0;
+        let timeout = if is_animating || stepper_holding || editor_state.ocr.is_busy() || fading_in {
             16
         } else {
             -1
@@ -242,6 +250,8 @@ pub async fn make_screenshot(
             }
         }
 
+        let dim_fade = tick_dim_fade(&mut editor_state, &mut dirty_mask);
+
         if dirty_mask != 0 {
             let selection_dirty = editor_state.selection.zone != editor_state.selection.prev_zone;
             let active_text_id = editor_state.text_editing.as_ref().map(|e| e.annotation_id);
@@ -299,13 +309,16 @@ pub async fn make_screenshot(
                         );
                     }
 
-                    let damage: Option<DamageRect> = dirty_rect.as_ref().and_then(|r| {
-                        renderer::rect_bounds(
-                            r,
-                            editor_state.base[i].width(),
-                            editor_state.base[i].height(),
-                        )
-                    });
+                    let damage: Option<DamageRect> = dirty_rect
+                        .as_ref()
+                        .filter(|_| dim_fade.is_none())
+                        .and_then(|r| {
+                            renderer::rect_bounds(
+                                r,
+                                editor_state.base[i].width(),
+                                editor_state.base[i].height(),
+                            )
+                        });
 
                     if i == editor_state.toolbar.monitor_idx
                         && !editor_state.toolbar.dirty
@@ -399,7 +412,13 @@ pub async fn make_screenshot(
                         icons_cache: &editor_state.icons_cache,
                         annotations_layer: &editor_state.annotations_layer[i],
                         offset,
-                        annotations_layer_empty: false,
+                        // Nothing is ever drawn into the layer without also
+                        // landing in `annotations` or bumping the baked-pen
+                        // counter, so this is exactly "the layer is blank" -
+                        // and it skips a full-canvas composite on every whole
+                        // frame, the intro fade's 400ms of them included.
+                        annotations_layer_empty: editor_state.annotations.is_empty()
+                            && editor_state.pending_pen_baked == 0,
                         pending: editor_state.pending.as_ref(),
                         is_pending_selected: editor_state.ann_drag.is_some(),
                         selected_annotation: editor_state.selected_annotation,
@@ -413,6 +432,7 @@ pub async fn make_screenshot(
                         } else {
                             None
                         },
+                        dim_fade,
                     });
 
                     overlay.stage_frame(i, editor_state.canvas[i].data(), damage)?;
@@ -444,6 +464,27 @@ pub async fn make_screenshot(
 // ************************* //
 //      RENDER HELPERS       //
 // ************************* //
+
+/// fading time
+const DIM_FADE: std::time::Duration = std::time::Duration::from_millis(400);
+
+/// Progress the intro fade-in and return its current opacity for this frame.
+/// Returns `None` when the fade finishes and normal dimming takes over.
+fn tick_dim_fade(editor_state: &mut EditorState, dirty_mask: &mut u32) -> Option<f32> {
+    if editor_state.dim_strength >= 1.0 {
+        return None;
+    }
+    let start = editor_state.dim_fade_start?;
+
+    let t = (start.elapsed().as_secs_f32() / DIM_FADE.as_secs_f32()).clamp(0.0, 1.0);
+    // Ease out: most of the darkening lands early, then it settles.
+    editor_state.dim_strength = 1.0 - (1.0 - t).powi(3);
+
+    for i in 0..editor_state.placements.len() {
+        crate::editor::dirty::mark_dirty(dirty_mask, i);
+    }
+    Some(editor_state.dim_strength)
+}
 
 pub fn selection_render_info(
     selection: &Option<Rect>,
