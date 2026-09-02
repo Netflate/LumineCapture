@@ -183,7 +183,7 @@ pub fn measure_text_prefix_width(
     );
     buffer.shape_until_scroll(font_system, false);
 
-    for run in buffer.layout_runs() {
+    if let Some(run) = buffer.layout_runs().next() {
         for glyph in run.glyphs.iter() {
             if glyph.start >= upto_byte {
                 return glyph.x;

@@ -387,8 +387,8 @@ pub fn begin_drag_for_annotation(state: &mut EditorState, idx: usize) {
 }
 
 pub fn commit_drag_if_changed(state: &mut EditorState) {
-    if let Some(drag) = state.ann_drag.take() {
-        if let Some(ann) = state.pending.take() {
+    if let Some(drag) = state.ann_drag.take()
+        && let Some(ann) = state.pending.take() {
             let actually_changed =
                 !matches!(drag.handle, SelectionHandle::None) && ann != drag.orig;
 
@@ -408,7 +408,6 @@ pub fn commit_drag_if_changed(state: &mut EditorState) {
             state.prev_pending = None;
             state.selected_annotation = Some(insert_idx);
         }
-    }
 }
 
 pub fn apply_annotation_drag(state: &mut EditorState, global: (f64, f64)) {

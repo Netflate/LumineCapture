@@ -208,9 +208,9 @@ impl ToolBehavior for TextTool {
                 }
             }
 
-            if let Some(old_idx) = state.selected_annotation {
-                if old_idx != i {
-                    if let Some(old_ann) = state.annotations.get(old_idx) {
+            if let Some(old_idx) = state.selected_annotation
+                && old_idx != i
+                    && let Some(old_ann) = state.annotations.get(old_idx) {
                         state
                             .damage_rects
                             .push(DamageZone::Global(old_ann.damage_bbox(true)));
@@ -219,8 +219,6 @@ impl ToolBehavior for TextTool {
                             old_editor.set_selection(Selection::None);
                         }
                     }
-                }
-            }
 
             state
                 .damage_rects
@@ -281,8 +279,8 @@ impl ToolBehavior for TextTool {
                     editor.set_selection(Selection::None);
                 }
             }
-            if let Some(old_idx) = state.selected_annotation.take() {
-                if let Some(old_ann) = state.annotations.get(old_idx) {
+            if let Some(old_idx) = state.selected_annotation.take()
+                && let Some(old_ann) = state.annotations.get(old_idx) {
                     state.layer_damage_rects.push(old_ann.damage_bbox(false));
                     state
                         .damage_rects
@@ -291,7 +289,6 @@ impl ToolBehavior for TextTool {
                         editor.set_selection(Selection::None);
                     }
                 }
-            }
             state.selected_annotation = None;
             state.annotations_dirty = true;
             return;
@@ -458,8 +455,8 @@ impl ToolBehavior for TextTool {
                 editor.set_selection(Selection::None);
             }
         }
-        if let Some(old_idx) = state.selected_annotation.take() {
-            if let Some(old_ann) = state.annotations.get(old_idx) {
+        if let Some(old_idx) = state.selected_annotation.take()
+            && let Some(old_ann) = state.annotations.get(old_idx) {
                 state.layer_damage_rects.push(old_ann.damage_bbox(false));
                 state
                     .damage_rects
@@ -468,7 +465,6 @@ impl ToolBehavior for TextTool {
                     editor.set_selection(Selection::None);
                 }
             }
-        }
         state.text_editing = None;
         state.selected_annotation = None;
         state.annotations_dirty = true;

@@ -174,6 +174,12 @@ pub struct TextFieldGroup<K: Eq + Hash + Copy> {
     pub editing: Option<FieldEdit<K>>,
 }
 
+impl<K: Eq + Hash + Copy> Default for TextFieldGroup<K> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<K: Eq + Hash + Copy> TextFieldGroup<K> {
     pub fn new() -> Self {
         Self { values: HashMap::new(), editing: None }
@@ -287,11 +293,10 @@ impl<K: Eq + Hash + Copy> TextFieldGroup<K> {
     /// from last confirmed value and replace buffer with result 
     /// otherwise on commit old stuff text will overwrite what arrow key applied.
     pub fn set_editing_text(&mut self, key: K, text: String) {
-        if let Some(edit) = self.editing.as_mut() {
-            if edit.key == key {
+        if let Some(edit) = self.editing.as_mut()
+            && edit.key == key {
                 edit.field = LineEditState::new(text);
             }
-        }
     }
 }
 

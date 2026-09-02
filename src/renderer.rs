@@ -157,11 +157,10 @@ pub fn render_frame(req: &mut RenderRequest) {
     }
 
     // Dynamic selection chrome: handles for the currently selected annotation
-    if let Some(idx) = req.selected_annotation {
-        if let Some(ann) = req.annotations.get(idx) {
+    if let Some(idx) = req.selected_annotation
+        && let Some(ann) = req.annotations.get(idx) {
             annotations::draw_annotation_handles_only(req.canvas, ann, req.offset);
         }
-    }
 
     // Clipped to the dirty rect: everything the overlay paints is translucent,
     // so anything drawn outside the area just restored from `dimmed` would

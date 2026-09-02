@@ -135,6 +135,12 @@ pub struct ScrollAccumulator<K: PartialEq> {
     pub last_processed: Option<Instant>,
 }
 
+impl<K: PartialEq> Default for ScrollAccumulator<K> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<K: PartialEq> ScrollAccumulator<K> {
     pub fn new() -> Self {
         Self {
@@ -164,11 +170,10 @@ impl<K: PartialEq> ScrollAccumulator<K> {
         }
 
         // Rate limit: drop events that arrive too quickly.
-        if let Some(last) = self.last_processed {
-            if Instant::now().duration_since(last) < MIN_INTERVAL {
+        if let Some(last) = self.last_processed
+            && Instant::now().duration_since(last) < MIN_INTERVAL {
                 return 0;
             }
-        }
         self.last_processed = Some(Instant::now());
 
         self.accumulator += delta;

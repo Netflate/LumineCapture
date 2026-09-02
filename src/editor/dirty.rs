@@ -125,8 +125,8 @@ impl EditorState {
                 );
             }
         }
-        if let Some(ann_idx) = self.selected_annotation {
-            if let Some(ann) = self.annotations.get(ann_idx) {
+        if let Some(ann_idx) = self.selected_annotation
+            && let Some(ann) = self.annotations.get(ann_idx) {
                 let pad = crate::renderer::selection_chrome_pad()
                     .max(crate::renderer::visual_pad(ann.stroke_width));
                 dirty = union_rect(
@@ -134,7 +134,6 @@ impl EditorState {
                     global_to_local_padded(&ann.bbox, offset, pad, mw, mh),
                 );
             }
-        }
 
         for zone in &self.damage_rects {
             match zone {
@@ -177,11 +176,10 @@ impl EditorState {
             let ix2 = r.min(mw);
             let iy2 = b.min(mh);
 
-            if ix2 > ix1 && iy2 > iy1 {
-                if let Some(local_r) = Rect::from_ltrb(ix1, iy1, ix2, iy2) {
+            if ix2 > ix1 && iy2 > iy1
+                && let Some(local_r) = Rect::from_ltrb(ix1, iy1, ix2, iy2) {
                     dirty = union_rect(dirty, Some(local_r));
                 }
-            }
         }
 
         dirty

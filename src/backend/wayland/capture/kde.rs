@@ -38,6 +38,12 @@ pub struct KdeMethod {
     conn: OnceCell<Connection>, // session bus connected lazily once, reused across calls
 }
 
+impl Default for KdeMethod {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl KdeMethod {
     pub fn new() -> Self {
         Self {

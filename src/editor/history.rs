@@ -40,18 +40,16 @@ impl EditorState {
         }
 
         // Commit any uncommitted settings/color stepper or slider snapshot
-        if let Some(snapshot) = self.settings_panel.pre_edit_snapshot.take() {
-            if self.annotations != snapshot {
+        if let Some(snapshot) = self.settings_panel.pre_edit_snapshot.take()
+            && self.annotations != snapshot {
                 self.undo_stack.push(snapshot);
                 self.redo_stack.clear();
             }
-        }
-        if let Some(snapshot) = self.color_popover.pre_edit_snapshot.take() {
-            if self.annotations != snapshot {
+        if let Some(snapshot) = self.color_popover.pre_edit_snapshot.take()
+            && self.annotations != snapshot {
                 self.undo_stack.push(snapshot);
                 self.redo_stack.clear();
             }
-        }
 
         let selected_id = self
             .selected_annotation
@@ -59,12 +57,11 @@ impl EditorState {
             .map(|ann| ann.id);
 
         if let Some(prev_state) = self.undo_stack.pop() {
-            if let Some(sel_idx) = self.selected_annotation {
-                if let Some(ann) = self.annotations.get(sel_idx) {
+            if let Some(sel_idx) = self.selected_annotation
+                && let Some(ann) = self.annotations.get(sel_idx) {
                     self.damage_rects
                         .push(DamageZone::Global(ann.damage_bbox(true)));
                 }
-            }
             Self::record_history_damage(
                 &mut self.damage_rects,
                 &mut self.layer_damage_rects,
@@ -112,18 +109,16 @@ impl EditorState {
         }
 
         // Commit any uncommitted settings/color stepper or slider snapshot
-        if let Some(snapshot) = self.settings_panel.pre_edit_snapshot.take() {
-            if self.annotations != snapshot {
+        if let Some(snapshot) = self.settings_panel.pre_edit_snapshot.take()
+            && self.annotations != snapshot {
                 self.undo_stack.push(snapshot);
                 self.redo_stack.clear();
             }
-        }
-        if let Some(snapshot) = self.color_popover.pre_edit_snapshot.take() {
-            if self.annotations != snapshot {
+        if let Some(snapshot) = self.color_popover.pre_edit_snapshot.take()
+            && self.annotations != snapshot {
                 self.undo_stack.push(snapshot);
                 self.redo_stack.clear();
             }
-        }
 
         let selected_id = self
             .selected_annotation
@@ -131,12 +126,11 @@ impl EditorState {
             .map(|ann| ann.id);
 
         if let Some(next_state) = self.redo_stack.pop() {
-            if let Some(sel_idx) = self.selected_annotation {
-                if let Some(ann) = self.annotations.get(sel_idx) {
+            if let Some(sel_idx) = self.selected_annotation
+                && let Some(ann) = self.annotations.get(sel_idx) {
                     self.damage_rects
                         .push(DamageZone::Global(ann.damage_bbox(true)));
                 }
-            }
             Self::record_history_damage(
                 &mut self.damage_rects,
                 &mut self.layer_damage_rects,

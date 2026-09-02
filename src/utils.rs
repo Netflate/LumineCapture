@@ -226,8 +226,8 @@ pub fn get_full_workspace_rect(placements: &[Placement]) -> Option<Rect> {
     for p in placements {
         min_x = min_x.min(p.position.0);
         min_y = min_y.min(p.position.1);
-        max_x = max_x.max(p.position.0 + p.size.0 as i32);
-        max_y = max_y.max(p.position.1 + p.size.1 as i32);
+        max_x = max_x.max(p.position.0 + p.size.0);
+        max_y = max_y.max(p.position.1 + p.size.1);
     }
 
     Rect::from_ltrb(min_x as f32, min_y as f32, max_x as f32, max_y as f32)

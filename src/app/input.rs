@@ -501,16 +501,15 @@ pub fn handle_scroll(
     let local = editor_state.pointer.local;
     let delta_y = delta_y * SCROLL_SENSITIVITY;
 
-    if editor_state.color_popover.open {
-        if let Some(field) = hit_test_color_scroll_field(editor_state, local) {
+    if editor_state.color_popover.open
+        && let Some(field) = hit_test_color_scroll_field(editor_state, local) {
             handle_color_field_scroll(editor_state, field, delta_y, dirty_mask);
             apply_damage_rects(editor_state, dirty_mask);
             return;
         }
-    }
 
-    if editor_state.settings_panel.visible {
-        if let (_, Some(widget_idx)) = editor_state.settings_panel.hit_test(local)
+    if editor_state.settings_panel.visible
+        && let (_, Some(widget_idx)) = editor_state.settings_panel.hit_test(local)
             && matches!(
                 editor_state.settings_panel.widgets.get(widget_idx),
                 Some(SettingsWidget::Stepper { .. })
@@ -520,7 +519,6 @@ pub fn handle_scroll(
             apply_damage_rects(editor_state, dirty_mask);
             return;
         }
-    }
 
     let _ = delta_x;
     apply_damage_rects(editor_state, dirty_mask);

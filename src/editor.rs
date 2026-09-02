@@ -114,8 +114,8 @@ impl EditorState {
             );
             let monitor_rect =
                 Rect::from_xywh(0.0, 0.0, placement.size.0 as f32, placement.size.1 as f32);
-            if let (Some(vis), Some(mon)) = (visual, monitor_rect) {
-                if vis.left() < mon.right()
+            if let (Some(vis), Some(mon)) = (visual, monitor_rect)
+                && vis.left() < mon.right()
                     && vis.right() > mon.left()
                     && vis.top() < mon.bottom()
                     && vis.bottom() > mon.top()
@@ -131,7 +131,6 @@ impl EditorState {
                         None,
                     );
                 }
-            }
         }
     }
 
@@ -171,8 +170,8 @@ impl EditorState {
                 );
                 let monitor_rect =
                     Rect::from_xywh(0.0, 0.0, placement.size.0 as f32, placement.size.1 as f32);
-                if let (Some(vis), Some(mon)) = (visual, monitor_rect) {
-                    if vis.left() < mon.right()
+                if let (Some(vis), Some(mon)) = (visual, monitor_rect)
+                    && vis.left() < mon.right()
                         && vis.right() > mon.left()
                         && vis.top() < mon.bottom()
                         && vis.bottom() > mon.top()
@@ -185,7 +184,6 @@ impl EditorState {
                             offset,
                         );
                     }
-                }
             }
         }
 

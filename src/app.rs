@@ -182,11 +182,10 @@ pub async fn make_screenshot(
                 dirty_mask |= 1 << sp_mon;
 
                 if editor_state.color_popover.open {
-                    if let Some(ann_idx) = settings_logic::active_annotation_idx(&editor_state) {
-                        if let Some(ann) = editor_state.annotations.get(ann_idx) {
+                    if let Some(ann_idx) = settings_logic::active_annotation_idx(&editor_state)
+                        && let Some(ann) = editor_state.annotations.get(ann_idx) {
                             editor_state.color_popover.select_color(ann.color);
                         }
-                    }
                     color_popover::update_color_popover(&mut editor_state, &mut dirty_mask);
                     editor_state.color_popover.dirty = true;
                     let cp_mon = editor_state.color_popover.monitor_idx;
@@ -207,11 +206,10 @@ pub async fn make_screenshot(
                 dirty_mask |= 1 << sp_mon;
 
                 if editor_state.color_popover.open {
-                    if let Some(ann_idx) = settings_logic::active_annotation_idx(&editor_state) {
-                        if let Some(ann) = editor_state.annotations.get(ann_idx) {
+                    if let Some(ann_idx) = settings_logic::active_annotation_idx(&editor_state)
+                        && let Some(ann) = editor_state.annotations.get(ann_idx) {
                             editor_state.color_popover.select_color(ann.color);
                         }
-                    }
                     color_popover::update_color_popover(&mut editor_state, &mut dirty_mask);
                     editor_state.color_popover.dirty = true;
                     let cp_mon = editor_state.color_popover.monitor_idx;

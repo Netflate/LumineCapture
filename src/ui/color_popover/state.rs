@@ -245,6 +245,12 @@ pub struct ColorSquareState {
     pub dragging: bool,
 }
 
+impl Default for ColorSquareState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ColorSquareState {
     pub fn new() -> Self {
         let (h, s, v) = color_to_hsv(DEFAULT_COLOR.color());
@@ -409,6 +415,12 @@ pub struct ColorPickerPopover {
     pub scroll: ScrollAccumulator<ColorField>,
 }
 
+impl Default for ColorPickerPopover {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ColorPickerPopover {
     pub fn new() -> Self {
         Self {
@@ -565,11 +577,10 @@ impl ColorPickerPopover {
     }
 
     pub fn field_text(&self, field: ColorField) -> String {
-        if let Some(edit) = self.fields.editing.as_ref() {
-            if edit.key == field {
+        if let Some(edit) = self.fields.editing.as_ref()
+            && edit.key == field {
                 return edit.field.text.clone();
             }
-        }
         self.fields.value(field).cloned().unwrap_or_default()
     }
 

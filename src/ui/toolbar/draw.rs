@@ -94,9 +94,9 @@ fn draw_toolbar_content(
         let cell_size = item.size();
         match item {
             ToolbarItem::Button(button) => {
-                if toolbar.selected == Some(index) || toolbar.hovered == Some(index) {
-                    if let Some(cell_rect) = Rect::from_xywh(current_x, bg_y, cell_size, bg_h) {
-                        if let Some(cell_path) =
+                if (toolbar.selected == Some(index) || toolbar.hovered == Some(index))
+                    && let Some(cell_rect) = Rect::from_xywh(current_x, bg_y, cell_size, bg_h)
+                        && let Some(cell_path) =
                             rounded_rect_path(&cell_rect, radius::ITEM, true, true, true, true)
                         {
                             let mut cell_paint = Paint::default();
@@ -115,8 +115,6 @@ fn draw_toolbar_content(
                                 None,
                             );
                         }
-                    }
-                }
 
                 let ToolbarButton::Tool(tool) = button;
                 let (svg_str, icon_size) = get_svg_for_tool(*tool);
@@ -140,8 +138,8 @@ fn draw_toolbar_content(
                 let sep_x = current_x + (cell_size - sep_w) / 2.0;
                 let sep_y = rect.top() + (h - sep_h) / 2.0;
 
-                if let Some(sep_rect) = Rect::from_xywh(sep_x, sep_y, sep_w, sep_h) {
-                    if let Some(sep_path) =
+                if let Some(sep_rect) = Rect::from_xywh(sep_x, sep_y, sep_w, sep_h)
+                    && let Some(sep_path) =
                         rounded_rect_path(&sep_rect, radius::SEPARATOR, true, true, true, true)
                     {
                         let mut sep_paint = Paint::default();
@@ -155,7 +153,6 @@ fn draw_toolbar_content(
                             None,
                         );
                     }
-                }
             }
         }
         current_x += cell_size + item.trailing_padding();

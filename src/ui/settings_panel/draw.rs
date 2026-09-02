@@ -209,8 +209,8 @@ fn draw_settings_content(
                 let sep_x = current_x + (item_w - sep_w) / 2.0;
                 let sep_y = rect.top() + (h - sep_h) / 2.0;
 
-                if let Some(sep_rect) = Rect::from_xywh(sep_x, sep_y, sep_w, sep_h) {
-                    if let Some(sep_path) =
+                if let Some(sep_rect) = Rect::from_xywh(sep_x, sep_y, sep_w, sep_h)
+                    && let Some(sep_path) =
                         rounded_rect_path(&sep_rect, radius::SEPARATOR, true, true, true, true)
                     {
                         let mut sep_paint = Paint::default();
@@ -224,7 +224,6 @@ fn draw_settings_content(
                             None,
                         );
                     }
-                }
             }
         }
 
@@ -441,7 +440,7 @@ pub fn char_index_for_x(
     );
     buffer.shape_until_scroll(font_system, false);
 
-    for run in buffer.layout_runs() {
+    if let Some(run) = buffer.layout_runs().next() {
         let mut last_byte = 0usize;
         for glyph in run.glyphs.iter() {
             let glyph_mid = glyph.x + glyph.w / 2.0;

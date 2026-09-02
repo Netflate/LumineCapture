@@ -8,6 +8,12 @@ pub struct Profiler {
     lines: Vec<String>,
 }
 
+impl Default for Profiler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Profiler {
     pub fn new() -> Self {
         let enabled = std::env::var_os("LUMINE_PROFILE").is_some();

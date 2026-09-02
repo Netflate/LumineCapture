@@ -1,7 +1,7 @@
 use crate::theme::color;
 
 /// 4/3*(sqrt(2)-1).
-pub const KAPPA: f32 = 0.5522847498307933;
+pub const KAPPA: f32 = 0.552_284_8;
 use crate::theme::stroke::BORDER as BORDER_WIDTH;
 
 use std::collections::HashMap;
@@ -110,9 +110,9 @@ pub fn tint_pixmap(pixmap: &mut tiny_skia::Pixmap, color: usvg::Color) {
 }
 
 pub fn panel_border_color(bg: Color) -> Color {
-    let r = bg.red() as f32;
-    let g = bg.green() as f32;
-    let b = bg.blue() as f32;
+    let r = bg.red();
+    let g = bg.green();
+    let b = bg.blue();
     let luminance = 0.299 * r + 0.587 * g + 0.114 * b;
 
     if luminance > 0.5 {

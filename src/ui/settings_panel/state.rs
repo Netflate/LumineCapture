@@ -249,6 +249,12 @@ pub struct SettingsPanel {
     pub scroll: ScrollAccumulator<usize>,
 }
 
+impl Default for SettingsPanel {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SettingsPanel {
     pub fn new() -> Self {
         Self {

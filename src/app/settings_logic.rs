@@ -127,14 +127,12 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
                 .map(|arrow| (idx, arrow))
         });
 
-        if hovered != prev_hover && !editor_state.settings_panel.is_editing() {
-            if let Some(snapshot) = editor_state.settings_panel.pre_edit_snapshot.take() {
-                if editor_state.annotations != snapshot {
+        if hovered != prev_hover && !editor_state.settings_panel.is_editing()
+            && let Some(snapshot) = editor_state.settings_panel.pre_edit_snapshot.take()
+                && editor_state.annotations != snapshot {
                     editor_state.undo_stack.push(snapshot);
                     editor_state.redo_stack.clear();
                 }
-            }
-        }
 
         sync_panel_hover(
             &mut editor_state.settings_panel,
@@ -149,14 +147,12 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
                 editor_state.settings_panel.arrow_held = None;
             }
         }
-    } else if !editor_state.settings_panel.is_editing() {
-        if let Some(snapshot) = editor_state.settings_panel.pre_edit_snapshot.take() {
-            if editor_state.annotations != snapshot {
+    } else if !editor_state.settings_panel.is_editing()
+        && let Some(snapshot) = editor_state.settings_panel.pre_edit_snapshot.take()
+            && editor_state.annotations != snapshot {
                 editor_state.undo_stack.push(snapshot);
                 editor_state.redo_stack.clear();
             }
-        }
-    }
 }
 
 /// Run a one-shot panel button. Kept here rather than in `input` so the panel's
@@ -292,12 +288,11 @@ pub fn commit_stepper_text_edit(editor_state: &mut EditorState, dirty_mask: &mut
     update_settings_panel(editor_state, dirty_mask);
     apply_damage_rects(editor_state, dirty_mask);
 
-    if let Some(snapshot) = snapshot {
-        if editor_state.annotations != snapshot {
+    if let Some(snapshot) = snapshot
+        && editor_state.annotations != snapshot {
             editor_state.undo_stack.push(snapshot);
             editor_state.redo_stack.clear();
         }
-    }
 }
 
 pub fn commit_settings_change(
@@ -500,12 +495,11 @@ pub fn apply_stepper_arrow_step(
 }
 
 pub fn sync_stepper_edit_text(editor_state: &mut EditorState, widget_idx: usize) {
-    if !editor_state
+    if editor_state
         .settings_panel
         .fields
         .editing
-        .as_ref()
-        .is_some_and(|e| e.key == widget_idx)
+        .as_ref().is_none_or(|e| e.key != widget_idx)
     {
         return;
     }
