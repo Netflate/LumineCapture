@@ -1,10 +1,8 @@
 use tiny_skia::Color;
 
-const fn unit(v: u8) -> f32 {
-    v as f32 / 255.0
-}
-pub const DEFAULT_COLOR: tiny_skia::Color =
-    unsafe { tiny_skia::Color::from_rgba_unchecked(unit(255), unit(255), unit(255), unit(255)) };
+use crate::theme::Rgba;
+
+pub const DEFAULT_COLOR: Rgba = Rgba(255, 255, 255, 255);
 const DEFAULT_STROKE_WIDTH: f32 = 12.0;
 const DEFAULT_FONT_SIZE: f32 = 24.0;
 const DEFAULT_BOLD: bool = true;
@@ -26,7 +24,7 @@ impl Default for ToolSettings {
             font_size: DEFAULT_FONT_SIZE,
             bold: DEFAULT_BOLD,
             italic: DEFAULT_ITALIC,
-            color: DEFAULT_COLOR,
+            color: DEFAULT_COLOR.color(),
         }
     }
 }

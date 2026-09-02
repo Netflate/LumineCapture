@@ -9,15 +9,16 @@ use crate::editor::EditorState;
 use crate::editor::dirty::is_dirty;
 use crate::profiler::Profiler;
 use crate::renderer;
+use crate::theme::anim;
 use crate::tools::Tool;
 use crate::tools::selection::{global_selection_to_local, selection_edges_for_monitor};
-use crate::types::click::DoubleClickTracker;
-use crate::types::panel::{AnimatedPanel, tick_panel_animation};
-use crate::types::toolbar::Toolbar;
-use crate::types::{
-    ColorPickerPopover, DamageRect, OverlayEvent, Placement, PointerState, SelectionEdges,
-    SelectionState, SettingsPanel, ToolSettings, UiPanel,
-};
+use crate::interaction::DoubleClickTracker;
+use crate::ui::panel::{AnimatedPanel, tick_panel_animation};
+use crate::ui::toolbar::Toolbar;
+use crate::types::{DamageRect, OverlayEvent, Placement, PointerState, SelectionEdges, SelectionState, ToolSettings};
+use crate::ui::color_popover::ColorPickerPopover;
+use crate::ui::panel::UiPanel;
+use crate::ui::settings_panel::SettingsPanel;
 use crate::utils::{encode_png, get_full_workspace_rect, get_overlapping_monitors, save_to_file};
 
 use cosmic_text::{FontSystem, SwashCache};
@@ -81,7 +82,7 @@ pub async fn make_screenshot(
         settings_panel: SettingsPanel::new(),
         tool_settings: ToolSettings::default(),
         color_popover: ColorPickerPopover::new(),
-        toasts: crate::types::toast::Toasts::default(),
+        toasts: crate::ui::toast::Toasts::default(),
         icons_cache,
         annotations: Vec::new(),
         pending: None,
@@ -255,7 +256,7 @@ pub async fn make_screenshot(
         let toast_place = {
             let idx = editor_state.pointer.monitor_idx;
             let placement = &editor_state.placements[idx];
-            crate::types::toast::ToastPlace {
+            crate::ui::toast::ToastPlace {
                 monitor_idx: idx,
                 size: (placement.size.0 as f32, placement.size.1 as f32),
             }
@@ -503,8 +504,6 @@ pub async fn make_screenshot(
 //      RENDER HELPERS       //
 // ************************* //
 
-/// fading time
-const DIM_FADE: std::time::Duration = std::time::Duration::from_millis(400);
 
 /// Progress the intro fade-in and return its current opacity for this frame.
 /// Returns `None` when the fade finishes and normal dimming takes over.
@@ -514,7 +513,7 @@ fn tick_dim_fade(editor_state: &mut EditorState, dirty_mask: &mut u32) -> Option
     }
     let start = editor_state.dim_fade_start?;
 
-    let t = (start.elapsed().as_secs_f32() / DIM_FADE.as_secs_f32()).clamp(0.0, 1.0);
+    let t = (start.elapsed().as_secs_f32() / anim::DIM_FADE.as_secs_f32()).clamp(0.0, 1.0);
     // Ease out: most of the darkening lands early, then it settles.
     editor_state.dim_strength = 1.0 - (1.0 - t).powi(3);
 

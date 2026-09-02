@@ -2,15 +2,10 @@ use crate::editor::{DamageZone, EditorState};
 use crate::tools::text::update_text_bbox_inline;
 use crate::types::{SelectionHandle, SignedRect};
 use crate::utils::{apply_handle_drag, hit_test_rect_handle};
+use crate::interaction::HANDLE_PAD;
+use crate::theme::shadow;
 use tiny_skia::{Color, Rect};
 
-pub const HANDLE_PAD: f64 = 20.0;
-pub const SHADOW_COLOR: (u8, u8, u8, u8) = (0, 0, 0, 130);
-pub const SHADOW_WIDTH_BONUS: f32 = 4.0;
-/// Offset of the drop shadow relative to the shape the annotation is
-pub const SHADOW_OFFSET: (f32, f32) = (0.0, 3.0);
-pub const SHADOW_LAYERS: usize = 4;
-pub const SPREAD_PER_LAYER: f32 = 1.5;
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum AnnotationShape {
@@ -87,7 +82,7 @@ impl Annotation {
             AnnotationShape::Rectangle { start, end }
             | AnnotationShape::Circle { start, end }
             | AnnotationShape::Line { start, end } => {
-                let pad = self.stroke_width / 2.0 + SHADOW_WIDTH_BONUS / 2.0;
+                let pad = self.stroke_width / 2.0 + shadow::WIDTH_BONUS / 2.0;
                 self.bbox = Rect::from_ltrb(
                     start.0.min(end.0) - pad,
                     start.1.min(end.1) - pad,
@@ -97,7 +92,7 @@ impl Annotation {
                 .unwrap();
             }
             AnnotationShape::Arrow { start, end } => {
-                let pad = self.stroke_width / 2.0 + SHADOW_WIDTH_BONUS / 2.0;
+                let pad = self.stroke_width / 2.0 + shadow::WIDTH_BONUS / 2.0;
                 let dx = end.0 - start.0;
                 let dy = end.1 - start.1;
                 let len = (dx * dx + dy * dy).sqrt().max(1.0);
@@ -154,7 +149,7 @@ impl Annotation {
 
     // to render only new pixels from pen, insted of rendering the whole rectangle
     pub fn last_segment_bbox(&self) -> Rect {
-        let pad = self.stroke_width / 2.0 + SHADOW_WIDTH_BONUS / 2.0;
+        let pad = self.stroke_width / 2.0 + shadow::WIDTH_BONUS / 2.0;
         match &self.shape {
             AnnotationShape::Pen { points } if points.len() >= 2 => {
                 let from = points[points.len() - 2];

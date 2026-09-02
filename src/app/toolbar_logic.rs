@@ -2,10 +2,10 @@
 
 use crate::editor::EditorState;
 use crate::tools::selection::global_selection_to_local;
-use crate::types::UiPanel;
-use crate::types::panel::{sync_panel_hover, sync_panel_rect};
-use crate::types::toolbar::{TOOLBAR_OFFSET, TOOLBAR_TRANSITION_OFFSET, ToolbarPlacementKind};
-
+use crate::ui::panel::UiPanel;
+use crate::ui::panel::{sync_panel_hover, sync_panel_rect};
+use crate::ui::toolbar::ToolbarPlacementKind;
+use crate::ui::toolbar;
 use tiny_skia::Rect;
 
 pub fn update_toolbar(editor_state: &mut EditorState, dirty_mask: &mut u32) {
@@ -38,7 +38,7 @@ pub fn update_toolbar(editor_state: &mut EditorState, dirty_mask: &mut u32) {
             target_position,
             target_monitor,
             &editor_state.placements,
-            TOOLBAR_TRANSITION_OFFSET,
+            toolbar::TRANSITION_OFFSET,
         );
         editor_state.toolbar.render_pos = start_pos;
     }
@@ -91,7 +91,7 @@ fn compute_toolbar_placement(editor_state: &EditorState) -> (usize, (f32, f32), 
         let monitor_idx = editor_state.pointer.monitor_idx;
         let placement = &editor_state.placements[monitor_idx];
         let mon_w = placement.size.0 as f32;
-        let pos = ((mon_w - editor_state.toolbar.size.0) / 2.0, TOOLBAR_OFFSET);
+        let pos = ((mon_w - editor_state.toolbar.size.0) / 2.0, toolbar::OFFSET);
         return (monitor_idx, pos, false);
     };
 
@@ -104,7 +104,7 @@ fn compute_toolbar_placement(editor_state: &EditorState) -> (usize, (f32, f32), 
 
     let tb_w = editor_state.toolbar.size.0;
     let tb_h = editor_state.toolbar.size.1;
-    let margin = TOOLBAR_OFFSET;
+    let margin = toolbar::OFFSET;
 
     let sel_center_x = (local_sel.left() + local_sel.right()) / 2.0;
     let pos_x = (sel_center_x - tb_w / 2.0).clamp(0.0, (placement.size.0 as f32 - tb_w).max(0.0));

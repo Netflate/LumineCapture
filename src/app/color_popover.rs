@@ -1,17 +1,14 @@
 use super::settings_logic::commit_settings_change;
 use crate::editor::EditorState;
-use crate::renderer::char_index_for_x;
+use crate::ui::settings_panel::char_index_for_x;
 use crate::types::SpecialKey;
-use crate::types::click::ClickTarget;
-use crate::types::color_popover::{
-    COLORPICKER_HEIGHT, COLORPICKER_OFFSET, COLORPICKER_WIDTH, ColorField, ColorPopoverElement,
-    FIELD_FONT_SIZE, step_hex_text,
-};
-use crate::types::panel::{UiPanel, emit_panel_damage, sync_panel_hover, sync_panel_rect};
-use crate::types::text_field::{CursorInit, is_hex_char, is_rgba_channel_char};
+use crate::interaction::ClickTarget;
+use crate::ui::color_popover::{ColorField, ColorPopoverElement, FIELD_FONT_SIZE, step_hex_text};
+use crate::ui::color_popover;
+use crate::ui::panel::{UiPanel, emit_panel_damage, sync_panel_hover, sync_panel_rect};
+use crate::ui::text_field::{CursorInit, is_hex_char, is_rgba_channel_char};
 use tiny_skia::Color;
 
-const FIELD_SCROLL_PIXELS_PER_STEP: f32 = 10.0;
 
 pub fn update_color_popover(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     let old_rect = editor_state.color_popover.rect();
@@ -108,20 +105,20 @@ fn compute_color_popover_placement(editor_state: &EditorState) -> ((f32, f32), u
     let tb_bottom = tb.render_pos.1 + tb.size.1;
     let combined_bottom = sp_bottom.max(tb_bottom);
 
-    let mut side_y = combined_bottom - COLORPICKER_HEIGHT;
+    let mut side_y = combined_bottom - color_popover::HEIGHT;
 
-    if side_y < COLORPICKER_OFFSET {
-        side_y = COLORPICKER_OFFSET;
+    if side_y < color_popover::OFFSET {
+        side_y = color_popover::OFFSET;
     }
-    if side_y + COLORPICKER_HEIGHT > monitor_height - COLORPICKER_OFFSET {
-        side_y = monitor_height - COLORPICKER_HEIGHT - COLORPICKER_OFFSET;
+    if side_y + color_popover::HEIGHT > monitor_height - color_popover::OFFSET {
+        side_y = monitor_height - color_popover::HEIGHT - color_popover::OFFSET;
     }
 
-    let x_left = sp.render_pos.0 - COLORPICKER_WIDTH - COLORPICKER_OFFSET;
-    let x_right = sp.render_pos.0 + sp.size.0 + COLORPICKER_OFFSET;
+    let x_left = sp.render_pos.0 - color_popover::WIDTH - color_popover::OFFSET;
+    let x_right = sp.render_pos.0 + sp.size.0 + color_popover::OFFSET;
 
-    let space_left = x_left >= COLORPICKER_OFFSET;
-    let space_right = x_right + COLORPICKER_WIDTH <= monitor_width - COLORPICKER_OFFSET;
+    let space_left = x_left >= color_popover::OFFSET;
+    let space_right = x_right + color_popover::WIDTH <= monitor_width - color_popover::OFFSET;
 
     if space_left {
         return ((x_left, side_y), monitor_idx);
@@ -131,17 +128,17 @@ fn compute_color_popover_placement(editor_state: &EditorState) -> ((f32, f32), u
 
     let mut final_x = sp.render_pos.0;
 
-    if final_x < COLORPICKER_OFFSET {
-        final_x = COLORPICKER_OFFSET;
+    if final_x < color_popover::OFFSET {
+        final_x = color_popover::OFFSET;
     }
-    if final_x + COLORPICKER_WIDTH > monitor_width - COLORPICKER_OFFSET {
-        final_x = monitor_width - COLORPICKER_WIDTH - COLORPICKER_OFFSET;
+    if final_x + color_popover::WIDTH > monitor_width - color_popover::OFFSET {
+        final_x = monitor_width - color_popover::WIDTH - color_popover::OFFSET;
     }
 
-    let y_below = sp.render_pos.1 + sp.size.1 + COLORPICKER_OFFSET;
-    let y_above = sp.render_pos.1 - COLORPICKER_OFFSET - COLORPICKER_HEIGHT;
+    let y_below = sp.render_pos.1 + sp.size.1 + color_popover::OFFSET;
+    let y_above = sp.render_pos.1 - color_popover::OFFSET - color_popover::HEIGHT;
 
-    let space_below = y_below + COLORPICKER_HEIGHT <= monitor_height;
+    let space_below = y_below + color_popover::HEIGHT <= monitor_height;
     let space_above = y_above >= 0.0;
 
     let sp_is_below_tb = sp.render_pos.1 >= tb.render_pos.1;
@@ -152,7 +149,7 @@ fn compute_color_popover_placement(editor_state: &EditorState) -> ((f32, f32), u
         } else if space_above {
             y_above
         } else {
-            monitor_height - COLORPICKER_HEIGHT - COLORPICKER_OFFSET
+            monitor_height - color_popover::HEIGHT - color_popover::OFFSET
         }
     } else {
         if space_above {
@@ -160,7 +157,7 @@ fn compute_color_popover_placement(editor_state: &EditorState) -> ((f32, f32), u
         } else if space_below {
             y_below
         } else {
-            COLORPICKER_OFFSET
+            color_popover::OFFSET
         }
     };
 
@@ -402,7 +399,7 @@ pub fn handle_color_field_scroll(
 ) {
     let steps = editor_state
         .color_popover
-        .scroll_step(field, delta_y / FIELD_SCROLL_PIXELS_PER_STEP);
+        .scroll_step(field, delta_y / crate::interaction::SCROLL_PIXELS_PER_STEP);
 
     step_color_field(editor_state, field, steps, dirty_mask);
 }

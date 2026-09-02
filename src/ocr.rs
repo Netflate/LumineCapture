@@ -7,6 +7,7 @@
 // view    - selection over those lines
 // runtime - recognition on a worker thread
 
+pub mod draw;
 pub mod layout;
 pub mod paddle_backend;
 pub mod runtime;

@@ -1,7 +1,10 @@
 use super::paths::{normalized_rect, oval_path};
 use super::text::{draw_text_buffer, shape_single_line};
 use crate::tools::text::render_text_annotation;
-use crate::types::annotations::{Annotation, AnnotationShape, HANDLE_PAD, SHADOW_COLOR};
+use crate::interaction::HANDLE_PAD;
+use crate::renderer::paths::KAPPA;
+use crate::theme::{color, shadow};
+use crate::types::annotations::{Annotation, AnnotationShape};
 
 use cosmic_text::{Editor, FontSystem, SwashCache};
 use std::collections::HashMap;
@@ -12,54 +15,51 @@ use tiny_skia::{
 /// Offset of the drop shadow relative to the shape it belongs to, in the
 /// same pixel space as `offset`/`transform`. One constant so every shape
 /// casts its shadow the same way.
-const SHADOW_OFFSET: (f32, f32) = (0.0, 3.0);
 
 /// Scales the shadow's own fixed alpha by the annotation color's alpha,
 /// so a half-transparent stroke doesn't end up with a full-opacity shadow
 /// sitting underneath it.
 fn shadow_alpha_for(color: Color) -> u8 {
-    (SHADOW_COLOR.3 as f32 * color.alpha()) as u8
+    (color::SHADOW.alpha() as f32 * color.alpha()) as u8
 }
 
 pub fn shadow_color_for(color: Color) -> Color {
     Color::from_rgba8(
-        SHADOW_COLOR.0,
-        SHADOW_COLOR.1,
-        SHADOW_COLOR.2,
+        color::SHADOW.0,
+        color::SHADOW.1,
+        color::SHADOW.2,
         shadow_alpha_for(color),
     )
 }
 
 /// Builds the "real" transform plus the same transform shifted by
-/// `SHADOW_OFFSET`, from a single viewport `offset`. Keeps every shape's
+/// `shadow::OFFSET`, from a single viewport `offset`. Keeps every shape's
 /// shadow offset in sync without repeating the translate math.
 fn transforms_for(offset: (f32, f32)) -> (Transform, Transform) {
     let transform = Transform::from_translate(-offset.0, -offset.1);
     let shadow_transform =
-        Transform::from_translate(-offset.0 + SHADOW_OFFSET.0, -offset.1 + SHADOW_OFFSET.1);
+        Transform::from_translate(-offset.0 + shadow::OFFSET.0, -offset.1 + shadow::OFFSET.1);
     (transform, shadow_transform)
 }
 
-const SHADOW_LAYERS: usize = 2;
-const SPREAD_PER_LAYER: f32 = 1.5;
 
 // Only matters for the offset-shadow path (stroke_with_shadow), not halo
-// (draw_text_box / draw_annotation_handles, which don't use SHADOW_OFFSET
+// (draw_text_box / draw_annotation_handles, which don't use shadow::OFFSET
 // at all — their layers spread evenly on every side by design).
 //
-// Keep (SHADOW_LAYERS * SPREAD_PER_LAYER) / 2.0 <= SHADOW_OFFSET.1 if you
+// Keep (shadow::LAYERS * shadow::SPREAD_PER_LAYER) / 2.0 <= shadow::OFFSET.1 if you
 // tune these: that's what keeps the widest, faintest layer's natural top
 // overhang from poking above the shape. Currently 4 * 1.5 / 2 = 3.0,
-// exactly matching SHADOW_OFFSET.1 = 3.0 — zero headroom, so don't shrink
+// exactly matching shadow::OFFSET.1 = 3.0 — zero headroom, so don't shrink
 // the offset or grow the spread without adjusting the other side too.
 
 pub fn visual_pad(stroke_width: f32) -> f32 {
-    let max_stroke_extent = (stroke_width + SHADOW_LAYERS as f32 * SPREAD_PER_LAYER) / 2.0;
-    max_stroke_extent + SHADOW_OFFSET.1.abs() + 2.0
+    let max_stroke_extent = (stroke_width + shadow::LAYERS as f32 * shadow::SPREAD_PER_LAYER) / 2.0;
+    max_stroke_extent + shadow::OFFSET.1.abs() + 2.0
 }
 pub fn selection_chrome_pad() -> f32 {
     const CHROME_STROKE: f32 = 3.0;
-    let max_stroke_extent = (CHROME_STROKE + SHADOW_LAYERS as f32 * SPREAD_PER_LAYER) / 2.0;
+    let max_stroke_extent = (CHROME_STROKE + shadow::LAYERS as f32 * shadow::SPREAD_PER_LAYER) / 2.0;
     (HANDLE_PAD / 2.0) as f32 + max_stroke_extent + 2.0
 }
 
@@ -72,10 +72,10 @@ fn stroke_segment_with_shadow(
     transform: Transform,
     shadow_transform: Transform,
 ) {
-    for i in (1..=SHADOW_LAYERS).rev() {
+    for i in (1..=shadow::LAYERS).rev() {
         let mut layer_stroke = stroke.clone();
 
-        let extra_width = i as f32 * SPREAD_PER_LAYER;
+        let extra_width = i as f32 * shadow::SPREAD_PER_LAYER;
         layer_stroke.width = stroke.width + extra_width;
 
         let alpha_factor = 1.0 / (1.0 + (i as f32 * 1.2));
@@ -180,10 +180,10 @@ fn draw_text_box(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32)) {
     stroke.line_join = tiny_skia::LineJoin::Round;
 
     let base_shadow_color = Color::from_rgba8(
-        SHADOW_COLOR.0,
-        SHADOW_COLOR.1,
-        SHADOW_COLOR.2,
-        SHADOW_COLOR.3,
+        color::SHADOW.0,
+        color::SHADOW.1,
+        color::SHADOW.2,
+        color::SHADOW.3,
     );
 
     // Selection chrome, not the annotation itself — halo (no offset) reads
@@ -202,25 +202,24 @@ fn draw_text_box(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32)) {
     let corner_w = (w * 0.20).clamp(8.0_f32.min(w * 0.5), w * 0.5);
     let corner_h = (h * 0.20).clamp(8.0_f32.min(h * 0.5), h * 0.5);
     let r = 4.0_f32.min(corner_w * 0.5).min(corner_h * 0.5);
-    let k = 0.5523_f32;
 
     let mut pb = PathBuilder::new();
 
     pb.move_to(l, t + corner_h);
     pb.line_to(l, t + r);
-    pb.cubic_to(l, t + r * k, l + r * k, t, l + r, t);
+    pb.cubic_to(l, t + r * KAPPA, l + r * KAPPA, t, l + r, t);
     pb.line_to(l + corner_w, t);
     pb.move_to(ri - corner_w, t);
     pb.line_to(ri - r, t);
-    pb.cubic_to(ri - r * k, t, ri, t + r * k, ri, t + r);
+    pb.cubic_to(ri - r * KAPPA, t, ri, t + r * KAPPA, ri, t + r);
     pb.line_to(ri, t + corner_h);
     pb.move_to(ri, b - corner_h);
     pb.line_to(ri, b - r);
-    pb.cubic_to(ri, b - r * k, ri - r * k, b, ri - r, b);
+    pb.cubic_to(ri, b - r * KAPPA, ri - r * KAPPA, b, ri - r, b);
     pb.line_to(ri - corner_w, b);
     pb.move_to(l + corner_w, b);
     pb.line_to(l + r, b);
-    pb.cubic_to(l + r * k, b, l, b - r * k, l, b - r);
+    pb.cubic_to(l + r * KAPPA, b, l, b - r * KAPPA, l, b - r);
     pb.line_to(l, b - corner_h);
 
     if let Some(path) = pb.finish() {
@@ -560,10 +559,10 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
     stroke.line_join = tiny_skia::LineJoin::Round;
 
     let base_shadow_color = Color::from_rgba8(
-        SHADOW_COLOR.0,
-        SHADOW_COLOR.1,
-        SHADOW_COLOR.2,
-        SHADOW_COLOR.3,
+        color::SHADOW.0,
+        color::SHADOW.1,
+        color::SHADOW.2,
+        color::SHADOW.3,
     );
 
     // Eight small, disjoint segments — halo (no offset) instead of a drop shadow.
@@ -591,32 +590,31 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
     let corner_h = (h * 0.20).clamp(8.0_f32.min(h * 0.5), h * 0.5);
 
     let r = 4.0_f32.min(corner_w * 0.5).min(corner_h * 0.5);
-    let k = 0.5523_f32;
 
     let mut pb = PathBuilder::new();
 
     // Top-Left
     pb.move_to(l, t + corner_h);
     pb.line_to(l, t + r);
-    pb.cubic_to(l, t + r * k, l + r * k, t, l + r, t);
+    pb.cubic_to(l, t + r * KAPPA, l + r * KAPPA, t, l + r, t);
     pb.line_to(l + corner_w, t);
 
     // Top-Right
     pb.move_to(ri - corner_w, t);
     pb.line_to(ri - r, t);
-    pb.cubic_to(ri - r * k, t, ri, t + r * k, ri, t + r);
+    pb.cubic_to(ri - r * KAPPA, t, ri, t + r * KAPPA, ri, t + r);
     pb.line_to(ri, t + corner_h);
 
     // Bottom-Right
     pb.move_to(ri, b - corner_h);
     pb.line_to(ri, b - r);
-    pb.cubic_to(ri, b - r * k, ri - r * k, b, ri - r, b);
+    pb.cubic_to(ri, b - r * KAPPA, ri - r * KAPPA, b, ri - r, b);
     pb.line_to(ri - corner_w, b);
 
     // Bottom-Left
     pb.move_to(l + corner_w, b);
     pb.line_to(l + r, b);
-    pb.cubic_to(l + r * k, b, l, b - r * k, l, b - r);
+    pb.cubic_to(l + r * KAPPA, b, l, b - r * KAPPA, l, b - r);
     pb.line_to(l, b - corner_h);
 
     // Top middle

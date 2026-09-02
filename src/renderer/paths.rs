@@ -1,4 +1,8 @@
-use crate::types::panel::{BUTTON_HOVERED, BUTTON_SELECTED, PANEL_COLOR};
+use crate::theme::color;
+
+/// 4/3*(sqrt(2)-1).
+pub const KAPPA: f32 = 0.5522847498307933;
+use crate::theme::stroke::BORDER as BORDER_WIDTH;
 
 use std::collections::HashMap;
 use tiny_skia::{Color, Paint, PathBuilder, Pixmap, Rect, Stroke, Transform};
@@ -15,7 +19,6 @@ pub fn rounded_rect_path(
     let r = r.min(rect.width() / 2.0).min(rect.height() / 2.0);
 
     let (l, t, ri, b) = (rect.left(), rect.top(), rect.right(), rect.bottom());
-    const K: f32 = 0.5523;
 
     let r_tl = if top_left { r } else { 0.0 };
     let r_tr = if top_right { r } else { 0.0 };
@@ -28,7 +31,7 @@ pub fn rounded_rect_path(
     pb.line_to(ri - r_tr, t);
 
     if top_right {
-        pb.cubic_to(ri - r_tr * K, t, ri, t + r_tr * K, ri, t + r_tr);
+        pb.cubic_to(ri - r_tr * KAPPA, t, ri, t + r_tr * KAPPA, ri, t + r_tr);
     } else {
         pb.line_to(ri, t);
     }
@@ -36,7 +39,7 @@ pub fn rounded_rect_path(
     pb.line_to(ri, b - r_br);
 
     if bottom_right {
-        pb.cubic_to(ri, b - r_br * K, ri - r_br * K, b, ri - r_br, b);
+        pb.cubic_to(ri, b - r_br * KAPPA, ri - r_br * KAPPA, b, ri - r_br, b);
     } else {
         pb.line_to(ri, b);
     }
@@ -44,7 +47,7 @@ pub fn rounded_rect_path(
     pb.line_to(l + r_bl, b);
 
     if bottom_left {
-        pb.cubic_to(l + r_bl * K, b, l, b - r_bl * K, l, b - r_bl);
+        pb.cubic_to(l + r_bl * KAPPA, b, l, b - r_bl * KAPPA, l, b - r_bl);
     } else {
         pb.line_to(l, b);
     }
@@ -52,7 +55,7 @@ pub fn rounded_rect_path(
     pb.line_to(l, t + r_tl);
 
     if top_left {
-        pb.cubic_to(l, t + r_tl * K, l + r_tl * K, t, l + r_tl, t);
+        pb.cubic_to(l, t + r_tl * KAPPA, l + r_tl * KAPPA, t, l + r_tl, t);
     } else {
         pb.line_to(l, t);
     }
@@ -61,13 +64,12 @@ pub fn rounded_rect_path(
 }
 
 pub fn oval_path(cx: f32, cy: f32, rx: f32, ry: f32) -> Option<tiny_skia::Path> {
-    const K: f32 = 0.5523;
     let mut pb = PathBuilder::new();
     pb.move_to(cx, cy - ry);
-    pb.cubic_to(cx + rx * K, cy - ry, cx + rx, cy - ry * K, cx + rx, cy);
-    pb.cubic_to(cx + rx, cy + ry * K, cx + rx * K, cy + ry, cx, cy + ry);
-    pb.cubic_to(cx - rx * K, cy + ry, cx - rx, cy + ry * K, cx - rx, cy);
-    pb.cubic_to(cx - rx, cy - ry * K, cx - rx * K, cy - ry, cx, cy - ry);
+    pb.cubic_to(cx + rx * KAPPA, cy - ry, cx + rx, cy - ry * KAPPA, cx + rx, cy);
+    pb.cubic_to(cx + rx, cy + ry * KAPPA, cx + rx * KAPPA, cy + ry, cx, cy + ry);
+    pb.cubic_to(cx - rx * KAPPA, cy + ry, cx - rx, cy + ry * KAPPA, cx - rx, cy);
+    pb.cubic_to(cx - rx, cy - ry * KAPPA, cx - rx * KAPPA, cy - ry, cx, cy - ry);
     pb.close();
     pb.finish()
 }
@@ -114,9 +116,9 @@ pub fn panel_border_color(bg: Color) -> Color {
     let luminance = 0.299 * r + 0.587 * g + 0.114 * b;
 
     if luminance > 0.5 {
-        Color::from_rgba8(0, 0, 0, 55)
+        color::BORDER_ON_LIGHT.color()
     } else {
-        Color::from_rgba8(255, 255, 255, 55)
+        color::BORDER_ON_DARK.color()
     }
 }
 
@@ -151,11 +153,11 @@ pub fn draw_item_border(
 
     let mut paint = Paint::default();
     paint.set_color(if is_selected {
-        BUTTON_SELECTED
+        color::ACCENT_BRIGHT.color()
     } else if is_hovered {
-        BUTTON_HOVERED
+        color::ACCENT.color()
     } else {
-        panel_border_color(PANEL_COLOR)
+        panel_border_color(color::PANEL.color())
     });
     paint.anti_alias = true;
 
@@ -175,8 +177,6 @@ pub fn draw_panel_border(
     radius: f32,
     opacity: f32,
 ) {
-    const BORDER_WIDTH: f32 = 1.0;
-    const K: f32 = 0.5522847498;
 
     let inset = BORDER_WIDTH / 2.0;
     let bx = x + inset;
@@ -184,7 +184,7 @@ pub fn draw_panel_border(
     let bw = (w - BORDER_WIDTH).max(0.0);
     let bh = (h - BORDER_WIDTH).max(0.0);
     let r = (radius - inset).max(0.0).min(bw / 2.0).min(bh / 2.0);
-    let kr = r * K;
+    let kr = r * KAPPA;
 
     let mut pb = PathBuilder::new();
 
@@ -210,11 +210,11 @@ pub fn draw_panel_border(
 
     let Some(path) = pb.finish() else { return };
 
-    let mut color = panel_border_color(PANEL_COLOR);
-    color.set_alpha(color.alpha() * opacity);
+    let mut border = panel_border_color(color::PANEL.color());
+    border.set_alpha(border.alpha() * opacity);
 
     let mut paint = Paint::default();
-    paint.set_color(color);
+    paint.set_color(border);
     paint.anti_alias = true;
 
     let stroke = Stroke {

@@ -8,11 +8,12 @@ use tiny_skia::{Color, PathBuilder, Pixmap, Rect};
 use usvg::Tree;
 
 use crate::tools::Tool;
-use crate::types::{
-    AnnDragState, Annotation, ClickTarget, ColorPickerPopover, DoubleClickTracker, MagnifierState,
-    Placement, PointerState, SelectionState, SettingsPanel, TextEditState, ToolSettings, Toolbar,
-};
-
+use crate::types::{AnnDragState, Annotation, Placement, PointerState, SelectionState, TextEditState, ToolSettings};
+use crate::interaction::{ClickTarget, DoubleClickTracker};
+use crate::ui::color_popover::ColorPickerPopover;
+use crate::ui::magnifier::MagnifierState;
+use crate::ui::settings_panel::SettingsPanel;
+use crate::ui::toolbar::Toolbar;
 pub struct EditorState {
     pub base: Vec<Pixmap>,
     pub canvas: Vec<Pixmap>,
@@ -33,7 +34,7 @@ pub struct EditorState {
     pub toolbar: Toolbar,
     pub settings_panel: SettingsPanel,
     pub color_popover: ColorPickerPopover,
-    pub toasts: crate::types::toast::Toasts,
+    pub toasts: crate::ui::toast::Toasts,
     // annotations
     pub annotations: Vec<Annotation>,
     pub pending: Option<Annotation>,

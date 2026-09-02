@@ -4,10 +4,8 @@ use crate::tools::ToolBehavior;
 use crate::types::annotations::{
     apply_annotation_drag, begin_drag_for_annotation, commit_drag_if_changed,
 };
-use crate::types::{
-    Annotation, AnnotationShape, ClickTarget, MouseButton, SpecialKey, TextEditState,
-};
-
+use crate::types::{Annotation, AnnotationShape, MouseButton, SpecialKey, TextEditState};
+use crate::interaction::ClickTarget;
 use cosmic_text::{
     Action, Attrs, Buffer, Edit, Editor, Family, Metrics, Motion, Selection, Shaping, SwashCache,
 };

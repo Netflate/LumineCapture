@@ -7,21 +7,21 @@
 
 use crate::editor::dirty::{apply_damage_rects, mark_dirty};
 use crate::editor::{DamageZone, EditorState};
-use crate::renderer::char_index_for_x;
+use crate::ui::settings_panel::char_index_for_x;
 use crate::tools::{
     Tool, dispatch_activate, dispatch_button, dispatch_deactivate, dispatch_key, dispatch_move,
     dispatch_text,
 };
-use crate::types::click::ClickTarget;
-use crate::types::color_popover::ColorField;
-use crate::types::panel::UiPanel;
-use crate::types::settings_panel::SETTINGS_LABEL_FONT_SIZE;
-use crate::types::text_field::{CursorInit, SCROLL_SENSITIVITY};
-use crate::types::toolbar::{ToolbarButton, ToolbarItem};
-use crate::types::{
-    ArrowHoldState, MAG_FRAME_INTERVAL, MagnifierState, MouseButton, PointerState, SettingsWidget,
-    SpecialKey, StepperArrow,
-};
+use crate::interaction::ClickTarget;
+use crate::ui::color_popover::ColorField;
+use crate::ui::panel::UiPanel;
+use crate::theme::{anim, font};
+use crate::interaction::SCROLL_SENSITIVITY;
+use crate::ui::text_field::CursorInit;
+use crate::ui::toolbar::{ToolbarButton, ToolbarItem};
+use crate::types::{MouseButton, PointerState, SpecialKey};
+use crate::ui::magnifier::MagnifierState;
+use crate::ui::settings_panel::{ArrowHoldState, SettingsWidget, StepperArrow};
 use crate::utils::{get_full_workspace_rect, global_point_to_local};
 
 use std::time::Instant;
@@ -275,7 +275,7 @@ pub fn handle_pointer_button(
                                 let idx = char_index_for_x(
                                     &current_value,
                                     click_x,
-                                    SETTINGS_LABEL_FONT_SIZE,
+                                    font::LABEL,
                                     &mut editor_state.font_system,
                                 );
                                 CursorInit::At(idx)
@@ -368,7 +368,7 @@ fn update_pointer(
 fn update_magnifier(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     let now = Instant::now();
     if let Some(last) = editor_state.last_mag_update
-        && now.duration_since(last) < MAG_FRAME_INTERVAL
+        && now.duration_since(last) < anim::FRAME
     {
         return;
     }

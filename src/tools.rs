@@ -16,7 +16,6 @@ use crate::tools::simple_shapes::SimpleShapeTool;
 use crate::tools::text::TextTool;
 use crate::types::annotations::AnnotationShape;
 use crate::types::{MouseButton, SpecialKey};
-
 // ==========================================
 // 1. Available Tools
 // ==========================================

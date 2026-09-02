@@ -6,8 +6,9 @@ use crate::backend::ScreenOverlay;
 use crate::editor::EditorState;
 use crate::profiler::Profiler;
 use crate::renderer;
-use crate::types::toolbar::{ToolbarButton, ToolbarItem};
-use crate::types::{MonitorFrame, Output, Placement, icons};
+use crate::ui::toolbar::{ToolbarButton, ToolbarItem};
+use crate::types::{MonitorFrame, Output, Placement};
+use crate::ui::icons;
 use crate::types::tool_settings::DEFAULT_COLOR;
 use std::collections::HashMap;
 use tiny_skia::{Pixmap, PixmapPaint, Transform};
@@ -116,7 +117,7 @@ pub fn build_placements(outputs: &[Output]) -> Vec<Placement> {
 pub fn load_icons_cache() -> HashMap<&'static str, Tree> {
     let opt = usvg::Options::default();
 
-    let all_svgs = crate::types::toolbar::TOOLBAR_ITEMS
+    let all_svgs = crate::ui::toolbar::ITEMS
         .iter()
         .filter_map(|item| match item {
             ToolbarItem::Button(ToolbarButton::Tool(tool)) => {
@@ -159,7 +160,7 @@ pub fn initial_paint(
     let icons_cache_ref = &*icons_cache;
     let magnifier_ref = &*magnifier;
 
-    let no_toasts = crate::types::toast::Toasts::default();
+    let no_toasts = crate::ui::toast::Toasts::default();
     let no_toasts = &no_toasts;
 
     std::thread::scope(|scope| {
@@ -208,7 +209,7 @@ pub fn initial_paint(
                     swash_cache: None,
                     text_editors: None,
                     active_text_id: None,
-                    current_color: DEFAULT_COLOR,
+                    current_color: DEFAULT_COLOR.color(),
                     ocr_view: None,
                     ocr_scan: None,
                     monitor_idx: i,

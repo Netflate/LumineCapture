@@ -1,4 +1,5 @@
-use crate::types::{HANDLE_PAD, Placement, SelectionHandle, SignedRect};
+use crate::types::{Placement, SelectionHandle, SignedRect};
+use crate::interaction::HANDLE_PAD;
 use std::path::PathBuf;
 use tiny_skia::Pixmap;
 use tiny_skia::Rect;

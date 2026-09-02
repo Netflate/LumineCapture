@@ -1,11 +1,11 @@
 use crate::editor::dirty::mark_dirty;
 use crate::editor::{DamageZone, EditorState};
 use crate::ocr::{self, StartOutcome};
-use crate::renderer::scan_badge_rect;
+use crate::ocr::draw::scan_badge_rect;
 use crate::tools::ToolBehavior;
 use crate::tools::selection::SelectionTool;
-use crate::types::click::ClickTarget;
-use crate::types::toast::ToastKind;
+use crate::interaction::{ClickTarget, OCR_MIN_REGION};
+use crate::ui::toast::ToastKind;
 use crate::types::{MouseButton, SelectionHandle, SpecialKey};
 use std::time::Instant;
 use tiny_skia::Rect;
@@ -142,16 +142,12 @@ fn await_region(state: &mut EditorState) {
         .show(ToastKind::OcrPickRegion, &mut state.font_system);
 }
 
-/// A drag has to cover at least this much before it counts as boxing out a new
-/// region. Below it, it was a shaky click - and honouring that would throw the
-/// result away and leave a handful of pixels selected.
-const MIN_REGION: f32 = 16.0;
 
 fn boxed_out(state: &EditorState) -> bool {
     state.selection.zone.is_some_and(|zone| {
         Some(zone) != state.ocr_redrag_from
-            && zone.width() >= MIN_REGION
-            && zone.height() >= MIN_REGION
+            && zone.width() >= OCR_MIN_REGION
+            && zone.height() >= OCR_MIN_REGION
     })
 }
 

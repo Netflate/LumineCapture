@@ -17,7 +17,6 @@ use wayland_client::{Connection, QueueHandle};
 
 use crate::backend::wayland::overlay::state::OverlayState;
 use crate::types::{OverlayEvent, SpecialKey};
-
 impl KeyboardHandler for OverlayState {
     fn press_key(
         &mut self,

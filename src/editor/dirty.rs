@@ -1,8 +1,9 @@
 use crate::editor::{DamageZone, EditorState};
-use crate::renderer::{self};
 use crate::tools::selection::global_selection_to_local;
 use crate::types::annotations::Annotation;
-use crate::types::{HANDLE_RADIUS, MagnifierState, Placement};
+use crate::types::Placement;
+use crate::interaction::HANDLE_RADIUS;
+use crate::ui::magnifier::MagnifierState;
 use crate::utils::get_overlapping_monitors;
 
 use tiny_skia::Rect;
@@ -63,7 +64,7 @@ impl EditorState {
             let mut add_mag_dirty = |mag_state: &Option<MagnifierState>| {
                 if let Some(mag) = mag_state.as_ref().filter(|m| m.monitor_idx == monitor_idx) {
                     let rect =
-                        renderer::magnifier_rect((mag.pos.0 as f32, mag.pos.1 as f32), mw, mh);
+                        crate::ui::magnifier::magnifier_rect((mag.pos.0 as f32, mag.pos.1 as f32), mw, mh);
                     if let Some(r) = expand_rect(&rect, mag_pad) {
                         dirty = union_rect(dirty, Some(r));
                     }

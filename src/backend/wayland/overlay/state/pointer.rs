@@ -10,7 +10,6 @@ use wayland_client::{Connection, QueueHandle};
 
 use crate::backend::wayland::overlay::state::OverlayState;
 use crate::types::{MouseButton, OverlayEvent};
-
 impl PointerHandler for OverlayState {
     fn pointer_frame(
         &mut self,

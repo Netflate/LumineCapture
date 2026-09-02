@@ -2,7 +2,8 @@ use cosmic_text::{Attrs, Buffer, FontSystem, Metrics, Shaping, SwashCache, Swash
 use tiny_skia::{Color, Paint, Pixmap, PixmapPaint, PremultipliedColorU8, Rect, Transform};
 
 use super::paths::rounded_rect_path;
-use crate::types::text_field::LineEditState;
+use crate::theme::color;
+use crate::ui::text_field::LineEditState;
 
 pub enum HAlign {
     Left,
@@ -150,7 +151,7 @@ pub fn draw_input_box(canvas: &mut Pixmap, rect: Rect, radius: f32) {
     };
 
     let mut fill_paint = Paint::default();
-    fill_paint.set_color(Color::from_rgba8(255, 255, 255, 18));
+    fill_paint.set_color(color::FIELD_BG.color());
     fill_paint.anti_alias = true;
     canvas.fill_path(
         &path,
@@ -206,7 +207,7 @@ pub fn draw_text_selection(canvas: &mut Pixmap, rect: Rect, start_x: f32, end_x:
     };
 
     let mut paint = Paint::default();
-    paint.set_color(Color::from_rgba8(100, 150, 255, 110));
+    paint.set_color(color::SELECT.color());
     paint.anti_alias = true;
     canvas.fill_rect(sel_rect, &paint, Transform::identity(), None);
 }
@@ -220,7 +221,7 @@ pub fn draw_text_caret(canvas: &mut Pixmap, rect: Rect, cursor_x: f32) {
     };
 
     let mut paint = Paint::default();
-    paint.set_color(Color::from_rgba8(255, 255, 255, 220));
+    paint.set_color(color::CARET.color());
     paint.anti_alias = false;
     canvas.fill_rect(cur_rect, &paint, Transform::identity(), None);
 }

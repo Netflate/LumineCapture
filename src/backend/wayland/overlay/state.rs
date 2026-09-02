@@ -10,7 +10,6 @@ use std::collections::VecDeque;
 
 use crate::backend::wayland::utils::surface::SurfaceData;
 use crate::types::{Output, OverlayEvent};
-
 use wayland_client::globals::registry_queue_init;
 use wayland_protocols::wp::{
     fractional_scale::v1::client::{wp_fractional_scale_manager_v1, wp_fractional_scale_v1},

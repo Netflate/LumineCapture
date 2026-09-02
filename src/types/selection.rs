@@ -1,6 +1,5 @@
 use tiny_skia::Rect;
 
-pub const HANDLE_RADIUS: f64 = 8.0; // pixels around selection border 
 
 pub struct SelectionState {
     pub zone: Option<Rect>,

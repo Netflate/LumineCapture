@@ -1,28 +1,24 @@
+// Frame building and shared drawing stuff: paths, text, and annotations.
+// UI component rendering lives in ui/<component>/draw.rs
+// OCR overlay rendering lives in ocr/draw.rs alongside its state
+
 mod annotations;
-mod color_popover;
-mod magnifier;
-mod ocr;
-mod paths;
-mod settings_panel;
-mod text;
-mod toast;
-mod toolbar;
+pub mod paths;
+pub mod text;
 
 pub use annotations::{
     draw_annotation, draw_annotation_handles_only, draw_pen_active_tail, draw_pen_tail,
     selection_chrome_pad, shadow_color_for, stroke_pen_segment, visual_pad,
 };
-pub use magnifier::magnifier_rect;
-pub use ocr::scan_badge_rect;
 pub use paths::{rect_bounds, rounded_rect_path};
-pub use settings_panel::char_index_for_x;
 pub use text::measure_line_width;
 
 use crate::types::annotations::Annotation;
-use crate::types::color_popover::ColorPickerPopover;
-use crate::types::settings_panel::SettingsPanel;
-use crate::types::toolbar::Toolbar;
-use crate::types::{MagnifierState, SelectionEdges};
+use crate::types::{SelectionEdges};
+use crate::ui::magnifier::MagnifierState;
+use crate::ui::color_popover::ColorPickerPopover;
+use crate::ui::settings_panel::SettingsPanel;
+use crate::ui::toolbar::Toolbar;
 use cosmic_text::{Editor, FontSystem, SwashCache};
 use std::collections::HashMap;
 use tiny_skia::{Color, Paint, PathBuilder, Pixmap, Rect, Stroke, Transform};
@@ -64,7 +60,7 @@ pub struct RenderRequest<'a> {
     /// recognition is working
     pub ocr_scan: Option<(Rect, f32)>,
     pub monitor_idx: usize,
-    pub toasts: &'a crate::types::toast::Toasts,
+    pub toasts: &'a crate::ui::toast::Toasts,
     /// Intro fade. `Some(strength)` rebuilds the whole dim layer from `base` at
     /// that strength (0 = untouched, 1 = fully dimmed) and repaints the whole
     /// monitor; `None` is the normal incremental path.
@@ -171,11 +167,11 @@ pub fn render_frame(req: &mut RenderRequest) {
     // so anything drawn outside the area just restored from `dimmed` would
     // stack a second layer on top of last frame's.
     if let Some(view) = req.ocr_view {
-        ocr::draw_ocr_overlay(req.canvas, view, req.offset, dirty_rect);
+        crate::ocr::draw::draw_ocr_overlay(req.canvas, view, req.offset, dirty_rect);
     }
 
     if let Some((region, phase)) = req.ocr_scan {
-        ocr::draw_ocr_scan(
+        crate::ocr::draw::draw_ocr_scan(
             req.canvas,
             region,
             phase,
@@ -188,13 +184,13 @@ pub fn render_frame(req: &mut RenderRequest) {
     if req.is_mag_monitor
         && let Some(mag) = req.magnifier
     {
-        magnifier::draw_magnifier(req.canvas, req.base, (mag.pos.0 as f32, mag.pos.1 as f32));
+        crate::ui::magnifier::draw_magnifier(req.canvas, req.base, (mag.pos.0 as f32, mag.pos.1 as f32));
     }
 
     if let Some(tb) = req.toolbar.as_deref_mut()
         && tb.dirty
     {
-        toolbar::draw_toolbar(req.canvas, tb, req.icons_cache);
+        crate::ui::toolbar::draw_toolbar(req.canvas, tb, req.icons_cache);
     }
 
     if let Some(settings) = req.settings_panel.as_deref_mut()
@@ -205,7 +201,7 @@ pub fn render_frame(req: &mut RenderRequest) {
             req.swash_cache.as_deref_mut(),
         ) {
             (Some(font_system), Some(swash_cache)) => {
-                settings_panel::draw_settings_panel(
+                crate::ui::settings_panel::draw_settings_panel(
                     req.canvas,
                     settings,
                     req.current_color,
@@ -228,7 +224,7 @@ pub fn render_frame(req: &mut RenderRequest) {
             req.swash_cache.as_deref_mut(),
         ) {
             (Some(font_system), Some(swash_cache)) => {
-                color_popover::draw_color_popover(
+                crate::ui::color_popover::draw_color_popover(
                     req.canvas,
                     color_picker,
                     //req.icons_cache,
@@ -249,7 +245,7 @@ pub fn render_frame(req: &mut RenderRequest) {
             req.swash_cache.as_deref_mut(),
         )
     {
-        toast::draw_toasts(
+        crate::ui::toast::draw_toasts(
             req.canvas,
             req.toasts,
             req.monitor_idx,
@@ -391,7 +387,6 @@ fn dim_hole_corners(
         ),
     ];
 
-    const K: f32 = 0.5523;
     for (rounded, (cx, cy), (sx, sy)) in corners {
         if !rounded {
             continue;
@@ -400,10 +395,10 @@ fn dim_hole_corners(
         pb.move_to(cx, cy);
         pb.line_to(cx + sx * radius, cy);
         pb.cubic_to(
-            cx + sx * radius * (1.0 - K),
+            cx + sx * radius * (1.0 - paths::KAPPA),
             cy,
             cx,
-            cy + sy * radius * (1.0 - K),
+            cy + sy * radius * (1.0 - paths::KAPPA),
             cx,
             cy + sy * radius,
         );

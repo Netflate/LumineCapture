@@ -5,17 +5,13 @@ use crate::editor::dirty::{apply_damage_rects, mark_dirty};
 use crate::editor::{DamageZone, EditorState};
 use crate::tools::Tool;
 use crate::types::annotations::rebuild_annotation;
-use crate::types::panel::{emit_panel_damage, sync_panel_hover, sync_panel_rect};
-use crate::types::{
-    Annotation, AnnotationShape, OCR_SCANNING_WIDGETS, STEPPER_HOLD_ACCEL_AFTER,
-    STEPPER_HOLD_FAST_INTERVAL, STEPPER_HOLD_INITIAL_DELAY, STEPPER_HOLD_REPEAT_INTERVAL,
-    SettingsAction, SettingsSource, SettingsWidget, SpecialKey, StepperArrow, ToggleField,
-    ToolSettings, UiPanel, compute_settings_placement, widgets_for_annotation, widgets_for_tool,
-};
-
+use crate::ui::panel::{emit_panel_damage, sync_panel_hover, sync_panel_rect};
+use crate::types::{Annotation, AnnotationShape, SpecialKey, ToolSettings};
+use crate::interaction::{HOLD_ACCEL_AFTER, HOLD_FAST_INTERVAL, HOLD_INITIAL_DELAY, HOLD_REPEAT_INTERVAL};
+use crate::ui::panel::UiPanel;
+use crate::ui::settings_panel::{OCR_SCANNING_WIDGETS, SettingsAction, SettingsSource, SettingsWidget, StepperArrow, ToggleField, compute_settings_placement, widgets_for_annotation, widgets_for_tool};
 use std::time::Instant;
 
-const STEPPER_SCROLL_PIXELS_PER_STEP: f32 = 10.0;
 
 pub fn active_annotation_idx(editor_state: &EditorState) -> Option<usize> {
     if editor_state.selected_tool == Tool::Pick || editor_state.selected_tool == Tool::Text {
@@ -184,12 +180,12 @@ pub fn tick_stepper_arrow_hold(editor_state: &mut EditorState, dirty_mask: &mut 
     let now = Instant::now();
 
     let next_due = if hold.repeat_count == 0 {
-        hold.started_at + STEPPER_HOLD_INITIAL_DELAY
+        hold.started_at + HOLD_INITIAL_DELAY
     } else {
-        let interval = if hold.repeat_count >= STEPPER_HOLD_ACCEL_AFTER {
-            STEPPER_HOLD_FAST_INTERVAL
+        let interval = if hold.repeat_count >= HOLD_ACCEL_AFTER {
+            HOLD_FAST_INTERVAL
         } else {
-            STEPPER_HOLD_REPEAT_INTERVAL
+            HOLD_REPEAT_INTERVAL
         };
         hold.last_step_at + interval
     };
@@ -548,7 +544,7 @@ pub fn handle_stepper_scroll(
 
     let steps = editor_state
         .settings_panel
-        .scroll_step(widget_idx, delta_y / STEPPER_SCROLL_PIXELS_PER_STEP);
+        .scroll_step(widget_idx, delta_y / crate::interaction::SCROLL_PIXELS_PER_STEP);
 
     if steps == 0 {
         return;

@@ -14,7 +14,6 @@ pub mod state;
 use crate::backend::ScreenOverlay;
 use crate::backend::wayland::utils::surface::SurfaceData;
 use crate::types::{DamageRect, Output, OverlayEvent};
-
 pub struct WaylandOverlay {
     pub connection: wayland_client::Connection,
     runtime: state::OverlayRunTime,
