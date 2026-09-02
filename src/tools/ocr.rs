@@ -54,7 +54,9 @@ impl ToolBehavior for OcrTool {
             None => {
                 let damage = state.ocr_view.deselect();
                 damage_overlay(state, damage);
-                begin_region_drag(state);
+                if !pressed_inside_region(state) {
+                    begin_region_drag(state);
+                }
             }
         }
     }
@@ -72,16 +74,11 @@ impl ToolBehavior for OcrTool {
             return;
         }
 
-        if !state.ocr_view.is_active() {
+        if !state.mouse_down_left || !state.ocr_view.is_active() {
             return;
         }
 
-        let damage = if state.mouse_down_left {
-            state.ocr_view.extend_drag(global)
-        } else {
-            let line = state.ocr_view.line_at(global);
-            state.ocr_view.set_hovered(line)
-        };
+        let damage = state.ocr_view.extend_drag(global);
         damage_overlay(state, damage);
     }
 
@@ -118,6 +115,16 @@ fn boxed_out(state: &EditorState) -> bool {
         Some(zone) != state.ocr_redrag_from
             && zone.width() >= MIN_REGION
             && zone.height() >= MIN_REGION
+    })
+}
+
+/// Checks if the click was inside the scanned area. Clicking slightly outside
+/// the text should not clear the result, so only a click far outside means
+/// "select a new area".
+fn pressed_inside_region(state: &EditorState) -> bool {
+    state.ocr_view.region().is_some_and(|region| {
+        let (x, y) = (state.pointer.global.0 as f32, state.pointer.global.1 as f32);
+        x >= region.left() && x <= region.right() && y >= region.top() && y <= region.bottom()
     })
 }
 

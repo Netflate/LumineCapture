@@ -272,16 +272,28 @@ fn recognize_one(recognizer: &Recognizer, crop: &image::RgbImage) -> Read {
 /// Minimum confidence for a one-character read to be believed.
 const SPECK_CONFIDENCE: f32 = 0.6;
 
+/// Minimum confidence for any read to be believed.
+const MIN_CONFIDENCE: f32 = 0.55;
+
+/// A detection this much taller than the body text, and no wider than it is
+/// tall, is an icon or a logo rather than a line of text.
+const GLYPH_HEIGHT: f32 = 1.8;
+const GLYPH_ASPECT: f32 = 1.2;
+
 /// A detection far smaller than the body text in both directions, which is
 /// what visual noise looks like. The recognizer cannot answer "not text" and
 /// would return its best single-character guess for it.
 fn is_speck(bounds: &Rect, body_height: f32) -> bool {
-    bounds.height() < 0.5 * body_height && bounds.width() < 0.5 * body_height
+    if bounds.height() < 0.5 * body_height && bounds.width() < 0.5 * body_height {
+        return true;
+    }
+    bounds.height() > GLYPH_HEIGHT * body_height
+        && bounds.width() < GLYPH_ASPECT * bounds.height()
 }
 
 /// Whether a read should be dropped instead of becoming a line.
 fn is_noise(bounds: &Rect, read: &Read, body_height: f32) -> bool {
-    if read.text.trim().is_empty() {
+    if read.text.trim().is_empty() || read.confidence < MIN_CONFIDENCE {
         return true;
     }
     read.text.chars().count() <= 1

@@ -27,18 +27,17 @@ use crate::types::panel::{BUTTON_SELECTED, ICON_COLOR};
 /// shade pushes the screenshot back and the plate lifts the text roughly back to
 /// where it started, so the lines read as the foreground without the region ever
 /// getting as dark as the overlay dim outside it.
-const REGION_SHADE: (u8, u8, u8, u8) = (10, 8, 20, 72);
+const REGION_SHADE: (u8, u8, u8, u8) = (10, 8, 20, 58);
 
 /// Plate behind a block of text.
-const PLATE: (u8, u8, u8, u8) = (255, 255, 255, 40);
-const PLATE_HOVER: (u8, u8, u8, u8) = (255, 255, 255, 78);
+const PLATE: (u8, u8, u8, u8) = (255, 255, 255, 20);
 
-const SELECT_FILL: (u8, u8, u8, u8) = (96, 152, 255, 130);
+const SELECT_FILL: (u8, u8, u8, u8) = (96, 152, 255, 110);
 
 /// Grown around a block's own bounds so the plate reads as a box around the
 /// text rather than a tight box on it.
-const PLATE_PAD_X: f32 = 5.0;
-const PLATE_PAD_Y: f32 = 3.0;
+const PLATE_PAD_X: f32 = 4.0;
+const PLATE_PAD_Y: f32 = 2.0;
 const PLATE_RADIUS: f32 = 5.0;
 
 // ── progress badge ──────────────────────────────────────────────────────────
@@ -65,29 +64,22 @@ pub fn draw_ocr_overlay(
         painter.fill(region, 0.0, REGION_SHADE);
     }
 
-    for plate in view.block_plates() {
-        let Some(bounds) = pad(plate.bounds, PLATE_PAD_X, PLATE_PAD_Y) else {
-            continue;
-        };
-        let color = if plate.hovered { PLATE_HOVER } else { PLATE };
-        painter.fill(bounds, PLATE_RADIUS, color);
-    }
+    let plates = view
+        .block_bounds()
+        .filter_map(|bounds| pad(bounds, PLATE_PAD_X, PLATE_PAD_Y));
+    painter.fill_union(plates, PLATE_RADIUS, PLATE);
 
-    for i in 0..view.lines.len() {
-        let Some(sel) = view.line_selection(i) else {
-            continue;
-        };
-        // At least a hairline wide, so an empty span still reads as a caret.
-        let Some(span) = Rect::from_ltrb(
+    // At least a hairline wide, so an empty span still reads as a caret.
+    let spans = (0..view.lines.len()).filter_map(|i| {
+        let sel = view.line_selection(i)?;
+        Rect::from_ltrb(
             sel.x.0,
             sel.y.0 - PLATE_PAD_Y,
             sel.x.1.max(sel.x.0 + 1.0),
             sel.y.1 + PLATE_PAD_Y,
-        ) else {
-            continue;
-        };
-        painter.fill(span, 2.0, SELECT_FILL);
-    }
+        )
+    });
+    painter.fill_union(spans, 2.0, SELECT_FILL);
 
     painter.finish(canvas);
 }
@@ -179,6 +171,56 @@ impl Painter {
             origin: (x as f32, y as f32),
             offset,
         })
+    }
+
+    /// Fills every rectangle in one pass
+    fn fill_union(
+        &mut self,
+        rects: impl IntoIterator<Item = Rect>,
+        radius: f32,
+        color: (u8, u8, u8, u8),
+    ) {
+        let mut pb = tiny_skia::PathBuilder::new();
+        let mut any = false;
+        for rect in rects {
+            let Some(rect) = self.to_buf_rect(rect) else {
+                continue;
+            };
+            let sub = if radius > 0.0 {
+                rounded_rect_path(&rect, radius, true, true, true, true)
+            } else {
+                Some(tiny_skia::PathBuilder::from_rect(rect))
+            };
+            if let Some(sub) = sub {
+                pb.push_path(&sub);
+                any = true;
+            }
+        }
+        if !any {
+            return;
+        }
+        let Some(path) = pb.finish() else { return };
+
+        let mut paint = Paint::default();
+        paint.set_color(Color::from_rgba8(color.0, color.1, color.2, color.3));
+        paint.anti_alias = radius > 0.0;
+        self.buf
+            .fill_path(&path, &paint, FillRule::Winding, Transform::identity(), None);
+    }
+
+    fn to_buf_rect(&self, rect: Rect) -> Option<Rect> {
+        let (dx, dy) = (self.offset.0 + self.origin.0, self.offset.1 + self.origin.1);
+        let rect = Rect::from_ltrb(
+            rect.left() - dx,
+            rect.top() - dy,
+            rect.right() - dx,
+            rect.bottom() - dy,
+        )?;
+        let outside = rect.right() <= 0.0
+            || rect.bottom() <= 0.0
+            || rect.left() >= self.buf.width() as f32
+            || rect.top() >= self.buf.height() as f32;
+        (!outside).then_some(rect)
     }
 
     fn fill(&mut self, rect: Rect, radius: f32, color: (u8, u8, u8, u8)) {

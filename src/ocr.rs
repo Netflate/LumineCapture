@@ -15,7 +15,7 @@ pub mod view;
 use tiny_skia::{Pixmap, PixmapPaint, Rect, Transform};
 
 pub use runtime::{OcrRuntime, StartOutcome};
-pub use view::{BlockPlate, LineSelection, OcrView};
+pub use view::{LineSelection, OcrView};
 
 use crate::types::Placement;
 

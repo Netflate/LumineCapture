@@ -10,6 +10,11 @@ use tiny_skia::Rect;
 
 use super::OcrLine;
 
+const BLOCK_GAP: f32 = 0.75;
+const BLOCK_GAP_MAX: f32 = 1.2;
+const BLOCK_OVERLAP: f32 = 0.35;
+const BLOCK_ALIGN: f32 = 0.8;
+
 /// A ensemble of lines that belong together: a paragraph, a column, a menu. Lines
 /// inside a block are in reading order, and so are the blocks.
 #[derive(Debug)]
@@ -92,16 +97,16 @@ pub(super) fn group_blocks(lines: &[OcrLine]) -> Vec<Block> {
         for &j in &sorted[si + 1..] {
             let b = &lines[j].bounds;
             let vgap = b.top() - a.bottom();
-            if vgap > 1.3 * unit {
+            if vgap > BLOCK_GAP_MAX * unit {
                 break; // sorted by top, so everything later is further still
             }
-            if vgap > 0.9 * unit {
+            if vgap > BLOCK_GAP * unit {
                 continue;
             }
             let overlap = a.right().min(b.right()) - a.left().max(b.left());
             let min_w = a.width().min(b.width()).max(1.0);
-            let left_aligned = (a.left() - b.left()).abs() < 1.5 * unit;
-            if overlap / min_w > 0.15 || left_aligned {
+            let left_aligned = (a.left() - b.left()).abs() < BLOCK_ALIGN * unit;
+            if overlap > 0.0 && (overlap / min_w > BLOCK_OVERLAP || left_aligned) {
                 uf.union(i, j);
             }
         }
@@ -128,15 +133,64 @@ pub(super) fn group_blocks(lines: &[OcrLine]) -> Vec<Block> {
         })
         .collect();
 
-    order_blocks(blocks, unit)
+    order_blocks(merge_touching(blocks, lines, unit), unit)
+}
+
+fn merge_touching(blocks: Vec<Block>, lines: &[OcrLine], unit: f32) -> Vec<Block> {
+    let n = blocks.len();
+    if n < 2 {
+        return blocks;
+    }
+    let pad = 0.2 * unit;
+
+    let mut uf = UnionFind::new(n);
+    let mut merged = false;
+    for (i, first) in blocks.iter().enumerate() {
+        let a = &first.bounds;
+        for (j, second) in blocks.iter().enumerate().skip(i + 1) {
+            let b = &second.bounds;
+            let apart = a.right() + pad <= b.left()
+                || b.right() + pad <= a.left()
+                || a.bottom() + pad <= b.top()
+                || b.bottom() + pad <= a.top();
+            if !apart {
+                uf.union(i, j);
+                merged = true;
+            }
+        }
+    }
+    if !merged {
+        return blocks;
+    }
+
+    let mut slot_of: Vec<Option<usize>> = vec![None; n];
+    let mut out: Vec<Block> = Vec::new();
+    for (i, block) in blocks.into_iter().enumerate() {
+        let root = uf.find(i);
+        match slot_of[root] {
+            Some(s) => {
+                let target: &mut Block = &mut out[s];
+                target.lines.extend(block.lines);
+                target.bounds =
+                    union_rect(Some(target.bounds), block.bounds).unwrap_or(target.bounds);
+            }
+            None => {
+                slot_of[root] = Some(out.len());
+                out.push(block);
+            }
+        }
+    }
+    for block in &mut out {
+        block
+            .lines
+            .sort_by(|&a, &b| cmp_reading(&lines[a].bounds, &lines[b].bounds));
+    }
+
+    merge_touching(out, lines, unit)
 }
 
 // Sorts text blocks column by column (left to right, top to bottom).
 // This prevents multi-column text from getting mixed up when copied.
-//
-// Columns are found by scanning from left to right. A new column only 
-// starts when there is a clear vertical space (gutter) with no overlapping 
-// blocks from the left.
 fn order_blocks(blocks: Vec<Block>, unit: f32) -> Vec<Block> {
     let n = blocks.len();
     if n < 2 {
@@ -148,17 +202,11 @@ fn order_blocks(blocks: Vec<Block>, unit: f32) -> Vec<Block> {
 
     let gutter = 6.0 * unit;
     let mut column = vec![0usize; n];
-    let mut current = 0usize;
-    let mut reach = blocks[by_left[0]].bounds.right();
     for w in 1..n {
-        let b = &blocks[by_left[w]].bounds;
-        if b.left() - reach > gutter {
-            current += 1;
-            reach = b.right();
-        } else {
-            reach = reach.max(b.right());
-        }
-        column[by_left[w]] = current;
+        let prev = &blocks[by_left[w - 1]].bounds;
+        let cur = &blocks[by_left[w]].bounds;
+        let split = cur.left() - prev.left() > gutter && cur.left() > prev.right();
+        column[by_left[w]] = column[by_left[w - 1]] + usize::from(split);
     }
 
     let mut order: Vec<usize> = (0..n).collect();

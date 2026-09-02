@@ -25,14 +25,6 @@ struct Caret {
     ch: usize,
 }
 
-/// One plate for the renderer to draw. A block is the unit a double-click
-/// selects, so it is also the unit that gets a box - a line that ended up in no
-/// group of its own is a block of one and still gets one.
-pub struct BlockPlate {
-    pub bounds: Rect,
-    pub hovered: bool,
-}
-
 /// A line's selected span, for the renderer.
 pub struct LineSelection {
     /// Global x of span's left and right edges.
@@ -61,8 +53,6 @@ pub struct OcrView {
     sel: Option<(Caret, Caret)>,
     /// Block the current drag began in (confines a sideways drag).
     anchor_block: Option<usize>,
-    /// Line under the cursor.
-    hovered: Option<usize>,
 }
 
 impl OcrView {
@@ -101,7 +91,6 @@ impl OcrView {
         self.rank = rank;
         self.sel = None;
         self.anchor_block = None;
-        self.hovered = None;
     }
 
     pub fn clear(&mut self) {
@@ -166,19 +155,8 @@ impl OcrView {
 
     // ── what the renderer draws ──────────────────────────────────────────────
 
-    pub fn block_plates(&self) -> impl Iterator<Item = BlockPlate> + '_ {
-        let hovered_block = self.hovered.map(|line| self.block_of[line]);
-        self.blocks.iter().enumerate().map(move |(i, block)| BlockPlate {
-            bounds: block.bounds,
-            hovered: Some(i) == hovered_block,
-        })
-    }
-
-    /// Bounds of the block under the pointer, the area a hover change repaints.
-    fn hover_bounds(&self) -> Option<Rect> {
-        let line = self.hovered?;
-        let &bi = self.block_of.get(line)?;
-        self.blocks.get(bi).map(|b| b.bounds)
+    pub fn block_bounds(&self) -> impl Iterator<Item = Rect> + '_ {
+        self.blocks.iter().map(|block| block.bounds)
     }
 
     /// Selected span on line `i`, or `None` if untouched. Middle lines give
@@ -213,16 +191,6 @@ impl OcrView {
     // restore exactly that area from the dim layer before it is drawn again.
     // Repainting the whole result instead would mean filling the entire
     // scanned region on every mouse move.
-
-    /// Move the hover highlight. Returns the area to repaint.
-    pub fn set_hovered(&mut self, line: Option<usize>) -> Option<Rect> {
-        if self.hovered == line {
-            return None;
-        }
-        let old = self.hover_bounds();
-        self.hovered = line;
-        union(old, self.hover_bounds())
-    }
 
     /// Start a drag selection at the caret nearest the pointer.
     pub fn begin_drag(&mut self, pointer: (f64, f64)) -> Option<Rect> {
