@@ -1,25 +1,24 @@
 use crate::tools::Tool;
+use crate::theme::anim;
 use crate::types::Placement;
-use crate::types::panel::{AnimatedPanel, HoverablePanel, PanelItem, UiPanel};
+use crate::ui::panel::{AnimatedPanel, HoverablePanel, PanelItem, UiPanel};
 use std::time::{Duration, Instant};
 use tiny_skia::{Pixmap, Rect};
 
 // ==========================================
 // 1. UI Layout Constants
 // ==========================================
-pub const TOOLBAR_ANIM_INTERVAL: std::time::Duration = std::time::Duration::from_millis(16);
-pub const TOOLBAR_ANIM_DT: f32 = 0.016;
-pub const TOOLBAR_TRANSITION_OFFSET: f32 = 340.0; // max cap on the transition entrance distance
+pub const TRANSITION_OFFSET: f32 = 340.0; // max cap on the transition entrance distance
 
-pub const TOOLBAR_HEIGHT: f32 = 42.0;
-pub const TOOLBAR_OFFSET: f32 = 5.0;
-pub const TOOLBAR_PADDING: f32 = 8.0;
+pub const HEIGHT: f32 = 42.0;
+pub const OFFSET: f32 = 5.0;
+pub const PADDING: f32 = 8.0;
 
-pub const BUTTON_CELL_SIZE: f32 = 35.0;
-const SEPARATOR_CELL_SIZE: f32 = 20.0;
+pub const BUTTON_CELL: f32 = 35.0;
+const SEPARATOR_CELL: f32 = 20.0;
 
 // Toolbar tools list
-pub const TOOLBAR_ITEMS: &[ToolbarItem] = &[
+pub const ITEMS: &[ToolbarItem] = &[
     ToolbarItem::Button(ToolbarButton::Tool(Tool::Selection)),
     ToolbarItem::Button(ToolbarButton::Tool(Tool::Pick)),
     ToolbarItem::Button(ToolbarButton::Tool(Tool::Ocr)),
@@ -75,7 +74,7 @@ impl UiPanel for Toolbar {
         self.items
     }
     fn padding(&self) -> f32 {
-        TOOLBAR_PADDING
+        PADDING
     }
     fn monitor_idx(&self) -> usize {
         self.monitor_idx
@@ -116,10 +115,10 @@ impl AnimatedPanel for Toolbar {
     }
 
     fn anim_interval(&self) -> Duration {
-        TOOLBAR_ANIM_INTERVAL
+        anim::FRAME
     }
     fn anim_dt(&self) -> f32 {
-        TOOLBAR_ANIM_DT
+        anim::DT
     }
 
     fn is_animating(&self) -> bool {
@@ -161,8 +160,8 @@ impl Toolbar {
     pub fn new() -> Self {
         let mut toolbar = Self {
             toolbar_pixmap: None,
-            items: TOOLBAR_ITEMS,
-            size: (0.0, TOOLBAR_HEIGHT),
+            items: ITEMS,
+            size: (0.0, HEIGHT),
             opacity: 1.0,
             monitor_idx: 0,
             position: (0.0, 0.0),
@@ -178,7 +177,7 @@ impl Toolbar {
         };
 
         toolbar.size.0 = toolbar.width();
-        toolbar.size.1 = TOOLBAR_HEIGHT;
+        toolbar.size.1 = HEIGHT;
 
         toolbar
     }
@@ -206,7 +205,7 @@ impl Toolbar {
             return (false, None);
         }
 
-        let mut current_x = rect.left() + TOOLBAR_PADDING;
+        let mut current_x = rect.left() + PADDING;
         for (idx, item) in self.items.iter().enumerate() {
             let item_w = item.size();
             let item_right = current_x + item_w;
@@ -291,8 +290,8 @@ pub enum ToolbarItem {
 impl PanelItem for ToolbarItem {
     fn size(&self) -> f32 {
         match self {
-            ToolbarItem::Button(_) => BUTTON_CELL_SIZE,
-            ToolbarItem::Seperator => SEPARATOR_CELL_SIZE,
+            ToolbarItem::Button(_) => BUTTON_CELL,
+            ToolbarItem::Seperator => SEPARATOR_CELL,
         }
     }
 
