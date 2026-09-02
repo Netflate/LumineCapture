@@ -7,14 +7,13 @@ use cosmic_text::FontSystem;
 use tiny_skia::Rect;
 
 use crate::editor::DamageZone;
-use crate::types::panel::emit_panel_damage;
+use crate::theme::anim;
+use crate::ui::panel::emit_panel_damage;
 
-pub const TOAST_HEIGHT: f32 = 38.0;
-pub const TOAST_PAD_X: f32 = 18.0;
-pub const TOAST_RADIUS: f32 = 10.0;
-pub const TOAST_FONT_SIZE: f32 = 14.0;
+pub const HEIGHT: f32 = 38.0;
+pub const PAD_X: f32 = 18.0;
+pub const RADIUS: f32 = 10.0;
 
-const TICK: Duration = Duration::from_millis(16);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ToastKind {
@@ -74,13 +73,13 @@ impl Toast {
 
     fn layout(&mut self, place: &ToastPlace) {
         self.monitor_idx = place.monitor_idx;
-        let w = self.text_width + TOAST_PAD_X * 2.0;
+        let w = self.text_width + PAD_X * 2.0;
         self.rect = match self.spec.anchor {
             ToastAnchor::CursorMonitorCenter => Rect::from_xywh(
                 ((place.size.0 - w) / 2.0).round(),
-                ((place.size.1 - TOAST_HEIGHT) / 2.0).round(),
+                ((place.size.1 - HEIGHT) / 2.0).round(),
                 w,
-                TOAST_HEIGHT,
+                HEIGHT,
             ),
         };
     }
@@ -108,7 +107,7 @@ impl Toasts {
 
         let spec = kind.spec();
         let text_width =
-            crate::renderer::measure_line_width(spec.text, TOAST_FONT_SIZE, font_system);
+            crate::renderer::measure_line_width(spec.text, crate::theme::font::LABEL, font_system);
         self.items.push(Toast {
             kind,
             spec,
@@ -147,8 +146,8 @@ impl Toasts {
         let elapsed = self
             .last_tick
             .map(|t| now.duration_since(t))
-            .unwrap_or(TICK);
-        if elapsed < TICK {
+            .unwrap_or(anim::FRAME);
+        if elapsed < anim::FRAME {
             return;
         }
         self.last_tick = Some(now);
