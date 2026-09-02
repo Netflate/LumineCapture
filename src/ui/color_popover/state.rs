@@ -1,18 +1,18 @@
 use crate::types::Annotation;
-use crate::types::panel::{AnimatedPanel, HoverablePanel, PanelItem, ScrollAccumulator, UiPanel};
-use crate::types::text_field::TextFieldGroup;
+use crate::interaction::ScrollAccumulator;
+use crate::theme::anim;
+use crate::ui::panel::{AnimatedPanel, HoverablePanel, PanelItem, UiPanel};
+use crate::ui::text_field::TextFieldGroup;
 use crate::types::tool_settings::DEFAULT_COLOR;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 use tiny_skia::{Color, Mask, Pixmap, Rect};
 
-pub const COLORPICKER_WIDTH: f32 = 230.0;
-pub const COLORPICKER_OFFSET: f32 = 5.0;
-pub const COLORPICKER_PADDING: f32 = 15.0;
-pub const COLORPICKER_RADIUS: f32 = 15.0;
+pub const WIDTH: f32 = 230.0;
+pub const OFFSET: f32 = 5.0;
+pub const PADDING: f32 = 15.0;
+pub const RADIUS: f32 = 15.0;
 
-pub const COLORPICKER_ANIM_INTERVAL: Duration = Duration::from_millis(16);
-pub const COLORPICKER_ANIM_DT: f32 = 0.016;
 
 pub const SV_SQUARE_SIZE: f32 = 170.0;
 pub const SV_SQUARE_RADIUS: f32 = 10.0;
@@ -20,7 +20,7 @@ pub const MARKER_RADIUS: f32 = 10.0;
 pub const MARKER_STROKE: f32 = 2.0;
 pub const MARKER_OUTLINE: f32 = 0.1;
 
-pub const COLOR_POPOVER_ITEM_BORDER: f32 = 2.0;
+pub const SWATCH_BORDER: f32 = 2.0;
 // ^ USED only for sv-square, hue-slider, swatches, not for hex/rgba fields
 // input and etc use usual item border constant from types/panel.rs
 pub const HUE_SLIDER_GAP: f32 = 12.0;
@@ -48,11 +48,11 @@ pub const FIELD_FONT_SIZE: f32 = 12.0;
 pub const FIELD_GAP: f32 = 6.0;
 
 const RECENT_ROW_OFFSET: f32 =
-    COLORPICKER_PADDING + SV_SQUARE_SIZE + RECENT_LABEL_GAP + RECENT_LABEL_HEIGHT + RECENT_ROW_GAP;
+    PADDING + SV_SQUARE_SIZE + RECENT_LABEL_GAP + RECENT_LABEL_HEIGHT + RECENT_ROW_GAP;
 const HEX_ROW_OFFSET: f32 = RECENT_ROW_OFFSET + SWATCH_DIAMETER + FIELD_ROW_GAP;
 const RGBA_ROW_OFFSET: f32 = HEX_ROW_OFFSET + FIELD_HEIGHT + FIELD_ROW_GAP;
 
-pub const COLORPICKER_HEIGHT: f32 = RGBA_ROW_OFFSET + FIELD_HEIGHT + COLORPICKER_PADDING;
+pub const HEIGHT: f32 = RGBA_ROW_OFFSET + FIELD_HEIGHT + PADDING;
 
 #[derive(Debug, Clone, Copy)]
 pub enum ColorPickerItem {}
@@ -247,8 +247,8 @@ pub struct ColorSquareState {
 
 impl ColorSquareState {
     pub fn new() -> Self {
-        let (h, s, v) = color_to_hsv(DEFAULT_COLOR);
-        let alpha = DEFAULT_COLOR.to_color_u8().alpha();
+        let (h, s, v) = color_to_hsv(DEFAULT_COLOR.color());
+        let alpha = DEFAULT_COLOR.alpha();
         Self {
             hue: h,
             sv: (s, v),
@@ -296,14 +296,14 @@ pub fn hue_from_pointer_y(track_top: f32, y: f32) -> f32 {
 
 pub fn recent_label_origin(content_origin: (f32, f32)) -> (f32, f32) {
     (
-        content_origin.0 + COLORPICKER_PADDING,
-        content_origin.1 + COLORPICKER_PADDING + SV_SQUARE_SIZE + RECENT_LABEL_GAP,
+        content_origin.0 + PADDING,
+        content_origin.1 + PADDING + SV_SQUARE_SIZE + RECENT_LABEL_GAP,
     )
 }
 
 pub fn recent_label_rect(content_origin: (f32, f32)) -> Rect {
     let (x, y) = recent_label_origin(content_origin);
-    let width = COLORPICKER_WIDTH - COLORPICKER_PADDING * 2.0;
+    let width = WIDTH - PADDING * 2.0;
     Rect::from_xywh(x, y, width, RECENT_LABEL_HEIGHT).expect("recent label rect")
 }
 
@@ -314,7 +314,7 @@ pub fn swatch_row_top(content_origin_y: f32) -> f32 {
 pub fn swatch_center(content_origin: (f32, f32), idx: usize) -> (f32, f32) {
     let row_top = swatch_row_top(content_origin.1);
     let cx = content_origin.0
-        + COLORPICKER_PADDING
+        + PADDING
         + SWATCH_RADIUS
         + idx as f32 * (SWATCH_DIAMETER + SWATCH_GAP);
     let cy = row_top + SWATCH_RADIUS;
@@ -333,25 +333,25 @@ pub fn rgba_row_top(content_origin_y: f32) -> f32 {
 
 pub fn hex_label_pos(content_origin: (f32, f32)) -> (f32, f32) {
     (
-        content_origin.0 + COLORPICKER_PADDING,
+        content_origin.0 + PADDING,
         hex_row_top(content_origin.1),
     )
 }
 
 pub fn hex_field_geom(content_origin: (f32, f32)) -> Rect {
-    let x = content_origin.0 + COLORPICKER_PADDING + FIELD_LABEL_WIDTH;
+    let x = content_origin.0 + PADDING + FIELD_LABEL_WIDTH;
     let y = hex_row_top(content_origin.1);
-    let width = COLORPICKER_WIDTH - COLORPICKER_PADDING * 2.0 - FIELD_LABEL_WIDTH;
+    let width = WIDTH - PADDING * 2.0 - FIELD_LABEL_WIDTH;
     Rect::from_xywh(x, y, width, FIELD_HEIGHT).expect("hex field rect")
 }
 
 fn rgba_field_total_width() -> f32 {
-    (COLORPICKER_WIDTH - COLORPICKER_PADDING * 2.0 - 3.0 * FIELD_GAP) / 4.0
+    (WIDTH - PADDING * 2.0 - 3.0 * FIELD_GAP) / 4.0
 }
 
 pub fn rgba_slot_origin(content_origin: (f32, f32), idx: usize) -> (f32, f32) {
     let total_w = rgba_field_total_width();
-    let x = content_origin.0 + COLORPICKER_PADDING + idx as f32 * (total_w + FIELD_GAP);
+    let x = content_origin.0 + PADDING + idx as f32 * (total_w + FIELD_GAP);
     let y = rgba_row_top(content_origin.1);
     (x, y)
 }
@@ -414,7 +414,7 @@ impl ColorPickerPopover {
         Self {
             colorpicker_pixmap: None,
             position: (0.0, 0.0),
-            size: (COLORPICKER_WIDTH, COLORPICKER_HEIGHT),
+            size: (WIDTH, HEIGHT),
             opacity: 0.0,
             monitor_idx: 0,
             open: false,
@@ -448,8 +448,8 @@ impl ColorPickerPopover {
     pub fn sv_square_rect(&self) -> Option<Rect> {
         let rect = self.rect()?;
         Rect::from_xywh(
-            rect.left() + COLORPICKER_PADDING,
-            rect.top() + COLORPICKER_PADDING,
+            rect.left() + PADDING,
+            rect.top() + PADDING,
             SV_SQUARE_SIZE,
             SV_SQUARE_SIZE,
         )
@@ -473,8 +473,8 @@ impl ColorPickerPopover {
 
     pub fn hue_slider_rect(&self) -> Option<Rect> {
         let rect = self.rect()?;
-        let x = rect.left() + COLORPICKER_PADDING + SV_SQUARE_SIZE + HUE_SLIDER_GAP;
-        let y = rect.top() + COLORPICKER_PADDING;
+        let x = rect.left() + PADDING + SV_SQUARE_SIZE + HUE_SLIDER_GAP;
+        let y = rect.top() + PADDING;
         Rect::from_xywh(x, y, HUE_SLIDER_WIDTH, HUE_SLIDER_HEIGHT)
     }
 
@@ -636,7 +636,7 @@ impl UiPanel for ColorPickerPopover {
         &[]
     }
     fn padding(&self) -> f32 {
-        COLORPICKER_PADDING
+        PADDING
     }
     fn monitor_idx(&self) -> usize {
         self.monitor_idx
@@ -674,10 +674,10 @@ impl AnimatedPanel for ColorPickerPopover {
     }
 
     fn anim_interval(&self) -> Duration {
-        COLORPICKER_ANIM_INTERVAL
+        anim::FRAME
     }
     fn anim_dt(&self) -> f32 {
-        COLORPICKER_ANIM_DT
+        anim::DT
     }
 
     fn is_animating(&self) -> bool {

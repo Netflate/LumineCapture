@@ -1,15 +1,8 @@
-use super::paths::{draw_item_border, draw_panel_border, rounded_rect_path};
-use super::text::{HAlign, draw_aligned_text, draw_input_box, draw_line_edit};
-use crate::types::color_popover::{
-    COLOR_POPOVER_ITEM_BORDER, COLORPICKER_PADDING, COLORPICKER_RADIUS, ColorField,
-    ColorPickerPopover, ColorPopoverElement, ColorSquareState, FIELD_FONT_SIZE, FIELD_HEIGHT,
-    FIELD_LABEL_WIDTH, HUE_SLIDER_GAP, HUE_SLIDER_HEIGHT, HUE_SLIDER_RADIUS, HUE_SLIDER_WIDTH,
-    MARKER_OUTLINE, MARKER_RADIUS, MARKER_STROKE, RECENT_LABEL, RECENT_LABEL_FONT_SIZE,
-    RGBA_FIELDS, RGBA_LABEL_WIDTH, SV_SQUARE_RADIUS, SV_SQUARE_SIZE, SWATCH_RADIUS, hex_field_geom,
-    hex_label_pos, hsv_to_color, hue_handle_center_y, recent_label_rect, rgba_field_geom,
-    rgba_slot_origin, swatch_center,
-};
-use crate::types::panel::{DEFAULT_ITEM_BORDER_STROKE, ICON_COLOR, PANEL_COLOR, UiPanel};
+use crate::renderer::paths::{draw_item_border, draw_panel_border, rounded_rect_path};
+use crate::renderer::text::{HAlign, draw_aligned_text, draw_input_box, draw_line_edit};
+use crate::ui::color_popover::{ColorField, ColorPickerPopover, ColorPopoverElement, ColorSquareState, FIELD_FONT_SIZE, FIELD_HEIGHT, FIELD_LABEL_WIDTH, HUE_SLIDER_GAP, HUE_SLIDER_HEIGHT, HUE_SLIDER_RADIUS, HUE_SLIDER_WIDTH, SWATCH_BORDER, MARKER_OUTLINE, MARKER_RADIUS, MARKER_STROKE, PADDING, RADIUS, RECENT_LABEL, RECENT_LABEL_FONT_SIZE, RGBA_FIELDS, RGBA_LABEL_WIDTH, SV_SQUARE_RADIUS, SV_SQUARE_SIZE, SWATCH_RADIUS, hex_field_geom, hex_label_pos, hsv_to_color, hue_handle_center_y, recent_label_rect, rgba_field_geom, rgba_slot_origin, swatch_center};
+use crate::theme::color;
+use crate::ui::panel::UiPanel;
 use cosmic_text::{FontSystem, SwashCache, Weight};
 use tiny_skia::{
     BlendMode, Color, FillRule, FilterQuality, GradientStop, LinearGradient, Mask, Paint,
@@ -69,7 +62,7 @@ pub fn draw_color_popover(
         y,
         w,
         h,
-        COLORPICKER_RADIUS,
+        RADIUS,
         color_popover.opacity,
     );
 
@@ -108,12 +101,12 @@ fn draw_color_popover_content(
         return;
     };
 
-    let Some(path) = rounded_rect_path(&rect, COLORPICKER_RADIUS, true, true, true, true) else {
+    let Some(path) = rounded_rect_path(&rect, RADIUS, true, true, true, true) else {
         return;
     };
 
     let mut paint = Paint::default();
-    paint.set_color(PANEL_COLOR);
+    paint.set_color(color::PANEL.color());
     paint.anti_alias = true;
     canvas.fill_path(
         &path,
@@ -124,7 +117,7 @@ fn draw_color_popover_content(
     );
 
     // ── sv square ────────────────────────────────────────
-    let square_origin = (COLORPICKER_PADDING, COLORPICKER_PADDING);
+    let square_origin = (PADDING, PADDING);
 
     let mut sv_clip = color_popover.sv_clip_mask.take();
     if sv_clip.is_none() {
@@ -151,7 +144,7 @@ fn draw_color_popover_content(
         SV_SQUARE_SIZE,
         SV_SQUARE_SIZE,
         SV_SQUARE_RADIUS,
-        COLOR_POPOVER_ITEM_BORDER,
+        SWATCH_BORDER,
         sv_hovered,
         color_popover.sv_square.dragging,
     );
@@ -168,8 +161,8 @@ fn draw_color_popover_content(
 
     // ── hue slider ───────────────────────────────────────
     let track_origin = (
-        COLORPICKER_PADDING + SV_SQUARE_SIZE + HUE_SLIDER_GAP,
-        COLORPICKER_PADDING,
+        PADDING + SV_SQUARE_SIZE + HUE_SLIDER_GAP,
+        PADDING,
     );
     let hue = color_popover.sv_square.hue;
 
@@ -198,7 +191,7 @@ fn draw_color_popover_content(
         HUE_SLIDER_WIDTH,
         HUE_SLIDER_HEIGHT,
         HUE_SLIDER_RADIUS,
-        COLOR_POPOVER_ITEM_BORDER,
+        SWATCH_BORDER,
         hue_hovered,
         color_popover.hue_dragging,
     );
@@ -392,7 +385,7 @@ fn draw_recent_colors(
     swash_cache: &mut SwashCache,
 ) {
     let origin = (0.0, 0.0);
-    let label_color = Color::from_rgba8(200, 200, 205, 160);
+    let label_color = color::MUTED.color();
 
     draw_aligned_text(
         canvas,
@@ -446,7 +439,7 @@ fn draw_color_fields(
     swash_cache: &mut SwashCache,
 ) {
     let origin = (0.0, 0.0);
-    let label_color = Color::from_rgba8(200, 200, 205, 160);
+    let label_color = color::MUTED.color();
 
     let (label_x, label_y) = hex_label_pos(origin);
     let hex_label_rect =
@@ -524,7 +517,7 @@ fn draw_color_input_field(
         box_rect.width(),
         box_rect.height(),
         4.0,
-        DEFAULT_ITEM_BORDER_STROKE,
+        SWATCH_BORDER,
         is_hovered,
         is_editing,
     );
@@ -544,7 +537,7 @@ fn draw_color_input_field(
         .filter(|e| e.key == field)
         .map(|e| &e.field);
 
-    let text_color = Color::from_rgba8(ICON_COLOR.red, ICON_COLOR.green, ICON_COLOR.blue, 255);
+    let text_color = color::ON_PANEL.color();
 
     draw_line_edit(
         canvas,
