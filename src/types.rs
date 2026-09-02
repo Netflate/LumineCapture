@@ -1,34 +1,16 @@
 pub mod annotations;
 pub mod capture;
-pub mod click;
-pub mod color_popover;
 pub mod events;
-pub mod icons;
-pub mod magnifier;
-pub mod panel;
 pub mod selection;
-pub mod settings_panel;
 pub mod text;
-pub mod text_field;
-pub mod toast;
 pub mod tool_settings;
-pub mod toolbar;
 
 pub use annotations::*;
 pub use capture::*;
-pub use click::*;
-pub use color_popover::*;
 pub use events::*;
-pub use icons::*;
-pub use magnifier::*;
-pub use panel::*;
 pub use selection::*;
-pub use settings_panel::*;
 pub use text::*;
-pub use text_field::*;
-pub use toast::*;
 pub use tool_settings::*;
-pub use toolbar::*;
 
 use tiny_skia::Rect;
 #[derive(Clone, Copy, Debug)]

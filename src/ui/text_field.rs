@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use crate::types::SpecialKey;
 
-pub const SCROLL_SENSITIVITY: f32 = 4.0;
 
 #[derive(Debug, Clone, Default)]
 pub struct LineEditState {

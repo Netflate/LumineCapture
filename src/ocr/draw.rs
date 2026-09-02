@@ -15,24 +15,22 @@
 //     each other exactly as they would drawn straight onto the canvas.
 
 use std::collections::HashMap;
-use tiny_skia::{Color, FillRule, Paint, Pixmap, Rect, Transform};
+use tiny_skia::{FillRule, Paint, Pixmap, Rect, Transform};
 use usvg::Tree;
 
-use super::paths::{draw_panel_border, draw_svg_icon, rect_bounds, rounded_rect_path};
+use crate::renderer::paths::{draw_panel_border, draw_svg_icon, rect_bounds, rounded_rect_path};
 use crate::ocr::OcrView;
-use crate::types::icons;
-use crate::types::panel::{BUTTON_SELECTED, ICON_COLOR};
+use crate::theme::{Rgba, color};
+use crate::ui::icons;
 
 /// Wash over the whole scanned area. Deliberately paired with `PLATE` below: the
 /// shade pushes the screenshot back and the plate lifts the text roughly back to
 /// where it started, so the lines read as the foreground without the region ever
 /// getting as dark as the overlay dim outside it.
-const REGION_SHADE: (u8, u8, u8, u8) = (10, 8, 20, 58);
+const REGION_SHADE: Rgba = Rgba(10, 8, 20, 58);
 
 /// Plate behind a block of text.
-const PLATE: (u8, u8, u8, u8) = (255, 255, 255, 20);
-
-const SELECT_FILL: (u8, u8, u8, u8) = (96, 152, 255, 110);
+const PLATE: Rgba = Rgba(255, 255, 255, 20);
 
 /// Grown around a block's own bounds so the plate reads as a box around the
 /// text rather than a tight box on it.
@@ -44,7 +42,6 @@ const PLATE_RADIUS: f32 = 5.0;
 
 const BADGE_SIZE: f32 = 62.0;
 const BADGE_RADIUS: f32 = 17.0;
-const BADGE_BG: (u8, u8, u8, u8) = (17, 17, 27, 250);
 const BADGE_ICON_SIZE: f32 = 30.0;
 /// Sweeps per second, counting there and back as two.
 const SCAN_RATE: f32 = 1.15;
@@ -79,7 +76,7 @@ pub fn draw_ocr_overlay(
             sel.y.1 + PLATE_PAD_Y,
         )
     });
-    painter.fill_union(spans, 2.0, SELECT_FILL);
+    painter.fill_union(spans, 2.0, color::SELECT);
 
     painter.finish(canvas);
 }
@@ -102,7 +99,7 @@ pub fn draw_ocr_scan(
     painter.fill(region, 0.0, REGION_SHADE);
 
     let badge = scan_badge_rect(region);
-    painter.fill(badge, BADGE_RADIUS, BADGE_BG);
+    painter.fill(badge, BADGE_RADIUS, color::PANEL);
 
     let left = badge.left() - offset.0;
     let top = badge.top() - offset.1;
@@ -115,7 +112,7 @@ pub fn draw_ocr_scan(
         BADGE_ICON_SIZE,
         bx + (BADGE_SIZE - BADGE_ICON_SIZE) / 2.0,
         by + (BADGE_SIZE - BADGE_ICON_SIZE) / 2.0,
-        ICON_COLOR,
+        color::ON_PANEL.usvg(),
     );
 
     // Ping-pong, eased at both ends so the bar decelerates into each turn
@@ -128,10 +125,9 @@ pub fn draw_ocr_scan(
     let x = left + (BADGE_SIZE - track) / 2.0 + t * track;
     let bar_top = top + (BADGE_SIZE - track) / 2.0;
 
-    let c = BUTTON_SELECTED.to_color_u8();
     let half = SCAN_WIDTH / 2.0;
     if let Some(bar) = Rect::from_ltrb(x - half, bar_top, x + half, bar_top + track) {
-        painter.fill_local(bar, half, (c.red(), c.green(), c.blue(), 255));
+        painter.fill_local(bar, half, color::ACCENT_BRIGHT);
     }
 
     painter.finish(canvas);
@@ -178,7 +174,7 @@ impl Painter {
         &mut self,
         rects: impl IntoIterator<Item = Rect>,
         radius: f32,
-        color: (u8, u8, u8, u8),
+        color: Rgba,
     ) {
         let mut pb = tiny_skia::PathBuilder::new();
         let mut any = false;
@@ -202,7 +198,7 @@ impl Painter {
         let Some(path) = pb.finish() else { return };
 
         let mut paint = Paint::default();
-        paint.set_color(Color::from_rgba8(color.0, color.1, color.2, color.3));
+        paint.set_color(color.color());
         paint.anti_alias = radius > 0.0;
         self.buf
             .fill_path(&path, &paint, FillRule::Winding, Transform::identity(), None);
@@ -223,7 +219,7 @@ impl Painter {
         (!outside).then_some(rect)
     }
 
-    fn fill(&mut self, rect: Rect, radius: f32, color: (u8, u8, u8, u8)) {
+    fn fill(&mut self, rect: Rect, radius: f32, color: Rgba) {
         let Some(local) = Rect::from_ltrb(
             rect.left() - self.offset.0,
             rect.top() - self.offset.1,
@@ -235,7 +231,7 @@ impl Painter {
         self.fill_local(local, radius, color);
     }
 
-    fn fill_local(&mut self, rect: Rect, radius: f32, color: (u8, u8, u8, u8)) {
+    fn fill_local(&mut self, rect: Rect, radius: f32, color: Rgba) {
         let Some(rect) = Rect::from_ltrb(
             rect.left() - self.origin.0,
             rect.top() - self.origin.1,
@@ -253,7 +249,7 @@ impl Painter {
         }
 
         let mut paint = Paint::default();
-        paint.set_color(Color::from_rgba8(color.0, color.1, color.2, color.3));
+        paint.set_color(color.color());
         paint.anti_alias = radius > 0.0;
 
         let path = if radius > 0.0 {

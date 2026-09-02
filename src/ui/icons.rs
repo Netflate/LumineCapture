@@ -1,5 +1,5 @@
 use crate::tools::Tool;
-use crate::types::toolbar::BUTTON_CELL_SIZE;
+use crate::ui::toolbar;
 
 pub const SELECTION: &str = include_str!("../../assets/icons/selection.svg");
 pub const ARROW: &str = include_str!("../../assets/icons/arrow.svg");
@@ -16,7 +16,7 @@ pub const BOLD: &str = include_str!("../../assets/icons/bold.svg");
 pub const RETRY: &str = include_str!("../../assets/icons/retry.svg");
 pub const COPY: &str = include_str!("../../assets/icons/copy.svg");
 // svg icon sizes
-const DEFAULT_ICON_SIZE: f32 = BUTTON_CELL_SIZE - 4.0;
+const DEFAULT_ICON_SIZE: f32 = toolbar::BUTTON_CELL - 4.0;
 
 /// Icons tied to a drawing Tool (used in the toolbar).
 pub fn get_svg_for_tool(tool: Tool) -> (&'static str, f32) {
