@@ -159,6 +159,9 @@ pub fn initial_paint(
     let icons_cache_ref = &*icons_cache;
     let magnifier_ref = &*magnifier;
 
+    let no_toasts = crate::types::toast::Toasts::default();
+    let no_toasts = &no_toasts;
+
     std::thread::scope(|scope| {
         let mut handles = Vec::with_capacity(n);
 
@@ -208,6 +211,8 @@ pub fn initial_paint(
                     current_color: DEFAULT_COLOR,
                     ocr_view: None,
                     ocr_scan: None,
+                    monitor_idx: i,
+                    toasts: no_toasts,
                     dim_fade: None,
                 });
             }));

@@ -81,6 +81,7 @@ pub async fn make_screenshot(
         settings_panel: SettingsPanel::new(),
         tool_settings: ToolSettings::default(),
         color_popover: ColorPickerPopover::new(),
+        toasts: crate::types::toast::Toasts::default(),
         icons_cache,
         annotations: Vec::new(),
         pending: None,
@@ -111,6 +112,7 @@ pub async fn make_screenshot(
         ocr_view: crate::ocr::OcrView::default(),
         ocr_redrag: false,
         ocr_redrag_from: None,
+        ocr_await_region: false,
         ocr_scan_started: None,
 
         dim_strength: 0.0,
@@ -138,11 +140,13 @@ pub async fn make_screenshot(
     let _save_as_file = true;
 
     loop {
-        let is_animating =
-            editor_state.toolbar.is_animating() || editor_state.color_popover.is_animating();
+        let is_animating = editor_state.toolbar.is_animating()
+            || editor_state.color_popover.is_animating()
+            || editor_state.toasts.is_animating();
         let stepper_holding = editor_state.settings_panel.arrow_held.is_some();
         let fading_in = editor_state.dim_strength < 1.0;
-        let timeout = if is_animating || stepper_holding || editor_state.ocr.is_busy() || fading_in {
+        let ocr_working = editor_state.ocr.needs_poll();
+        let timeout = if is_animating || stepper_holding || ocr_working || fading_in {
             16
         } else {
             -1
@@ -247,6 +251,20 @@ pub async fn make_screenshot(
             &mut dirty_mask,
         );
         settings_logic::tick_stepper_arrow_hold(&mut editor_state, &mut dirty_mask);
+
+        let toast_place = {
+            let idx = editor_state.pointer.monitor_idx;
+            let placement = &editor_state.placements[idx];
+            crate::types::toast::ToastPlace {
+                monitor_idx: idx,
+                size: (placement.size.0 as f32, placement.size.1 as f32),
+            }
+        };
+        editor_state.toasts.tick(
+            toast_place,
+            &mut editor_state.damage_rects,
+            &mut dirty_mask,
+        );
 
         if editor_state.toolbar.is_animating() || editor_state.color_popover.is_animating() {
             if editor_state.settings_panel.visible {
@@ -441,12 +459,17 @@ pub async fn make_screenshot(
                         swash_cache: Some(&mut editor_state.swash_cache),
                         text_editors: Some(&mut editor_state.text_editors),
                         active_text_id,
-                        ocr_view: if editor_state.ocr_view.is_active() {
+
+                        ocr_view: if editor_state.selected_tool == Tool::Ocr
+                            && editor_state.ocr_view.is_active()
+                        {
                             Some(&editor_state.ocr_view)
                         } else {
                             None
                         },
                         ocr_scan: scan_badge,
+                        monitor_idx: i,
+                        toasts: &editor_state.toasts,
                         dim_fade,
                     });
 
@@ -498,6 +521,8 @@ fn tick_dim_fade(editor_state: &mut EditorState, dirty_mask: &mut u32) -> Option
     for i in 0..editor_state.placements.len() {
         crate::editor::dirty::mark_dirty(dirty_mask, i);
     }
+    editor_state.toolbar.dirty = true;
+    editor_state.settings_panel.dirty = true;
     Some(editor_state.dim_strength)
 }
 

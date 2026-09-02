@@ -32,15 +32,18 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
     // A running scan owns the panel outright: its buttons act on a result that
     // isn't there yet.
     let scanning = editor_state.selected_tool == Tool::Ocr && editor_state.ocr.is_busy();
+    let awaiting = editor_state.selected_tool == Tool::Ocr && editor_state.ocr_await_region;
 
     let new_widgets = match selected_ann {
         _ if scanning => OCR_SCANNING_WIDGETS,
+        _ if awaiting => &[][..],
         Some(ann) => widgets_for_annotation(ann),
         None => widgets_for_tool(editor_state.selected_tool),
     };
 
     let new_source = match selected_ann {
         _ if scanning => SettingsSource::OcrScanning,
+        _ if awaiting => SettingsSource::OcrAwaiting,
         Some(ann) => SettingsSource::Annotation(ann.id),
         None => SettingsSource::Tool(editor_state.selected_tool),
     };

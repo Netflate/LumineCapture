@@ -5,6 +5,7 @@ mod ocr;
 mod paths;
 mod settings_panel;
 mod text;
+mod toast;
 mod toolbar;
 
 pub use annotations::{
@@ -15,6 +16,7 @@ pub use magnifier::magnifier_rect;
 pub use ocr::scan_badge_rect;
 pub use paths::{rect_bounds, rounded_rect_path};
 pub use settings_panel::char_index_for_x;
+pub use text::measure_line_width;
 
 use crate::types::annotations::Annotation;
 use crate::types::color_popover::ColorPickerPopover;
@@ -61,6 +63,8 @@ pub struct RenderRequest<'a> {
     /// OCR tool: region being scanned (global) + spinner animation, while a
     /// recognition is working
     pub ocr_scan: Option<(Rect, f32)>,
+    pub monitor_idx: usize,
+    pub toasts: &'a crate::types::toast::Toasts,
     /// Intro fade. `Some(strength)` rebuilds the whole dim layer from `base` at
     /// that strength (0 = untouched, 1 = fully dimmed) and repaints the whole
     /// monitor; `None` is the normal incremental path.
@@ -237,6 +241,22 @@ pub fn render_frame(req: &mut RenderRequest) {
                 "font_system/swash_cache are required for drawing color popover"
             ),
         }
+    }
+
+    if !req.toasts.items.is_empty()
+        && let (Some(font_system), Some(swash_cache)) = (
+            req.font_system.as_deref_mut(),
+            req.swash_cache.as_deref_mut(),
+        )
+    {
+        toast::draw_toasts(
+            req.canvas,
+            req.toasts,
+            req.monitor_idx,
+            dirty_rect,
+            font_system,
+            swash_cache,
+        );
     }
 }
 // ***************************/

@@ -5,6 +5,7 @@ use crate::renderer::scan_badge_rect;
 use crate::tools::ToolBehavior;
 use crate::tools::selection::SelectionTool;
 use crate::types::click::ClickTarget;
+use crate::types::toast::ToastKind;
 use crate::types::{MouseButton, SelectionHandle, SpecialKey};
 use std::time::Instant;
 use tiny_skia::Rect;
@@ -12,16 +13,28 @@ use tiny_skia::Rect;
 pub struct OcrTool;
 
 impl ToolBehavior for OcrTool {
-    // Picking the tool recognizes straight away: the active selection if
-    // there is one, otherwise the monitor under the cursor. The work runs on a
-    // background thread; `app` polls for the result and calls `finish_ocr`.
-    fn on_activate(&self, state: &mut EditorState, dirty_mask: &mut u32) {
+    // Picking the tool recognizes straight away when a selection is already
+    // there. The work runs on a background thread; `app` polls for the result
+    // and calls `finish_ocr`.
+    fn on_activate(&self, state: &mut EditorState, _dirty_mask: &mut u32) {
         if state.ocr.is_busy() {
             return;
         }
+
         damage_all(state);
+
+        // If this selection zone is already scanned, shows older result without recanning
+        if state.ocr_view.is_active() && state.ocr_view.region() == state.selection.zone {
+            return;
+        }
         state.ocr_view.clear();
-        start_ocr(state, dirty_mask);
+
+        // if there is no selection, ask for dragging one, using notification toast
+        if state.selection.zone.is_none() {
+            await_region(state);
+            return;
+        }
+        start_ocr(state);
     }
 
     fn on_button(
@@ -29,7 +42,7 @@ impl ToolBehavior for OcrTool {
         state: &mut EditorState,
         button: MouseButton,
         pressed: bool,
-        dirty_mask: &mut u32,
+        _dirty_mask: &mut u32,
     ) {
         if !matches!(button, MouseButton::Left) {
             return;
@@ -37,7 +50,7 @@ impl ToolBehavior for OcrTool {
         state.mouse_down_left = pressed;
 
         if !pressed {
-            end_region_drag(state, dirty_mask);
+            end_region_drag(state);
             return;
         }
 
@@ -96,13 +109,35 @@ impl ToolBehavior for OcrTool {
         }
     }
 
+    // on deactivate we cancel scan in progress, or cache scanned text if it was done.
+    // and in both cases clear the visuals 
     fn on_deactivate(&self, state: &mut EditorState, _dirty_mask: &mut u32) {
-        damage_all(state);
-        state.ocr_view.clear();
-        state.ocr_scan_started = None;
+        let scanning = state.ocr.is_busy();
+        cancel_scan(state);
+        if scanning {
+            state.ocr_view.clear();
+        } else {
+            let _ = state.ocr_view.deselect();
+        }
         state.ocr_redrag = false;
         state.tool_active = false;
+        state.ocr_await_region = false;
+        state.toasts.dismiss(ToastKind::OcrPickRegion);
     }
+}
+
+fn cancel_scan(state: &mut EditorState) {
+    state.ocr.cancel();
+    state.ocr_scan_started = None;
+    damage_all(state);
+}
+
+/// waiting for drag with showing toast
+fn await_region(state: &mut EditorState) {
+    state.ocr_await_region = true;
+    state
+        .toasts
+        .show(ToastKind::OcrPickRegion, &mut state.font_system);
 }
 
 /// A drag has to cover at least this much before it counts as boxing out a new
@@ -135,10 +170,11 @@ fn pressed_inside_region(state: &EditorState) -> bool {
 /// This prevents accidentally moving a full-screen box off the monitor.
 fn begin_region_drag(state: &mut EditorState) {
     if state.ocr.is_busy() {
-        // A scan already owns the region; moving it now would leave the badge
-        // and the shade describing an area nobody asked for.
-        return;
+        cancel_scan(state);
+        state.ocr_view.clear();
     }
+
+    state.toasts.dismiss(ToastKind::OcrPickRegion);
     state.ocr_redrag = true;
     state.ocr_redrag_from = state.selection.zone;
     state.tool_active = true;
@@ -146,7 +182,7 @@ fn begin_region_drag(state: &mut EditorState) {
     state.drag_start = Some(state.pointer.global);
 }
 
-fn end_region_drag(state: &mut EditorState, dirty_mask: &mut u32) {
+fn end_region_drag(state: &mut EditorState) {
     if !state.ocr_redrag {
         return;
     }
@@ -156,16 +192,20 @@ fn end_region_drag(state: &mut EditorState, dirty_mask: &mut u32) {
     state.selection.set_drag(SelectionHandle::None, None, None);
 
     if boxed_out(state) {
-        start_ocr(state, dirty_mask);
+        state.ocr_await_region = false;
+        start_ocr(state);
         return;
     }
 
-    // Restore the original selection if the drag barely moved, so a simple click does nothing.
     if state.selection.zone != state.ocr_redrag_from {
         for zone in [state.selection.zone, state.ocr_redrag_from].into_iter().flatten() {
             state.damage_rects.push(DamageZone::Global(zone));
         }
         state.selection.zone = state.ocr_redrag_from;
+    }
+
+    if state.ocr_await_region {
+        await_region(state);
     }
 }
 
@@ -189,28 +229,8 @@ fn damage_overlay(state: &mut EditorState, rect: Option<Rect>) {
     }
 }
 
-/// The region to scan. If nothing is selected, it defaults to the monitor under
-/// the cursor and selects it. This brightens the chosen screen, making it clear
-/// which one was read. Choosing the tool again after making a selection elsewhere
-/// will scan that new area instead.
-fn scan_region(state: &mut EditorState, dirty_mask: &mut u32) -> Option<Rect> {
-    if state.selection.zone.is_none() {
-        let placement = &state.placements[state.pointer.monitor_idx];
-        state.selection.zone = Rect::from_xywh(
-            placement.position.0 as f32,
-            placement.position.1 as f32,
-            placement.size.0 as f32,
-            placement.size.1 as f32,
-        );
-        for i in 0..state.placements.len() {
-            mark_dirty(dirty_mask, i);
-        }
-    }
-    state.selection.zone
-}
-
-fn start_ocr(state: &mut EditorState, dirty_mask: &mut u32) {
-    let Some(region) = scan_region(state, dirty_mask) else {
+fn start_ocr(state: &mut EditorState) {
+    let Some(region) = state.selection.zone else {
         return;
     };
 
@@ -231,12 +251,11 @@ fn start_ocr(state: &mut EditorState, dirty_mask: &mut u32) {
 }
 
 /// Re-run recognition over the current selection. Driven by the panel's rescan
-/// button, which is how the user points it at a different screen: move point there
-/// and click rescan, but maybe its not the best approach
-pub fn restart_ocr(state: &mut EditorState, dirty_mask: &mut u32) {
+/// button; another area is picked by dragging a new box instead.
+pub fn restart_ocr(state: &mut EditorState, _dirty_mask: &mut u32) {
     damage_all(state);
     state.ocr_view.clear();
-    start_ocr(state, dirty_mask);
+    start_ocr(state);
 }
 
 /// Copy what is selected, or everything when nothing is.

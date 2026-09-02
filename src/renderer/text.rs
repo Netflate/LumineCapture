@@ -96,6 +96,17 @@ pub fn shape_single_line(
     (buffer, text_width, text_height)
 }
 
+pub fn measure_line_width(text: &str, font_size: f32, font_system: &mut FontSystem) -> f32 {
+    shape_single_line(
+        font_system,
+        text,
+        font_size,
+        cosmic_text::Weight::NORMAL,
+        cosmic_text::Style::Normal,
+    )
+    .1
+}
+
 pub fn draw_aligned_text(
     canvas: &mut Pixmap,
     text: &str,

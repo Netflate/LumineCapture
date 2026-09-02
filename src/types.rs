@@ -10,6 +10,7 @@ pub mod selection;
 pub mod settings_panel;
 pub mod text;
 pub mod text_field;
+pub mod toast;
 pub mod tool_settings;
 pub mod toolbar;
 
@@ -25,6 +26,7 @@ pub use selection::*;
 pub use settings_panel::*;
 pub use text::*;
 pub use text_field::*;
+pub use toast::*;
 pub use tool_settings::*;
 pub use toolbar::*;
 

@@ -32,6 +32,9 @@ pub struct OcrRuntime {
     queued: Option<OcrImage>,
     /// Set if the engine fails to build; later requests fail fast.
     failed: Option<String>,
+    /// we can't kill the thread, so we wait for it to finish, and only then
+    /// return the engine with discarding the text
+    discarded: bool,
 }
 
 impl Default for OcrRuntime {
@@ -53,13 +56,25 @@ impl OcrRuntime {
             job_rx: None,
             queued: None,
             failed: None,
+            discarded: false,
         }
     }
 
-    /// Returns outstanding, running or waiting on the engine. The event loop
-    /// polls at frame rate while this holds.
+    /// A scan somebody is still waiting for: running, or parked until the
+    /// engine is ready. A cancelled one does not count.
     pub fn is_busy(&self) -> bool {
+        (self.job_rx.is_some() && !self.discarded) || self.queued.is_some()
+    }
+
+    pub fn needs_poll(&self) -> bool {
         self.job_rx.is_some() || self.queued.is_some()
+    }
+
+    pub fn cancel(&mut self) {
+        self.queued = None;
+        if self.job_rx.is_some() {
+            self.discarded = true;
+        }
     }
 
     /// Start recognizing `image`. Parks the request if the engine isn't ready.
@@ -101,18 +116,26 @@ impl OcrRuntime {
         }
 
         let rx = self.job_rx.as_ref()?;
-        match rx.try_recv() {
+        let (done, out) = match rx.try_recv() {
             Ok((backend, result)) => {
                 self.backend = Some(backend);
-                self.job_rx = None;
-                Some(result)
+                (true, Some(result))
             }
-            Err(TryRecvError::Empty) => None,
+            Err(TryRecvError::Empty) => (false, None),
             Err(TryRecvError::Disconnected) => {
-                self.job_rx = None;
-                Some(Err("recognition thread vanished".into()))
+                (true, Some(Err("recognition thread vanished".into())))
             }
+        };
+        if !done {
+            return None;
         }
+        self.job_rx = None;
+
+        if self.discarded {
+            self.discarded = false;
+            return None;
+        }
+        out
     }
 
     fn spawn(&mut self, backend: Box<dyn OcrBackend>, image: OcrImage) {
@@ -173,6 +196,7 @@ mod state_machine {
             job_rx: None,
             queued: None,
             failed: None,
+            discarded: false,
         }
     }
 
@@ -210,6 +234,7 @@ mod state_machine {
             job_rx: None,
             queued: None,
             failed: None,
+            discarded: false,
         };
         assert!(matches!(rt.start(image()), StartOutcome::Started));
         assert!(rt.is_busy(), "a parked request counts as busy");
@@ -233,6 +258,41 @@ mod state_machine {
     }
 
     #[test]
+    fn a_cancelled_job_is_silent_but_hands_the_engine_back() {
+        let mut rt = warm();
+        assert!(rt.poll().is_none());
+        assert!(matches!(rt.start(image()), StartOutcome::Started));
+
+        rt.cancel();
+        assert!(!rt.is_busy(), "nobody waits for a cancelled scan");
+
+        for _ in 0..200 {
+            if !rt.needs_poll() {
+                break;
+            }
+            assert!(rt.poll().is_none(), "the cancelled result must not surface");
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(!rt.needs_poll(), "the worker must have been collected");
+
+        assert!(matches!(rt.start(image()), StartOutcome::Started));
+        assert!(drain(&mut rt).expect("result").is_ok());
+    }
+
+    #[test]
+    fn a_scan_started_over_a_cancelled_one_still_runs() {
+        let mut rt = warm();
+        assert!(rt.poll().is_none());
+        rt.start(image());
+        rt.cancel();
+
+        assert!(matches!(rt.start(image()), StartOutcome::Started));
+        assert!(rt.is_busy(), "the replacement is live even while the old one drains");
+        let out = drain(&mut rt).expect("the replacement must come back");
+        assert_eq!(out.unwrap().lines[0].text, "ok");
+    }
+
+    #[test]
     fn failed_build_is_reported_then_refused() {
         let (tx, rx) = channel();
         let mut rt = OcrRuntime {
@@ -241,6 +301,7 @@ mod state_machine {
             job_rx: None,
             queued: None,
             failed: None,
+            discarded: false,
         };
         rt.start(image());
         tx.send(Err("boom".into())).unwrap();

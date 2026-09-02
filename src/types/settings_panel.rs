@@ -90,6 +90,7 @@ pub enum SettingsSource {
     Tool(Tool),
     Annotation(u64),
     OcrScanning,
+    OcrAwaiting, // <- waiting for drag
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

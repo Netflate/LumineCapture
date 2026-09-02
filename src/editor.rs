@@ -33,6 +33,7 @@ pub struct EditorState {
     pub toolbar: Toolbar,
     pub settings_panel: SettingsPanel,
     pub color_popover: ColorPickerPopover,
+    pub toasts: crate::types::toast::Toasts,
     // annotations
     pub annotations: Vec<Annotation>,
     pub pending: Option<Annotation>,
@@ -75,6 +76,8 @@ pub struct EditorState {
     /// This prevents a simple click from clearing the current result.
     pub ocr_redrag: bool,
     pub ocr_redrag_from: Option<Rect>,
+
+    pub ocr_await_region: bool,
 
     /// When the running recognition started, driving the progress badge's spin.
     /// `None` whenever nothing is in flight.
