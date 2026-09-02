@@ -241,13 +241,6 @@ pub(super) fn cmp_reading(a: &Rect, b: &Rect) -> std::cmp::Ordering {
     a.top().total_cmp(&b.top()).then(a.left().total_cmp(&b.left()))
 }
 
-/// Nearest distance from a point to a rectangle 
-pub(super) fn point_rect_dist(x: f32, y: f32, r: &Rect) -> f32 {
-    let dx = (r.left() - x).max(x - r.right()).max(0.0);
-    let dy = (r.top() - y).max(y - r.bottom()).max(0.0);
-    (dx * dx + dy * dy).sqrt()
-}
-
 /// Smallest rectangle containing both, or `a` when that somehow fails.
 pub(super) fn union_rect(a: Option<Rect>, b: Rect) -> Option<Rect> {
     let Some(a) = a else { return Some(b) };

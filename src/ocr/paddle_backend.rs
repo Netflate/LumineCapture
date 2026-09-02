@@ -242,9 +242,10 @@ impl OcrBackend for PaddleBackend {
 }
 
 /// One crop's recognition result.
+#[derive(Default)]
 struct Read {
     text: String,
-    /// Per-character position, normalized 0..1 across the crop width.
+    /// Per-character position, 0..1 across the crop's own width.
     positions: Vec<f32>,
     confidence: f32,
 }
@@ -255,18 +256,40 @@ fn ms(start: Instant) -> f64 {
 }
 
 fn recognize_one(recognizer: &Recognizer, crop: &image::RgbImage) -> Read {
-    match recognizer.predict(ImageTaskInput::new(vec![crop.clone()])) {
-        Ok(mut out) => Read {
-            text: out.texts.drain(..).next().unwrap_or_default(),
-            positions: out.char_positions.drain(..).next().unwrap_or_default(),
-            confidence: out.scores.first().copied().unwrap_or(0.0),
-        },
-        Err(_) => Read {
-            text: String::new(),
-            positions: Vec::new(),
-            confidence: 0.0,
-        },
+    let Ok(mut out) = recognizer.predict(ImageTaskInput::new(vec![crop.clone()])) else {
+        return Read::default();
+    };
+    let steps = out.sequence_lengths.first().copied().unwrap_or(0);
+    let positions = out.char_positions.drain(..).next().unwrap_or_default();
+    Read {
+        text: out.texts.drain(..).next().unwrap_or_default(),
+        positions: to_crop_space(positions, steps, crop.width(), crop.height()),
+        confidence: out.scores.first().copied().unwrap_or(0.0),
     }
+}
+
+// Adjusts character positions returned by the OCR model.
+//
+// recognizer scales image crops to 48px high and pads them to a fixed width.
+// Because of this extra padding, character coordinates can get squished 
+// to the left, especially on short lines.
+const REC_HEIGHT: f32 = 48.0;
+const REC_WIDTH: f32 = 320.0;
+const REC_MAX_WIDTH: f32 = 3200.0;
+
+/// Padded-tensor positions -> fractions of the crop itself.
+fn to_crop_space(mut positions: Vec<f32>, steps: usize, w: u32, h: u32) -> Vec<f32> {
+    let ratio = w as f32 / h.max(1) as f32;
+    let tensor_w = (REC_HEIGHT * ratio.max(REC_WIDTH / REC_HEIGHT))
+        .floor()
+        .min(REC_MAX_WIDTH);
+    let content_w = (REC_HEIGHT * ratio).ceil().min(tensor_w).max(1.0);
+
+    let half_step = if steps > 0 { 0.5 / steps as f32 } else { 0.0 };
+    for p in &mut positions {
+        *p = ((*p + half_step) * tensor_w / content_w).clamp(0.0, 1.0);
+    }
+    positions
 }
 
 /// Minimum confidence for a one-character read to be believed.
@@ -333,30 +356,88 @@ fn median_height(rects: &[Rect]) -> f32 {
     heights.sort_by(f32::total_cmp);
     heights[heights.len() / 2].max(1.0)
 }
-
-// the X position of every character boundary, including the ends.
-// Total values = character count + 1 (sorted left to right).
-//
-// `norm` holds normalized character positions (0.0 to 1.0).
-// Boundaries inside the text are placed midway between neighboring characters.
+/// Returns X coordinates for character boundaries (character count + 1 values), 
+/// sorted left to right within `bounds`.
+///
+/// Handles proportional spacing so boundaries split gaps based on character widths
+/// (exp an 'i' next to a 'W' won't take up half the space).
 fn char_boundaries(bounds: &Rect, text: &str, norm: &[f32]) -> Vec<f32> {
-    let n = text.chars().count();
-    let (left, width) = (bounds.left(), bounds.width());
+    let widths: Vec<f32> = text.chars().map(advance).collect();
+    let n = widths.len();
+    let (left, right) = (bounds.left(), bounds.right());
     if n == 0 {
-        return vec![left, bounds.right()];
+        return vec![left, right];
     }
-    let at = |k: usize| left + width * norm.get(k).copied().unwrap_or(1.0).clamp(0.0, 1.0);
+
+    let at = |k: usize| left + bounds.width() * norm[k].clamp(0.0, 1.0);
+    let span = if norm.len() == n { at(n - 1) - at(0) } else { 0.0 };
+    if n == 1 || span <= 0.0 {
+        return modelled(left, right, &widths);
+    }
+
+    // OCR positions measure center-to-center, leaving half of the first 
+    // and half of the last character uncovered.
+    let total: f32 = widths.iter().sum();
+    let unit = span / (total - 0.5 * (widths[0] + widths[n - 1])).max(f32::EPSILON);
 
     let mut xs = Vec::with_capacity(n + 1);
-    xs.push(left);
+    xs.push(at(0) - 0.5 * widths[0] * unit);
     for k in 1..n {
-        xs.push(0.5 * (at(k - 1) + at(k)));
+        let share = widths[k - 1] / (widths[k - 1] + widths[k]);
+        xs.push(at(k - 1) + (at(k) - at(k - 1)) * share);
     }
-    xs.push(bounds.right());
-    for i in 1..xs.len() {
-        if xs[i] < xs[i - 1] {
-            xs[i] = xs[i - 1];
+    xs.push(at(n - 1) + 0.5 * widths[n - 1] * unit);
+
+    // OCR positions can drift left on dense text. Re-center everything 
+    // relative to the bounding box.
+    let slide = 0.5 * (left + right - xs[0] - xs[n]);
+    for x in &mut xs {
+        *x += slide;
+    }
+
+    // Ensure narrow characters have a minimum width so boundaries don't overlap.
+    const MIN_SHARE: f32 = 0.6;
+    xs[0] = xs[0].max(left);
+    for k in 0..n {
+        xs[k + 1] = xs[k + 1].max(xs[k] + MIN_SHARE * widths[k] * unit);
+    }
+
+    // If expanding minimum widths pushed text past the right boundary, 
+    // scale down proportionally to fit the box.
+    let (start, grown) = (xs[0], xs[n] - xs[0]);
+    if xs[n] > right && grown > 0.0 {
+        let squeeze = (right - start) / grown;
+        for x in &mut xs[1..] {
+            *x = start + (*x - start) * squeeze;
         }
     }
     xs
+}
+
+/// Fallback positioning based solely on estimated character widths.
+/// Used for single characters or when OCR positions are missing.
+fn modelled(left: f32, right: f32, widths: &[f32]) -> Vec<f32> {
+    let unit = (right - left) / widths.iter().sum::<f32>().max(f32::EPSILON);
+    let mut xs = Vec::with_capacity(widths.len() + 1);
+    let mut x = left;
+    xs.push(left);
+    for w in widths {
+        x += w * unit;
+        xs.push(x);
+    }
+    *xs.last_mut().unwrap() = right;
+    xs
+}
+
+/// Returns estimated character width relative to a standard lowercase letter.
+fn advance(c: char) -> f32 {
+    match c {
+        'i' | 'j' | 'l' | 'I' | '|' | '.' | ',' | ':' | ';' | '!' | '\'' | '`' => 0.4,
+        ' ' | 'f' | 'r' | 't' | '(' | ')' | '[' | ']' | '{' | '}' | '-' | '"' | '/' | '\\' => 0.6,
+        'm' | 'w' | 'M' | 'W' | 'ш' | 'щ' | 'ж' | 'ы' | 'ю' | 'ф' => 1.5,
+        'Ш' | 'Щ' | 'Ж' | 'Ы' | 'Ю' | 'Ф' | '—' | '№' => 1.6,
+        _ if c as u32 >= 0x2E80 => 2.0, 
+        _ if c.is_uppercase() => 1.2,
+        _ => 1.0,
+    }
 }

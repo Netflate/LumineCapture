@@ -30,8 +30,8 @@ pub struct OcrImage {
 }
 
 /// One recognized line. `bounds` is global. `char_x` is the global x of every
-/// character boundary: `text.chars().count() + 1` values, non-decreasing,
-/// running from `bounds.left()` to `bounds.right()`.
+/// character boundary: `text.chars().count() + 1` values, non-decreasing, and
+/// inside `bounds` - they follow the glyphs, which need not fill the box.
 #[derive(Debug, Clone)]
 pub struct OcrLine {
     pub text: String,

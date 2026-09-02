@@ -3,7 +3,7 @@
 // The selection is represented as two points: start and end (line + character position).
 // Text between them includes full middle lines and partial outer lines.
 // 
-// Uses `nearest_line` for click/hover detection so mouse clicks and hover effects 
+// Uses `best_line` for click/hover detection so mouse clicks and hover effects 
 // always target the exact same line.
 
 use tiny_skia::Rect;
@@ -105,18 +105,32 @@ impl OcrView {
 
     /// Line under a global point, if close enough to count as hit.
     pub fn line_at(&self, p: (f64, f64)) -> Option<usize> {
-        let (line, distance) = self.nearest_line(p.0 as f32, p.1 as f32, false)?;
+        let (x, y) = (p.0 as f32, p.1 as f32);
+        let (line, distance) = self.best_line(x, y, false, false)?;
         (distance <= HIT_SLACK).then_some(line)
     }
 
-    /// Finds the nearest line and its distance (0 if inside).
-    ///
-    /// If `confine` is set, skips lines outside the anchor block while the mouse 
-    /// is vertically aligned with it.
-    ///
-    /// In case of a tie, picks the line closer to the anchor in reading order.
-    fn nearest_line(&self, x: f32, y: f32, confine: bool) -> Option<(usize, f32)> {
-        let level_with_block = confine
+    /// Nearest line, then nearest character boundary within it.
+    fn caret_at(&self, p: (f64, f64), confine: bool) -> Option<Caret> {
+        let (x, y) = (p.0 as f32, p.1 as f32);
+        let (line, _) = self.best_line(x, y, confine, confine)?;
+        Some(Caret {
+            line,
+            ch: nearest_boundary(&self.lines[line].char_x, x),
+        })
+    }
+
+    // Finds which line a point belongs to and its distance from that line.
+    //
+    // When `by_row` is true, vertical distance is checked before horizontal distance.
+    // This matches how text selection works (dragging diagonally moves to the next line 
+    // rather than sticking to the horizontally nearest line).
+    //
+    // If `confine` is set, lines in other blocks are ignored while the pointer stays 
+    // vertically level with the anchor block. Ties go to the line closer in reading order.
+    fn best_line(&self, x: f32, y: f32, by_row: bool, confine: bool) -> Option<(usize, f32)> {
+        let anchored = confine && self.anchor_block.is_some();
+        let level_with_block = anchored
             && self
                 .anchor_block
                 .and_then(|bi| self.blocks.get(bi))
@@ -126,31 +140,32 @@ impl OcrView {
 
         let anchor_rank = self.sel.map(|(a, _)| self.rank[a.line]).unwrap_or(0);
         let mut best = None;
-        let mut best_key = (f32::MAX, usize::MAX);
+        let mut best_key = (f32::MAX, f32::MAX, usize::MAX);
         for (i, line) in self.lines.iter().enumerate() {
-            if level_with_block && Some(self.block_of[i]) != self.anchor_block {
-                continue;
+            let block = self.block_of[i];
+            if anchored && Some(block) != self.anchor_block {
+                let over_block = !level_with_block
+                    && self.blocks.get(block).is_some_and(|b| {
+                        let (bx, by) = gaps(x, y, &b.bounds);
+                        bx <= VERTICAL_SLACK && by <= VERTICAL_SLACK
+                    });
+                if !over_block {
+                    continue;
+                }
             }
-            let key = (
-                layout::point_rect_dist(x, y, &line.bounds),
-                self.rank[i].abs_diff(anchor_rank),
-            );
+            let (dx, dy) = gaps(x, y, &line.bounds);
+            let rank = self.rank[i].abs_diff(anchor_rank);
+            let key = if by_row {
+                (dy, dx, rank)
+            } else {
+                (dx.hypot(dy), 0.0, rank)
+            };
             if key < best_key {
                 best_key = key;
                 best = Some(i);
             }
         }
         best.map(|i| (i, best_key.0))
-    }
-
-    /// Nearest line, then nearest character boundary within it.
-    fn caret_at(&self, p: (f64, f64), confine: bool) -> Option<Caret> {
-        let (x, y) = (p.0 as f32, p.1 as f32);
-        let (line, _) = self.nearest_line(x, y, confine)?;
-        Some(Caret {
-            line,
-            ch: nearest_boundary(&self.lines[line].char_x, x),
-        })
     }
 
     // ── what the renderer draws ──────────────────────────────────────────────
@@ -338,6 +353,15 @@ fn union(a: Option<Rect>, b: Option<Rect>) -> Option<Rect> {
         (Some(a), Some(b)) => layout::union_rect(Some(a), b),
         (some, None) | (None, some) => some,
     }
+}
+
+/// Horizontal and vertical gap from a point to a rectangle, 0 on an axis the
+/// point already falls inside.
+fn gaps(x: f32, y: f32, r: &Rect) -> (f32, f32) {
+    (
+        (r.left() - x).max(x - r.right()).max(0.0),
+        (r.top() - y).max(y - r.bottom()).max(0.0),
+    )
 }
 
 /// Index of the character boundary in `char_x` closest to `x`.

@@ -54,24 +54,26 @@ impl ToolBehavior for OcrTool {
             return;
         }
 
-        match state.ocr_view.line_at(state.pointer.global) {
-            Some(line) => {
-                let pos = (state.pointer.global.0 as f32, state.pointer.global.1 as f32);
-                let damage = if state.click_tracker.register(ClickTarget::OcrLine(line), pos) {
-                    state.ocr_view.select_block(line)
-                } else {
-                    state.ocr_view.begin_drag(state.pointer.global)
-                };
+        let hit = state.ocr_view.line_at(state.pointer.global);
+        if let Some(line) = hit {
+            let pos = (state.pointer.global.0 as f32, state.pointer.global.1 as f32);
+            if state.click_tracker.register(ClickTarget::OcrLine(line), pos) {
+                let damage = state.ocr_view.select_block(line);
                 damage_overlay(state, damage);
-            }
-            None => {
-                let damage = state.ocr_view.deselect();
-                damage_overlay(state, damage);
-                if !pressed_inside_region(state) {
-                    begin_region_drag(state);
-                }
+                return;
             }
         }
+
+        // Empty space inside the scanned area still starts a text drag
+        if hit.is_some() || pressed_inside_region(state) {
+            let damage = state.ocr_view.begin_drag(state.pointer.global);
+            damage_overlay(state, damage);
+            return;
+        }
+
+        let damage = state.ocr_view.deselect();
+        damage_overlay(state, damage);
+        begin_region_drag(state);
     }
 
     fn on_move(&self, state: &mut EditorState, global: (f64, f64), dirty_mask: &mut u32) {
