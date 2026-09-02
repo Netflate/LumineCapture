@@ -1,37 +1,33 @@
 use crate::editor::EditorState;
 use crate::tools::Tool;
-use crate::types::CursorInit;
+use crate::ui::text_field::CursorInit;
 use crate::types::SpecialKey;
 use crate::types::annotations::{Annotation, AnnotationShape};
-use crate::types::panel::{HoverablePanel, PanelItem, ScrollAccumulator, UiPanel};
-use crate::types::text_field::{TextFieldGroup, is_stepper_char};
-use crate::types::toolbar::TOOLBAR_OFFSET;
+use crate::interaction::ScrollAccumulator;
+use crate::ui::panel::{HoverablePanel, PanelItem, UiPanel};
+use crate::ui::text_field::{TextFieldGroup, is_stepper_char};
+use crate::ui::toolbar;
 use tiny_skia::{Pixmap, Rect};
 
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-pub const SETTINGS_PANEL_HEIGHT: f32 = 42.0;
-pub const SETTINGS_PADDING: f32 = 8.0;
-pub const SETTINGS_ITEM_GAP: f32 = 8.0;
-pub const SETTINGS_SWATCH_SIZE: f32 = 28.0;
-pub const SETTINGS_SEPARATOR_SIZE: f32 = 16.0;
-pub const SETTINGS_STEPPER_WIDTH: f32 = 84.0;
-pub const SETTINGS_LABEL_FONT_SIZE: f32 = 14.0;
+pub const HEIGHT: f32 = 42.0;
+pub const PADDING: f32 = 8.0;
+pub const ITEM_GAP: f32 = 8.0;
+pub const SWATCH_SIZE: f32 = 28.0;
+pub const SEPARATOR_SIZE: f32 = 16.0;
+pub const STEPPER_WIDTH: f32 = 84.0;
 
-pub const SETTINGS_ICON_BUTTON_SIZE: f32 = SETTINGS_SWATCH_SIZE;
-pub const SETTINGS_CHECKBOX_BOX_SIZE: f32 = 18.0;
-pub const SETTINGS_CHECKBOX_LABEL_GAP: f32 = 6.0;
+pub const ICON_BUTTON_SIZE: f32 = SWATCH_SIZE;
+pub const CHECKBOX_BOX_SIZE: f32 = 18.0;
+pub const CHECKBOX_LABEL_GAP: f32 = 6.0;
 
 pub const STEPPER_ARROW_ZONE: f32 = 30.0;
 pub const STEPPER_ARROW_WIDTH: f32 = 15.0;
 pub const STEPPER_ARROW_HEIGHT: f32 = 6.0;
 pub const STEPPER_ARROW_GAP: f32 = 9.0;
 pub const STEPPER_ARROW_STROKE: f32 = 1.6;
-pub const STEPPER_HOLD_INITIAL_DELAY: Duration = Duration::from_millis(400);
-pub const STEPPER_HOLD_REPEAT_INTERVAL: Duration = Duration::from_millis(120);
-pub const STEPPER_HOLD_ACCEL_AFTER: u32 = 8;
-pub const STEPPER_HOLD_FAST_INTERVAL: Duration = Duration::from_millis(40);
 
 #[derive(Debug, Clone, Copy)]
 pub enum ToggleVisual {
@@ -125,14 +121,14 @@ pub fn widgets_for_tool(tool: Tool) -> &'static [SettingsWidget] {
             SettingsWidget::Separator,
             SettingsWidget::Toggle {
                 visual: ToggleVisual::Icon {
-                    svg: crate::types::icons::BOLD,
+                    svg: crate::ui::icons::BOLD,
                     icon_size: 16.0,
                 },
                 field: ToggleField::Bold,
             },
             SettingsWidget::Toggle {
                 visual: ToggleVisual::Icon {
-                    svg: crate::types::icons::ITALIC,
+                    svg: crate::ui::icons::ITALIC,
                     icon_size: 16.0,
                 },
                 field: ToggleField::Italic,
@@ -161,12 +157,12 @@ pub fn widgets_for_tool(tool: Tool) -> &'static [SettingsWidget] {
 pub const OCR_WIDGETS: &[SettingsWidget] = &[
     SettingsWidget::Action {
         action: SettingsAction::OcrRescan,
-        svg: crate::types::icons::RETRY,
+        svg: crate::ui::icons::RETRY,
         icon_size: 16.0,
     },
     SettingsWidget::Action {
         action: SettingsAction::OcrCopyAll,
-        svg: crate::types::icons::COPY,
+        svg: crate::ui::icons::COPY,
         icon_size: 15.0,
     },
     SettingsWidget::Separator,
@@ -193,26 +189,26 @@ pub fn widgets_for_annotation(ann: &Annotation) -> &'static [SettingsWidget] {
 impl PanelItem for SettingsWidget {
     fn size(&self) -> f32 {
         match self {
-            SettingsWidget::ColorSwatch => SETTINGS_SWATCH_SIZE,
-            SettingsWidget::Action { .. } => SETTINGS_ICON_BUTTON_SIZE,
-            SettingsWidget::Stepper { .. } => SETTINGS_STEPPER_WIDTH,
+            SettingsWidget::ColorSwatch => SWATCH_SIZE,
+            SettingsWidget::Action { .. } => ICON_BUTTON_SIZE,
+            SettingsWidget::Stepper { .. } => STEPPER_WIDTH,
             SettingsWidget::Toggle { visual, .. } => match visual {
-                ToggleVisual::Icon { .. } => SETTINGS_ICON_BUTTON_SIZE,
+                ToggleVisual::Icon { .. } => ICON_BUTTON_SIZE,
                 ToggleVisual::Checkbox { label } => {
-                    SETTINGS_CHECKBOX_BOX_SIZE
-                        + SETTINGS_CHECKBOX_LABEL_GAP
+                    CHECKBOX_BOX_SIZE
+                        + CHECKBOX_LABEL_GAP
                         + label.len() as f32 * 7.0
                 }
             },
             SettingsWidget::Label(text) => text.chars().count() as f32 * 7.0 + 8.0,
-            SettingsWidget::Separator => SETTINGS_SEPARATOR_SIZE,
+            SettingsWidget::Separator => SEPARATOR_SIZE,
         }
     }
 
     fn trailing_padding(&self) -> f32 {
         match self {
             SettingsWidget::Separator => 0.0,
-            _ => SETTINGS_ITEM_GAP,
+            _ => ITEM_GAP,
         }
     }
 
@@ -260,7 +256,7 @@ impl SettingsPanel {
             active_source: None,
             position: (0.0, 0.0),
             render_pos: (0.0, 0.0),
-            size: (0.0, SETTINGS_PANEL_HEIGHT),
+            size: (0.0, HEIGHT),
             monitor_idx: 0,
             visible: false,
             dirty: true,
@@ -288,7 +284,7 @@ impl SettingsPanel {
             return (false, None);
         }
 
-        let mut current_x = rect.left() + SETTINGS_PADDING;
+        let mut current_x = rect.left() + PADDING;
         for (idx, widget) in self.widgets.iter().enumerate() {
             let w = widget.size();
             let right = current_x + w;
@@ -306,7 +302,7 @@ impl SettingsPanel {
         let item_h = h * 0.70;
         let item_y = rect.top() + (h - item_h) / 2.0;
 
-        let mut current_x = rect.left() + SETTINGS_PADDING;
+        let mut current_x = rect.left() + PADDING;
         for (idx, widget) in self.widgets.iter().enumerate() {
             let w = widget.size();
             if idx == widget_idx {
@@ -389,10 +385,10 @@ impl SettingsPanel {
 
     pub fn widget_text_x(&self, widget_idx: usize) -> Option<f32> {
         let rect = self.rect()?;
-        let mut current_x = rect.left() + SETTINGS_PADDING;
+        let mut current_x = rect.left() + PADDING;
         for (idx, widget) in self.widgets.iter().enumerate() {
             if idx == widget_idx {
-                return Some(current_x + SETTINGS_PADDING);
+                return Some(current_x + PADDING);
             }
             current_x += widget.size() + widget.trailing_padding();
         }
@@ -443,7 +439,7 @@ impl UiPanel for SettingsPanel {
         self.widgets
     }
     fn padding(&self) -> f32 {
-        SETTINGS_PADDING
+        PADDING
     }
     fn monitor_idx(&self) -> usize {
         self.monitor_idx
@@ -482,14 +478,14 @@ pub fn compute_settings_placement(editor_state: &EditorState) -> ((f32, f32), us
     let tb_h = tb.size.1;
 
     let target_y = tb.position.1;
-    let is_above = (target_y - panel_h - TOOLBAR_OFFSET) >= 0.0;
+    let is_above = (target_y - panel_h - toolbar::OFFSET) >= 0.0;
 
     let (render_x, render_y) = tb.render_pos;
 
     let y = if is_above {
-        render_y - panel_h - TOOLBAR_OFFSET
+        render_y - panel_h - toolbar::OFFSET
     } else {
-        render_y + tb_h + TOOLBAR_OFFSET
+        render_y + tb_h + toolbar::OFFSET
     };
 
     ((render_x, y), tb.monitor_idx)

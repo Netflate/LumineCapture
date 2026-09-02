@@ -1,16 +1,9 @@
-use super::paths::{draw_item_border, draw_panel_border, draw_svg_icon, rounded_rect_path};
-use super::text::{HAlign, draw_aligned_text, draw_line_edit};
-use crate::types::panel::UiPanel;
-use crate::types::panel::{
-    BUTTON_HOVERED, DEFAULT_ITEM_BORDER_STROKE, ICON_COLOR, ICON_HOVERED, ICON_SELECTED,
-    PANEL_COLOR, PanelItem, SEPARATOR_COLOR,
-};
-use crate::types::settings_panel::{
-    SETTINGS_CHECKBOX_BOX_SIZE, SETTINGS_CHECKBOX_LABEL_GAP, SETTINGS_LABEL_FONT_SIZE,
-    SETTINGS_PADDING, STEPPER_ARROW_GAP, STEPPER_ARROW_HEIGHT, STEPPER_ARROW_STROKE,
-    STEPPER_ARROW_WIDTH, STEPPER_ARROW_ZONE, SettingsPanel, SettingsWidget, StepperArrow,
-    ToggleVisual,
-};
+use crate::renderer::paths::{draw_item_border, draw_panel_border, draw_svg_icon, rounded_rect_path};
+use crate::renderer::text::{HAlign, draw_aligned_text, draw_line_edit};
+use crate::theme::{color, font, radius};
+use crate::theme::stroke::BORDER as ITEM_BORDER;
+use crate::ui::panel::{PanelItem, UiPanel};
+use crate::ui::settings_panel::{CHECKBOX_BOX_SIZE, CHECKBOX_LABEL_GAP, PADDING, STEPPER_ARROW_GAP, STEPPER_ARROW_HEIGHT, STEPPER_ARROW_STROKE, STEPPER_ARROW_WIDTH, STEPPER_ARROW_ZONE, SettingsPanel, SettingsWidget, StepperArrow, ToggleVisual};
 use cosmic_text::{FontSystem, SwashCache};
 use std::collections::HashMap;
 use tiny_skia::{
@@ -81,7 +74,7 @@ pub fn draw_settings_panel(
         None,
     );
 
-    draw_panel_border(canvas, x, y, w, h, 8.0, panel.opacity);
+    draw_panel_border(canvas, x, y, w, h, radius::PANEL, panel.opacity);
 
     panel.panel_pixmap = Some(panel_pixmap);
 }
@@ -99,9 +92,9 @@ fn draw_settings_content(
         return;
     };
 
-    if let Some(path) = rounded_rect_path(&rect, 8.0, true, true, true, true) {
+    if let Some(path) = rounded_rect_path(&rect, radius::PANEL, true, true, true, true) {
         let mut paint = Paint::default();
-        paint.set_color(PANEL_COLOR);
+        paint.set_color(color::PANEL.color());
         paint.anti_alias = true;
         canvas.fill_path(
             &path,
@@ -114,8 +107,8 @@ fn draw_settings_content(
 
     let item_h = h * 0.70;
     let item_y = rect.top() + (h - item_h) / 2.0;
-    let mut current_x = rect.left() + SETTINGS_PADDING;
-    let icon_color = Color::from_rgba8(ICON_COLOR.red, ICON_COLOR.green, ICON_COLOR.blue, 255);
+    let mut current_x = rect.left() + PADDING;
+    let icon_color = color::ON_PANEL.color();
 
     for (index, item) in panel.widgets.iter().enumerate() {
         let item_w = item.size();
@@ -142,12 +135,12 @@ fn draw_settings_content(
                     item_y,
                     item_w,
                     item_h,
-                    4.0,
-                    DEFAULT_ITEM_BORDER_STROKE,
+                    radius::ITEM,
+                    ITEM_BORDER,
                     is_hovered,
                     is_selected,
                 );
-                let tint = if is_hovered { ICON_HOVERED } else { ICON_COLOR };
+                let tint = if is_hovered { color::ACCENT.usvg() } else { color::ON_PANEL.usvg() };
                 draw_svg_icon(
                     canvas,
                     icons_cache,
@@ -201,7 +194,7 @@ fn draw_settings_content(
                         font_system,
                         swash_cache,
                         label_rect,
-                        SETTINGS_LABEL_FONT_SIZE,
+                        font::LABEL,
                         icon_color,
                         HAlign::Center,
                         (0.0, 0.0),
@@ -218,10 +211,10 @@ fn draw_settings_content(
 
                 if let Some(sep_rect) = Rect::from_xywh(sep_x, sep_y, sep_w, sep_h) {
                     if let Some(sep_path) =
-                        rounded_rect_path(&sep_rect, 1.0, true, true, true, true)
+                        rounded_rect_path(&sep_rect, radius::SEPARATOR, true, true, true, true)
                     {
                         let mut sep_paint = Paint::default();
-                        sep_paint.set_color(SEPARATOR_COLOR);
+                        sep_paint.set_color(color::ON_PANEL.color());
                         sep_paint.anti_alias = true;
                         canvas.fill_path(
                             &sep_path,
@@ -255,8 +248,8 @@ fn draw_color_swatch(
         y,
         w,
         h,
-        4.0,
-        DEFAULT_ITEM_BORDER_STROKE,
+        radius::ITEM,
+        ITEM_BORDER,
         is_hovered,
         is_selected,
     );
@@ -302,16 +295,16 @@ fn draw_stepper(
         y,
         w,
         h,
-        4.0,
-        DEFAULT_ITEM_BORDER_STROKE,
+        radius::ITEM,
+        ITEM_BORDER,
         is_hovered,
         is_selected,
     );
 
     let Some(label_rect) = Rect::from_xywh(
-        x + SETTINGS_PADDING,
+        x + PADDING,
         y,
-        (w - STEPPER_ARROW_ZONE - SETTINGS_PADDING).max(0.0),
+        (w - STEPPER_ARROW_ZONE - PADDING).max(0.0),
         h,
     ) else {
         let hovered_arrow = panel
@@ -336,7 +329,7 @@ fn draw_stepper(
         editing,
         font_system,
         swash_cache,
-        SETTINGS_LABEL_FONT_SIZE,
+        font::LABEL,
         icon_color,
         cosmic_text::Weight::BOLD,
     );
@@ -364,12 +357,12 @@ fn draw_stepper_arrows(
     let down_cy = mid_y + STEPPER_ARROW_GAP / 2.0 + STEPPER_ARROW_HEIGHT / 2.0;
 
     let up_color = if hovered == Some(StepperArrow::Up) {
-        BUTTON_HOVERED
+        color::ACCENT.color()
     } else {
         icon_color
     };
     let down_color = if hovered == Some(StepperArrow::Down) {
-        BUTTON_HOVERED
+        color::ACCENT.color()
     } else {
         icon_color
     };
@@ -488,21 +481,17 @@ fn draw_toggle(
                 y,
                 w,
                 h,
-                4.0,
-                DEFAULT_ITEM_BORDER_STROKE,
+                radius::ITEM,
+                ITEM_BORDER,
                 is_hovered,
                 is_on,
             );
             let tint = if is_on {
-                ICON_SELECTED
+                color::ACCENT_BRIGHT.usvg()
             } else if is_hovered {
-                ICON_HOVERED
+                color::ACCENT.usvg()
             } else {
-                usvg::Color {
-                    red: ICON_COLOR.red,
-                    green: ICON_COLOR.green,
-                    blue: ICON_COLOR.blue,
-                }
+                color::ON_PANEL.usvg()
             };
 
             let icon_x = x + (w - icon_size) / 2.0;
@@ -510,14 +499,14 @@ fn draw_toggle(
             draw_svg_icon(canvas, icons_cache, svg, *icon_size, icon_x, icon_y, tint);
         }
         ToggleVisual::Checkbox { label } => {
-            let box_size = SETTINGS_CHECKBOX_BOX_SIZE;
+            let box_size = CHECKBOX_BOX_SIZE;
             let box_x = x + w - box_size;
             let box_y = y + (h - box_size) / 2.0;
 
             if let Some(label_rect) = Rect::from_xywh(
                 x,
                 y,
-                (w - box_size - SETTINGS_CHECKBOX_LABEL_GAP).max(0.0),
+                (w - box_size - CHECKBOX_LABEL_GAP).max(0.0),
                 h,
             ) {
                 draw_aligned_text(
@@ -526,7 +515,7 @@ fn draw_toggle(
                     font_system,
                     swash_cache,
                     label_rect,
-                    SETTINGS_LABEL_FONT_SIZE,
+                    font::LABEL,
                     icon_color,
                     HAlign::Left,
                     (0.0, 0.0),
@@ -542,7 +531,7 @@ fn draw_toggle(
                 box_size,
                 box_size,
                 3.0,
-                DEFAULT_ITEM_BORDER_STROKE,
+                ITEM_BORDER,
                 is_hovered,
                 is_on,
             );
