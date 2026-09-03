@@ -40,8 +40,10 @@ usvg = "0.47.0"
 zune-core = "0.5.1"
 zune-png = "0.5.2"
 
-# ocr - PaddleOCR (PP-OCRv5) via ONNX Runtime; models in assets/models/
+# ocr - PaddleOCR (PP-OCRv5) via ONNX Runtime; models are downloaded at runtime (ocr/models.rs)
 oar-ocr = "0.9"
+hmac-sha256 = "1.1"
+ureq = { version = "3.4", default-features = false, features = ["native-tls"] }
 
 # utilities
 chrono = { version = "0.4", features = ["clock"] }
