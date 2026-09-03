@@ -3,9 +3,13 @@ use crate::renderer::shadow_color_for;
 use crate::tools::ToolBehavior;
 use crate::types::annotations::{
     apply_annotation_drag, begin_drag_for_annotation, commit_drag_if_changed,
+    handle_hit_test_for_annotation,
 };
-use crate::types::{Annotation, AnnotationShape, MouseButton, SpecialKey, TextEditState};
+use crate::types::{
+    Annotation, AnnotationShape, CursorIcon, MouseButton, SpecialKey, TextEditState,
+};
 use crate::interaction::ClickTarget;
+use crate::utils::cursor_for_handle;
 use cosmic_text::{
     Action, Attrs, Buffer, Edit, Editor, Family, Metrics, Motion, Selection, Shaping, SwashCache,
 };
@@ -468,6 +472,22 @@ impl ToolBehavior for TextTool {
         state.text_editing = None;
         state.selected_annotation = None;
         state.annotations_dirty = true;
+    }
+
+    fn cursor(&self, state: &EditorState) -> CursorIcon {
+        if let Some(drag) = &state.ann_drag {
+            return cursor_for_handle(drag.handle, true).unwrap_or(CursorIcon::Text);
+        }
+        if let Some(ann) = state
+            .selected_annotation
+            .and_then(|idx| state.annotations.get(idx))
+            && matches!(ann.shape, AnnotationShape::Text { .. })
+            && let Some(icon) =
+                cursor_for_handle(handle_hit_test_for_annotation(ann, state.pointer.global), false)
+        {
+            return icon;
+        }
+        CursorIcon::Text
     }
 }
 

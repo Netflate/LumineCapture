@@ -1,7 +1,7 @@
 use crate::editor::{DamageZone, EditorState};
 use crate::tools::ToolBehavior;
-use crate::types::{MouseButton, Placement, SelectionEdges, SelectionHandle};
-use crate::utils::{apply_handle_drag, hit_test_rect_handle, make_rect};
+use crate::types::{CursorIcon, MouseButton, Placement, SelectionEdges, SelectionHandle};
+use crate::utils::{apply_handle_drag, cursor_for_handle, hit_test_rect_handle, make_rect};
 use tiny_skia::Rect;
 
 pub struct SelectionTool;
@@ -120,5 +120,18 @@ impl ToolBehavior for SelectionTool {
                 state.damage_rects.push(DamageZone::Global(sel));
             }
         }
+    }
+
+    fn cursor(&self, state: &EditorState) -> CursorIcon {
+        if state.mouse_down_left && state.selection.active_handle != SelectionHandle::None {
+            return cursor_for_handle(state.selection.active_handle, true)
+                .unwrap_or(CursorIcon::Crosshair);
+        }
+        if let Some(sel) = state.selection.zone
+            && let Some(icon) = cursor_for_handle(hit_test_rect_handle(&sel, state.pointer.global), false)
+        {
+            return icon;
+        }
+        CursorIcon::Crosshair
     }
 }

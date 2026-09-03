@@ -1,4 +1,5 @@
 pub mod compositor_shm_xdg;
+pub mod cursor;
 pub mod global;
 pub mod keyboard;
 pub mod output;
@@ -9,7 +10,7 @@ use std::collections::HashMap;
 use std::collections::VecDeque;
 
 use crate::backend::wayland::utils::surface::SurfaceData;
-use crate::types::{Output, OverlayEvent};
+use crate::types::{CursorIcon, Output, OverlayEvent};
 use wayland_client::globals::registry_queue_init;
 use wayland_protocols::wp::{
     fractional_scale::v1::client::{wp_fractional_scale_manager_v1, wp_fractional_scale_v1},
@@ -43,6 +44,9 @@ pub struct OverlayState {
     pub cursor_shape_device: Option<WpCursorShapeDeviceV1>,
     pub pointer_enter_serial: u32,
     pub pointer_surface_idx: Option<usize>,
+    // current cursor shape, and flag is it applied for last enter
+    pub current_cursor_icon: CursorIcon,
+    pub cursor_applied_since_enter: bool,
     // ── ui & input state ─────────────────────────────────────────────────────────
     pub surfaces: HashMap<usize, SurfaceData>,
     pub events: VecDeque<OverlayEvent>,
@@ -139,6 +143,8 @@ impl OverlayState {
             viewporter,
 
             cursor_shape_device: None,
+            current_cursor_icon: CursorIcon::default(),
+            cursor_applied_since_enter: false,
             outputs: Vec::new(),
             surfaces: HashMap::new(),
             events: VecDeque::new(),

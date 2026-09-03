@@ -1,5 +1,6 @@
 pub mod annotations;
 pub mod capture;
+pub mod cursor;
 pub mod events;
 pub mod selection;
 pub mod text;
@@ -7,6 +8,7 @@ pub mod tool_settings;
 
 pub use annotations::*;
 pub use capture::*;
+pub use cursor::*;
 pub use events::*;
 pub use selection::*;
 pub use text::*;

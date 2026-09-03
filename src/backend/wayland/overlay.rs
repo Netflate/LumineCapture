@@ -13,7 +13,7 @@ pub mod state;
 
 use crate::backend::ScreenOverlay;
 use crate::backend::wayland::utils::surface::SurfaceData;
-use crate::types::{DamageRect, Output, OverlayEvent};
+use crate::types::{CursorIcon, DamageRect, Output, OverlayEvent};
 pub struct WaylandOverlay {
     pub connection: wayland_client::Connection,
     runtime: state::OverlayRunTime,
@@ -198,5 +198,9 @@ impl ScreenOverlay for WaylandOverlay {
 
     fn discovered_outputs(&self) -> &[Output] {
         &self.runtime.state.outputs
+    }
+
+    fn set_cursor(&mut self, icon: CursorIcon) {
+        self.runtime.state.apply_cursor(icon);
     }
 }

@@ -239,6 +239,8 @@ pub async fn make_screenshot(
             }
         }
 
+        overlay.set_cursor(input::compute_cursor(&editor_state));
+
         tick_panel_animation(
             &mut editor_state.toolbar,
             &mut editor_state.damage_rects,

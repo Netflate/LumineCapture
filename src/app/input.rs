@@ -9,8 +9,8 @@ use crate::editor::dirty::{apply_damage_rects, mark_dirty};
 use crate::editor::{DamageZone, EditorState};
 use crate::ui::settings_panel::char_index_for_x;
 use crate::tools::{
-    Tool, dispatch_activate, dispatch_button, dispatch_deactivate, dispatch_key, dispatch_move,
-    dispatch_text,
+    Tool, dispatch_activate, dispatch_button, dispatch_cursor, dispatch_deactivate, dispatch_key,
+    dispatch_move, dispatch_text,
 };
 use crate::interaction::ClickTarget;
 use crate::ui::color_popover::ColorField;
@@ -19,7 +19,7 @@ use crate::theme::{anim, font};
 use crate::interaction::SCROLL_SENSITIVITY;
 use crate::ui::text_field::CursorInit;
 use crate::ui::toolbar::{ToolbarButton, ToolbarItem};
-use crate::types::{MouseButton, PointerState, SpecialKey};
+use crate::types::{CursorIcon, MouseButton, PointerState, SpecialKey};
 use crate::ui::magnifier::MagnifierState;
 use crate::ui::settings_panel::{ArrowHoldState, SettingsWidget, StepperArrow};
 use crate::utils::{get_full_workspace_rect, global_point_to_local};
@@ -115,6 +115,19 @@ fn hit_test_ui(editor_state: &EditorState, local: (f64, f64)) -> UiHit {
 
     UiHit::None
 }
+
+pub fn compute_cursor(editor_state: &EditorState) -> CursorIcon {
+    match hit_test_ui(editor_state, editor_state.pointer.local) {
+        UiHit::ColorPopoverInside | UiHit::ToolbarItem(_) | UiHit::SettingsItem(_) => {
+            CursorIcon::Pointer
+        }
+        UiHit::ToolbarBackground | UiHit::SettingsBackground => CursorIcon::Default,
+        UiHit::ColorPopoverOutside | UiHit::None => {
+            dispatch_cursor(editor_state.selected_tool, editor_state)
+        }
+    }
+}
+
 pub fn handle_pointer_button(
     editor_state: &mut EditorState,
     button: MouseButton,

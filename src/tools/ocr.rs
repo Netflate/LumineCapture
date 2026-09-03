@@ -6,7 +6,7 @@ use crate::tools::ToolBehavior;
 use crate::tools::selection::SelectionTool;
 use crate::interaction::{ClickTarget, OCR_MIN_REGION};
 use crate::ui::toast::ToastKind;
-use crate::types::{MouseButton, SelectionHandle, SpecialKey};
+use crate::types::{CursorIcon, MouseButton, SelectionHandle, SpecialKey};
 use std::time::Instant;
 use tiny_skia::Rect;
 
@@ -125,6 +125,14 @@ impl ToolBehavior for OcrTool {
         state.tool_active = false;
         state.ocr_await_region = false;
         state.toasts.dismiss(ToastKind::OcrPickRegion);
+    }
+
+    fn cursor(&self, state: &EditorState) -> CursorIcon {
+        if state.ocr_view.is_active() && state.ocr_view.line_at(state.pointer.global).is_some() {
+            CursorIcon::Text
+        } else {
+            CursorIcon::Crosshair
+        }
     }
 }
 

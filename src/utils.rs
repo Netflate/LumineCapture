@@ -1,4 +1,4 @@
-use crate::types::{Placement, SelectionHandle, SignedRect};
+use crate::types::{CursorIcon, Placement, SelectionHandle, SignedRect};
 use crate::interaction::HANDLE_PAD;
 use std::path::PathBuf;
 use tiny_skia::Pixmap;
@@ -162,6 +162,23 @@ pub fn hit_test_rect_handle(sel: &Rect, pos: (f64, f64)) -> SelectionHandle {
     }
 
     SelectionHandle::None
+}
+
+pub fn cursor_for_handle(handle: SelectionHandle, dragging: bool) -> Option<CursorIcon> {
+    Some(match handle {
+        SelectionHandle::TopLeft | SelectionHandle::BottomRight => CursorIcon::NwseResize,
+        SelectionHandle::TopRight | SelectionHandle::BottomLeft => CursorIcon::NeswResize,
+        SelectionHandle::Top | SelectionHandle::Bottom => CursorIcon::NsResize,
+        SelectionHandle::Left | SelectionHandle::Right => CursorIcon::EwResize,
+        SelectionHandle::Move => {
+            if dragging {
+                CursorIcon::Grabbing
+            } else {
+                CursorIcon::Grab
+            }
+        }
+        SelectionHandle::None => return None,
+    })
 }
 
 #[inline]

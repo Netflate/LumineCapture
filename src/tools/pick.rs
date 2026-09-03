@@ -1,9 +1,13 @@
 use crate::editor::{DamageZone, EditorState};
 use crate::tools::ToolBehavior;
 use crate::types::{
-    AnnDragState, MouseButton, SelectionHandle, SpecialKey,
-    annotations::{apply_annotation_drag, begin_drag_for_annotation, commit_drag_if_changed},
+    AnnDragState, CursorIcon, MouseButton, SelectionHandle, SpecialKey,
+    annotations::{
+        apply_annotation_drag, begin_drag_for_annotation, commit_drag_if_changed,
+        handle_hit_test_for_annotation,
+    },
 };
+use crate::utils::cursor_for_handle;
 use cosmic_text::Edit;
 
 pub struct PickTool;
@@ -121,5 +125,19 @@ impl ToolBehavior for PickTool {
             state.selected_annotation = None;
             state.ann_drag = None;
         }
+    }
+
+    fn cursor(&self, state: &EditorState) -> CursorIcon {
+        if let Some(drag) = &state.ann_drag {
+            return cursor_for_handle(drag.handle, true).unwrap_or(CursorIcon::Default);
+        }
+        let Some(ann) = state
+            .selected_annotation
+            .and_then(|idx| state.annotations.get(idx))
+        else {
+            return CursorIcon::Default;
+        };
+        let handle = handle_hit_test_for_annotation(ann, state.pointer.global);
+        cursor_for_handle(handle, false).unwrap_or(CursorIcon::Default)
     }
 }

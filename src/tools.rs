@@ -15,7 +15,7 @@ use crate::tools::selection::SelectionTool;
 use crate::tools::simple_shapes::SimpleShapeTool;
 use crate::tools::text::TextTool;
 use crate::types::annotations::AnnotationShape;
-use crate::types::{MouseButton, SpecialKey};
+use crate::types::{CursorIcon, MouseButton, SpecialKey};
 // ==========================================
 // 1. Available Tools
 // ==========================================
@@ -50,6 +50,10 @@ pub trait ToolBehavior {
     fn on_deactivate(&self, _state: &mut EditorState, _dirty_mask: &mut u32) {}
     fn on_text(&self, _state: &mut EditorState, _ch: char, _dirty_mask: &mut u32) {}
     fn on_key(&self, _state: &mut EditorState, _key: SpecialKey, _dirty_mask: &mut u32) {}
+    // default cursor shape is crosshair
+    fn cursor(&self, _state: &EditorState) -> CursorIcon {
+        CursorIcon::Crosshair
+    }
 }
 
 // ==========================================
@@ -154,5 +158,17 @@ pub fn dispatch_key(tool: Tool, state: &mut EditorState, key: SpecialKey, dirty_
         Tool::Text => TextTool.on_key(state, key, dirty_mask),
         Tool::Ocr => OcrTool.on_key(state, key, dirty_mask),
         _ => {}
+    }
+}
+
+pub fn dispatch_cursor(tool: Tool, state: &EditorState) -> CursorIcon {
+    match tool {
+        Tool::Selection => SelectionTool.cursor(state),
+        Tool::Pick => PickTool.cursor(state),
+        Tool::Text => TextTool.cursor(state),
+        Tool::Ocr => OcrTool.cursor(state),
+        Tool::Pen | Tool::NumeratedArrow | Tool::Rectangle | Tool::Arrow | Tool::Circle | Tool::Line => {
+            CursorIcon::Crosshair
+        }
     }
 }

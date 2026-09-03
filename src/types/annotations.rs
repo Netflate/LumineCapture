@@ -362,8 +362,7 @@ impl Annotation {
 // (they both can select and drag, tho text does that only with text)
 // utils.rs or editor/drag.rs
 
-pub fn begin_drag_for_annotation(state: &mut EditorState, idx: usize) {
-    let ann = &state.annotations[idx];
+pub fn handle_hit_test_for_annotation(ann: &Annotation, pos: (f64, f64)) -> SelectionHandle {
     let out_pad = (HANDLE_PAD / 2.0) as f32;
     let bbox = ann.bbox;
 
@@ -375,7 +374,12 @@ pub fn begin_drag_for_annotation(state: &mut EditorState, idx: usize) {
     )
     .unwrap_or(bbox);
 
-    let handle = hit_test_rect_handle(&visual_bbox, state.pointer.global);
+    hit_test_rect_handle(&visual_bbox, pos)
+}
+
+pub fn begin_drag_for_annotation(state: &mut EditorState, idx: usize) {
+    let ann = &state.annotations[idx];
+    let handle = handle_hit_test_for_annotation(ann, state.pointer.global);
 
     state.ann_drag = Some(AnnDragState {
         handle,

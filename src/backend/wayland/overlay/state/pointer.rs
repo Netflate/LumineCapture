@@ -30,10 +30,8 @@ impl PointerHandler for OverlayState {
                     self.pointer_enter_serial = serial;
                     self.pointer_surface_idx = monitor_idx;
 
-                    // set crosshair shape
-                    if let Some(device) = &self.cursor_shape_device {
-                        device.set_shape(serial, wayland_protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::Shape::Crosshair);
-                    }
+                    self.cursor_applied_since_enter = false;
+                    self.apply_cursor(self.current_cursor_icon);
 
                     if let Some(idx) = monitor_idx {
                         self.events.push_back(OverlayEvent::PointerMove {
