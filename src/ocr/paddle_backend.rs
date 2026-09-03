@@ -1,7 +1,7 @@
 // Runs PP-OCRv5 mobile models via ONNX Runtime using the `oar-ocr` crate.
 //
 // Highlights:
-// - Uses temporary for now Cyrillic model that supports Cyrillic, English, digits, and punctuation.
+// - Uses the model picked in the language list (see `models`), e.g. Cyrillic supports Cyrillic, English, digits, and punctuation.
 // - Processes image crops one by one. Batching or multi-threading is avoided 
 //   because it slows down execution and wastes memory cache.
 // - Uses direct low-level API access to get exact character positions (`return_word_box`) 
@@ -21,15 +21,10 @@ use oar_ocr::utils::get_rotate_crop_image;
 use tiny_skia::Rect;
 
 use super::layout;
+use super::models::ModelFiles;
 use super::{OcrBackend, OcrError, OcrImage, OcrLine, OcrText};
 
 type Recognizer = TaskPredictorCore<TextRecognitionTask>;
-
-// todo HARDCODE
-static DETECTION_MODEL: &[u8] = include_bytes!("../../assets/models/pp-ocrv5_mobile_det.onnx");
-static RECOGNITION_MODEL: &[u8] =
-    include_bytes!("../../assets/models/cyrillic_pp-ocrv5_mobile_rec.onnx");
-static RECOGNITION_DICT: &str = include_str!("../../assets/models/ppocrv5_cyrillic_dict.txt");
 
 /// Longest image side the detector sees; larger inputs are downscaled first.
 /// The stock default of 960 halves a 1080p grab and loses small UI text.
@@ -42,7 +37,7 @@ pub struct PaddleBackend {
 }
 
 impl PaddleBackend {
-    pub fn new() -> Result<Self, OcrError> {
+    pub fn new(files: &ModelFiles) -> Result<Self, OcrError> {
         let total = Instant::now();
         let threads = std::thread::available_parallelism()
             .map(|n| n.get())
@@ -61,11 +56,14 @@ impl PaddleBackend {
                 max_side_len: Some(4096),
             })
             .with_ort_config(ort.clone())
-            .build(DETECTION_MODEL)?;
+            .build(files.detector.as_path())?;
         let detector_ms = ms(stage);
 
         let stage = Instant::now();
-        let dict: Vec<String> = RECOGNITION_DICT.lines().map(str::to_owned).collect();
+        let dict: Vec<String> = std::fs::read_to_string(&files.dict)?
+            .lines()
+            .map(str::to_owned)
+            .collect();
         let rec_config = TextRecognitionConfig {
             score_threshold: 0.0,
         };
@@ -74,7 +72,7 @@ impl PaddleBackend {
             .character_dict(dict)
             .return_word_box(true) // per-character x positions
             .with_ort_config(ort.clone())
-            .build(RECOGNITION_MODEL)?;
+            .build(files.recognizer.as_path())?;
         let recognizer = TaskPredictorCore::new(
             Box::new(rec_adapter),
             TextRecognitionTask::new(rec_config.clone()),
@@ -152,7 +150,10 @@ impl OcrBackend for PaddleBackend {
         // One crop per visual line rather than per detection box: the detector
         // splits a line wherever the spacing widens, and each extra call costs
         // a fixed ~9ms on top of the per-pixel work.
-        let rows = layout::row_groups(&keep.iter().map(|&i| boxes[i]).collect::<Vec<_>>());
+        let rows = layout::row_groups(
+            &keep.iter().map(|&i| boxes[i]).collect::<Vec<_>>(),
+            |a, b| has_rule(&img, a, b),
+        );
         let mut rects: Vec<Rect> = Vec::with_capacity(rows.len());
         let mut crops: Vec<image::RgbImage> = Vec::with_capacity(rows.len());
         for row in &rows {
@@ -323,6 +324,56 @@ fn is_noise(bounds: &Rect, read: &Read, body_height: f32) -> bool {
         && (bounds.height() < 0.6 * body_height || read.confidence < SPECK_CONFIDENCE)
 }
 
+/// Minimum brightness difference required to distinguish a line pixel from the background.
+const RULE_CONTRAST: i32 = 32;
+
+/// Minimum fraction of a line segment that must overlap with pixels meeting `RULE_CONTRAST`.
+const RULE_COVERAGE: f32 = 0.9;
+
+/// Vertical search extension above and below a text line (as a fraction of line height).
+/// Cell borders usually extend beyond text boundaries, unlike pipe characters (`|`).
+const RULE_REACH: f32 = 0.5;
+
+// Checks for a vertical ruling line in the gap between two boxes on the same line.
+// Separated boxes are split into distinct crops for OCR processing.
+fn has_rule(img: &image::RgbImage, a: &Rect, b: &Rect) -> bool {
+    let (top, bottom) = (a.top().min(b.top()), a.bottom().max(b.bottom()));
+    let reach = (bottom - top) * RULE_REACH;
+    let clamp_y = |y: f32| (y.max(0.0) as u32).min(img.height());
+    let x0 = a.right().ceil().max(0.0) as u32;
+    let x1 = (b.left().floor().max(0.0) as u32).min(img.width());
+    let (above, y0, y1, below) = (
+        clamp_y(top - reach),
+        clamp_y(top),
+        clamp_y(bottom),
+        clamp_y(bottom + reach),
+    );
+    if x1 <= x0 || y1 <= y0 {
+        return false;
+    }
+
+    let luma = |x: u32, y: u32| {
+        let [r, g, b] = img.get_pixel(x, y).0;
+        (i32::from(r) * 299 + i32::from(g) * 587 + i32::from(b) * 114) / 1000
+    };
+    let mut values: Vec<i32> = (y0..y1)
+        .flat_map(|y| (x0..x1).map(move |x| (x, y)))
+        .map(|(x, y)| luma(x, y))
+        .collect();
+    let mid = values.len() / 2;
+    let background = *values.select_nth_unstable(mid).1;
+
+    let covered = |x: u32, from: u32, to: u32| {
+        let needed = ((to - from) as f32 * RULE_COVERAGE).ceil() as usize;
+        to > from
+            && (from..to)
+                .filter(|&y| (luma(x, y) - background).abs() > RULE_CONTRAST)
+                .count()
+                >= needed
+    };
+    (x0..x1).any(|x| covered(x, y0, y1) && (covered(x, above, y0) || covered(x, y1, below)))
+}
+
 /// Smallest rectangle covering the listed boxes.
 fn union_of(members: &[usize], boxes: &[Rect]) -> Rect {
     let (mut l, mut t, mut r, mut b) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
@@ -356,11 +407,11 @@ fn median_height(rects: &[Rect]) -> f32 {
     heights.sort_by(f32::total_cmp);
     heights[heights.len() / 2].max(1.0)
 }
-/// Returns X coordinates for character boundaries (character count + 1 values), 
+/// Returns X coordinates for character boundaries (character count + 1 values),
 /// sorted left to right within `bounds`.
 ///
-/// Handles proportional spacing so boundaries split gaps based on character widths
-/// (exp an 'i' next to a 'W' won't take up half the space).
+/// Handles proportional spacing: boundaries follow both the recognizer's positions and
+/// character widths (exp an 'i' next to a 'W' won't take up half the space).
 fn char_boundaries(bounds: &Rect, text: &str, norm: &[f32]) -> Vec<f32> {
     let widths: Vec<f32> = text.chars().map(advance).collect();
     let n = widths.len();
@@ -370,48 +421,83 @@ fn char_boundaries(bounds: &Rect, text: &str, norm: &[f32]) -> Vec<f32> {
     }
 
     let at = |k: usize| left + bounds.width() * norm[k].clamp(0.0, 1.0);
-    let span = if norm.len() == n { at(n - 1) - at(0) } else { 0.0 };
-    if n == 1 || span <= 0.0 {
+    let total: f32 = widths.iter().sum();
+    let span = if norm.len() == n && n > 1 { at(n - 1) - at(0) } else { 0.0 };
+    if span <= 0.0 || total <= 0.0 {
         return modelled(left, right, &widths);
     }
-
-    // OCR positions measure center-to-center, leaving half of the first 
-    // and half of the last character uncovered.
-    let total: f32 = widths.iter().sum();
     let unit = span / (total - 0.5 * (widths[0] + widths[n - 1])).max(f32::EPSILON);
 
-    let mut xs = Vec::with_capacity(n + 1);
-    xs.push(at(0) - 0.5 * widths[0] * unit);
-    for k in 1..n {
-        let share = widths[k - 1] / (widths[k - 1] + widths[k]);
-        xs.push(at(k - 1) + (at(k) - at(k - 1)) * share);
-    }
-    xs.push(at(n - 1) + 0.5 * widths[n - 1] * unit);
-
-    // OCR positions can drift left on dense text. Re-center everything 
-    // relative to the bounding box.
-    let slide = 0.5 * (left + right - xs[0] - xs[n]);
-    for x in &mut xs {
-        *x += slide;
-    }
-
-    // Ensure narrow characters have a minimum width so boundaries don't overlap.
-    const MIN_SHARE: f32 = 0.6;
-    xs[0] = xs[0].max(left);
-    for k in 0..n {
-        xs[k + 1] = xs[k + 1].max(xs[k] + MIN_SHARE * widths[k] * unit);
-    }
-
-    // If expanding minimum widths pushed text past the right boundary, 
-    // scale down proportionally to fit the box.
-    let (start, grown) = (xs[0], xs[n] - xs[0]);
-    if xs[n] > right && grown > 0.0 {
-        let squeeze = (right - start) / grown;
-        for x in &mut xs[1..] {
-            *x = start + (*x - start) * squeeze;
+    let mut system = Tridiagonal::new(n + 1);
+    for (k, &w) in widths.iter().enumerate() {
+        if w == 0.0 {
+            system.add(k, (-1.0, 1.0), 0.0, MARK_WEIGHT);
+            continue;
         }
+        system.add(k, (0.5, 0.5), at(k), 1.0);
+        system.add(k, (-1.0, 1.0), w * unit, WIDTH_WEIGHT);
+    }
+
+    let mut xs = system.solve();
+    for x in &mut xs {
+        *x = x.clamp(left, right);
+    }
+    for k in 0..n {
+        xs[k + 1] = xs[k + 1].max(xs[k]);
     }
     xs
+}
+/// Relative weight of estimated character width compared to the recognizer's position output.
+const WIDTH_WEIGHT: f32 = 1.0;
+
+/// High constraint weight enforcing near-zero width for combining diacritical marks.
+const MARK_WEIGHT: f32 = 50.0;
+
+// Tridiagonal normal equations where each constraint links two adjacent character boundaries.
+struct Tridiagonal {
+    diag: Vec<f32>,
+    off: Vec<f32>,
+    rhs: Vec<f32>,
+}
+
+impl Tridiagonal {
+    fn new(len: usize) -> Self {
+        Self {
+            diag: vec![0.0; len],
+            off: vec![0.0; len.saturating_sub(1)],
+            rhs: vec![0.0; len],
+        }
+    }
+
+    fn add(&mut self, k: usize, (u, v): (f32, f32), target: f32, weight: f32) {
+        self.diag[k] += weight * u * u;
+        self.diag[k + 1] += weight * v * v;
+        self.off[k] += weight * u * v;
+        self.rhs[k] += weight * u * target;
+        self.rhs[k + 1] += weight * v * target;
+    }
+
+    fn solve(self) -> Vec<f32> {
+        let len = self.diag.len();
+        let mut c = vec![0.0f32; len];
+        let mut d = vec![0.0f32; len];
+        for i in 0..len {
+            let (sub, cp, dp) = if i > 0 {
+                (self.off[i - 1], c[i - 1], d[i - 1])
+            } else {
+                (0.0, 0.0, 0.0)
+            };
+            let denom = (self.diag[i] - sub * cp).max(1e-9);
+            c[i] = self.off.get(i).map_or(0.0, |off| off / denom);
+            d[i] = (self.rhs[i] - sub * dp) / denom;
+        }
+        let mut xs = vec![0.0f32; len];
+        for i in (0..len).rev() {
+            let next = if i + 1 < len { c[i] * xs[i + 1] } else { 0.0 };
+            xs[i] = d[i] - next;
+        }
+        xs
+    }
 }
 
 /// Fallback positioning based solely on estimated character widths.
@@ -436,7 +522,8 @@ fn advance(c: char) -> f32 {
         ' ' | 'f' | 'r' | 't' | '(' | ')' | '[' | ']' | '{' | '}' | '-' | '"' | '/' | '\\' => 0.6,
         'm' | 'w' | 'M' | 'W' | 'ш' | 'щ' | 'ж' | 'ы' | 'ю' | 'ф' => 1.5,
         'Ш' | 'Щ' | 'Ж' | 'Ы' | 'Ю' | 'Ф' | '—' | '№' => 1.6,
-        _ if c as u32 >= 0x2E80 => 2.0, 
+        _ if super::is_mark(c) => 0.0,
+        _ if c as u32 >= 0x2E80 => 2.0,
         _ if c.is_uppercase() => 1.2,
         _ => 1.0,
     }

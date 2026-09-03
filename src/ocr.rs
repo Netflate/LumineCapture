@@ -1,14 +1,20 @@
 // Optical character recognition.
 //
-// `OcrBackend` hides the engine: input `OcrImage`, output `OcrText`. 
+// `OcrBackend` hides the engine: input `OcrImage`, output `OcrText`.
 // implementation of new engine is a new module & one line in `default_backend`.
 //
-// layout  - detection boxes -> lines, blocks, reading order
-// view    - selection over those lines
-// runtime - recognition on a worker thread
+// layout   - detection boxes -> lines, blocks, reading order
+// view     - selection over those lines
+// runtime  - recognition on a worker thread
+// models   - available, installed and selected models
+// download - background download of models
+// bidi     - converting visual RTL text order to logical order for copy/paste.
 
+pub mod bidi;
+pub mod download;
 pub mod draw;
 pub mod layout;
+pub mod models;
 pub mod paddle_backend;
 pub mod runtime;
 pub mod view;
@@ -19,6 +25,7 @@ pub use runtime::{OcrRuntime, StartOutcome};
 pub use view::{LineSelection, OcrView};
 
 use crate::types::Placement;
+use models::ModelFiles;
 
 /// Tightly packed RGB8 pixels plus the global coordinate of their top-left
 /// corner, so results can be mapped back onto the canvas. Owned: it moves to
@@ -46,6 +53,27 @@ impl OcrLine {
     }
 }
 
+/// Checks if a character is a combining mark (diacritical mark that attaches 
+/// to the previous letter without taking up horizontal spacing).
+pub fn is_mark(c: char) -> bool {
+    matches!(
+        c as u32,
+        0x0300..=0x036F
+            | 0x0483..=0x0489
+            | 0x0591..=0x05C7
+            | 0x0610..=0x061A
+            | 0x064B..=0x065F
+            | 0x0670
+            | 0x06D6..=0x06ED
+            | 0x0E31
+            | 0x0E34..=0x0E3A
+            | 0x0E47..=0x0E4E
+            | 0x1AB0..=0x1AFF
+            | 0x20D0..=0x20FF
+            | 0x3099..=0x309A
+    )
+}
+
 /// Everything found in one image, lines in reading order.
 #[derive(Debug, Clone, Default)]
 pub struct OcrText {
@@ -67,12 +95,12 @@ pub trait OcrBackend: Send {
 }
 
 /// Build the backend the app ships with today.
-pub fn default_backend() -> Result<Box<dyn OcrBackend>, OcrError> {
-    Ok(Box::new(paddle_backend::PaddleBackend::new()?))
+pub fn default_backend(files: &ModelFiles) -> Result<Box<dyn OcrBackend>, OcrError> {
+    Ok(Box::new(paddle_backend::PaddleBackend::new(files)?))
 }
 
 /// Composite the pixels covered by `region` (global coords) out of the
-/// per-monitor `base` layers into one contiguous RGB8 buffer. Repeats 
+/// per-monitor `base` layers into one contiguous RGB8 buffer. Repeats
 /// base-compositing half of `app::render_final`, without annotations.
 pub fn composite_region(
     base: &[Pixmap],
@@ -120,7 +148,7 @@ pub fn composite_region(
 }
 
 /// Write recognized text to a timestamped `.txt` in the current working
-/// directory (temporary) 
+/// directory (temporary)
 pub fn write_text_file(text: &str) -> std::io::Result<std::path::PathBuf> {
     let name = chrono::Local::now()
         .format("ocr_%Y-%m-%d_%H-%M-%S.txt")
