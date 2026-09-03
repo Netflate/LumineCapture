@@ -10,10 +10,10 @@ use tiny_skia::Rect;
 
 use super::OcrLine;
 
-const BLOCK_GAP: f32 = 0.75;
-const BLOCK_GAP_MAX: f32 = 1.2;
-const BLOCK_OVERLAP: f32 = 0.35;
-const BLOCK_ALIGN: f32 = 0.8;
+const BLOCK_GAP: f32 = 0.4;
+const BLOCK_GAP_MAX: f32 = 0.7;
+const BLOCK_OVERLAP: f32 = 0.5;
+const BLOCK_ALIGN: f32 = 0.35;
 
 /// A ensemble of lines that belong together: a paragraph, a column, a menu. Lines
 /// inside a block are in reading order, and so are the blocks.
@@ -133,15 +133,14 @@ pub(super) fn group_blocks(lines: &[OcrLine]) -> Vec<Block> {
         })
         .collect();
 
-    order_blocks(merge_touching(blocks, lines, unit), unit)
+    order_blocks(merge_touching(blocks, lines), unit)
 }
 
-fn merge_touching(blocks: Vec<Block>, lines: &[OcrLine], unit: f32) -> Vec<Block> {
+fn merge_touching(blocks: Vec<Block>, lines: &[OcrLine]) -> Vec<Block> {
     let n = blocks.len();
     if n < 2 {
         return blocks;
     }
-    let pad = 0.2 * unit;
 
     let mut uf = UnionFind::new(n);
     let mut merged = false;
@@ -149,10 +148,10 @@ fn merge_touching(blocks: Vec<Block>, lines: &[OcrLine], unit: f32) -> Vec<Block
         let a = &first.bounds;
         for (j, second) in blocks.iter().enumerate().skip(i + 1) {
             let b = &second.bounds;
-            let apart = a.right() + pad <= b.left()
-                || b.right() + pad <= a.left()
-                || a.bottom() + pad <= b.top()
-                || b.bottom() + pad <= a.top();
+            let apart = a.right() <= b.left()
+                || b.right() <= a.left()
+                || a.bottom() <= b.top()
+                || b.bottom() <= a.top();
             if !apart {
                 uf.union(i, j);
                 merged = true;
@@ -186,7 +185,7 @@ fn merge_touching(blocks: Vec<Block>, lines: &[OcrLine], unit: f32) -> Vec<Block
             .sort_by(|&a, &b| cmp_reading(&lines[a].bounds, &lines[b].bounds));
     }
 
-    merge_touching(out, lines, unit)
+    merge_touching(out, lines)
 }
 
 // Sorts text blocks column by column (left to right, top to bottom).
