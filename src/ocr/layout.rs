@@ -31,9 +31,12 @@ pub(super) struct Block {
 //
 // How it works:
 // 1. Groups boxes into rows by their vertical center.
-// 2. Splits a row only if there is a huge gap (a real second column).
+// 2. Splits a row only if there is a huge gap (a real second column) or `divided` sees a rule in it.
 // 3. Returns the grouped box indices, ordered left to right.
-pub(super) fn row_groups(rects: &[Rect]) -> Vec<Vec<usize>> {
+pub(super) fn row_groups(
+    rects: &[Rect],
+    divided: impl Fn(&Rect, &Rect) -> bool,
+) -> Vec<Vec<usize>> {
     let n = rects.len();
     if n == 0 {
         return Vec::new();
@@ -63,12 +66,17 @@ pub(super) fn row_groups(rects: &[Rect]) -> Vec<Vec<usize>> {
     for mut row in rows {
         row.sort_by(|&a, &b| rects[a].left().total_cmp(&rects[b].left()));
         let mut current: Vec<usize> = Vec::new();
-        let mut reach = f32::MIN;
+        let mut reach_box = 0;
         for i in row {
-            if !current.is_empty() && rects[i].left() - reach >= 4.0 * unit {
+            if !current.is_empty()
+                && (rects[i].left() - rects[reach_box].right() >= 4.0 * unit
+                    || divided(&rects[reach_box], &rects[i]))
+            {
                 groups.push(std::mem::take(&mut current));
             }
-            reach = reach.max(rects[i].right());
+            if current.is_empty() || rects[i].right() > rects[reach_box].right() {
+                reach_box = i;
+            }
             current.push(i);
         }
         if !current.is_empty() {
