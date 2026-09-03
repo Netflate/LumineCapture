@@ -15,6 +15,11 @@ pub const ITALIC: &str = include_str!("../../assets/icons/italic.svg");
 pub const BOLD: &str = include_str!("../../assets/icons/bold.svg");
 pub const RETRY: &str = include_str!("../../assets/icons/retry.svg");
 pub const COPY: &str = include_str!("../../assets/icons/copy.svg");
+pub const GLOBE: &str = include_str!("../../assets/icons/globe.svg");
+pub const DOWNLOAD: &str = include_str!("../../assets/icons/download.svg");
+pub const CLOSE: &str = include_str!("../../assets/icons/close.svg");
+pub const TRASH: &str = include_str!("../../assets/icons/trash.svg");
+pub const CHECK: &str = include_str!("../../assets/icons/check.svg");
 // svg icon sizes
 const DEFAULT_ICON_SIZE: f32 = toolbar::BUTTON_CELL - 4.0;
 
@@ -36,7 +41,7 @@ pub fn get_svg_for_tool(tool: Tool) -> (&'static str, f32) {
 
 /// Icons not tied to any Tool (e.g. SettingsWidget::Toggle icons).
 /// Add every new ToggleVisual::Icon svg here so load_icons_cache() preloads it.
-pub const EXTRA_ICONS: &[&str] = &[ITALIC, BOLD, RETRY, COPY];
+pub const EXTRA_ICONS: &[&str] = &[ITALIC, BOLD, RETRY, COPY, GLOBE, DOWNLOAD, CLOSE, TRASH, CHECK];
 
 #[cfg(test)]
 mod tests {
