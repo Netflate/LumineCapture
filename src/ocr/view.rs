@@ -11,6 +11,7 @@ use tiny_skia::Rect;
 use crate::interaction::{OCR_HIT_SLACK, OCR_VERTICAL_SLACK};
 
 use super::OcrLine;
+use super::bidi;
 use super::layout::{self, Block};
 
 /// Character offset `ch` (0..=char count) within `line`, ordered by reading
@@ -49,6 +50,8 @@ pub struct OcrView {
     sel: Option<(Caret, Caret)>,
     /// Block the current drag began in (confines a sideways drag).
     anchor_block: Option<usize>,
+    /// for right-to-left languages
+    rtl: Vec<bool>,
 }
 
 impl OcrView {
@@ -80,6 +83,7 @@ impl OcrView {
             rank[li] = pos;
         }
 
+        self.rtl = lines.iter().map(|line| bidi::is_rtl(&line.text)).collect();
         self.lines = lines;
         self.blocks = blocks;
         self.block_of = block_of;
@@ -260,10 +264,13 @@ impl OcrView {
     /// Select from the start of `first` to the end of `last`.
     fn set_span(&mut self, first: usize, last: usize) -> Option<Rect> {
         let next = Some((
-            Caret { line: first, ch: 0 },
+            Caret {
+                line: first,
+                ch: self.line_start(first),
+            },
             Caret {
                 line: last,
-                ch: self.lines[last].char_count(),
+                ch: self.line_end(last),
             },
         ));
         if self.sel == next {
@@ -272,6 +279,23 @@ impl OcrView {
         let old = self.sel_bounds(self.sel);
         self.sel = next;
         union(old, self.sel_bounds(next))
+    }
+
+    /// for right-to-left text: the start of the line in reading order is its rightmost character
+    fn line_start(&self, line: usize) -> usize {
+        if self.rtl[line] {
+            self.lines[line].char_count()
+        } else {
+            0
+        }
+    }
+
+    fn line_end(&self, line: usize) -> usize {
+        if self.rtl[line] {
+            0
+        } else {
+            self.lines[line].char_count()
+        }
     }
 
     /// Bounds of every line a caret pair touches.
@@ -292,13 +316,14 @@ impl OcrView {
         let mut out = String::new();
         let mut prev_block: Option<usize> = None;
         for &li in &self.order {
-            let segment: String = if sel.is_none() {
-                self.lines[li].text.clone()
+            let segment = if sel.is_none() {
+                bidi::to_logical(&self.lines[li].text)
             } else {
                 let Some((lo, hi)) = self.span(sel, li) else {
                     continue;
                 };
-                self.lines[li].text.chars().skip(lo).take(hi - lo).collect()
+                let visual: String = self.lines[li].text.chars().skip(lo).take(hi - lo).collect();
+                bidi::to_logical(&visual)
             };
             let block = self.block_of[li];
             match prev_block {
@@ -320,11 +345,18 @@ impl OcrView {
         if r < self.rank[a.line] || r > self.rank[b.line] {
             return None;
         }
-        let lo = if i == a.line { a.ch } else { 0 };
-        let hi = if i == b.line {
-            b.ch
+        let n = self.lines[i].char_count();
+        // for right-to-left languages
+        let (lo, hi) = if self.rtl[i] {
+            (
+                if i == b.line { b.ch } else { 0 },
+                if i == a.line { a.ch } else { n },
+            )
         } else {
-            self.lines[i].char_count()
+            (
+                if i == a.line { a.ch } else { 0 },
+                if i == b.line { b.ch } else { n },
+            )
         };
         (lo < hi).then_some((lo, hi))
     }
@@ -340,7 +372,12 @@ impl OcrView {
     }
 
     fn caret_key(&self, c: Caret) -> (usize, usize) {
-        (self.rank.get(c.line).copied().unwrap_or(0), c.ch)
+        let rank = self.rank.get(c.line).copied().unwrap_or(0);
+        if self.rtl.get(c.line).copied().unwrap_or(false) {
+            (rank, self.lines[c.line].char_count().saturating_sub(c.ch))
+        } else {
+            (rank, c.ch)
+        }
     }
 }
 
