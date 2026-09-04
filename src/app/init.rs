@@ -179,9 +179,7 @@ pub fn initial_paint(
                 let (local_sel, prev_local, edges) =
                     selection_render_info(sel_zone, prev_zone, placement);
 
-                // Strength 0: the overlay's first frame is the untouched
-                // screenshot, and `tick_dim_fade` darkens it from there.
-                renderer::init_dimming(dimmed_i, base_i, local_sel.as_ref(), edges.as_ref(), 0.0);
+                renderer::init_dimming(dimmed_i, base_i, local_sel.as_ref(), edges.as_ref());
 
                 renderer::render_frame(&mut renderer::RenderRequest {
                     canvas: canvas_i,
@@ -216,7 +214,6 @@ pub fn initial_paint(
                     ocr_scan: None,
                     monitor_idx: i,
                     toasts: no_toasts,
-                    dim_fade: None,
                 });
             }));
         }

@@ -64,40 +64,19 @@ pub struct RenderRequest<'a> {
     pub ocr_scan: Option<(Rect, f32)>,
     pub monitor_idx: usize,
     pub toasts: &'a crate::ui::toast::Toasts,
-    /// Intro fade. `Some(strength)` rebuilds the whole dim layer from `base` at
-    /// that strength (0 = untouched, 1 = fully dimmed) and repaints the whole
-    /// monitor; `None` is the normal incremental path.
-    pub dim_fade: Option<f32>,
 }
 
 pub fn render_frame(req: &mut RenderRequest) {
-    // fade repaints the whole dim layer every frame, so it also forces a
-    // whole-monitor repaint
-    // TODO: should be there an option to disable or enable 
-    let dirty_rect = match req.dim_fade {
-        Some(strength) => {
-            init_dimming(
-                req.dimmed,
-                req.base,
-                req.selection,
-                req.selection_edges,
-                strength,
-            );
-            None
-        }
-        None => {
-            if req.selection_dirty {
-                update_dimming_delta(
-                    req.dimmed,
-                    req.base,
-                    req.prev_selection,
-                    req.selection,
-                    req.selection_edges,
-                );
-            }
-            req.dirty_rect
-        }
-    };
+    if req.selection_dirty {
+        update_dimming_delta(
+            req.dimmed,
+            req.base,
+            req.prev_selection,
+            req.selection,
+            req.selection_edges,
+        );
+    }
+    let dirty_rect = req.dirty_rect;
 
     if let Some(dirty) = dirty_rect {
         blit_rect(req.dimmed, req.canvas, dirty);
@@ -295,7 +274,7 @@ pub fn render_frame(req: &mut RenderRequest) {
 // selection border, so the border doesn't have a hard-edged hole.
 // rounded corners are only visual, the screenshot result won't have such corners
 //
-/// Black laid over everything outside the selection, at full strength.
+/// Black transparent background over everything outside the selection.
 const DIM_ALPHA: f32 = 140.0;
 /// Corner radius of the selection border, measured on its outer edge.
 const SELECTION_RADIUS: f32 = 8.0;
@@ -303,9 +282,9 @@ const SELECTION_STROKE: f32 = 2.0;
 /// Radius of the bright area
 const HOLE_RADIUS: f32 = SELECTION_RADIUS - SELECTION_STROKE / 2.0;
 
-/// `base_channel -> dimmed_channel` at `strength` (0 = untouched, 1 = full dim).
-fn dim_lut(strength: f32) -> [u8; 256] {
-    let keep = 255.0 - DIM_ALPHA * strength.clamp(0.0, 1.0);
+/// `base_channel -> dimmed_channel`.
+fn dim_lut() -> [u8; 256] {
+    let keep = 255.0 - DIM_ALPHA;
     let mut lut = [0u8; 256];
     for (value, slot) in lut.iter_mut().enumerate() {
         *slot = (value as f32 * keep / 255.0 + 0.5) as u8;
@@ -318,9 +297,8 @@ pub fn init_dimming(
     base: &Pixmap,
     selection: Option<&Rect>,
     edges: Option<&SelectionEdges>,
-    strength: f32,
 ) {
-    let lut = dim_lut(strength);
+    let lut = dim_lut();
     for (s, d) in base
         .data()
         .chunks_exact(4)
@@ -334,7 +312,7 @@ pub fn init_dimming(
 
     if let Some(sel) = selection {
         blit_rect(base, dimmed, sel);
-        dim_hole_corners(dimmed, sel, edges, strength);
+        dim_hole_corners(dimmed, sel, edges);
     }
 }
 
@@ -376,12 +354,7 @@ fn draw_selection_border(canvas: &mut Pixmap, sel: &Rect, edges: Option<&Selecti
 ///
 /// A corner is only rounded if both sides are visible screen edges. If the
 /// selection goes off the edge of the monitor, that corner stays flat.
-fn dim_hole_corners(
-    canvas: &mut Pixmap,
-    sel: &Rect,
-    edges: Option<&SelectionEdges>,
-    strength: f32,
-) {
+fn dim_hole_corners(canvas: &mut Pixmap, sel: &Rect, edges: Option<&SelectionEdges>) {
     let Some(edges) = edges else { return };
     let radius = HOLE_RADIUS.min(sel.width() / 2.0).min(sel.height() / 2.0);
     if radius <= 0.0 {
@@ -389,12 +362,7 @@ fn dim_hole_corners(
     }
 
     let mut paint = Paint::default();
-    paint.set_color(Color::from_rgba8(
-        0,
-        0,
-        0,
-        (DIM_ALPHA * strength.clamp(0.0, 1.0)) as u8,
-    ));
+    paint.set_color(Color::from_rgba8(0, 0, 0, DIM_ALPHA as u8));
     paint.anti_alias = true;
 
     // corner point, then the direction the rectangle's interior lies in
@@ -457,7 +425,7 @@ fn update_dimming_delta(
     }
     if let Some(cur) = next {
         blit_rect(base, dimmed, cur);
-        dim_hole_corners(dimmed, cur, edges, 1.0);
+        dim_hole_corners(dimmed, cur, edges);
     }
 }
 
@@ -472,7 +440,7 @@ fn dim_rect(dimmed: &mut Pixmap, base: &Pixmap, rect: &Rect) {
         return;
     };
 
-    let lut = dim_lut(1.0);
+    let lut = dim_lut();
     let stride = (w * 4) as usize;
     let row_bytes = rw as usize * 4;
     let src = base.data();

@@ -304,6 +304,28 @@ pub fn intersect_area(a: &Rect, b: &Rect) -> f32 {
     }
 }
 
+/// Spawns a new instance of this binary and passes image bytes via stdin.
+/// Runs in its own process group so Ctrl+C in the terminal won't kill pins or the clipboard handler.
+pub fn spawn_self(args: &[&str], stdin: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::Write;
+    use std::os::unix::process::CommandExt;
+    use std::process::{Command, Stdio};
+
+    let mut child = Command::new(std::env::current_exe()?)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .process_group(0)
+        .spawn()?;
+
+    child.stdin.take().ok_or("child has no stdin")?.write_all(stdin)?;
+
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}
+
 pub fn copy_to_clipboard(text: &str) {
     if let Ok(mut cb) = arboard::Clipboard::new() {
         let _ = cb.set_text(text.to_owned());

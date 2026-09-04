@@ -10,17 +10,16 @@ use crate::editor::EditorState;
 use crate::editor::dirty::is_dirty;
 use crate::profiler::Profiler;
 use crate::renderer;
-use crate::theme::anim;
 use crate::tools::Tool;
 use crate::tools::selection::{global_selection_to_local, selection_edges_for_monitor};
 use crate::interaction::DoubleClickTracker;
 use crate::ui::panel::{AnimatedPanel, tick_panel_animation};
 use crate::ui::toolbar::Toolbar;
-use crate::types::{DamageRect, OverlayEvent, Placement, PointerState, SelectionEdges, SelectionState, ToolSettings};
+use crate::types::{DamageRect, Finish, OverlayEvent, Placement, PointerState, SelectionEdges, SelectionState, ToolSettings};
 use crate::ui::color_popover::ColorPickerPopover;
 use crate::ui::panel::UiPanel;
 use crate::ui::settings_panel::SettingsPanel;
-use crate::utils::{encode_png, get_full_workspace_rect, get_overlapping_monitors, save_to_file};
+use crate::utils::{encode_png, get_full_workspace_rect, get_overlapping_monitors, save_to_file, spawn_self};
 
 use cosmic_text::{FontSystem, SwashCache};
 use std::collections::HashMap;
@@ -29,6 +28,9 @@ use tiny_skia::{Pixmap, PixmapPaint, Rect, Transform};
 /// download progress updates each tick, but if there is no animation
 /// then manually after each 50ms
 const DOWNLOAD_POLL_MS: i32 = 50;
+
+/// later in config
+const SAVE_ALWAYS: bool = true;
 
 // ************************* //
 //      ENTRY POINT          //
@@ -94,6 +96,7 @@ pub async fn make_screenshot(
         settings_panel: SettingsPanel::new(),
         tool_settings: ToolSettings::default(),
         pick_once: false,
+        finish: None,
         color_popover: ColorPickerPopover::new(),
         model_popover: crate::ui::model_popover::ModelPopover::new(),
         toasts: crate::ui::toast::Toasts::default(),
@@ -130,9 +133,6 @@ pub async fn make_screenshot(
         ocr_redrag_from: None,
         ocr_await_region: false,
         ocr_scan_started: None,
-
-        dim_strength: 0.0,
-        dim_fade_start: None,
     };
     prof.mark("editor_state built");
 
@@ -146,14 +146,8 @@ pub async fn make_screenshot(
     init::initial_paint(&mut editor_state, &mut overlay, &mut prof)?;
     prof.dump();
 
-    // The first frame is the bare screenshot; the dim rolls in from here, so the
-    // overlay arrives instead of slamming on.
-    editor_state.dim_fade_start = Some(std::time::Instant::now());
-
     let mut dirty_mask: u32 = 0;
 
-    let mut save_to_clipboard = false;
-    let _save_as_file = true;
     let mut annotations_were_hidden = false;
 
     loop {
@@ -162,9 +156,8 @@ pub async fn make_screenshot(
             || editor_state.model_popover.is_animating()
             || editor_state.toasts.is_animating();
         let stepper_holding = editor_state.settings_panel.arrow_held.is_some();
-        let fading_in = editor_state.dim_strength < 1.0;
         let ocr_working = editor_state.ocr.needs_poll();
-        let timeout = if is_animating || stepper_holding || ocr_working || fading_in {
+        let timeout = if is_animating || stepper_holding || ocr_working {
             16
         } else if editor_state.ocr_models.is_downloading() {
             DOWNLOAD_POLL_MS
@@ -239,11 +232,6 @@ pub async fn make_screenshot(
                     dirty_mask |= 1 << cp_mon;
                 }
             }
-            OverlayEvent::SaveToClipboard => {
-                drop(overlay);
-                save_to_clipboard = true;
-                break;
-            }
             OverlayEvent::TextInput(ch) => {
                 input::handle_text_input(&mut editor_state, ch, &mut dirty_mask);
             }
@@ -257,6 +245,11 @@ pub async fn make_screenshot(
             OverlayEvent::Scroll { delta_x, delta_y } => {
                 input::handle_scroll(&mut editor_state, delta_x, delta_y, &mut dirty_mask);
             }
+        }
+
+        if editor_state.finish.is_some() {
+            drop(overlay);
+            break;
         }
 
         overlay.set_cursor(input::compute_cursor(&editor_state));
@@ -330,8 +323,6 @@ pub async fn make_screenshot(
             }
         }
 
-        let dim_fade = tick_dim_fade(&mut editor_state, &mut dirty_mask);
-
         if dirty_mask != 0 {
             let selection_dirty = editor_state.selection.zone != editor_state.selection.prev_zone;
             let active_text_id = editor_state.text_editing.as_ref().map(|e| e.annotation_id);
@@ -396,7 +387,6 @@ pub async fn make_screenshot(
 
                     let damage: Option<DamageRect> = dirty_rect
                         .as_ref()
-                        .filter(|_| dim_fade.is_none())
                         .and_then(|r| {
                             renderer::rect_bounds(
                                 r,
@@ -527,7 +517,7 @@ pub async fn make_screenshot(
                         // landing in `annotations` or bumping the baked-pen
                         // counter, so this is exactly "the layer is blank" -
                         // and it skips a full-canvas composite on every whole
-                        // frame, the intro fade's 400ms of them included.
+                        // frame.
                         annotations_layer_empty: annotations_hidden
                             || (editor_state.annotations.is_empty()
                                 && editor_state.pending_pen_baked == 0),
@@ -552,7 +542,6 @@ pub async fn make_screenshot(
                         ocr_scan: scan_badge,
                         monitor_idx: i,
                         toasts: &editor_state.toasts,
-                        dim_fade,
                     });
 
                     overlay.stage_frame(i, editor_state.canvas[i].data(), damage)?;
@@ -575,10 +564,23 @@ pub async fn make_screenshot(
 
     editor_state.ocr_models.shutdown();
 
-    if save_to_clipboard {
-        let final_result = render_final(&mut editor_state);
-        let _path = save_to_file(&final_result);
-        clipboard.copy_image_to_clipboard(final_result)?;
+    let Some(finish) = editor_state.finish else {
+        return Ok(());
+    };
+    let Some((png, (x, y))) = render_final(&mut editor_state) else {
+        return Ok(());
+    };
+
+    if finish == Finish::Pin {
+        spawn_self(&["--pin", "--at", &format!("{x},{y}")], &png)?;
+    }
+    if (finish == Finish::Save || SAVE_ALWAYS)
+        && let Err(e) = save_to_file(&png)
+    {
+        eprintln!("failed to save the screenshot: {e}");
+    }
+    if finish == Finish::Copy {
+        clipboard.copy_image_to_clipboard(png)?;
     }
 
     Ok(())
@@ -588,26 +590,6 @@ pub async fn make_screenshot(
 //      RENDER HELPERS       //
 // ************************* //
 
-
-/// Progress the intro fade-in and return its current opacity for this frame.
-/// Returns `None` when the fade finishes and normal dimming takes over.
-fn tick_dim_fade(editor_state: &mut EditorState, dirty_mask: &mut u32) -> Option<f32> {
-    if editor_state.dim_strength >= 1.0 {
-        return None;
-    }
-    let start = editor_state.dim_fade_start?;
-
-    let t = (start.elapsed().as_secs_f32() / anim::DIM_FADE.as_secs_f32()).clamp(0.0, 1.0);
-    // Ease out: most of the darkening lands early, then it settles.
-    editor_state.dim_strength = 1.0 - (1.0 - t).powi(3);
-
-    for i in 0..editor_state.placements.len() {
-        crate::editor::dirty::mark_dirty(dirty_mask, i);
-    }
-    editor_state.toolbar.dirty = true;
-    editor_state.settings_panel.dirty = true;
-    Some(editor_state.dim_strength)
-}
 
 pub fn selection_render_info(
     selection: &Option<Rect>,
@@ -628,13 +610,12 @@ pub fn selection_render_info(
     (local_sel, prev_local, edges)
 }
 
-fn render_final(editor_state: &mut EditorState) -> Vec<u8> {
+/// Returns the final PNG and the global position of its top-left corner.
+/// position is required for the pin feature ^^^      
+fn render_final(editor_state: &mut EditorState) -> Option<(Vec<u8>, (i32, i32))> {
     let sel = match editor_state.selection.zone {
         Some(s) => s,
-        None => match get_full_workspace_rect(&editor_state.placements) {
-            Some(r) => r,
-            None => return vec![],
-        },
+        None => get_full_workspace_rect(&editor_state.placements)?,
     };
 
     let mask = get_overlapping_monitors(&sel, &editor_state.placements);
@@ -646,7 +627,7 @@ fn render_final(editor_state: &mut EditorState) -> Vec<u8> {
     let sel_w = (sel_right - sel_left).max(0) as u32;
     let sel_h = (sel_bottom - sel_top).max(0) as u32;
     if sel_w == 0 || sel_h == 0 {
-        return vec![];
+        return None;
     }
 
     let mut out = Pixmap::new(sel_w, sel_h).unwrap();
@@ -680,5 +661,5 @@ fn render_final(editor_state: &mut EditorState) -> Vec<u8> {
         );
     }
 
-    encode_png(&out)
+    Some((encode_png(&out), (sel_left, sel_top)))
 }

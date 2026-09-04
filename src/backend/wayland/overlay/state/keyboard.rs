@@ -162,7 +162,8 @@ impl OverlayState {
                     OverlayEvent::Undo
                 }),
                 Keysym::y | Keysym::Y => Some(OverlayEvent::Redo),
-                Keysym::s | Keysym::S => Some(OverlayEvent::SaveToClipboard),
+                Keysym::s | Keysym::S => Some(OverlayEvent::KeyPress(SpecialKey::KeyS)),
+                Keysym::p | Keysym::P => Some(OverlayEvent::KeyPress(SpecialKey::KeyP)),
                 Keysym::a | Keysym::A => Some(OverlayEvent::KeyPress(SpecialKey::KeyA)),
                 Keysym::c | Keysym::C => Some(OverlayEvent::KeyPress(SpecialKey::KeyC)),
                 Keysym::v | Keysym::V => Some(OverlayEvent::KeyPress(SpecialKey::KeyV)),
@@ -175,10 +176,14 @@ impl OverlayState {
                     OverlayEvent::Redo
                 } else {
                     OverlayEvent::Undo
-                }), // 44 -> Z
-                21 => Some(OverlayEvent::Redo),            // 21 -> Y
-                31 => Some(OverlayEvent::SaveToClipboard), // 31 -> S
+                }),                                                   // 44 -> Z
+                21 => Some(OverlayEvent::Redo),                       // 21 -> Y
+                31 => Some(OverlayEvent::KeyPress(SpecialKey::KeyS)), // 31 -> S
+                25 => Some(OverlayEvent::KeyPress(SpecialKey::KeyP)), // 25 -> P
                 30 => Some(OverlayEvent::KeyPress(SpecialKey::KeyA)), // 30 -> A
+                46 => Some(OverlayEvent::KeyPress(SpecialKey::KeyC)), // 46 -> C
+                47 => Some(OverlayEvent::KeyPress(SpecialKey::KeyV)), // 47 -> V
+                45 => Some(OverlayEvent::KeyPress(SpecialKey::KeyX)), // 45 -> X
                 _ => None,
             });
 

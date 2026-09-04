@@ -113,8 +113,6 @@ pub mod anim {
     const FRAME_MS: u64 = 10;
     pub const FRAME: Duration = Duration::from_millis(FRAME_MS);
     pub const DT: f32 = FRAME_MS as f32 / 1000.0;
-
-    pub const DIM_FADE: Duration = Duration::from_millis(400);
 }
 
 // ==========================================

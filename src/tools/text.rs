@@ -25,6 +25,7 @@ fn key_to_action(key: SpecialKey, ctrl: bool) -> Option<Action> {
         SpecialKey::KeyC => None,
         SpecialKey::KeyV => None,
         SpecialKey::KeyX => None,
+        SpecialKey::KeyS | SpecialKey::KeyP => None,
         SpecialKey::Left => Some(Action::Motion(if ctrl {
             Motion::LeftWord
         } else {

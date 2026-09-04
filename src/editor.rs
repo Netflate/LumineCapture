@@ -65,6 +65,7 @@ pub struct EditorState {
 
     /// Set to true when the user is about to pick a color from the palette, since the action is a one-time thing
     pub pick_once: bool,
+    pub finish: Option<crate::types::Finish>,
     pub click_tracker: DoubleClickTracker<ClickTarget>,
 
     pub mod_ctrl: bool,
@@ -89,12 +90,6 @@ pub struct EditorState {
     /// When the running recognition started, driving the progress badge's spin.
     /// `None` whenever nothing is in flight.
     pub ocr_scan_started: Option<Instant>,
-
-    /// Intro fade: the overlay darkens from nothing to full over `app::DIM_FADE`
-    /// instead of slamming on with the first frame. 1.0 once it has finished,
-    /// and every monitor re-dims from `base` each frame until then.
-    pub dim_strength: f32,
-    pub dim_fade_start: Option<Instant>,
 }
 
 // types.rs
