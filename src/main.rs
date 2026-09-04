@@ -11,21 +11,50 @@ pub mod types;
 pub mod ui;
 pub mod utils;
 
-#[tokio::main]
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut args = std::env::args().skip(1);
+    // supplementary processes start before initializing Tokio to avoid inheriting the runtime or its worker threads.
+    match args.next().as_deref() {
+        // wayland clipboard requires the source process to stay alive to serve data.
+        // we spawn a short-lived daemon so clipboard managers can fetch the capture
+        Some("--clipboard-daemon") => {
+            run_clipboard_daemon();
+            Ok(())
+        }
+        Some("--pin") => run_pin(args),
+        _ => tokio::runtime::Runtime::new()?.block_on(async {
+            let wayland_ = wayland_client::Connection::connect_to_env().ok();
+            app::make_screenshot(wayland_).await
+        }),
+    }
+}
 
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<String> = std::env::args().collect();
+/// Handles `--pin [--at X,Y] [FILE]`. Reads the image from stdin if no file path is provided.
+fn run_pin(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::Read;
 
-    // wayland clipboard requires the source process to stay alive to serve data.
-    // we spawn a short-lived daemon so clipboard managers can fetch the capture
-    if args.get(1).map(String::as_str) == Some("--clipboard-daemon") {
-        run_clipboard_daemon();
-        return Ok(());
+    let mut at = None;
+    let mut file = None;
+    while let Some(arg) = args.next() {
+        if arg == "--at" {
+            at = args.next().and_then(|v| {
+                let (x, y) = v.split_once(',')?;
+                Some((x.parse().ok()?, y.parse().ok()?))
+            });
+        } else {
+            file = Some(arg);
+        }
     }
 
-    let wayland_ = wayland_client::Connection::connect_to_env().ok();
-    app::make_screenshot(wayland_).await?;
-    Ok(())
+    let image = match file {
+        Some(path) => std::fs::read(path)?,
+        None => {
+            let mut buf = Vec::new();
+            std::io::stdin().read_to_end(&mut buf)?;
+            buf
+        }
+    };
+    backend::wayland::pin::run(&image, at)
 }
 
 fn run_clipboard_daemon() {
