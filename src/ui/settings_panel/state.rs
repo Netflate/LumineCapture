@@ -18,6 +18,9 @@ pub const ITEM_GAP: f32 = 8.0;
 pub const SWATCH_SIZE: f32 = 28.0;
 pub const SEPARATOR_SIZE: f32 = 16.0;
 pub const STEPPER_WIDTH: f32 = 84.0;
+pub const DOWNLOAD_WIDTH: f32 = 196.0;
+pub const DOWNLOAD_LABEL_WIDTH: f32 = 96.0;
+pub const DOWNLOAD_PERCENT_WIDTH: f32 = 38.0;
 
 pub const ICON_BUTTON_SIZE: f32 = SWATCH_SIZE;
 pub const CHECKBOX_BOX_SIZE: f32 = 18.0;
@@ -41,6 +44,7 @@ pub enum ToggleVisual {
 pub enum SettingsAction {
     OcrRescan,
     OcrCopyAll,
+    OcrLanguages,
 }
 
 #[derive(Debug, Clone)]
@@ -63,6 +67,7 @@ pub enum SettingsWidget {
         field: ToggleField,
     },
     Label(&'static str),
+    Download,
     Separator,
 }
 
@@ -86,7 +91,9 @@ pub enum SettingsSource {
     Tool(Tool),
     Annotation(u64),
     OcrScanning,
-    OcrAwaiting, // <- waiting for drag
+    OcrAwaiting { downloading: bool }, // <- waiting for drag
+    OcrNoModel { downloading: bool },
+    OcrResult { downloading: bool },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -155,23 +162,59 @@ pub fn widgets_for_tool(tool: Tool) -> &'static [SettingsWidget] {
 /// boxes out a new region - on this screen or any other - and reads it on
 /// release, so nothing has to be re-picked from the toolbar.
 pub const OCR_WIDGETS: &[SettingsWidget] = &[
-    SettingsWidget::Action {
-        action: SettingsAction::OcrRescan,
-        svg: crate::ui::icons::RETRY,
-        icon_size: 16.0,
-    },
-    SettingsWidget::Action {
-        action: SettingsAction::OcrCopyAll,
-        svg: crate::ui::icons::COPY,
-        icon_size: 15.0,
-    },
+    OCR_LANGUAGES,
+    SettingsWidget::Separator,
+    OCR_RESCAN,
+    OCR_COPY_ALL,
     SettingsWidget::Separator,
     SettingsWidget::Label("Drag a new box to read another area"),
+];
+
+/// when downloading
+pub const OCR_WIDGETS_DOWNLOADING: &[SettingsWidget] = &[
+    OCR_LANGUAGES,
+    SettingsWidget::Separator,
+    OCR_RESCAN,
+    OCR_COPY_ALL,
+    SettingsWidget::Separator,
+    SettingsWidget::Download,
 ];
 
 /// Shown while the worker thread is busy; the progress badge sits over the
 /// region itself, this just keeps the panel from advertising dead buttons.
 pub const OCR_SCANNING_WIDGETS: &[SettingsWidget] = &[SettingsWidget::Label("Reading text...")];
+
+pub const OCR_AWAITING_WIDGETS: &[SettingsWidget] = &[OCR_LANGUAGES];
+
+pub const OCR_NO_MODEL_WIDGETS: &[SettingsWidget] = &[
+    OCR_LANGUAGES,
+    SettingsWidget::Separator,
+    SettingsWidget::Label("Choose a language model to use OCR"),
+];
+
+pub const OCR_DOWNLOADING_WIDGETS: &[SettingsWidget] = &[
+    OCR_LANGUAGES,
+    SettingsWidget::Separator,
+    SettingsWidget::Download,
+];
+
+const OCR_LANGUAGES: SettingsWidget = SettingsWidget::Action {
+    action: SettingsAction::OcrLanguages,
+    svg: crate::ui::icons::GLOBE,
+    icon_size: 16.0,
+};
+
+const OCR_RESCAN: SettingsWidget = SettingsWidget::Action {
+    action: SettingsAction::OcrRescan,
+    svg: crate::ui::icons::RETRY,
+    icon_size: 16.0,
+};
+
+const OCR_COPY_ALL: SettingsWidget = SettingsWidget::Action {
+    action: SettingsAction::OcrCopyAll,
+    svg: crate::ui::icons::COPY,
+    icon_size: 15.0,
+};
 
 pub fn widgets_for_annotation(ann: &Annotation) -> &'static [SettingsWidget] {
     match &ann.shape {
@@ -201,6 +244,7 @@ impl PanelItem for SettingsWidget {
                 }
             },
             SettingsWidget::Label(text) => text.chars().count() as f32 * 7.0 + 8.0,
+            SettingsWidget::Download => DOWNLOAD_WIDTH,
             SettingsWidget::Separator => SEPARATOR_SIZE,
         }
     }
@@ -241,6 +285,8 @@ pub struct SettingsPanel {
     pub arrow_held: Option<ArrowHoldState>,
     pub toggled: HashMap<usize, bool>,
     pub pre_edit_snapshot: Option<Vec<Annotation>>,
+    /// % of download progress if any
+    pub download: Option<u8>,
 
     /// Scroll accumulator for scrollable fields (hex/rgba)
     /// Keeps scroll fractional state separate from raw events to avoid
@@ -276,6 +322,7 @@ impl SettingsPanel {
             toggled: HashMap::new(),
             scroll: ScrollAccumulator::new(),
             pre_edit_snapshot: None,
+            download: None,
         }
     }
 

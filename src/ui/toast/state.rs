@@ -13,16 +13,21 @@ use crate::ui::panel::emit_panel_damage;
 pub const HEIGHT: f32 = 38.0;
 pub const PAD_X: f32 = 18.0;
 pub const RADIUS: f32 = 10.0;
+pub const MARGIN: f32 = 8.0;
 
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ToastKind {
     OcrPickRegion,
+    OcrNoModel,
+    OcrDownloadFailed,
 }
 
 #[derive(Clone, Copy)]
 pub enum ToastAnchor {
     CursorMonitorCenter,
+    /// if there is selection, center of local selection in the monitor, else just center 
+    SelectionCenter,
 }
 
 #[derive(Clone, Copy)]
@@ -50,6 +55,20 @@ impl ToastKind {
                 fade_in: 0.18,
                 fade_out: 0.14,
             },
+            ToastKind::OcrNoModel => ToastSpec {
+                text: "Choose a language model to use OCR",
+                anchor: ToastAnchor::SelectionCenter,
+                life: ToastLife::Timed(Duration::from_secs(4)),
+                fade_in: 0.18,
+                fade_out: 0.14,
+            },
+            ToastKind::OcrDownloadFailed => ToastSpec {
+                text: "Couldn't download the language, check the connection",
+                anchor: ToastAnchor::SelectionCenter,
+                life: ToastLife::Timed(Duration::from_secs(4)),
+                fade_in: 0.18,
+                fade_out: 0.14,
+            },
         }
     }
 }
@@ -74,14 +93,16 @@ impl Toast {
     fn layout(&mut self, place: &ToastPlace) {
         self.monitor_idx = place.monitor_idx;
         let w = self.text_width + PAD_X * 2.0;
-        self.rect = match self.spec.anchor {
-            ToastAnchor::CursorMonitorCenter => Rect::from_xywh(
-                ((place.size.0 - w) / 2.0).round(),
-                ((place.size.1 - HEIGHT) / 2.0).round(),
-                w,
-                HEIGHT,
+        let (cx, cy) = match (self.spec.anchor, place.focus) {
+            (ToastAnchor::SelectionCenter, Some(focus)) => (
+                focus.left() + focus.width() / 2.0,
+                focus.top() + focus.height() / 2.0,
             ),
+            _ => (place.size.0 / 2.0, place.size.1 / 2.0),
         };
+        let x = (cx - w / 2.0).clamp(MARGIN, (place.size.0 - w - MARGIN).max(MARGIN));
+        let y = (cy - HEIGHT / 2.0).clamp(MARGIN, (place.size.1 - HEIGHT - MARGIN).max(MARGIN));
+        self.rect = Rect::from_xywh(x.round(), y.round(), w, HEIGHT);
     }
 }
 
@@ -89,6 +110,7 @@ impl Toast {
 pub struct ToastPlace {
     pub monitor_idx: usize,
     pub size: (f32, f32),
+    pub focus: Option<Rect>,
 }
 
 #[derive(Default)]

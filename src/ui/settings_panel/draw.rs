@@ -1,9 +1,9 @@
-use crate::renderer::paths::{draw_item_border, draw_panel_border, draw_svg_icon, rounded_rect_path};
+use crate::renderer::paths::{draw_item_border, draw_panel_border, draw_progress_bar, draw_svg_icon, rounded_rect_path};
 use crate::renderer::text::{HAlign, draw_aligned_text, draw_line_edit};
 use crate::theme::{color, font, radius};
 use crate::theme::stroke::BORDER as ITEM_BORDER;
 use crate::ui::panel::{PanelItem, UiPanel};
-use crate::ui::settings_panel::{CHECKBOX_BOX_SIZE, CHECKBOX_LABEL_GAP, PADDING, STEPPER_ARROW_GAP, STEPPER_ARROW_HEIGHT, STEPPER_ARROW_STROKE, STEPPER_ARROW_WIDTH, STEPPER_ARROW_ZONE, SettingsPanel, SettingsWidget, StepperArrow, ToggleVisual};
+use crate::ui::settings_panel::{CHECKBOX_BOX_SIZE, CHECKBOX_LABEL_GAP, DOWNLOAD_LABEL_WIDTH, DOWNLOAD_PERCENT_WIDTH, PADDING, STEPPER_ARROW_GAP, STEPPER_ARROW_HEIGHT, STEPPER_ARROW_STROKE, STEPPER_ARROW_WIDTH, STEPPER_ARROW_ZONE, SettingsPanel, SettingsWidget, StepperArrow, ToggleVisual};
 use cosmic_text::{FontSystem, SwashCache};
 use std::collections::HashMap;
 use tiny_skia::{
@@ -203,6 +203,19 @@ fn draw_settings_content(
                     );
                 }
             }
+            SettingsWidget::Download => {
+                draw_download(
+                    canvas,
+                    current_x,
+                    item_y,
+                    item_w,
+                    item_h,
+                    panel.download.unwrap_or(0),
+                    icon_color,
+                    font_system,
+                    swash_cache,
+                );
+            }
             SettingsWidget::Separator => {
                 let sep_w = 2.0;
                 let sep_h = h * 0.5;
@@ -228,6 +241,59 @@ fn draw_settings_content(
         }
 
         current_x += item_w + item.trailing_padding();
+    }
+}
+
+fn draw_download(
+    canvas: &mut Pixmap,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    percent: u8,
+    text_color: Color,
+    font_system: &mut FontSystem,
+    swash_cache: &mut SwashCache,
+) {
+    if let Some(label) = Rect::from_xywh(x, y, DOWNLOAD_LABEL_WIDTH, h) {
+        draw_aligned_text(
+            canvas,
+            "Downloading",
+            font_system,
+            swash_cache,
+            label,
+            font::LABEL,
+            text_color,
+            HAlign::Left,
+            (0.0, 0.0),
+            cosmic_text::Weight::NORMAL,
+            cosmic_text::Style::Normal,
+        );
+    }
+
+    let bar_w = (w - DOWNLOAD_LABEL_WIDTH - DOWNLOAD_PERCENT_WIDTH).max(0.0);
+    draw_progress_bar(
+        canvas,
+        x + DOWNLOAD_LABEL_WIDTH,
+        y + (h - crate::theme::stroke::PROGRESS) / 2.0,
+        bar_w,
+        percent,
+    );
+
+    if let Some(label) = Rect::from_xywh(x + w - DOWNLOAD_PERCENT_WIDTH, y, DOWNLOAD_PERCENT_WIDTH, h) {
+        draw_aligned_text(
+            canvas,
+            &format!("{percent}%"),
+            font_system,
+            swash_cache,
+            label,
+            font::LABEL,
+            text_color,
+            HAlign::Center,
+            (0.0, 0.0),
+            cosmic_text::Weight::NORMAL,
+            cosmic_text::Style::Normal,
+        );
     }
 }
 

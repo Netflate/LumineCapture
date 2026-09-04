@@ -9,7 +9,7 @@ use crate::ui::panel::{emit_panel_damage, sync_panel_hover, sync_panel_rect};
 use crate::types::{Annotation, AnnotationShape, SpecialKey, ToolSettings};
 use crate::interaction::{HOLD_ACCEL_AFTER, HOLD_FAST_INTERVAL, HOLD_INITIAL_DELAY, HOLD_REPEAT_INTERVAL};
 use crate::ui::panel::UiPanel;
-use crate::ui::settings_panel::{OCR_SCANNING_WIDGETS, SettingsAction, SettingsSource, SettingsWidget, StepperArrow, ToggleField, compute_settings_placement, widgets_for_annotation, widgets_for_tool};
+use crate::ui::settings_panel::{OCR_AWAITING_WIDGETS, OCR_DOWNLOADING_WIDGETS, OCR_NO_MODEL_WIDGETS, OCR_SCANNING_WIDGETS, OCR_WIDGETS, OCR_WIDGETS_DOWNLOADING, SettingsAction, SettingsSource, SettingsWidget, StepperArrow, ToggleField, compute_settings_placement, widgets_for_annotation, widgets_for_tool};
 use std::time::Instant;
 
 
@@ -27,23 +27,36 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
 
     // A running scan owns the panel outright: its buttons act on a result that
     // isn't there yet.
-    let scanning = editor_state.selected_tool == Tool::Ocr && editor_state.ocr.is_busy();
-    let awaiting = editor_state.selected_tool == Tool::Ocr && editor_state.ocr_await_region;
-
-    let new_widgets = match selected_ann {
-        _ if scanning => OCR_SCANNING_WIDGETS,
-        _ if awaiting => &[][..],
-        Some(ann) => widgets_for_annotation(ann),
-        None => widgets_for_tool(editor_state.selected_tool),
-    };
+    let ocr = editor_state.selected_tool == Tool::Ocr;
+    let scanning = ocr && editor_state.ocr.is_busy();
+    let awaiting = ocr && editor_state.ocr_await_region;
+    let no_model = ocr && editor_state.ocr_models.installed_count() == 0;
+    let downloading = editor_state.ocr_models.is_downloading();
 
     let new_source = match selected_ann {
+        _ if no_model => SettingsSource::OcrNoModel { downloading },
         _ if scanning => SettingsSource::OcrScanning,
-        _ if awaiting => SettingsSource::OcrAwaiting,
+        _ if awaiting => SettingsSource::OcrAwaiting { downloading },
+        _ if ocr => SettingsSource::OcrResult { downloading },
         Some(ann) => SettingsSource::Annotation(ann.id),
         None => SettingsSource::Tool(editor_state.selected_tool),
     };
+
+    let new_widgets = match new_source {
+        SettingsSource::OcrScanning => OCR_SCANNING_WIDGETS,
+        SettingsSource::OcrNoModel { downloading: false } => OCR_NO_MODEL_WIDGETS,
+        SettingsSource::OcrAwaiting { downloading: false } => OCR_AWAITING_WIDGETS,
+        SettingsSource::OcrNoModel { downloading: true }
+        | SettingsSource::OcrAwaiting { downloading: true } => OCR_DOWNLOADING_WIDGETS,
+        SettingsSource::OcrResult { downloading: false } => OCR_WIDGETS,
+        SettingsSource::OcrResult { downloading: true } => OCR_WIDGETS_DOWNLOADING,
+        SettingsSource::Annotation(_) => selected_ann.map_or(&[][..], widgets_for_annotation),
+        SettingsSource::Tool(tool) => widgets_for_tool(tool),
+    };
     let source_changed = editor_state.settings_panel.active_source != Some(new_source);
+
+    let old_rect = editor_state.settings_panel.rect();
+    let old_monitor = editor_state.settings_panel.monitor_idx;
 
     if source_changed {
         editor_state.settings_panel.widgets = new_widgets;
@@ -92,9 +105,6 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
 
     let should_be_visible = !new_widgets.is_empty() && !editor_state.tool_active;
 
-    let old_rect = editor_state.settings_panel.rect();
-    let old_monitor = editor_state.settings_panel.monitor_idx;
-
     if should_be_visible {
         let (pos, monitor_idx) = compute_settings_placement(editor_state);
         editor_state.settings_panel.position = pos;
@@ -106,11 +116,15 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
         editor_state.settings_panel.arrow_held = None;
     }
 
+    let download = editor_state.ocr_models.download_progress();
+    let download_changed = editor_state.settings_panel.download != download;
+    editor_state.settings_panel.download = download;
+
     sync_panel_rect(
         &mut editor_state.settings_panel,
         old_rect,
         old_monitor,
-        source_changed,
+        source_changed || download_changed,
         &mut editor_state.damage_rects,
         dirty_mask,
     );
@@ -165,8 +179,87 @@ pub fn run_settings_action(
     match action {
         SettingsAction::OcrRescan => crate::tools::ocr::restart_ocr(editor_state, dirty_mask),
         SettingsAction::OcrCopyAll => crate::tools::ocr::copy_all(editor_state, dirty_mask),
+        SettingsAction::OcrLanguages => {
+            super::model_popover::toggle_model_popover(editor_state, dirty_mask)
+        }
     }
     update_settings_panel(editor_state, dirty_mask);
+}
+
+/// same as color popover
+pub fn compute_popover_placement(
+    editor_state: &EditorState,
+    (width, height): (f32, f32),
+    offset: f32,
+) -> ((f32, f32), usize) {
+    let sp = &editor_state.settings_panel;
+    let tb = &editor_state.toolbar;
+    let monitor_idx = sp.monitor_idx;
+
+    let monitor_width = editor_state.placements[monitor_idx].size.0 as f32;
+    let monitor_height = editor_state.placements[monitor_idx].size.1 as f32;
+
+    let sp_bottom = sp.render_pos.1 + sp.size.1;
+    let tb_bottom = tb.render_pos.1 + tb.size.1;
+    let combined_bottom = sp_bottom.max(tb_bottom);
+
+    let mut side_y = combined_bottom - height;
+
+    if side_y < offset {
+        side_y = offset;
+    }
+    if side_y + height > monitor_height - offset {
+        side_y = monitor_height - height - offset;
+    }
+
+    let x_left = sp.render_pos.0 - width - offset;
+    let x_right = sp.render_pos.0 + sp.size.0 + offset;
+
+    let space_left = x_left >= offset;
+    let space_right = x_right + width <= monitor_width - offset;
+
+    if space_left {
+        return ((x_left, side_y), monitor_idx);
+    } else if space_right {
+        return ((x_right, side_y), monitor_idx);
+    }
+
+    let mut final_x = sp.render_pos.0;
+
+    if final_x < offset {
+        final_x = offset;
+    }
+    if final_x + width > monitor_width - offset {
+        final_x = monitor_width - width - offset;
+    }
+
+    let y_below = sp.render_pos.1 + sp.size.1 + offset;
+    let y_above = sp.render_pos.1 - offset - height;
+
+    let space_below = y_below + height <= monitor_height;
+    let space_above = y_above >= 0.0;
+
+    let sp_is_below_tb = sp.render_pos.1 >= tb.render_pos.1;
+
+    let final_y = if sp_is_below_tb {
+        if space_below {
+            y_below
+        } else if space_above {
+            y_above
+        } else {
+            monitor_height - height - offset
+        }
+    } else {
+        if space_above {
+            y_above
+        } else if space_below {
+            y_below
+        } else {
+            offset
+        }
+    };
+
+    ((final_x, final_y), monitor_idx)
 }
 
 pub fn tick_stepper_arrow_hold(editor_state: &mut EditorState, dirty_mask: &mut u32) {
