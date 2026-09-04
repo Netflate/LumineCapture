@@ -1,6 +1,6 @@
 use crate::tools::Tool;
 use crate::theme::anim;
-use crate::types::Placement;
+use crate::types::{Finish, Placement};
 use crate::ui::panel::{AnimatedPanel, HoverablePanel, PanelItem, UiPanel};
 use std::time::{Duration, Instant};
 use tiny_skia::{Pixmap, Rect};
@@ -31,6 +31,10 @@ pub const ITEMS: &[ToolbarItem] = &[
     ToolbarItem::Button(ToolbarButton::Tool(Tool::Rectangle)),
     ToolbarItem::Button(ToolbarButton::Tool(Tool::Circle)),
     ToolbarItem::Button(ToolbarButton::Tool(Tool::NumeratedArrow)),
+    ToolbarItem::Seperator,
+    ToolbarItem::Button(ToolbarButton::Finish(Finish::Pin)),
+    ToolbarItem::Button(ToolbarButton::Finish(Finish::Copy)),
+    ToolbarItem::Button(ToolbarButton::Finish(Finish::Save)),
 ];
 
 // ==========================================
@@ -188,7 +192,7 @@ impl Toolbar {
             .and_then(|idx| self.items.get(idx))
             .and_then(|item| match item {
                 ToolbarItem::Button(ToolbarButton::Tool(tool)) => Some(tool),
-                ToolbarItem::Seperator => None,
+                ToolbarItem::Button(ToolbarButton::Finish(_)) | ToolbarItem::Seperator => None,
             })
     }
 
@@ -279,6 +283,7 @@ pub enum ToolbarAction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ToolbarButton {
     Tool(Tool),
+    Finish(Finish),
     //Action(ToolbarAction),
 }
 

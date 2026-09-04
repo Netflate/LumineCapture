@@ -32,7 +32,6 @@ pub enum OverlayEvent {
     PointerMove { monitor_idx: usize, x: f64, y: f64 },
     PointerButton { button: MouseButton, pressed: bool },
     EscapePressed,
-    SaveToClipboard,
     Tick,
     Redo,
     Undo,
@@ -40,6 +39,13 @@ pub enum OverlayEvent {
     KeyPress(SpecialKey),
     ModifiersChanged { ctrl: bool, shift: bool },
     Scroll { delta_x: f32, delta_y: f32 },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Finish {
+    Pin,
+    Copy,
+    Save,
 }
 
 #[derive(Debug, Clone)]
@@ -57,4 +63,6 @@ pub enum SpecialKey {
     KeyC,
     KeyX,
     KeyV,
+    KeyS,
+    KeyP,
 }

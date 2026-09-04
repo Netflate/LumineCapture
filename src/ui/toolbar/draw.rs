@@ -1,7 +1,7 @@
 use crate::renderer::paths::{draw_panel_border, draw_svg_icon, rounded_rect_path};
 use crate::theme::{color, radius};
 use crate::ui::panel::UiPanel;
-use crate::ui::icons::get_svg_for_tool;
+use crate::ui::icons::{get_svg_for_finish, get_svg_for_tool};
 use crate::ui::panel::PanelItem;
 use crate::ui::toolbar::{PADDING, Toolbar, ToolbarButton, ToolbarItem};
 use std::collections::HashMap;
@@ -116,8 +116,10 @@ fn draw_toolbar_content(
                             );
                         }
 
-                let ToolbarButton::Tool(tool) = button;
-                let (svg_str, icon_size) = get_svg_for_tool(*tool);
+                let (svg_str, icon_size) = match button {
+                    ToolbarButton::Tool(tool) => get_svg_for_tool(*tool),
+                    ToolbarButton::Finish(finish) => get_svg_for_finish(*finish),
+                };
 
                 let icon_x = current_x + (cell_size - icon_size) / 2.0;
                 let icon_y = rect.top() + (h - icon_size) / 2.0;

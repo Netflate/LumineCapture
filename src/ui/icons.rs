@@ -1,4 +1,5 @@
 use crate::tools::Tool;
+use crate::types::Finish;
 use crate::ui::toolbar;
 
 pub const SELECTION: &str = include_str!("../../assets/icons/selection.svg");
@@ -21,6 +22,8 @@ pub const DOWNLOAD: &str = include_str!("../../assets/icons/download.svg");
 pub const CLOSE: &str = include_str!("../../assets/icons/close.svg");
 pub const TRASH: &str = include_str!("../../assets/icons/trash.svg");
 pub const CHECK: &str = include_str!("../../assets/icons/check.svg");
+pub const PIN: &str = include_str!("../../assets/icons/pin.svg");
+pub const SAVE: &str = include_str!("../../assets/icons/save.svg");
 // svg icon sizes
 const DEFAULT_ICON_SIZE: f32 = toolbar::BUTTON_CELL - 4.0;
 
@@ -41,9 +44,19 @@ pub fn get_svg_for_tool(tool: Tool) -> (&'static str, f32) {
     }
 }
 
+pub fn get_svg_for_finish(finish: Finish) -> (&'static str, f32) {
+    match finish {
+        Finish::Pin => (PIN, DEFAULT_ICON_SIZE - 10.0),
+        Finish::Copy => (COPY, DEFAULT_ICON_SIZE - 11.0),
+        Finish::Save => (SAVE, DEFAULT_ICON_SIZE - 11.0),
+    }
+}
+
 /// Icons not tied to any Tool (e.g. SettingsWidget::Toggle icons).
 /// Add every new ToggleVisual::Icon svg here so load_icons_cache() preloads it.
-pub const EXTRA_ICONS: &[&str] = &[ITALIC, BOLD, RETRY, COPY, GLOBE, DOWNLOAD, CLOSE, TRASH, CHECK];
+pub const EXTRA_ICONS: &[&str] = &[
+    ITALIC, BOLD, RETRY, COPY, GLOBE, DOWNLOAD, CLOSE, TRASH, CHECK, PIN, SAVE,
+];
 
 #[cfg(test)]
 mod tests {

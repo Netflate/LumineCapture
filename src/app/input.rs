@@ -18,6 +18,7 @@ use crate::ui::panel::UiPanel;
 use crate::theme::{anim, font};
 use crate::interaction::SCROLL_SENSITIVITY;
 use crate::ui::text_field::CursorInit;
+use crate::types::Finish;
 use crate::ui::toolbar::{ToolbarButton, ToolbarItem};
 use crate::types::{CursorIcon, MouseButton, PointerState, SpecialKey};
 use crate::ui::magnifier::MagnifierState;
@@ -254,6 +255,10 @@ pub fn handle_pointer_button(
                             editor_state.toolbar.dirty = true;
                             dispatch_activate(*tool, editor_state, dirty_mask);
                         }
+                        ToolbarButton::Finish(finish) => {
+                            editor_state.finish = Some(*finish);
+                            return;
+                        }
                     }
                     update_toolbar(editor_state, dirty_mask);
                     update_settings_panel(editor_state, dirty_mask);
@@ -480,12 +485,39 @@ pub fn handle_text_input(editor_state: &mut EditorState, ch: char, dirty_mask: &
     apply_damage_rects(editor_state, dirty_mask);
 }
 
+fn finish_for_key(editor_state: &EditorState, key: &SpecialKey) -> Option<Finish> {
+    if !editor_state.mod_ctrl {
+        return None;
+    }
+    match key {
+        SpecialKey::KeyP => Some(Finish::Pin),
+        SpecialKey::KeyS => Some(Finish::Save),
+        SpecialKey::KeyC => {
+            let taken = editor_state.color_popover.fields.is_editing()
+                || editor_state.settings_panel.is_editing()
+                || match editor_state.selected_tool {
+                    Tool::Eyedropper => true,
+                    Tool::Ocr => editor_state.ocr_view.is_active(),
+                    Tool::Text => editor_state.text_editing.is_some(),
+                    _ => false,
+                };
+            (!taken).then_some(Finish::Copy)
+        }
+        _ => None,
+    }
+}
+
 pub fn handle_key_press(editor_state: &mut EditorState, key: SpecialKey, dirty_mask: &mut u32) {
     // to not stack a lot of scroll events
     // any other action cancels the scroll in progress
     // so that user can do anything afterwards, wiithout waiting for the scroll to finish
     editor_state.settings_panel.cancel_scroll();
     editor_state.color_popover.cancel_scroll();
+
+    if let Some(finish) = finish_for_key(editor_state, &key) {
+        editor_state.finish = Some(finish);
+        return;
+    }
 
     if matches!(key, SpecialKey::Up | SpecialKey::Down) {
         let sign: i32 = if matches!(key, SpecialKey::Up) { 1 } else { -1 };
