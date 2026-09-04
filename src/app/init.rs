@@ -197,6 +197,7 @@ pub fn initial_paint(
                     toolbar: None,
                     settings_panel: None,
                     color_picker: None,
+                    model_popover: None,
                     icons_cache: icons_cache_ref,
                     offset: (0.0, 0.0),
                     annotations_layer: ann_i,

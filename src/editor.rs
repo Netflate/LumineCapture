@@ -34,6 +34,7 @@ pub struct EditorState {
     pub toolbar: Toolbar,
     pub settings_panel: SettingsPanel,
     pub color_popover: ColorPickerPopover,
+    pub model_popover: crate::ui::model_popover::ModelPopover,
     pub toasts: crate::ui::toast::Toasts,
     // annotations
     pub annotations: Vec<Annotation>,
@@ -68,6 +69,8 @@ pub struct EditorState {
 
     // OCR engine and its recognition jobs
     pub ocr: crate::ocr::OcrRuntime,
+    // downloaded & downloading models, and selected
+    pub ocr_models: crate::ocr::models::OcrModels,
     // recognized lines and the selection over them
     pub ocr_view: crate::ocr::OcrView,
     /// Set when the user drags to select a new OCR area. It saves the original

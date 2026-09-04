@@ -1,6 +1,7 @@
 mod color_popover;
 mod init;
 mod input;
+mod model_popover;
 mod settings_logic;
 mod toolbar_logic;
 
@@ -24,6 +25,10 @@ use crate::utils::{encode_png, get_full_workspace_rect, get_overlapping_monitors
 use cosmic_text::{FontSystem, SwashCache};
 use std::collections::HashMap;
 use tiny_skia::{Pixmap, PixmapPaint, Rect, Transform};
+
+/// download progress updates each tick, but if there is no animation
+/// then manually after each 50ms
+const DOWNLOAD_POLL_MS: i32 = 50;
 
 // ************************* //
 //      ENTRY POINT          //
@@ -64,6 +69,13 @@ pub async fn make_screenshot(
 
     let (swash_cache, font_system) = text_handle.join().expect("Failed to join text thread");
     let icons_cache = icons_handle.join().expect("Failed to join icons thread");
+
+    let ocr_models = crate::ocr::models::OcrModels::load();
+    let mut ocr = crate::ocr::OcrRuntime::new();
+    if let Some(files) = ocr_models.active().and_then(|idx| ocr_models.files(idx)) {
+        ocr.load(files);
+    }
+
     let mut editor_state = EditorState {
         base: base_pixmaps,
         canvas,
@@ -82,6 +94,7 @@ pub async fn make_screenshot(
         settings_panel: SettingsPanel::new(),
         tool_settings: ToolSettings::default(),
         color_popover: ColorPickerPopover::new(),
+        model_popover: crate::ui::model_popover::ModelPopover::new(),
         toasts: crate::ui::toast::Toasts::default(),
         icons_cache,
         annotations: Vec::new(),
@@ -109,7 +122,8 @@ pub async fn make_screenshot(
 
         click_tracker: DoubleClickTracker::new(),
 
-        ocr: crate::ocr::OcrRuntime::new(),
+        ocr,
+        ocr_models,
         ocr_view: crate::ocr::OcrView::default(),
         ocr_redrag: false,
         ocr_redrag_from: None,
@@ -139,16 +153,20 @@ pub async fn make_screenshot(
 
     let mut save_to_clipboard = false;
     let _save_as_file = true;
+    let mut annotations_were_hidden = false;
 
     loop {
         let is_animating = editor_state.toolbar.is_animating()
             || editor_state.color_popover.is_animating()
+            || editor_state.model_popover.is_animating()
             || editor_state.toasts.is_animating();
         let stepper_holding = editor_state.settings_panel.arrow_held.is_some();
         let fading_in = editor_state.dim_strength < 1.0;
         let ocr_working = editor_state.ocr.needs_poll();
         let timeout = if is_animating || stepper_holding || ocr_working || fading_in {
             16
+        } else if editor_state.ocr_models.is_downloading() {
+            DOWNLOAD_POLL_MS
         } else {
             -1
         };
@@ -157,6 +175,7 @@ pub async fn make_screenshot(
             crate::tools::ocr::finish_ocr(&mut editor_state, result, &mut dirty_mask);
             settings_logic::update_settings_panel(&mut editor_state, &mut dirty_mask);
         }
+        model_popover::tick_model_downloads(&mut editor_state, &mut dirty_mask);
         if editor_state.ocr.is_busy() {
             crate::tools::ocr::tick_scan_badge(&mut editor_state, &mut dirty_mask);
         }
@@ -251,6 +270,11 @@ pub async fn make_screenshot(
             &mut editor_state.damage_rects,
             &mut dirty_mask,
         );
+        tick_panel_animation(
+            &mut editor_state.model_popover,
+            &mut editor_state.damage_rects,
+            &mut dirty_mask,
+        );
         settings_logic::tick_stepper_arrow_hold(&mut editor_state, &mut dirty_mask);
 
         let toast_place = {
@@ -259,6 +283,11 @@ pub async fn make_screenshot(
             crate::ui::toast::ToastPlace {
                 monitor_idx: idx,
                 size: (placement.size.0 as f32, placement.size.1 as f32),
+                focus: editor_state
+                    .selection
+                    .zone
+                    .as_ref()
+                    .and_then(|zone| global_selection_to_local(zone, placement)),
             }
         };
         editor_state.toasts.tick(
@@ -267,12 +296,36 @@ pub async fn make_screenshot(
             &mut dirty_mask,
         );
 
-        if editor_state.toolbar.is_animating() || editor_state.color_popover.is_animating() {
+        if editor_state.toolbar.is_animating()
+            || editor_state.color_popover.is_animating()
+            || editor_state.model_popover.is_animating()
+        {
             if editor_state.settings_panel.visible {
                 settings_logic::update_settings_panel(&mut editor_state, &mut dirty_mask);
             }
             if editor_state.color_popover.is_visible() {
                 color_popover::update_color_popover(&mut editor_state, &mut dirty_mask);
+            }
+            if editor_state.model_popover.is_visible() {
+                model_popover::update_model_popover(&mut editor_state, &mut dirty_mask);
+            }
+        }
+
+        // ocr tool hides annotations, so need to mark diryt everything
+        let annotations_hidden = editor_state.selected_tool == Tool::Ocr;
+        if annotations_hidden != annotations_were_hidden {
+            annotations_were_hidden = annotations_hidden;
+            let has_annotations = !editor_state.annotations.is_empty()
+                || editor_state.pending_pen_baked != 0;
+            if has_annotations
+                && let Some(workspace) = get_full_workspace_rect(&editor_state.placements)
+            {
+                editor_state
+                    .damage_rects
+                    .push(crate::editor::DamageZone::Global(workspace));
+                for i in 0..editor_state.placements.len() {
+                    crate::editor::dirty::mark_dirty(&mut dirty_mask, i);
+                }
             }
         }
 
@@ -422,6 +475,30 @@ pub async fn make_screenshot(
                         None
                     };
 
+                    if i == editor_state.model_popover.monitor_idx
+                        && editor_state.model_popover.is_visible()
+                        && !editor_state.model_popover.dirty
+                        && let Some(dirty) = dirty_rect.as_ref()
+                        && let Some(mp_r) = editor_state.model_popover.rect()
+                    {
+                        let intersects = dirty.left() < mp_r.right()
+                            && dirty.right() > mp_r.left()
+                            && dirty.top() < mp_r.bottom()
+                            && dirty.bottom() > mp_r.top();
+                        if intersects {
+                            editor_state.model_popover.dirty = true;
+                        }
+                    }
+
+                    let model_list = if i == editor_state.model_popover.monitor_idx
+                        && editor_state.model_popover.dirty
+                        && editor_state.model_popover.is_visible()
+                    {
+                        Some(&mut editor_state.model_popover)
+                    } else {
+                        None
+                    };
+
                     let offset = (
                         editor_state.placements[i].position.0 as f32,
                         editor_state.placements[i].position.1 as f32,
@@ -442,6 +519,7 @@ pub async fn make_screenshot(
                         settings_panel,
                         current_color,
                         color_picker,
+                        model_popover: model_list,
                         icons_cache: &editor_state.icons_cache,
                         annotations_layer: &editor_state.annotations_layer[i],
                         offset,
@@ -450,11 +528,14 @@ pub async fn make_screenshot(
                         // counter, so this is exactly "the layer is blank" -
                         // and it skips a full-canvas composite on every whole
                         // frame, the intro fade's 400ms of them included.
-                        annotations_layer_empty: editor_state.annotations.is_empty()
-                            && editor_state.pending_pen_baked == 0,
-                        pending: editor_state.pending.as_ref(),
+                        annotations_layer_empty: annotations_hidden
+                            || (editor_state.annotations.is_empty()
+                                && editor_state.pending_pen_baked == 0),
+                        pending: editor_state.pending.as_ref().filter(|_| !annotations_hidden),
                         is_pending_selected: editor_state.ann_drag.is_some(),
-                        selected_annotation: editor_state.selected_annotation,
+                        selected_annotation: editor_state
+                            .selected_annotation
+                            .filter(|_| !annotations_hidden),
                         annotations: &editor_state.annotations,
                         font_system: Some(&mut editor_state.font_system),
                         swash_cache: Some(&mut editor_state.swash_cache),
@@ -488,8 +569,11 @@ pub async fn make_screenshot(
             editor_state.layer_damage_rects.clear();
             editor_state.settings_panel.dirty = false;
             editor_state.color_popover.dirty = false;
+            editor_state.model_popover.dirty = false;
         }
     }
+
+    editor_state.ocr_models.shutdown();
 
     if save_to_clipboard {
         let final_result = render_final(&mut editor_state);

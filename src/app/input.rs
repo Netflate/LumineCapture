@@ -37,6 +37,7 @@ use super::settings_logic::{
     handle_settings_key_press, handle_settings_text_input, handle_stepper_scroll,
     run_settings_action, sync_stepper_edit_text, update_settings_panel,
 };
+use super::model_popover::{close_model_popover, handle_model_popover_click, update_model_popover};
 use super::toolbar_logic::update_toolbar;
 
 pub fn handle_pointer_move(
@@ -68,14 +69,19 @@ pub fn handle_pointer_move(
         update_color_popover(editor_state, dirty_mask);
         handle_color_popover_drag(editor_state, dirty_mask);
     }
+    if editor_state.model_popover.open {
+        update_model_popover(editor_state, dirty_mask);
+    }
     apply_damage_rects(editor_state, dirty_mask);
 }
 
-// ──── hit test with priority: color popover (if open) -> toolbar -> settings ──────────────────
+// ──── hit test with priority: color popover (if open) -> languages list (if open) -> toolbar -> settings ──────────────────
 
 enum UiHit {
     ColorPopoverInside,
     ColorPopoverOutside,
+    ModelPopoverInside,
+    ModelPopoverOutside,
     ToolbarItem(usize),
     ToolbarBackground,
     SettingsItem(usize),
@@ -84,12 +90,20 @@ enum UiHit {
 }
 
 fn hit_test_ui(editor_state: &EditorState, local: (f64, f64)) -> UiHit {
-    // 1. Color Popover
+    // 1. Popovers
     if editor_state.color_popover.open {
         return if editor_state.color_popover.hit_test(local) {
             UiHit::ColorPopoverInside
         } else {
             UiHit::ColorPopoverOutside
+        };
+    }
+
+    if editor_state.model_popover.open {
+        return if editor_state.model_popover.hit_test(local) {
+            UiHit::ModelPopoverInside
+        } else {
+            UiHit::ModelPopoverOutside
         };
     }
 
@@ -121,8 +135,15 @@ pub fn compute_cursor(editor_state: &EditorState) -> CursorIcon {
         UiHit::ColorPopoverInside | UiHit::ToolbarItem(_) | UiHit::SettingsItem(_) => {
             CursorIcon::Pointer
         }
+        UiHit::ModelPopoverInside => {
+            if editor_state.model_popover.element_at(editor_state.pointer.local).is_some() {
+                CursorIcon::Pointer
+            } else {
+                CursorIcon::Default
+            }
+        }
         UiHit::ToolbarBackground | UiHit::SettingsBackground => CursorIcon::Default,
-        UiHit::ColorPopoverOutside | UiHit::None => {
+        UiHit::ColorPopoverOutside | UiHit::ModelPopoverOutside | UiHit::None => {
             dispatch_cursor(editor_state.selected_tool, editor_state)
         }
     }
@@ -160,13 +181,29 @@ pub fn handle_pointer_button(
             ui_hit = hit_test_ui(editor_state, editor_state.pointer.local);
         }
 
+        if let UiHit::ModelPopoverOutside = ui_hit {
+            let on_toggle = languages_button_hit(editor_state);
+            close_model_popover(editor_state, dirty_mask);
+            if on_toggle {
+                apply_damage_rects(editor_state, dirty_mask);
+                return;
+            }
+            ui_hit = hit_test_ui(editor_state, editor_state.pointer.local);
+        }
+
         match ui_hit {
             UiHit::ColorPopoverInside => {
                 handle_color_popover_click(editor_state, dirty_mask);
                 apply_damage_rects(editor_state, dirty_mask);
-                return; 
+                return;
             }
             UiHit::ColorPopoverOutside => unreachable!("popover is closed at this point"),
+            UiHit::ModelPopoverInside => {
+                handle_model_popover_click(editor_state, dirty_mask);
+                apply_damage_rects(editor_state, dirty_mask);
+                return;
+            }
+            UiHit::ModelPopoverOutside => unreachable!("popover is closed at this point"),
 
             UiHit::ToolbarBackground => {
                 return; 
@@ -218,6 +255,9 @@ pub fn handle_pointer_button(
                     if editor_state.color_popover.open {
                         update_color_popover(editor_state, dirty_mask);
                         handle_color_popover_drag(editor_state, dirty_mask);
+                    }
+                    if editor_state.model_popover.is_visible() {
+                        update_model_popover(editor_state, dirty_mask);
                     }
 
                     apply_damage_rects(editor_state, dirty_mask);
@@ -545,4 +585,17 @@ fn hit_test_color_scroll_field(
         return Some(ColorField::Hex);
     }
     editor_state.color_popover.rgba_field_hit(local)
+}
+
+fn languages_button_hit(editor_state: &EditorState) -> bool {
+    let (_, widget_idx) = editor_state
+        .settings_panel
+        .hit_test(editor_state.pointer.local);
+    matches!(
+        widget_idx.and_then(|idx| editor_state.settings_panel.widgets.get(idx)),
+        Some(SettingsWidget::Action {
+            action: crate::ui::settings_panel::SettingsAction::OcrLanguages,
+            ..
+        })
+    )
 }

@@ -2,7 +2,8 @@ use crate::editor::dirty::mark_dirty;
 use crate::editor::{DamageZone, EditorState};
 use crate::ocr::{self, StartOutcome};
 use crate::ocr::draw::scan_badge_rect;
-use crate::tools::ToolBehavior;
+use crate::ocr::models::MODELS;
+use crate::tools::{Tool, ToolBehavior};
 use crate::tools::selection::SelectionTool;
 use crate::interaction::{ClickTarget, OCR_MIN_REGION};
 use crate::ui::toast::ToastKind;
@@ -28,6 +29,11 @@ impl ToolBehavior for OcrTool {
             return;
         }
         state.ocr_view.clear();
+
+        if state.ocr_models.installed_count() == 0 {
+            ask_for_model(state);
+            return;
+        }
 
         // if there is no selection, ask for dragging one, using notification toast
         if state.selection.zone.is_none() {
@@ -112,7 +118,7 @@ impl ToolBehavior for OcrTool {
     }
 
     // on deactivate we cancel scan in progress, or cache scanned text if it was done.
-    // and in both cases clear the visuals 
+    // and in both cases clear the visuals
     fn on_deactivate(&self, state: &mut EditorState, _dirty_mask: &mut u32) {
         let scanning = state.ocr.is_busy();
         cancel_scan(state);
@@ -124,7 +130,9 @@ impl ToolBehavior for OcrTool {
         state.ocr_redrag = false;
         state.tool_active = false;
         state.ocr_await_region = false;
+        state.model_popover.open = false;
         state.toasts.dismiss(ToastKind::OcrPickRegion);
+        state.toasts.dismiss(ToastKind::OcrNoModel);
     }
 
     fn cursor(&self, state: &EditorState) -> CursorIcon {
@@ -148,6 +156,13 @@ fn await_region(state: &mut EditorState) {
     state
         .toasts
         .show(ToastKind::OcrPickRegion, &mut state.font_system);
+}
+
+fn ask_for_model(state: &mut EditorState) {
+    state.model_popover.open = true;
+    state
+        .toasts
+        .show(ToastKind::OcrNoModel, &mut state.font_system);
 }
 
 
@@ -240,6 +255,11 @@ fn start_ocr(state: &mut EditorState) {
         return;
     };
 
+    if !state.ocr_models.active_installed() {
+        ask_for_model(state);
+        return;
+    }
+
     let Some(capture) = ocr::composite_region(&state.base, &state.placements, region) else {
         return;
     };
@@ -283,7 +303,7 @@ pub fn copy_all(state: &mut EditorState, dirty_mask: &mut u32) {
 }
 
 /// One animation step of the progress badge while recognition runs. Only the
-/// badge is damaged 
+/// badge is damaged
 pub fn tick_scan_badge(state: &mut EditorState, dirty_mask: &mut u32) {
     let Some(region) = state.ocr_view.region() else {
         return;
@@ -335,6 +355,64 @@ pub fn finish_ocr(
 
     damage_all(state);
     mark_all_dirty(state, dirty_mask);
+}
+
+/// after downloading starts reading immediately
+pub fn use_model(state: &mut EditorState, idx: usize, dirty_mask: &mut u32) {
+    if state.ocr_models.active() == Some(idx) {
+        return;
+    }
+    let Some(files) = state.ocr_models.files(idx) else {
+        return;
+    };
+    state.ocr_models.set_active(Some(idx));
+    state.ocr.load(files);
+
+    if state.selected_tool != Tool::Ocr {
+        state.ocr_view.clear();
+        return;
+    }
+    if state.ocr.is_busy() || state.ocr_view.is_active() {
+        cancel_scan(state);
+        restart_ocr(state, dirty_mask);
+    }
+}
+
+pub fn model_ready(state: &mut EditorState, idx: usize, dirty_mask: &mut u32) {
+    if state.ocr_models.active() == Some(idx) {
+        if let Some(files) = state.ocr_models.files(idx) {
+            state.ocr.load(files);
+        }
+    } else if !state.ocr_models.active_installed() {
+        use_model(state, idx, dirty_mask);
+    }
+
+    if state.ocr_models.installed_count() != 1 || state.selected_tool != Tool::Ocr {
+        return;
+    }
+    state.model_popover.open = false;
+    state.toasts.dismiss(ToastKind::OcrNoModel);
+    if state.selection.zone.is_some() {
+        start_ocr(state);
+    } else {
+        await_region(state);
+    }
+}
+
+pub fn model_failed(state: &mut EditorState, idx: usize, err: &str) {
+    eprintln!("ocr: failed to download {}: {err}", MODELS[idx].name);
+    if state.selected_tool == Tool::Ocr {
+        state
+            .toasts
+            .show(ToastKind::OcrDownloadFailed, &mut state.font_system);
+    }
+}
+
+pub fn cancel_model_download(state: &mut EditorState, idx: usize) {
+    state.ocr_models.cancel(idx);
+    if state.ocr_models.active() == Some(idx) {
+        state.ocr_models.set_active(None);
+    }
 }
 
 fn mark_all_dirty(state: &EditorState, dirty_mask: &mut u32) {

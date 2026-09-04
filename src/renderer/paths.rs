@@ -8,6 +8,29 @@ use std::collections::HashMap;
 use tiny_skia::{Color, Paint, PathBuilder, Pixmap, Rect, Stroke, Transform};
 use usvg::Tree;
 
+pub fn draw_progress_bar(canvas: &mut Pixmap, x: f32, y: f32, w: f32, percent: u8) {
+    let h = crate::theme::stroke::PROGRESS;
+    let filled = match percent {
+        0 => 0.0,
+        _ => (w * f32::from(percent.min(100)) / 100.0).max(h),
+    };
+    let mut paint = Paint {
+        anti_alias: true,
+        ..Paint::default()
+    };
+    for (width, fill) in [(w, color::TRACK), (filled, color::ACCENT_BRIGHT)] {
+        if width <= 0.0 {
+            continue;
+        }
+        if let Some(rect) = Rect::from_xywh(x, y, width, h)
+            && let Some(path) = rounded_rect_path(&rect, h / 2.0, true, true, true, true)
+        {
+            paint.set_color(fill.color());
+            canvas.fill_path(&path, &paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
+        }
+    }
+}
+
 pub fn rounded_rect_path(
     rect: &Rect,
     r: f32,

@@ -41,6 +41,7 @@ pub struct RenderRequest<'a> {
     pub settings_panel: Option<&'a mut SettingsPanel>,
     pub current_color: Color,
     pub color_picker: Option<&'a mut ColorPickerPopover>,
+    pub model_popover: Option<&'a mut crate::ui::model_popover::ModelPopover>,
     pub icons_cache: &'a HashMap<&'static str, Tree>,
     pub offset: (f32, f32),
     // annotations
@@ -236,6 +237,21 @@ pub fn render_frame(req: &mut RenderRequest) {
                 "font_system/swash_cache are required for drawing color popover"
             ),
         }
+    }
+    if let Some(model_popover) = req.model_popover.as_deref_mut()
+        && model_popover.dirty
+        && let (Some(font_system), Some(swash_cache)) = (
+            req.font_system.as_deref_mut(),
+            req.swash_cache.as_deref_mut(),
+        )
+    {
+        crate::ui::model_popover::draw_model_popover(
+            req.canvas,
+            model_popover,
+            req.icons_cache,
+            font_system,
+            swash_cache,
+        );
     }
 
     if !req.toasts.items.is_empty()

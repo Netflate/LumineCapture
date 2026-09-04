@@ -1,4 +1,4 @@
-use super::settings_logic::commit_settings_change;
+use super::settings_logic::{commit_settings_change, compute_popover_placement};
 use crate::editor::EditorState;
 use crate::ui::settings_panel::char_index_for_x;
 use crate::types::SpecialKey;
@@ -19,7 +19,11 @@ pub fn update_color_popover(editor_state: &mut EditorState, dirty_mask: &mut u32
     // popover travel with the toolbar. It keeps tracking while fading out too,
     // otherwise it would detach and sit there for the length of the fade.
     if editor_state.color_popover.is_visible() {
-        let (pos, monitor_idx) = compute_color_popover_placement(editor_state);
+        let (pos, monitor_idx) = compute_popover_placement(
+            editor_state,
+            (color_popover::WIDTH, color_popover::HEIGHT),
+            color_popover::OFFSET,
+        );
         editor_state.color_popover.position = pos;
         editor_state.color_popover.render_pos = pos;
         editor_state.color_popover.monitor_idx = monitor_idx;
@@ -85,77 +89,6 @@ fn hover_test(editor_state: &EditorState, local: (f64, f64)) -> Option<ColorPopo
         return Some(ColorPopoverElement::Field(field));
     }
     None
-}
-
-fn compute_color_popover_placement(editor_state: &EditorState) -> ((f32, f32), usize) {
-    let sp = &editor_state.settings_panel;
-    let tb = &editor_state.toolbar;
-    let monitor_idx = sp.monitor_idx;
-
-    let monitor_width = editor_state.placements[monitor_idx].size.0 as f32;
-    let monitor_height = editor_state.placements[monitor_idx].size.1 as f32;
-
-    let sp_bottom = sp.render_pos.1 + sp.size.1;
-    let tb_bottom = tb.render_pos.1 + tb.size.1;
-    let combined_bottom = sp_bottom.max(tb_bottom);
-
-    let mut side_y = combined_bottom - color_popover::HEIGHT;
-
-    if side_y < color_popover::OFFSET {
-        side_y = color_popover::OFFSET;
-    }
-    if side_y + color_popover::HEIGHT > monitor_height - color_popover::OFFSET {
-        side_y = monitor_height - color_popover::HEIGHT - color_popover::OFFSET;
-    }
-
-    let x_left = sp.render_pos.0 - color_popover::WIDTH - color_popover::OFFSET;
-    let x_right = sp.render_pos.0 + sp.size.0 + color_popover::OFFSET;
-
-    let space_left = x_left >= color_popover::OFFSET;
-    let space_right = x_right + color_popover::WIDTH <= monitor_width - color_popover::OFFSET;
-
-    if space_left {
-        return ((x_left, side_y), monitor_idx);
-    } else if space_right {
-        return ((x_right, side_y), monitor_idx);
-    }
-
-    let mut final_x = sp.render_pos.0;
-
-    if final_x < color_popover::OFFSET {
-        final_x = color_popover::OFFSET;
-    }
-    if final_x + color_popover::WIDTH > monitor_width - color_popover::OFFSET {
-        final_x = monitor_width - color_popover::WIDTH - color_popover::OFFSET;
-    }
-
-    let y_below = sp.render_pos.1 + sp.size.1 + color_popover::OFFSET;
-    let y_above = sp.render_pos.1 - color_popover::OFFSET - color_popover::HEIGHT;
-
-    let space_below = y_below + color_popover::HEIGHT <= monitor_height;
-    let space_above = y_above >= 0.0;
-
-    let sp_is_below_tb = sp.render_pos.1 >= tb.render_pos.1;
-
-    let final_y = if sp_is_below_tb {
-        if space_below {
-            y_below
-        } else if space_above {
-            y_above
-        } else {
-            monitor_height - color_popover::HEIGHT - color_popover::OFFSET
-        }
-    } else {
-        if space_above {
-            y_above
-        } else if space_below {
-            y_below
-        } else {
-            color_popover::OFFSET
-        }
-    };
-
-    ((final_x, final_y), monitor_idx)
 }
 
 fn emit_color_popover_damage(editor_state: &mut EditorState, dirty_mask: &mut u32) {

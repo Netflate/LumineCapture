@@ -63,6 +63,8 @@ pub mod color {
     pub const SELECT: Rgba = Rgba(100, 150, 255, 110);
     /// input field
     pub const FIELD_BG: Rgba = Rgba(255, 255, 255, 18);
+    /// empty part of downloading bar
+    pub const TRACK: Rgba = Rgba(255, 255, 255, 30);
     pub const CARET: Rgba = Rgba(255, 255, 255, 220);
 
     pub const SHADOW: Rgba = Rgba(0, 0, 0, 130);
@@ -88,6 +90,8 @@ pub mod radius {
 
 pub mod stroke {
     pub const BORDER: f32 = 1.0;
+    /// downloading bar stroke
+    pub const PROGRESS: f32 = 4.0;
 }
 
 // ==========================================
