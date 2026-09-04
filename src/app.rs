@@ -1,4 +1,4 @@
-mod color_popover;
+pub mod color_popover;
 mod init;
 mod input;
 mod model_popover;
@@ -93,6 +93,7 @@ pub async fn make_screenshot(
         toolbar: Toolbar::new(),
         settings_panel: SettingsPanel::new(),
         tool_settings: ToolSettings::default(),
+        pick_once: false,
         color_popover: ColorPickerPopover::new(),
         model_popover: crate::ui::model_popover::ModelPopover::new(),
         toasts: crate::ui::toast::Toasts::default(),
@@ -339,15 +340,13 @@ pub async fn make_screenshot(
                 Some((editor_state.ocr_view.region()?, started.elapsed().as_secs_f32()))
             });
 
-            let current_color = settings_logic::active_annotation_idx(&editor_state)
-                .and_then(|idx| editor_state.annotations.get(idx))
-                .map(|ann| ann.color)
-                .unwrap_or(editor_state.tool_settings.color);
+            let current_color = settings_logic::current_color(&editor_state);
 
             for i in 0..editor_state.base.len() {
                 if is_dirty(dirty_mask, i) {
                     // No loupe while reading text: it sits right where the
                     // pointer is selecting and hides the line under it.
+                    let picking = editor_state.picking();
                     let is_mag_monitor = editor_state.selected_tool != Tool::Ocr
                         && editor_state
                             .magnifier
@@ -514,6 +513,7 @@ pub async fn make_screenshot(
                         selection_dirty,
                         selection_edges: edges.as_ref(),
                         magnifier: editor_state.magnifier.as_ref(),
+                        mag_label: picking,
                         is_mag_monitor,
                         toolbar,
                         settings_panel,

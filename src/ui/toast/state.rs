@@ -1,6 +1,7 @@
 // notifications: simple text on the overlay, without any input or hit testing
 // not implemented as panels, since panels are not a one time thing, and has wider
 // functionality, as input fields, hit testing and etc
+use std::borrow::Cow;
 use std::time::{Duration, Instant};
 
 use cosmic_text::FontSystem;
@@ -21,6 +22,8 @@ pub enum ToastKind {
     OcrPickRegion,
     OcrNoModel,
     OcrDownloadFailed,
+    ColorCopied,
+    PickColor,
 }
 
 #[derive(Clone, Copy)]
@@ -62,6 +65,20 @@ impl ToastKind {
                 fade_in: 0.18,
                 fade_out: 0.14,
             },
+            ToastKind::PickColor => ToastSpec {
+                text: "Click anywhere to pick a color",
+                anchor: ToastAnchor::SelectionCenter,
+                life: ToastLife::Manual,
+                fade_in: 0.18,
+                fade_out: 0.12,
+            },
+            ToastKind::ColorCopied => ToastSpec {
+                text: "Copied",
+                anchor: ToastAnchor::SelectionCenter,
+                life: ToastLife::Timed(Duration::from_millis(1400)),
+                fade_in: 0.12,
+                fade_out: 0.12,
+            },
             ToastKind::OcrDownloadFailed => ToastSpec {
                 text: "Couldn't download the language, check the connection",
                 anchor: ToastAnchor::SelectionCenter,
@@ -76,6 +93,7 @@ impl ToastKind {
 pub struct Toast {
     pub kind: ToastKind,
     pub spec: ToastSpec,
+    pub text: Cow<'static, str>,
     pub text_width: f32,
     pub monitor_idx: usize,
     pub rect: Option<Rect>,
@@ -120,19 +138,32 @@ pub struct Toasts {
 }
 
 impl Toasts {
+    /// Shows a toast with predefined static text.
     pub fn show(&mut self, kind: ToastKind, font_system: &mut FontSystem) {
+        self.push(kind, Cow::Borrowed(kind.spec().text), font_system);
+    }
+
+    /// Shows a toast with dynamic text evaluated at runtime.
+    pub fn show_text(&mut self, kind: ToastKind, text: String, font_system: &mut FontSystem) {
+        self.push(kind, Cow::Owned(text), font_system);
+    }
+
+    fn push(&mut self, kind: ToastKind, text: Cow<'static, str>, font_system: &mut FontSystem) {
+        let text_width =
+            crate::renderer::measure_line_width(&text, crate::theme::font::LABEL, font_system);
         if let Some(toast) = self.items.iter_mut().find(|t| t.kind == kind) {
             toast.closing = false;
             toast.shown_at = Instant::now();
+            toast.text = text;
+            toast.text_width = text_width;
             return;
         }
 
         let spec = kind.spec();
-        let text_width =
-            crate::renderer::measure_line_width(spec.text, crate::theme::font::LABEL, font_system);
         self.items.push(Toast {
             kind,
             spec,
+            text,
             text_width,
             monitor_idx: 0,
             rect: None,

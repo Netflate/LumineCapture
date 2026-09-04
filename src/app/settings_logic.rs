@@ -21,6 +21,12 @@ pub fn active_annotation_idx(editor_state: &EditorState) -> Option<usize> {
     }
 }
 
+pub fn current_color(editor_state: &EditorState) -> tiny_skia::Color {
+    active_annotation_idx(editor_state)
+        .and_then(|idx| editor_state.annotations.get(idx))
+        .map_or(editor_state.tool_settings.color, |ann| ann.color)
+}
+
 pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     let ann_idx = active_annotation_idx(editor_state);
     let selected_ann = ann_idx.and_then(|i| editor_state.annotations.get(i));

@@ -1,6 +1,10 @@
-use crate::renderer::paths::{draw_item_border, draw_panel_border, rounded_rect_path};
+use std::collections::HashMap;
+
+use usvg::Tree;
+
+use crate::renderer::paths::{draw_item_border, draw_panel_border, draw_svg_icon, rounded_rect_path};
 use crate::renderer::text::{HAlign, draw_aligned_text, draw_input_box, draw_line_edit};
-use crate::ui::color_popover::{ColorField, ColorPickerPopover, ColorPopoverElement, ColorSquareState, FIELD_FONT_SIZE, FIELD_HEIGHT, FIELD_LABEL_WIDTH, HUE_SLIDER_GAP, HUE_SLIDER_HEIGHT, HUE_SLIDER_RADIUS, HUE_SLIDER_WIDTH, SWATCH_BORDER, MARKER_OUTLINE, MARKER_RADIUS, MARKER_STROKE, PADDING, RADIUS, RECENT_LABEL, RECENT_LABEL_FONT_SIZE, RGBA_FIELDS, RGBA_LABEL_WIDTH, SV_SQUARE_RADIUS, SV_SQUARE_SIZE, SWATCH_RADIUS, hex_field_geom, hex_label_pos, hsv_to_color, hue_handle_center_y, recent_label_rect, rgba_field_geom, rgba_slot_origin, swatch_center};
+use crate::ui::color_popover::{ColorField, ColorPickerPopover, ColorPopoverElement, ColorSquareState, FIELD_FONT_SIZE, FIELD_HEIGHT, FIELD_LABEL_WIDTH, HUE_SLIDER_GAP, HUE_SLIDER_HEIGHT, HUE_SLIDER_RADIUS, HUE_SLIDER_WIDTH, SWATCH_BORDER, MARKER_OUTLINE, MARKER_RADIUS, MARKER_STROKE, PADDING, RADIUS, RECENT_LABEL, RECENT_LABEL_FONT_SIZE, RGBA_FIELDS, RGBA_LABEL_WIDTH, SV_SQUARE_RADIUS, SV_SQUARE_SIZE, SWATCH_RADIUS, EYEDROPPER_ICON, eyedropper_center, hex_field_geom, hex_label_pos, hsv_to_color, hue_handle_center_y, recent_label_rect, rgba_field_geom, rgba_slot_origin, swatch_center};
 use crate::theme::color;
 use crate::ui::panel::UiPanel;
 use cosmic_text::{FontSystem, SwashCache, Weight};
@@ -12,6 +16,7 @@ use tiny_skia::{
 pub fn draw_color_popover(
     canvas: &mut Pixmap,
     color_popover: &mut ColorPickerPopover,
+    icons_cache: &HashMap<&'static str, Tree>,
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
 ) {
@@ -40,7 +45,13 @@ pub fn draw_color_popover(
 
     if color_popover.dirty {
         popover_pixmap.fill(Color::TRANSPARENT);
-        draw_color_popover_content(&mut popover_pixmap, color_popover, font_system, swash_cache);
+        draw_color_popover_content(
+            &mut popover_pixmap,
+            color_popover,
+            icons_cache,
+            font_system,
+            swash_cache,
+        );
     }
 
     canvas.draw_pixmap(
@@ -93,6 +104,7 @@ fn build_rounded_clip_mask(
 fn draw_color_popover_content(
     canvas: &mut Pixmap,
     color_popover: &mut ColorPickerPopover,
+    icons_cache: &HashMap<&'static str, Tree>,
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
 ) {
@@ -205,7 +217,7 @@ fn draw_color_popover_content(
         hsv_to_color(hue, 1.0, 1.0),
     );
 
-    draw_recent_colors(canvas, color_popover, font_system, swash_cache);
+    draw_recent_colors(canvas, color_popover, icons_cache, font_system, swash_cache);
     draw_color_fields(canvas, color_popover, font_system, swash_cache);
 }
 
@@ -381,6 +393,7 @@ fn blit_hue_track(
 fn draw_recent_colors(
     canvas: &mut Pixmap,
     color_popover: &ColorPickerPopover,
+    icons_cache: &HashMap<&'static str, Tree>,
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
 ) {
@@ -407,6 +420,53 @@ fn draw_recent_colors(
             matches!(color_popover.hovered, Some(ColorPopoverElement::Swatch(i)) if i == idx);
         draw_swatch(canvas, cx, cy, *color, is_hovered);
     }
+
+    let (cx, cy) = eyedropper_center(origin);
+    let is_hovered = color_popover.hovered == Some(ColorPopoverElement::Eyedropper);
+    draw_eyedropper(canvas, icons_cache, cx, cy, is_hovered, color_popover.picking);
+}
+
+fn draw_eyedropper(
+    pm: &mut Pixmap,
+    icons_cache: &HashMap<&'static str, Tree>,
+    cx: f32,
+    cy: f32,
+    is_hovered: bool,
+    is_picking: bool,
+) {
+    let mut pb = PathBuilder::new();
+    pb.push_circle(cx, cy, SWATCH_RADIUS);
+    if let Some(circle) = pb.finish() {
+        let mut paint = Paint::default();
+        paint.set_color(if is_picking {
+            color::ACCENT.color()
+        } else {
+            color::FIELD_BG.color()
+        });
+        paint.anti_alias = true;
+        pm.fill_path(
+            &circle,
+            &paint,
+            tiny_skia::FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
+    }
+
+    let tint = if is_picking || is_hovered {
+        color::ON_PANEL
+    } else {
+        color::MUTED
+    };
+    draw_svg_icon(
+        pm,
+        icons_cache,
+        crate::ui::icons::EYEDROPPER,
+        EYEDROPPER_ICON,
+        cx - EYEDROPPER_ICON / 2.0,
+        cy - EYEDROPPER_ICON / 2.0,
+        tint.usvg(),
+    );
 }
 
 fn draw_swatch(pm: &mut Pixmap, cx: f32, cy: f32, color: Color, is_hovered: bool) {

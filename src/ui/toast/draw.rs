@@ -60,7 +60,7 @@ pub fn draw_toasts(
 
         draw_aligned_text(
             canvas,
-            toast.spec.text,
+            toast.text.as_ref(),
             font_system,
             swash_cache,
             rect,

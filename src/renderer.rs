@@ -37,6 +37,8 @@ pub struct RenderRequest<'a> {
     pub selection_dirty: bool,
     pub magnifier: Option<&'a MagnifierState>,
     pub is_mag_monitor: bool,
+    /// Eyedropper only: the loupe also carries the colour plate under it.
+    pub mag_label: bool,
     pub toolbar: Option<&'a mut Toolbar>,
     pub settings_panel: Option<&'a mut SettingsPanel>,
     pub current_color: Color,
@@ -184,7 +186,20 @@ pub fn render_frame(req: &mut RenderRequest) {
     if req.is_mag_monitor
         && let Some(mag) = req.magnifier
     {
-        crate::ui::magnifier::draw_magnifier(req.canvas, req.base, (mag.pos.0 as f32, mag.pos.1 as f32));
+        let label = match (
+            req.mag_label,
+            req.font_system.as_deref_mut(),
+            req.swash_cache.as_deref_mut(),
+        ) {
+            (true, Some(font_system), Some(swash_cache)) => Some((font_system, swash_cache)),
+            _ => None,
+        };
+        crate::ui::magnifier::draw_magnifier(
+            req.canvas,
+            req.base,
+            (mag.pos.0 as f32, mag.pos.1 as f32),
+            label,
+        );
     }
 
     if let Some(tb) = req.toolbar.as_deref_mut()
@@ -227,7 +242,7 @@ pub fn render_frame(req: &mut RenderRequest) {
                 crate::ui::color_popover::draw_color_popover(
                     req.canvas,
                     color_picker,
-                    //req.icons_cache,
+                    req.icons_cache,
                     font_system,
                     swash_cache,
                 );

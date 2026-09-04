@@ -203,6 +203,19 @@ fn draw_settings_content(
                     );
                 }
             }
+            SettingsWidget::Value { field } => {
+                if let Some(rect) = Rect::from_xywh(current_x, item_y, item_w, item_h) {
+                    draw_value_field(
+                        canvas,
+                        rect,
+                        &field.text(current_color),
+                        is_hovered,
+                        icon_color,
+                        font_system,
+                        swash_cache,
+                    );
+                }
+            }
             SettingsWidget::Download => {
                 draw_download(
                     canvas,
@@ -242,6 +255,55 @@ fn draw_settings_content(
 
         current_x += item_w + item.trailing_padding();
     }
+}
+
+/// looks like the input field, but on click just copies the value to clipboard 
+fn draw_value_field(
+    canvas: &mut Pixmap,
+    rect: Rect,
+    text: &str,
+    is_hovered: bool,
+    text_color: Color,
+    font_system: &mut FontSystem,
+    swash_cache: &mut SwashCache,
+) {
+    if let Some(path) = rounded_rect_path(&rect, radius::ITEM, true, true, true, true) {
+        let mut paint = Paint::default();
+        paint.set_color(color::FIELD_BG.color());
+        paint.anti_alias = true;
+        canvas.fill_path(
+            &path,
+            &paint,
+            tiny_skia::FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
+    }
+    draw_item_border(
+        canvas,
+        rect.left(),
+        rect.top(),
+        rect.width(),
+        rect.height(),
+        radius::ITEM,
+        ITEM_BORDER,
+        is_hovered,
+        false,
+    );
+
+    draw_aligned_text(
+        canvas,
+        text,
+        font_system,
+        swash_cache,
+        rect,
+        font::LABEL,
+        text_color,
+        HAlign::Center,
+        (0.0, 0.0),
+        cosmic_text::Weight::NORMAL,
+        cosmic_text::Style::Normal,
+    );
 }
 
 fn draw_download(

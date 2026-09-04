@@ -39,6 +39,7 @@ pub const SWATCH_RADIUS: f32 = SWATCH_DIAMETER / 2.0;
 pub const SWATCH_GAP: f32 = 8.0;
 pub const MAX_RECENT_COLORS: usize = 6;
 
+pub const EYEDROPPER_ICON: f32 = 13.0;
 // ── hex / rgba input fields ──────────────────────────────
 pub const FIELD_ROW_GAP: f32 = 10.0;
 pub const FIELD_LABEL_WIDTH: f32 = 28.0;
@@ -90,6 +91,7 @@ pub enum ColorPopoverElement {
     SvSquare,
     HueSlider,
     Swatch(usize),
+    Eyedropper,
     Field(ColorField),
 }
 
@@ -327,6 +329,14 @@ pub fn swatch_center(content_origin: (f32, f32), idx: usize) -> (f32, f32) {
     (cx, cy)
 }
 
+pub fn eyedropper_center(content_origin: (f32, f32)) -> (f32, f32) {
+    let row_top = swatch_row_top(content_origin.1);
+    (
+        content_origin.0 + WIDTH - PADDING - SWATCH_RADIUS,
+        row_top + SWATCH_RADIUS,
+    )
+}
+
 // ── hex / rgba fields geometry ───────────────────────────
 
 pub fn hex_row_top(content_origin_y: f32) -> f32 {
@@ -404,6 +414,7 @@ pub struct ColorPickerPopover {
     pub sv_clip_mask: Option<Mask>,
     pub hue_clip_mask: Option<Mask>,
 
+    pub picking: bool,
     pub recent_colors: Vec<Color>,
     pub fields: TextFieldGroup<ColorField>,
     pub pre_edit_snapshot: Option<Vec<Annotation>>,
@@ -439,6 +450,7 @@ impl ColorPickerPopover {
             hue_dragging: false,
             sv_clip_mask: None,
             hue_clip_mask: None,
+            picking: false,
             recent_colors: default_palette().to_vec(),
             fields: TextFieldGroup::new(),
             scroll: ScrollAccumulator::new(),
@@ -542,6 +554,15 @@ impl ColorPickerPopover {
             }
         }
         None
+    }
+
+    pub fn eyedropper_hit(&self, local: (f64, f64)) -> bool {
+        let Some(rect) = self.rect() else {
+            return false;
+        };
+        let (cx, cy) = eyedropper_center((rect.left(), rect.top()));
+        let (dx, dy) = (local.0 as f32 - cx, local.1 as f32 - cy);
+        dx * dx + dy * dy <= SWATCH_RADIUS * SWATCH_RADIUS
     }
 
     // ── hex / rgba fields ────────────────────────────────

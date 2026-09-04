@@ -31,11 +31,15 @@ pub fn update_color_popover(editor_state: &mut EditorState, dirty_mask: &mut u32
 
     editor_state.color_popover.sync_field_values();
 
+    let picking = editor_state.pick_once;
+    let picking_changed = editor_state.color_popover.picking != picking;
+    editor_state.color_popover.picking = picking;
+
     sync_panel_rect(
         &mut editor_state.color_popover,
         old_rect,
         old_monitor,
-        false,
+        picking_changed,
         &mut editor_state.damage_rects,
         dirty_mask,
     );
@@ -82,6 +86,9 @@ fn hover_test(editor_state: &EditorState, local: (f64, f64)) -> Option<ColorPopo
     if let Some(idx) = cp.swatch_hit(local) {
         return Some(ColorPopoverElement::Swatch(idx));
     }
+    if cp.eyedropper_hit(local) {
+        return Some(ColorPopoverElement::Eyedropper);
+    }
     if cp.hex_field_hit(local) {
         return Some(ColorPopoverElement::Field(ColorField::Hex));
     }
@@ -101,6 +108,17 @@ fn emit_color_popover_damage(editor_state: &mut EditorState, dirty_mask: &mut u3
             dirty_mask,
         );
     }
+}
+
+/// common path for color selection, since we have two ways to use color selection
+/// swatch click and eyedropper pick
+pub fn use_color(editor_state: &mut EditorState, color: Color, dirty_mask: &mut u32) {
+    editor_state.color_popover.select_color(color);
+    editor_state.color_popover.record_used_color(color);
+    editor_state.color_popover.sync_field_values();
+    editor_state.color_popover.dirty = true;
+    emit_color_popover_damage(editor_state, dirty_mask);
+    apply_color_selection(editor_state, color, true, dirty_mask);
 }
 
 pub fn apply_color_selection(
@@ -333,6 +351,10 @@ pub fn handle_color_field_scroll(
 pub fn handle_color_popover_click(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     let local = editor_state.pointer.local;
 
+    if editor_state.pick_once && !editor_state.color_popover.eyedropper_hit(local) {
+        crate::tools::eyedropper::end_pick_once(editor_state, dirty_mask);
+    }
+
     if editor_state.color_popover.sv_square_hit(local) {
         editor_state.color_popover.pre_edit_snapshot = Some(editor_state.annotations.clone());
         editor_state.color_popover.sv_square.dragging = true;
@@ -359,14 +381,14 @@ pub fn handle_color_popover_click(editor_state: &mut EditorState, dirty_mask: &m
         return;
     }
 
+    if editor_state.color_popover.eyedropper_hit(local) {
+        crate::tools::eyedropper::toggle_pick_once(editor_state, dirty_mask);
+        return;
+    }
+
     if let Some(idx) = editor_state.color_popover.swatch_hit(local) {
         if let Some(color) = editor_state.color_popover.palette().get(idx).copied() {
-            editor_state.color_popover.select_color(color);
-            editor_state.color_popover.record_used_color(color);
-            editor_state.color_popover.sync_field_values();
-            editor_state.color_popover.dirty = true;
-            emit_color_popover_damage(editor_state, dirty_mask);
-            apply_color_selection(editor_state, color, true, dirty_mask);
+            use_color(editor_state, color, dirty_mask);
         }
         return;
     }

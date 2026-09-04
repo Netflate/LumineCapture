@@ -144,7 +144,11 @@ pub fn compute_cursor(editor_state: &EditorState) -> CursorIcon {
         }
         UiHit::ToolbarBackground | UiHit::SettingsBackground => CursorIcon::Default,
         UiHit::ColorPopoverOutside | UiHit::ModelPopoverOutside | UiHit::None => {
-            dispatch_cursor(editor_state.selected_tool, editor_state)
+            if editor_state.pick_once {
+                CursorIcon::Crosshair
+            } else {
+                dispatch_cursor(editor_state.selected_tool, editor_state)
+            }
         }
     }
 }
@@ -215,6 +219,7 @@ pub fn handle_pointer_button(
                 if let Some(ToolbarItem::Button(btn)) = editor_state.toolbar.items.get(tb_button) {
                     match btn {
                         ToolbarButton::Tool(tool) => {
+                            crate::tools::eyedropper::end_pick_once(editor_state, dirty_mask);
                             // ocr falls back to the monitor under the cursor,
                             // so it doesn't want a forced full-workspace one
 
@@ -356,6 +361,12 @@ pub fn handle_pointer_button(
                         editor_state.settings_panel.selected = None;
                         run_settings_action(editor_state, action, dirty_mask);
                     }
+
+                    SettingsWidget::Value { field } => {
+                        editor_state.settings_panel.selected = None;
+                        let color = super::settings_logic::current_color(editor_state);
+                        crate::tools::eyedropper::copy_value(editor_state, field, color);
+                    }
                     _ => {}
                 }
                 if editor_state.color_popover.open {
@@ -391,6 +402,13 @@ pub fn handle_pointer_button(
                 .push(DamageZone::Local { monitor_idx, rect });
         }
         mark_dirty(dirty_mask, monitor_idx);
+    }
+
+    //                                       ⬇⬇⬇⬇⬇⬇⬇⬇⬇
+    if is_left_click_pressed && editor_state.pick_once {
+        crate::tools::eyedropper::pick(editor_state, dirty_mask);
+        apply_damage_rects(editor_state, dirty_mask);
+        return;
     }
 
     dispatch_button(

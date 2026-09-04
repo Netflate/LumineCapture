@@ -1,3 +1,4 @@
+pub mod eyedropper;
 pub mod numerated_arrow;
 pub mod ocr;
 pub mod pen;
@@ -7,6 +8,7 @@ pub mod simple_shapes;
 pub mod text;
 
 use crate::editor::EditorState;
+use crate::tools::eyedropper::EyedropperTool;
 use crate::tools::numerated_arrow::NumeratedArrowTool;
 use crate::tools::ocr::OcrTool;
 use crate::tools::pen::PenTool;
@@ -30,6 +32,7 @@ pub enum Tool {
     Line,
     Text,
     Pick,
+    Eyedropper,
     NumeratedArrow,
     Ocr,
 }
@@ -68,6 +71,7 @@ pub fn dispatch_move(
     match tool {
         Tool::Selection => SelectionTool.on_move(state, global, dirty_mask),
         Tool::Pick => PickTool.on_move(state, global, dirty_mask),
+        Tool::Eyedropper => EyedropperTool.on_move(state, global, dirty_mask),
         Tool::Text => TextTool.on_move(state, global, dirty_mask),
         Tool::Pen => PenTool.on_move(state, global, dirty_mask),
         Tool::NumeratedArrow => NumeratedArrowTool.on_move(state, global, dirty_mask),
@@ -103,6 +107,7 @@ pub fn dispatch_button(
     match tool {
         Tool::Selection => SelectionTool.on_button(state, button, pressed, dirty_mask),
         Tool::Pick => PickTool.on_button(state, button, pressed, dirty_mask),
+        Tool::Eyedropper => EyedropperTool.on_button(state, button, pressed, dirty_mask),
         Tool::Text => TextTool.on_button(state, button, pressed, dirty_mask),
         Tool::Pen => PenTool.on_button(state, button, pressed, dirty_mask),
         Tool::NumeratedArrow => NumeratedArrowTool.on_button(state, button, pressed, dirty_mask),
@@ -131,14 +136,17 @@ pub fn dispatch_button(
 // runs when a tool becomes the active one (Ocr uses it to start recognition)
 // yet its still a `Tool`, since after ocr user can highlight  text and  copy 
 pub fn dispatch_activate(tool: Tool, state: &mut EditorState, dirty_mask: &mut u32) {
-    if tool == Tool::Ocr {
-        OcrTool.on_activate(state, dirty_mask)
+    match tool {
+        Tool::Ocr => OcrTool.on_activate(state, dirty_mask),
+        Tool::Eyedropper => EyedropperTool.on_activate(state, dirty_mask),
+        _ => {}
     }
 }
 
 // for now it only cancels active selection
 pub fn dispatch_deactivate(tool: Tool, state: &mut EditorState, dirty_mask: &mut u32) {
     match tool {
+        Tool::Eyedropper => EyedropperTool.on_deactivate(state, dirty_mask),
         Tool::Pick => PickTool.on_deactivate(state, dirty_mask),
         Tool::Text => TextTool.on_deactivate(state, dirty_mask),
         Tool::Ocr => OcrTool.on_deactivate(state, dirty_mask),
@@ -155,6 +163,7 @@ pub fn dispatch_text(tool: Tool, state: &mut EditorState, ch: char, dirty_mask: 
 pub fn dispatch_key(tool: Tool, state: &mut EditorState, key: SpecialKey, dirty_mask: &mut u32) {
     match tool {
         Tool::Pick => PickTool.on_key(state, key, dirty_mask),
+        Tool::Eyedropper => EyedropperTool.on_key(state, key, dirty_mask),
         Tool::Text => TextTool.on_key(state, key, dirty_mask),
         Tool::Ocr => OcrTool.on_key(state, key, dirty_mask),
         _ => {}
@@ -167,6 +176,7 @@ pub fn dispatch_cursor(tool: Tool, state: &EditorState) -> CursorIcon {
         Tool::Pick => PickTool.cursor(state),
         Tool::Text => TextTool.cursor(state),
         Tool::Ocr => OcrTool.cursor(state),
+        Tool::Eyedropper => EyedropperTool.cursor(state),
         Tool::Pen | Tool::NumeratedArrow | Tool::Rectangle | Tool::Arrow | Tool::Circle | Tool::Line => {
             CursorIcon::Crosshair
         }

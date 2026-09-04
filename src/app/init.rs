@@ -194,6 +194,7 @@ pub fn initial_paint(
                     selection_dirty: false,
                     magnifier: magnifier_ref.as_ref(),
                     is_mag_monitor: false,
+                    mag_label: false,
                     toolbar: None,
                     settings_panel: None,
                     color_picker: None,

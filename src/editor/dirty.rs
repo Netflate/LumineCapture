@@ -58,13 +58,19 @@ impl EditorState {
     fn calc_magnifier_dirty(&self, monitor_idx: usize, placement: &Placement) -> Option<Rect> {
         let mut dirty = None;
         let (mw, mh) = (placement.size.0 as f32, placement.size.1 as f32);
+        // color label, when picking a color
+        let with_label = self.picking();
         if mw > 0.0 && mh > 0.0 {
             let mag_pad = 2.0;
 
             let mut add_mag_dirty = |mag_state: &Option<MagnifierState>| {
                 if let Some(mag) = mag_state.as_ref().filter(|m| m.monitor_idx == monitor_idx) {
-                    let rect =
-                        crate::ui::magnifier::magnifier_rect((mag.pos.0 as f32, mag.pos.1 as f32), mw, mh);
+                    let rect = crate::ui::magnifier::magnifier_rect(
+                        (mag.pos.0 as f32, mag.pos.1 as f32),
+                        mw,
+                        mh,
+                        with_label,
+                    );
                     if let Some(r) = expand_rect(&rect, mag_pad) {
                         dirty = union_rect(dirty, Some(r));
                     }

@@ -62,6 +62,9 @@ pub struct EditorState {
     pub text_editors: HashMap<u64, Editor<'static>>,
     pub text_editing: Option<TextEditState>,
     pub tool_settings: ToolSettings,
+
+    /// Set to true when the user is about to pick a color from the palette, since the action is a one-time thing
+    pub pick_once: bool,
     pub click_tracker: DoubleClickTracker<ClickTarget>,
 
     pub mod_ctrl: bool,
@@ -102,6 +105,11 @@ pub enum DamageZone {
 }
 
 impl EditorState {
+    /// Returns true if the user is currently picking a color
+    pub fn picking(&self) -> bool {
+        self.selected_tool == Tool::Eyedropper || self.pick_once
+    }
+
     // to avoid revbuilding the entire annotation layer like it was implemented before
     // instead commited annotations are `baked`, so pending new annotations are separate from them
     // so there will be absolutely no lags while drawing something on top of 10000th circles

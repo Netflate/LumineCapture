@@ -1,16 +1,49 @@
-use crate::theme::Rgba;
-use crate::ui::magnifier::{CELLS, OFFSET, SIZE, ZOOM};
-use tiny_skia::{Color, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform};
+use cosmic_text::{FontSystem, Style, SwashCache, Weight};
 
-const GRID: Rgba = Rgba(255, 255, 255, 40);
-const GRID_SOFT: Rgba = Rgba(180, 180, 180, 80);
+use crate::renderer::paths::rounded_rect_path;
+use crate::renderer::text::{HAlign, draw_aligned_text};
+use crate::theme::{Rgba, color, font, radius};
+use crate::ui::magnifier::{CELLS, LABEL_GAP, LABEL_HEIGHT, OFFSET, SIZE, ZOOM, sample_pixel};
+use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform};
 
-pub fn magnifier_rect(cursor: (f32, f32), monitor_w: f32, monitor_h: f32) -> Rect {
-    let (mag_x, mag_y) = magnifier_position(cursor, (0.0, 0.0, monitor_w, monitor_h));
-    Rect::from_xywh(mag_x, mag_y, SIZE as f32, SIZE as f32).unwrap()
+// outline of magnifier, and color label if its in color picker mode
+pub const OUTLINE: f32 = 2.0;
+
+pub const GRID: Rgba = Rgba(255, 255, 255, 40);
+pub const GRID_SOFT: Rgba = Rgba(180, 180, 180, 80);
+
+/// if its in color picker mode
+const SWATCH: f32 = 14.0;
+const SWATCH_GAP: f32 = 8.0;
+const SWATCH_RADIUS: f32 = 3.0;
+
+/// Loupe plus, for the eyedropper, the colour plate under it.
+pub fn magnifier_rect(
+    cursor: (f32, f32),
+    monitor_w: f32,
+    monitor_h: f32,
+    with_label: bool,
+) -> Rect {
+    let height = box_height(with_label);
+    let (mag_x, mag_y) = magnifier_position(cursor, (0.0, 0.0, monitor_w, monitor_h), height);
+    Rect::from_xywh(mag_x, mag_y, SIZE as f32, height).unwrap()
 }
 
-pub fn draw_magnifier(canvas: &mut Pixmap, source: &Pixmap, cursor: (f32, f32)) {
+fn box_height(with_label: bool) -> f32 {
+    if with_label {
+        SIZE as f32 + LABEL_GAP + LABEL_HEIGHT
+    } else {
+        SIZE as f32
+    }
+}
+
+/// `label` is the text machinery the eyedropper needs; without it only the loupe is drawn.
+pub fn draw_magnifier(
+    canvas: &mut Pixmap,
+    source: &Pixmap,
+    cursor: (f32, f32),
+    label: Option<(&mut FontSystem, &mut SwashCache)>,
+) {
     let screen_w = source.width() as f32;
     let screen_h = source.height() as f32;
 
@@ -34,7 +67,8 @@ pub fn draw_magnifier(canvas: &mut Pixmap, source: &Pixmap, cursor: (f32, f32)) 
         None,
     );
 
-    let (mag_x, mag_y) = magnifier_position(cursor, (0.0, 0.0, screen_w, screen_h));
+    let (mag_x, mag_y) =
+        magnifier_position(cursor, (0.0, 0.0, screen_w, screen_h), box_height(label.is_some()));
     let radius = SIZE as f32 / 2.0;
     let cx = mag_x + radius;
     let cy = mag_y + radius;
@@ -76,13 +110,111 @@ pub fn draw_magnifier(canvas: &mut Pixmap, source: &Pixmap, cursor: (f32, f32)) 
     paint.set_color(Color::WHITE);
     paint.anti_alias = true;
     let mut stroke = Stroke::default();
-    stroke.width = 2.0;
+    stroke.width = OUTLINE;
     if let Some(circle_path) = PathBuilder::from_circle(cx, cy, radius) {
         canvas.stroke_path(&circle_path, &paint, &stroke, Transform::identity(), None);
     }
+
+    if let Some((font_system, swash_cache)) = label
+        && let Some(color) = sample_pixel(source, (cursor.0 as f64, cursor.1 as f64))
+    {
+        draw_color_label(
+            canvas,
+            mag_x,
+            mag_y + SIZE as f32 + LABEL_GAP,
+            color,
+            font_system,
+            swash_cache,
+        );
+    }
 }
 
-fn magnifier_position(cursor: (f32, f32), monitor: (f32, f32, f32, f32)) -> (f32, f32) {
+fn draw_color_label(
+    canvas: &mut Pixmap,
+    x: f32,
+    y: f32,
+    color: Color,
+    font_system: &mut FontSystem,
+    swash_cache: &mut SwashCache,
+) {
+    let width = SIZE as f32;
+    let Some(plate) = Rect::from_xywh(x, y, width, LABEL_HEIGHT) else {
+        return;
+    };
+    fill(canvas, plate, radius::PANEL, color::PANEL.color());
+    stroke_outline(canvas, plate, radius::PANEL);
+
+    let text = crate::ui::settings_panel::ValueField::Hex.text(color);
+    let text_width = crate::renderer::measure_line_width(&text, font::LABEL, font_system);
+    let group = SWATCH + SWATCH_GAP + text_width;
+    let swatch_x = x + ((width - group) / 2.0).max(SWATCH_GAP);
+
+    if let Some(swatch) = Rect::from_xywh(swatch_x, y + (LABEL_HEIGHT - SWATCH) / 2.0, SWATCH, SWATCH) {
+        fill(canvas, swatch, SWATCH_RADIUS, color);
+        stroke_outline(canvas, swatch, SWATCH_RADIUS);
+    }
+
+    if let Some(text_rect) = Rect::from_xywh(
+        swatch_x + SWATCH + SWATCH_GAP,
+        y,
+        (width - (swatch_x - x) - SWATCH - SWATCH_GAP).max(0.0),
+        LABEL_HEIGHT,
+    ) {
+        draw_aligned_text(
+            canvas,
+            &text,
+            font_system,
+            swash_cache,
+            text_rect,
+            font::LABEL,
+            color::ON_PANEL.color(),
+            HAlign::Left,
+            (0.0, 0.0),
+            Weight::NORMAL,
+            Style::Normal,
+        );
+    }
+}
+
+fn stroke_outline(canvas: &mut Pixmap, rect: Rect, radius: f32) {
+    let inset = OUTLINE / 2.0;
+    let Some(inner) = Rect::from_xywh(
+        rect.left() + inset,
+        rect.top() + inset,
+        (rect.width() - OUTLINE).max(0.1),
+        (rect.height() - OUTLINE).max(0.1),
+    ) else {
+        return;
+    };
+    let Some(path) = rounded_rect_path(&inner, (radius - inset).max(0.0), true, true, true, true)
+    else {
+        return;
+    };
+    let mut paint = Paint::default();
+    paint.set_color(Color::WHITE);
+    paint.anti_alias = true;
+    let stroke = Stroke {
+        width: OUTLINE,
+        ..Stroke::default()
+    };
+    canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+}
+
+fn fill(canvas: &mut Pixmap, rect: Rect, radius: f32, color: Color) {
+    let Some(path) = rounded_rect_path(&rect, radius, true, true, true, true) else {
+        return;
+    };
+    let mut paint = Paint::default();
+    paint.set_color(color);
+    paint.anti_alias = true;
+    canvas.fill_path(&path, &paint, FillRule::Winding, Transform::identity(), None);
+}
+
+fn magnifier_position(
+    cursor: (f32, f32),
+    monitor: (f32, f32, f32, f32),
+    height: f32,
+) -> (f32, f32) {
     let mag = SIZE as f32;
     let (cx, cy) = cursor;
     let (mx, my, mw, mh) = monitor;
@@ -93,10 +225,10 @@ fn magnifier_position(cursor: (f32, f32), monitor: (f32, f32, f32, f32)) -> (f32
         cx - mag - OFFSET
     };
 
-    let y = if cy + mag + OFFSET < my + mh {
+    let y = if cy + height + OFFSET < my + mh {
         cy + OFFSET
     } else {
-        cy - mag - OFFSET
+        cy - height - OFFSET
     };
 
     (x, y)

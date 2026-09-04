@@ -19,6 +19,8 @@ pub const SWATCH_SIZE: f32 = 28.0;
 pub const SEPARATOR_SIZE: f32 = 16.0;
 pub const STEPPER_WIDTH: f32 = 84.0;
 pub const DOWNLOAD_WIDTH: f32 = 196.0;
+pub const VALUE_HEX_WIDTH: f32 = 84.0;
+pub const VALUE_RGB_WIDTH: f32 = 120.0;
 pub const DOWNLOAD_LABEL_WIDTH: f32 = 96.0;
 pub const DOWNLOAD_PERCENT_WIDTH: f32 = 38.0;
 
@@ -31,6 +33,29 @@ pub const STEPPER_ARROW_WIDTH: f32 = 15.0;
 pub const STEPPER_ARROW_HEIGHT: f32 = 6.0;
 pub const STEPPER_ARROW_GAP: f32 = 9.0;
 pub const STEPPER_ARROW_STROKE: f32 = 1.6;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValueField {
+    Hex,
+    Rgb,
+}
+
+impl ValueField {
+    pub fn text(self, color: tiny_skia::Color) -> String {
+        let c = color.to_color_u8();
+        match self {
+            ValueField::Hex => format!("#{}", crate::ui::color_popover::color_to_hex_string(color)),
+            ValueField::Rgb => format!("{}, {}, {}", c.red(), c.green(), c.blue()),
+        }
+    }
+
+    fn width(self) -> f32 {
+        match self {
+            ValueField::Hex => VALUE_HEX_WIDTH,
+            ValueField::Rgb => VALUE_RGB_WIDTH,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum ToggleVisual {
@@ -67,6 +92,9 @@ pub enum SettingsWidget {
         field: ToggleField,
     },
     Label(&'static str),
+    Value {
+        field: ValueField,
+    },
     Download,
     Separator,
 }
@@ -152,10 +180,18 @@ pub fn widgets_for_tool(tool: Tool) -> &'static [SettingsWidget] {
                 unit: "px",
             },
         ],
+        Tool::Eyedropper => EYEDROPPER_WIDGETS,
         Tool::Ocr => OCR_WIDGETS,
         _ => &[],
     }
 }
+
+pub const EYEDROPPER_WIDGETS: &[SettingsWidget] = &[
+    SettingsWidget::Value { field: ValueField::Hex },
+    SettingsWidget::Value { field: ValueField::Rgb },
+    SettingsWidget::Separator,
+    SettingsWidget::Label("Click anywhere to pick a color"),
+];
 
 /// What the panel offers once text has been read. The hint is the answer to
 /// "how do I read something else": dragging on empty space inside the tool
@@ -244,6 +280,7 @@ impl PanelItem for SettingsWidget {
                 }
             },
             SettingsWidget::Label(text) => text.chars().count() as f32 * 7.0 + 8.0,
+            SettingsWidget::Value { field } => field.width(),
             SettingsWidget::Download => DOWNLOAD_WIDTH,
             SettingsWidget::Separator => SEPARATOR_SIZE,
         }
@@ -263,6 +300,7 @@ impl PanelItem for SettingsWidget {
                 | SettingsWidget::Action { .. }
                 | SettingsWidget::Stepper { .. }
                 | SettingsWidget::Toggle { .. }
+                | SettingsWidget::Value { .. }
         )
     }
 }
