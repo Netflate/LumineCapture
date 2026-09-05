@@ -5,6 +5,7 @@ mod model_popover;
 mod settings_logic;
 mod toolbar_logic;
 
+use crate::backend::notify::{self, Notice};
 use crate::backend::{initialize_capture, initialize_clipboard, initialize_overlay};
 use crate::editor::EditorState;
 use crate::editor::dirty::is_dirty;
@@ -571,16 +572,33 @@ pub async fn make_screenshot(
         return Ok(());
     };
 
-    if finish == Finish::Pin {
-        spawn_self(&["--pin", "--at", &format!("{x},{y}")], &png)?;
-    }
-    if (finish == Finish::Save || SAVE_ALWAYS)
-        && let Err(e) = save_to_file(&png)
+    if finish == Finish::Pin
+        && let Err(e) = spawn_self(&["--pin", "--at", &format!("{x},{y}")], &png)
     {
-        eprintln!("failed to save the screenshot: {e}");
+        notify::send(Notice::PinFailed(e.to_string())).await;
     }
-    if finish == Finish::Copy {
-        clipboard.copy_image_to_clipboard(png)?;
+    let saved = if finish == Finish::Save || SAVE_ALWAYS {
+        match save_to_file(&png) {
+            Ok(path) => Some(path),
+            Err(e) => {
+                notify::send(Notice::SaveFailed(e.to_string())).await;
+                None
+            }
+        }
+    } else {
+        None
+    };
+    match finish {
+        Finish::Save => {
+            if let Some(path) = saved {
+                notify::send(Notice::Saved(path)).await;
+            }
+        }
+        Finish::Copy => match clipboard.copy_image_to_clipboard(png) {
+            Ok(()) => notify::send(Notice::Copied(saved)).await,
+            Err(e) => notify::send(Notice::CopyFailed(e.to_string())).await,
+        },
+        Finish::Pin => {}
     }
 
     Ok(())

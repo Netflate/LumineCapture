@@ -1,3 +1,4 @@
+pub mod notify;
 pub mod wayland;
 
 use crate::types::{CaptureResult, CursorIcon, DamageRect, Output, OverlayEvent};
@@ -58,4 +59,20 @@ pub fn initialize_overlay(
 
 pub fn initialize_clipboard(_: Connection) -> Box<dyn ClipboardProvider> {
     Box::new(wayland::clipboard::ext_data_control::ClipboardMethod)
+}
+
+#[async_trait]
+pub trait Notifier {
+    async fn notify(
+        &self,
+        n: &notify::Notification,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+}
+
+pub fn initialize_notifier() -> Box<dyn Notifier> {
+    let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
+    match desktop.as_str() {
+        "KDE" => Box::new(notify::freedesktop::FreedesktopNotifier { kde: true }),
+        _ => Box::new(notify::freedesktop::FreedesktopNotifier { kde: false }),
+    }
 }

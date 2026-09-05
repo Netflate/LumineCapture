@@ -32,6 +32,7 @@ use wayland_client::globals::registry_queue_init;
 use wayland_client::protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface};
 use wayland_client::{Connection, QueueHandle};
 
+use crate::backend::notify::{self, Notice};
 use crate::backend::{ClipboardProvider, initialize_clipboard};
 use crate::renderer::paths::{draw_panel_border, rounded_rect_path};
 use crate::theme::radius;
@@ -356,11 +357,12 @@ impl KeyboardHandler for Pin {
         let is_c = matches!(event.keysym, Keysym::c | Keysym::C) || event.raw_code == KEY_C;
         if event.keysym == Keysym::Escape {
             self.exit = true;
-        } else if self.ctrl
-            && is_c
-            && let Err(e) = self.clipboard.copy_image_to_clipboard(self.png.clone())
-        {
-            eprintln!("pin: copy failed: {e}");
+        } else if self.ctrl && is_c {
+            let notice = match self.clipboard.copy_image_to_clipboard(self.png.clone()) {
+                Ok(()) => Notice::Copied(None),
+                Err(e) => Notice::CopyFailed(e.to_string()),
+            };
+            notify::send_blocking(notice);
         }
     }
 

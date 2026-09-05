@@ -24,7 +24,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("--pin") => run_pin(args),
         _ => tokio::runtime::Runtime::new()?.block_on(async {
             let wayland_ = wayland_client::Connection::connect_to_env().ok();
-            app::make_screenshot(wayland_).await
+            let result = app::make_screenshot(wayland_).await;
+            if let Err(e) = &result {
+                backend::notify::send(backend::notify::Notice::Failed(e.to_string())).await;
+            }
+            result
         }),
     }
 }
@@ -83,7 +87,7 @@ fn run_clipboard_daemon() {
     ]);
 
     if let Err(e) = result {
-        eprintln!("clipboard daemon error: {e}");
+        backend::notify::send_blocking(backend::notify::Notice::CopyFailed(e.to_string()));
         std::process::exit(1);
     }
 }
