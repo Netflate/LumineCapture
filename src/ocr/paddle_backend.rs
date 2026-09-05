@@ -10,7 +10,7 @@
 
 use std::time::Instant;
 
-use oar_ocr::core::config::OrtSessionConfig;
+use oar_ocr::core::config::{OrtExecutionProvider, OrtSessionConfig};
 use oar_ocr::core::traits::{AdapterBuilder, OrtConfigurable};
 use oar_ocr::core::traits::task::ImageTaskInput;
 use oar_ocr::domain::adapters::TextRecognitionAdapterBuilder;
@@ -42,7 +42,12 @@ impl PaddleBackend {
         let threads = std::thread::available_parallelism()
             .map(|n| n.get())
             .unwrap_or(4);
-        let ort = OrtSessionConfig::new().with_intra_threads(threads);
+        // Explicitly configuring the CPU Execution Provider disables ORT's arena allocator.
+        // With the arena allocator enabled, scanning a 1920x2160 frame retains +-1.1 GB resident memory indefinitely;
+        // without it, memory drops to ~145 MB, at the cost of a ~5-10% latency penalty per scan.
+        let ort = OrtSessionConfig::new()
+            .with_intra_threads(threads)
+            .with_execution_providers(vec![OrtExecutionProvider::CPU]);
 
         let stage = Instant::now();
         let detector = TextDetectionPredictor::builder()
@@ -95,7 +100,7 @@ impl PaddleBackend {
 }
 
 impl OcrBackend for PaddleBackend {
-    fn recognize(&self, image: OcrImage) -> Result<OcrText, OcrError> {
+    fn recognize(&self, image: OcrImage, cancelled: &dyn Fn() -> bool) -> Result<OcrText, OcrError> {
         let total = Instant::now();
 
         let stage = Instant::now();
@@ -110,6 +115,9 @@ impl OcrBackend for PaddleBackend {
         // is unavoidable: the pixels are needed again to cut the line crops.
         let detected = self.detector.predict(vec![img.clone()])?;
         let detect_ms = ms(stage);
+        if cancelled() {
+            return Err(super::CANCELLED.into());
+        }
         let Some(regions) = detected.detections.into_iter().next() else {
             return Ok(OcrText::default());
         };
@@ -188,10 +196,13 @@ impl OcrBackend for PaddleBackend {
         }
 
         let stage = Instant::now();
-        let reads: Vec<Read> = crops
-            .iter()
-            .map(|crop| recognize_one(&self.recognizer, crop))
-            .collect();
+        let mut reads: Vec<Read> = Vec::with_capacity(crops.len());
+        for crop in &crops {
+            if cancelled() {
+                return Err(super::CANCELLED.into());
+            }
+            reads.push(recognize_one(&self.recognizer, crop));
+        }
         let recognize_ms = ms(stage);
 
         let stage = Instant::now();
