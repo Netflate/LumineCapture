@@ -18,6 +18,7 @@ impl ToolBehavior for OcrTool {
     // there. The work runs on a background thread; `app` polls for the result
     // and calls `finish_ocr`.
     fn on_activate(&self, state: &mut EditorState, _dirty_mask: &mut u32) {
+        state.ocr.prepare();
         if state.ocr.is_busy() {
             return;
         }
@@ -372,6 +373,7 @@ pub fn use_model(state: &mut EditorState, idx: usize, dirty_mask: &mut u32) {
         state.ocr_view.clear();
         return;
     }
+    state.ocr.prepare();
     if state.ocr.is_busy() || state.ocr_view.is_active() {
         cancel_scan(state);
         restart_ocr(state, dirty_mask);
@@ -382,6 +384,9 @@ pub fn model_ready(state: &mut EditorState, idx: usize, dirty_mask: &mut u32) {
     if state.ocr_models.active() == Some(idx) {
         if let Some(files) = state.ocr_models.files(idx) {
             state.ocr.load(files);
+            if state.selected_tool == Tool::Ocr {
+                state.ocr.prepare();
+            }
         }
     } else if !state.ocr_models.active_installed() {
         use_model(state, idx, dirty_mask);

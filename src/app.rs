@@ -74,7 +74,8 @@ pub async fn make_screenshot(
     let icons_cache = icons_handle.join().expect("Failed to join icons thread");
 
     let ocr_models = crate::ocr::models::OcrModels::load();
-    let mut ocr = crate::ocr::OcrRuntime::new();
+    let ocr_settings = crate::ocr::settings::EngineSettings::load();
+    let mut ocr = crate::ocr::OcrRuntime::new(crate::ocr::daemon::resolve_mode(&ocr_settings));
     if let Some(files) = ocr_models.active().and_then(|idx| ocr_models.files(idx)) {
         ocr.load(files);
     }

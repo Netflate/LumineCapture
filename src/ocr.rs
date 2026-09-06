@@ -9,14 +9,45 @@
 // models   - available, installed and selected models
 // download - background download of models
 // bidi     - converting visual RTL text order to logical order for copy/paste.
+// daemon   - persistent process keeping a pre-ready model instance ready in memory. (crucial for gpu ocr, see below)
+// settings - how to prepare the engine (on-demand / at-launch / daemon)
 
+// clarifications: 
+// Settings : 
+// - on-demand : load the engine when choosing ocr 
+// - at-launch : load the engine at app launch
+// - daemon    : launches a background daemon, that outlives main process, which 
+//               purpose is keeping ready ocr engine
+
+// When specific mode is chosen and why: 
+// first things to keep in mind: 
+// * GPU initialization takes time, and decent chunk on memory (`1`)
+// * Preparing engine for cpu takes around 90ms, and some memory (`2`)
+
+// if gpu initalization doesn't work on the user computer, the default mode is on-demand
+// that means when scanning text the first time after launching capture, he will extra 
+// 90ms, at-launch isn't favorable, since preparing engine on every launch and taking 
+// some performance and memory for a function used 1 time in 10 launches - is unefficient
+
+// if gpu does work, system never choose it for on-demand, initailizing engine with 
+// gpu takes way more time, than the user would gain for gpu scan, and same reasons as 
+// above for not using on-launch
+// but launching a daemon for gpu is a win win situation, small optimized idle daemon
+// with ready engine, will scan text much faster than with cpu, on every launch, and 
+// will be ready for the next scans while its running.
+// all of the above is true for the default mode, but user can choose any of the modes in settings,
+// user can any time set a daemon for cpu for example, but the gain will be debatable, since cpu engine is fast enough 
 pub mod bidi;
+pub mod daemon;
 pub mod download;
 pub mod draw;
 pub mod layout;
 pub mod models;
 pub mod paddle_backend;
 pub mod runtime;
+pub mod settings;
+#[cfg(test)]
+pub mod testing;
 pub mod view;
 
 use tiny_skia::{Pixmap, PixmapPaint, Rect, Transform};
@@ -40,7 +71,7 @@ pub struct OcrImage {
 /// One recognized line. `bounds` is global. `char_x` is the global x of every
 /// character boundary: `text.chars().count() + 1` values, non-decreasing, and
 /// inside `bounds` - they follow the glyphs, which need not fill the box.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct OcrLine {
     pub text: String,
     pub bounds: Rect,
@@ -75,7 +106,7 @@ pub fn is_mark(c: char) -> bool {
 }
 
 /// Everything found in one image, lines in reading order.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct OcrText {
     pub lines: Vec<OcrLine>,
 }
@@ -88,15 +119,28 @@ impl OcrText {
 
 pub type OcrError = Box<dyn std::error::Error + Send + Sync>;
 
+/// cancelled text scan
+pub const CANCELLED: &str = "cancelled";
+
 /// `Send` so recognition can run on a worker thread. Takes the image by value
 /// to avoid copying the full screen buffer.
+/// Checked between pipeline stages so cancelled scans exit early with an error.
 pub trait OcrBackend: Send {
-    fn recognize(&self, image: OcrImage) -> Result<OcrText, OcrError>;
+    fn recognize(&self, image: OcrImage, cancelled: &dyn Fn() -> bool) -> Result<OcrText, OcrError>;
 }
 
 /// Build the backend the app ships with today.
 pub fn default_backend(files: &ModelFiles) -> Result<Box<dyn OcrBackend>, OcrError> {
     Ok(Box::new(paddle_backend::PaddleBackend::new(files)?))
+}
+
+/// Connects to the daemon client if running in daemon mode
+/// otherwise, initializes the engine directly within this process
+pub fn build_backend(mode: settings::Mode, files: &ModelFiles) -> Result<Box<dyn OcrBackend>, OcrError> {
+    match mode {
+        settings::Mode::Daemon => daemon::client::connect(files),
+        settings::Mode::OnDemand | settings::Mode::AtLaunch => default_backend(files),
+    }
 }
 
 /// Composite the pixels covered by `region` (global coords) out of the

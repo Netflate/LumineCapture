@@ -22,6 +22,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(())
         }
         Some("--pin") => run_pin(args),
+        Some("--ocr-daemon") => ocr::daemon::cli(args),
         _ => tokio::runtime::Runtime::new()?.block_on(async {
             let wayland_ = wayland_client::Connection::connect_to_env().ok();
             let result = app::make_screenshot(wayland_).await;

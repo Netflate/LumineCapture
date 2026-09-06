@@ -143,6 +143,7 @@ pub const MODELS: &[Model] = &[
     },
 ];
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelFiles {
     pub detector: PathBuf,
     pub recognizer: PathBuf,
