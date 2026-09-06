@@ -7,6 +7,7 @@
 // server   - Daemon service daemon entry point (`--ocr-daemon serve | status | stop`)
 // client   - `OcrBackend` client wrapper that delegates to the daemon with automatic local fallback
 
+pub mod calibrate;
 pub mod client;
 pub mod protocol;
 pub mod server;
@@ -27,6 +28,7 @@ use nix::fcntl::{Flock, FlockArg};
 use super::models::ModelFiles;
 use super::paddle_backend::PaddleBackend;
 use super::settings::{Device, EngineSettings, GPU_BUILD, Mode};
+use calibrate::{Record, Verdict};
 use protocol::EngineState;
 
 #[derive(Debug, Clone)]
@@ -73,26 +75,62 @@ pub fn build_id() -> &'static str {
     })
 }
 
+/// What the machine measured last time, if those numbers still apply to it.
+pub fn measurement() -> Option<Record> {
+    calibrate::stored(&calibrate::cache_path()?, &calibrate::machine_key())
+}
+
+pub fn save_measurement(record: &Record) {
+    if let Some(path) = calibrate::cache_path() {
+        calibrate::store(&path, record, &calibrate::machine_key());
+    }
+}
+
 pub fn resolve_mode(settings: &EngineSettings) -> Mode {
     let paths = Paths::from_env();
     let ruled_out = paths
         .as_ref()
         .is_some_and(|paths| gpu_ruled_out(&read_strikes(paths), build_id()));
-    let mode = settings.resolve(paths.is_some(), GPU_BUILD && !ruled_out);
+    let measured = measurement();
+    let cpu_won = measured.is_some_and(|record| record.verdict == Verdict::Cpu);
+    let mode = settings.resolve(paths.is_some(), GPU_BUILD && !ruled_out && !cpu_won);
 
     if mode == settings.mode {
-        eprintln!("ocr: engine mode = {mode:?} (device {:?})", settings.device);
+        let how = match (mode, measured) {
+            (Mode::OnDemand | Mode::AtLaunch, _) => {
+                "nothing stays in the background; mode = daemon in ~/.config/LumineCapture/ocr-engine \
+                 keeps a faster engine warm instead"
+                    .to_owned()
+            }
+            (_, Some(record)) if settings.device == Device::Auto => match record.verdict {
+                Verdict::Gpu => {
+                    format!("{}, the daemon holds that engine in video memory", record.summary())
+                }
+                Verdict::Cpu => record.summary(),
+            },
+            (_, None) if settings.device == Device::Auto && GPU_BUILD => {
+                "first run, the daemon measures CPU against GPU once".to_owned()
+            }
+            _ => format!("device {:?}", settings.device),
+        };
+        eprintln!("ocr: engine mode = {mode:?} ({how})");
     } else {
         let why = if paths.is_none() {
-            "no XDG_RUNTIME_DIR"
+            "no XDG_RUNTIME_DIR".to_owned()
+        } else if let Some(record) = measured.filter(|_| cpu_won) {
+            format!("measured here: {}", record.summary())
         } else if ruled_out {
-            "this binary already failed to put the engine on a GPU here"
+            "this binary already failed to put the engine on a GPU here".to_owned()
         } else {
-            "this binary has no GPU engine compiled in yet (nothing to do with your graphics card)"
+            "this binary has no GPU engine compiled in yet (nothing to do with your graphics card)".to_owned()
+        };
+        let hint = if cpu_won {
+            "--ocr-daemon calibrate measures again"
+        } else {
+            "set device = cpu in ~/.config/LumineCapture/ocr-engine to run the daemon on the CPU anyway"
         };
         eprintln!(
-            "ocr: engine mode = {mode:?} (config wants {:?}; {why} -- \
-             set device = cpu in ~/.config/LumineCapture/ocr-engine to run the daemon on the CPU anyway)",
+            "ocr: engine mode = {mode:?} (config wants {:?}; {why} -- {hint})",
             settings.mode
         );
     }
@@ -113,6 +151,18 @@ pub fn engine_factory(device: Device) -> server::Factory {
     Arc::new(move |files: &ModelFiles| match device {
         Device::Cpu => cpu_engine(files),
         Device::Gpu if GPU_BUILD => gpu_engine(files),
+        Device::Auto if GPU_BUILD => match measurement().map(|record| record.verdict) {
+            Some(Verdict::Gpu) => gpu_engine(files),
+            Some(Verdict::Cpu) => Err(server::BuildError::NoGpu),
+            None => {
+                let record = calibrate::run(files);
+                save_measurement(&record);
+                match record.verdict {
+                    Verdict::Gpu => gpu_engine(files),
+                    Verdict::Cpu => Err(server::BuildError::NoGpu),
+                }
+            }
+        },
         Device::Auto | Device::Gpu => Err(server::BuildError::NoGpu),
     })
 }
@@ -284,8 +334,29 @@ pub fn cli(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn Error>>
         None | Some("serve") => serve(paths),
         Some("status") => status(&paths),
         Some("stop") => stop(&paths),
-        Some(other) => Err(format!("unknown command `{other}`, expected serve | status | stop").into()),
+        Some("calibrate") => recalibrate(&paths),
+        Some(other) => {
+            Err(format!("unknown command `{other}`, expected serve | status | stop | calibrate").into())
+        }
     }
+}
+
+fn recalibrate(paths: &Paths) -> Result<(), Box<dyn Error>> {
+    let models = crate::ocr::models::OcrModels::load();
+    let files = models
+        .active()
+        .and_then(|idx| models.files(idx))
+        .ok_or("no OCR model is installed yet, install one in the overlay first")?;
+    let record = calibrate::run(&files);
+    save_measurement(&record);
+    println!("ocr: {}", record.summary());
+    if let Some(path) = calibrate::cache_path() {
+        println!("saved to {}", path.display());
+    }
+    if !lock_free(&paths.lock) {
+        println!("a daemon is still running with the previous decision (--ocr-daemon stop)");
+    }
+    Ok(())
 }
 
 fn serve(paths: Paths) -> Result<(), Box<dyn Error>> {
@@ -319,6 +390,9 @@ fn status(paths: &Paths) -> Result<(), Box<dyn Error>> {
     };
     println!("ocr daemon: running, pid {}, up {}", status.pid, human(status.uptime_secs));
     println!("engine:     {engine}");
+    if let Some(record) = measurement() {
+        println!("measured:   {}", record.summary());
+    }
     println!("served:     {} scan(s), last took {} ms", status.served, status.last_ms);
     println!("memory:     {} MB", status.rss_kb / 1024);
     match status.idle_left_secs {

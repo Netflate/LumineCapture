@@ -5,7 +5,7 @@
 ///   daemon_idle = 900   (idle timeout in seconds; 0 disables auto-exit)
 
 /// see when and why each mode is chosen in [crate::ocr] top comments
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,7 +39,7 @@ pub const GPU_BUILD: bool = cfg!(feature = "ocr-gpu");
 impl Default for EngineSettings {
     fn default() -> Self {
         Self {
-            mode: Mode::Daemon,
+            mode: Mode::OnDemand,
             device: Device::Auto,
             daemon_idle: Some(Duration::from_secs(900)),
         }
@@ -48,9 +48,16 @@ impl Default for EngineSettings {
 
 impl EngineSettings {
     pub fn load() -> Self {
-        path()
-            .and_then(|path| std::fs::read_to_string(path).ok())
-            .map_or_else(Self::default, |text| Self::parse(&text))
+        let Some(path) = path() else {
+            return Self::default();
+        };
+        match std::fs::read_to_string(&path) {
+            Ok(text) => Self::parse(&text),
+            Err(_) => {
+                write_template(&path);
+                Self::default()
+            }
+        }
     }
 
     pub fn parse(text: &str) -> Self {
@@ -116,6 +123,35 @@ fn parse_device(value: &str) -> Option<Device> {
     }
 }
 
+pub const TEMPLATE: &str = "\
+# How LumineCapture prepares the OCR engine.
+# Delete this file to get these defaults back.
+
+# on-demand  build the engine when OCR is used, inside this process (default)
+# at-launch  build it at every launch, inside this process
+# daemon     keep a ready engine in a background process, reused by later launches
+mode = on-demand
+
+# Only the daemon uses this. A GPU engine reads text about twice as fast, but holds
+# video memory for as long as the daemon lives, so nothing runs on the GPU unless
+# you ask for the daemon. auto measures this machine once and keeps the faster one.
+# auto | cpu | gpu
+device = auto
+
+# Seconds the daemon may sit unused before it exits. 0 lets it stay forever.
+daemon_idle = 900
+";
+
+fn write_template(path: &Path) {
+    let written = path
+        .parent()
+        .map_or(Ok(()), std::fs::create_dir_all)
+        .and_then(|()| std::fs::write(path, TEMPLATE));
+    if let Err(e) = written {
+        eprintln!("ocr: cannot write {}: {e}", path.display());
+    }
+}
+
 fn path() -> Option<PathBuf> {
     Some(dirs::config_dir()?.join("LumineCapture").join("ocr-engine"))
 }
@@ -163,7 +199,7 @@ mod tests {
 
     #[test]
     fn daemon_needs_a_gpu_unless_cpu_is_forced() {
-        let daemon = EngineSettings::default();
+        let daemon = EngineSettings { mode: Mode::Daemon, ..EngineSettings::default() };
         assert_eq!(daemon.resolve(true, true), Mode::Daemon);
         assert_eq!(daemon.resolve(true, false), Mode::OnDemand);
         assert_eq!(daemon.resolve(false, true), Mode::OnDemand);
@@ -183,5 +219,17 @@ mod tests {
             assert_eq!(settings.resolve(false, false), mode);
             assert_eq!(settings.resolve(true, true), mode);
         }
+    }
+
+    #[test]
+    fn nothing_runs_in_the_background_by_default() {
+        let settings = EngineSettings::default();
+        assert_eq!(settings.mode, Mode::OnDemand);
+        assert_eq!(settings.resolve(true, true), Mode::OnDemand);
+    }
+
+    #[test]
+    fn the_template_reads_back_as_the_defaults() {
+        assert_eq!(EngineSettings::parse(TEMPLATE), EngineSettings::default());
     }
 }

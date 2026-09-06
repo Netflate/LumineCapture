@@ -24,19 +24,14 @@
 // * GPU initialization takes time, and decent chunk on memory (`1`)
 // * Preparing engine for cpu takes around 90ms, and some memory (`2`)
 
-// if gpu initalization doesn't work on the user computer, the default mode is on-demand
-// that means when scanning text the first time after launching capture, he will extra 
-// 90ms, at-launch isn't favorable, since preparing engine on every launch and taking 
-// some performance and memory for a function used 1 time in 10 launches - is unefficient
+// Default mode: on-demand.
+// 1. why not at-launch: launching engine on every launch is inefficient, it's not something user will use on every launch
+//  it will make sense to make a separate bind, that instantly launches the engines, and chooses ocr tool, but that's later
 
-// if gpu does work, system never choose it for on-demand, initailizing engine with 
-// gpu takes way more time, than the user would gain for gpu scan, and same reasons as 
-// above for not using on-launch
-// but launching a daemon for gpu is a win win situation, small optimized idle daemon
-// with ready engine, will scan text much faster than with cpu, on every launch, and 
-// will be ready for the next scans while its running.
-// all of the above is true for the default mode, but user can choose any of the modes in settings,
-// user can any time set a daemon for cpu for example, but the gain will be debatable, since cpu engine is fast enough 
+// 2. why not daemon: launching daemon for cpu is inefficient, running a separate daemon will gain practically nothing, only around
+// 90 ms on my machine. Yet, for gpu there is real gain, gpu scan is much faster than cpu, and launching engine with gpu 
+// takes much more time, so it makes sense for it to be in a daemon. Yet, daemon takes GPU memory, and having a background
+// daemon with always 100+mb taken is not a good idea, sooo it's not optimal
 pub mod bidi;
 pub mod daemon;
 pub mod download;
