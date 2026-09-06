@@ -20,7 +20,8 @@ use super::client::{self, Spawner, Timing};
 use super::protocol::{self, EngineState, Outgoing, PROTO, Reply, Request, Welcome};
 use super::server::{self, BuildError, Engine, Factory, Outcome};
 use super::{
-    Paths, daemon_blocked, lock_free, model_name, read_strikes, record_strike, spawn_detached, unix_now,
+    Paths, Strike, daemon_blocked, gpu_ruled_out, lock_free, model_name, read_strikes, record_strike,
+    spawn_detached, unix_now,
 };
 use crate::ocr::models::ModelFiles;
 use crate::ocr::testing::{self, Fake, label_of, wait_until};
@@ -443,10 +444,13 @@ fn shutdown_does_not_wait_for_a_long_scan() {
 
 #[test]
 fn engine_that_cannot_run_makes_the_daemon_leave() {
-    let cases: [(Factory, EngineState); 1] = [(
-        Arc::new(|_: &ModelFiles| Err(BuildError::Failed("boom".into()))),
-        EngineState::Failed("boom".into()),
-    )];
+    let cases: [(Factory, EngineState); 2] = [
+        (Arc::new(|_: &ModelFiles| Err(BuildError::NoGpu)), EngineState::NoGpu),
+        (
+            Arc::new(|_: &ModelFiles| Err(BuildError::Failed("boom".into()))),
+            EngineState::Failed("boom".into()),
+        ),
+    ];
     for (make, expected) in cases {
         let (dir, paths) = dir_and_paths("unusable");
         let server = start(config(&dir, make));
@@ -578,7 +582,7 @@ fn daemon_dying_mid_scan_means_a_local_read_and_a_strike() {
     let backend = client::connect_with(client_config(&paths, refusing_spawner(&probe), &probe), &files).unwrap();
 
     assert_eq!(read(&*backend), "local");
-    assert!(read_strikes(&paths).contains(BUILD));
+    assert!(read_strikes(&paths).contains("failed"));
     daemon.join().unwrap();
     assert_eq!(read(&*backend), "local");
     assert_eq!(probe.spawns(), 0, "a daemon that broke must not be retried in the same session");
@@ -613,7 +617,7 @@ fn hung_daemon_is_killed_and_the_scan_read_locally() {
     assert_eq!(read(&*backend), "local");
     assert!(started.elapsed() < Duration::from_secs(2));
     assert_eq!(probe.kills(), vec![std::process::id() as i32]);
-    assert!(read_strikes(&paths).contains(BUILD));
+    assert!(read_strikes(&paths).contains("failed"));
     drop(release);
     daemon.join().unwrap();
 }
@@ -674,22 +678,27 @@ fn concurrent_clients_start_a_single_daemon() {
 #[test]
 fn strike_rules() {
     let now = 10_000;
-    let failed = |ago: u64| format!("{} {BUILD}\n", now - ago);
+    let failed = |ago: u64| format!("{} failed {BUILD}\n", now - ago);
     assert!(!daemon_blocked("", BUILD, now));
 
     let two = failed(10) + &failed(20);
     assert!(!daemon_blocked(&two, BUILD, now));
     assert!(daemon_blocked(&(two.clone() + &failed(30)), BUILD, now));
     assert!(!daemon_blocked(&(two.clone() + &failed(601)), BUILD, now), "old failures expire");
-    assert!(!daemon_blocked(&(two + &format!("{now} other-build\n")), BUILD, now));
-    assert!(!daemon_blocked("junk\n\n1 2\nnan test-build\n", BUILD, now));
+    assert!(!daemon_blocked(&(two + &format!("{now} failed other-build\n")), BUILD, now));
+
+    let no_gpu = format!("{now} no-gpu {BUILD}\n");
+    assert!(daemon_blocked(&no_gpu, BUILD, now + 10_000_000), "no GPU does not expire for a build");
+    assert!(gpu_ruled_out(&no_gpu, BUILD));
+    assert!(!gpu_ruled_out(&no_gpu, "next-build"));
+    assert!(!daemon_blocked("junk\n\n1 2 3\nnan failed test-build\n42 exploded test-build\n", BUILD, now));
 }
 
 #[test]
 fn repeated_failures_stop_spawning_for_a_while() {
     let (_dir, paths) = dir_and_paths("strikes");
     for _ in 0..20 {
-        record_strike(&paths, BUILD);
+        record_strike(&paths, BUILD, Strike::Failed);
     }
     assert_eq!(read_strikes(&paths).lines().count(), 8, "the strike file must stay small");
     assert!(daemon_blocked(&read_strikes(&paths), BUILD, unix_now()));
@@ -699,6 +708,26 @@ fn repeated_failures_stop_spawning_for_a_while() {
         client::connect_with(client_config(&paths, refusing_spawner(&probe), &probe), &testing::files("m")).unwrap();
     assert_eq!(read(&*backend), "local");
     assert_eq!(probe.spawns(), 0);
+}
+
+#[test]
+fn daemon_without_gpu_is_remembered_and_not_started_again() {
+    let (dir, paths) = dir_and_paths("no-gpu");
+    let probe = Probe::default();
+    let servers = Servers::default();
+    let spawn = thread_spawner(&dir, Arc::new(|_: &ModelFiles| Err(BuildError::NoGpu)), &probe, &servers);
+
+    let backend = client::connect_with(client_config(&paths, spawn, &probe), &testing::files("m")).unwrap();
+    assert!(wait_until(LONG, || {
+        read(&*backend) == "local" && gpu_ruled_out(&read_strikes(&paths), BUILD)
+    }));
+    assert_eq!(probe.spawns(), 1);
+    assert_eq!(finish_all(&servers), vec![Outcome::Unusable]);
+
+    let again =
+        client::connect_with(client_config(&paths, refusing_spawner(&probe), &probe), &testing::files("m")).unwrap();
+    assert_eq!(read(&*again), "local");
+    assert_eq!(probe.spawns(), 1);
 }
 
 #[test]
@@ -860,7 +889,7 @@ fn killed_daemon_is_survived_and_replaced() {
     assert_eq!(read(&*backend), "local");
     killer.join().unwrap().unwrap();
     assert!(wait_until(LONG, || !alive(pid)));
-    assert!(read_strikes(&paths).contains(BUILD));
+    assert!(read_strikes(&paths).contains("failed"));
 
     let fresh = client::connect_with(client_config(&paths, spawn, &probe), &files).unwrap();
     let new_pid = ready_pid(&paths);

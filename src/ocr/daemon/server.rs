@@ -35,6 +35,7 @@ pub struct Engine {
 }
 
 pub enum BuildError {
+    NoGpu,
     Failed(String),
 }
 
@@ -213,7 +214,7 @@ impl Shared {
     }
 
     fn unusable(&self) -> bool {
-        matches!(*lock(&self.state), EngineState::Failed(_))
+        matches!(*lock(&self.state), EngineState::Failed(_) | EngineState::NoGpu)
     }
 
     fn touch(&self) {
@@ -348,6 +349,7 @@ fn load(shared: &Arc<Shared>, files: ModelFiles) {
                     model: model_name(&files),
                 }
             }
+            Err(BuildError::NoGpu) => EngineState::NoGpu,
             Err(BuildError::Failed(e)) => EngineState::Failed(e),
         };
         eprintln!("ocr-daemon: engine {state:?} after {} ms", started.elapsed().as_millis());

@@ -20,7 +20,7 @@ use nix::unistd::Pid;
 
 use super::protocol::{self, EngineState, Outgoing, PROTO, Reply, Status, Welcome};
 use super::{
-    Paths, build_id, daemon_blocked, lock_file_pid, lock_free, model_name, read_strikes,
+    Paths, Strike, build_id, daemon_blocked, lock_file_pid, lock_free, model_name, read_strikes,
     record_strike, spawn_daemon, unix_now, wait_lock_free,
 };
 use crate::ocr::models::ModelFiles;
@@ -134,6 +134,7 @@ struct Session {
 
 enum Fail {
     Unreachable(String),
+    NoGpu,
     Failed(String),
     Protocol(String),
 }
@@ -187,6 +188,7 @@ impl DaemonBackend {
             }
         }
         match &session.welcome.state {
+            EngineState::NoGpu => Err(Fail::NoGpu),
             EngineState::Failed(e) => Err(Fail::Failed(e.clone())),
             _ => Ok(session),
         }
@@ -317,11 +319,12 @@ impl DaemonBackend {
     }
 
     fn strike(&self, fail: &Fail) {
-        let reason = match fail {
-            Fail::Unreachable(e) | Fail::Failed(e) | Fail::Protocol(e) => e.clone(),
+        let (strike, reason) = match fail {
+            Fail::NoGpu => (Strike::NoGpu, "no GPU".to_owned()),
+            Fail::Unreachable(e) | Fail::Failed(e) | Fail::Protocol(e) => (Strike::Failed, e.clone()),
         };
         eprintln!("ocr: daemon unusable ({reason}), OCR runs in this process");
-        record_strike(&self.config.paths, &self.config.build);
+        record_strike(&self.config.paths, &self.config.build, strike);
     }
 }
 

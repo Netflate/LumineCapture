@@ -43,6 +43,7 @@ pub enum EngineState {
     Loading { model: String },
     Ready { device: String, model: String },
     Failed(String),
+    NoGpu,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -393,6 +394,7 @@ impl Body {
                 self.u8(3);
                 self.str(message);
             }
+            EngineState::NoGpu => self.u8(4),
         }
     }
 
@@ -479,6 +481,7 @@ impl<'a> Cursor<'a> {
                 model: self.string()?,
             },
             3 => EngineState::Failed(self.string()?),
+            4 => EngineState::NoGpu,
             _ => return Err(ProtoError::Malformed("engine state")),
         })
     }
@@ -607,6 +610,7 @@ mod tests {
                 model: "/models/cyrillic.onnx".into(),
             },
             EngineState::Failed("no such file".into()),
+            EngineState::NoGpu,
         ] {
             roundtrip(Reply::Welcome(Welcome {
                 proto: PROTO,
@@ -796,7 +800,7 @@ mod tests {
         let status = Reply::Status(Status {
             pid: 1,
             uptime_secs: 1,
-            state: EngineState::Idle,
+            state: EngineState::NoGpu,
             served: 0,
             last_ms: 0,
             rss_kb: 0,

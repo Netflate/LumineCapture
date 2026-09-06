@@ -19,16 +19,28 @@ pub enum Mode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Device {
+    Auto,
+    Cpu,
+    Gpu,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EngineSettings {
     pub mode: Mode,
+    pub device: Device,
     /// `None` disables the idle auto-exit behavior for the daemon.
     pub daemon_idle: Option<Duration>,
 }
+
+// (feature = "ocr-gpu")
+pub const GPU_BUILD: bool = false;
 
 impl Default for EngineSettings {
     fn default() -> Self {
         Self {
             mode: Mode::Daemon,
+            device: Device::Auto,
             daemon_idle: Some(Duration::from_secs(900)),
         }
     }
@@ -55,6 +67,9 @@ impl EngineSettings {
             let (key, value) = (key.trim(), value.trim());
             let understood = match key {
                 "mode" => parse_mode(value).map(|mode| settings.mode = mode).is_some(),
+                "device" => parse_device(value)
+                    .map(|device| settings.device = device)
+                    .is_some(),
                 "daemon_idle" => value
                     .parse::<u64>()
                     .map(|secs| settings.daemon_idle = (secs > 0).then(|| Duration::from_secs(secs)))
@@ -68,9 +83,16 @@ impl EngineSettings {
         settings
     }
 
-    pub fn resolve(&self, daemon_possible: bool) -> Mode {
+    /// Resolves the actual execution mode.
+    ///
+    /// daemon is only beneficial with GPU acceleration. Therefore, if GPU access
+    /// is unavailable, `daemon` mode silently falls back to `on-demand`. Explicitly setting
+    /// `device = cpu` bypasses this fallback to allow daemon debugging.
+    pub fn resolve(&self, daemon_possible: bool, gpu_possible: bool) -> Mode {
         match self.mode {
             Mode::Daemon if !daemon_possible => Mode::OnDemand,
+            Mode::Daemon if self.device == Device::Cpu || gpu_possible => Mode::Daemon,
+            Mode::Daemon => Mode::OnDemand,
             mode => mode,
         }
     }
@@ -81,6 +103,15 @@ fn parse_mode(value: &str) -> Option<Mode> {
         "on-demand" => Some(Mode::OnDemand),
         "at-launch" => Some(Mode::AtLaunch),
         "daemon" => Some(Mode::Daemon),
+        _ => None,
+    }
+}
+
+fn parse_device(value: &str) -> Option<Device> {
+    match value {
+        "auto" => Some(Device::Auto),
+        "cpu" => Some(Device::Cpu),
+        "gpu" => Some(Device::Gpu),
         _ => None,
     }
 }
@@ -101,8 +132,9 @@ mod tests {
 
     #[test]
     fn reads_every_key() {
-        let settings = EngineSettings::parse("mode = at-launch\ndaemon_idle = 60\n");
+        let settings = EngineSettings::parse("mode = at-launch\ndevice=cpu\ndaemon_idle = 60\n");
         assert_eq!(settings.mode, Mode::AtLaunch);
+        assert_eq!(settings.device, Device::Cpu);
         assert_eq!(settings.daemon_idle, Some(Duration::from_secs(60)));
     }
 
@@ -115,6 +147,7 @@ mod tests {
     fn comments_whitespace_and_unknown_keys_are_ignored() {
         let settings = EngineSettings::parse("  mode = on-demand   # trailing\nfuture_key = 1\n\tdevice\t=\tgpu");
         assert_eq!(settings.mode, Mode::OnDemand);
+        assert_eq!(settings.device, Device::Gpu);
     }
 
     #[test]
@@ -129,18 +162,26 @@ mod tests {
     }
 
     #[test]
-    fn daemon_needs_a_runtime_dir() {
+    fn daemon_needs_a_gpu_unless_cpu_is_forced() {
         let daemon = EngineSettings::default();
-        assert_eq!(daemon.resolve(true), Mode::Daemon);
-        assert_eq!(daemon.resolve(false), Mode::OnDemand);
+        assert_eq!(daemon.resolve(true, true), Mode::Daemon);
+        assert_eq!(daemon.resolve(true, false), Mode::OnDemand);
+        assert_eq!(daemon.resolve(false, true), Mode::OnDemand);
+
+        let gpu = EngineSettings { device: Device::Gpu, ..daemon };
+        assert_eq!(gpu.resolve(true, false), Mode::OnDemand);
+
+        let cpu = EngineSettings { device: Device::Cpu, ..daemon };
+        assert_eq!(cpu.resolve(true, false), Mode::Daemon);
+        assert_eq!(cpu.resolve(false, false), Mode::OnDemand);
     }
 
     #[test]
     fn local_modes_are_kept() {
         for mode in [Mode::OnDemand, Mode::AtLaunch] {
             let settings = EngineSettings { mode, ..EngineSettings::default() };
-            assert_eq!(settings.resolve(false), mode);
-            assert_eq!(settings.resolve(true), mode);
+            assert_eq!(settings.resolve(false, false), mode);
+            assert_eq!(settings.resolve(true, true), mode);
         }
     }
 }

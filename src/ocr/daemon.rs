@@ -26,7 +26,7 @@ use nix::fcntl::{Flock, FlockArg};
 
 use super::models::ModelFiles;
 use super::paddle_backend::PaddleBackend;
-use super::settings::{EngineSettings, Mode};
+use super::settings::{Device, EngineSettings, GPU_BUILD, Mode};
 use protocol::EngineState;
 
 #[derive(Debug, Clone)]
@@ -75,13 +75,24 @@ pub fn build_id() -> &'static str {
 
 pub fn resolve_mode(settings: &EngineSettings) -> Mode {
     let paths = Paths::from_env();
-    let mode = settings.resolve(paths.is_some());
+    let ruled_out = paths
+        .as_ref()
+        .is_some_and(|paths| gpu_ruled_out(&read_strikes(paths), build_id()));
+    let mode = settings.resolve(paths.is_some(), GPU_BUILD && !ruled_out);
 
     if mode == settings.mode {
-        eprintln!("ocr: engine mode = {mode:?}");
+        eprintln!("ocr: engine mode = {mode:?} (device {:?})", settings.device);
     } else {
+        let why = if paths.is_none() {
+            "no XDG_RUNTIME_DIR"
+        } else if ruled_out {
+            "this build already failed to run this engine on a GPU before"
+        } else {
+            "this build has no GPU support yet"
+        };
         eprintln!(
-            "ocr: engine mode = {mode:?} (config wants {:?}, but no XDG_RUNTIME_DIR)",
+            "ocr: engine mode = {mode:?} (config wants {:?}, but {why} -- \
+             set device = cpu in ~/.config/LumineCapture/ocr-engine to force a CPU daemon)",
             settings.mode
         );
     }
@@ -92,25 +103,36 @@ pub fn model_name(files: &ModelFiles) -> String {
     files.recognizer.to_string_lossy().into_owned()
 }
 
-pub fn engine_factory() -> server::Factory {
-    Arc::new(move |files: &ModelFiles| {
-        PaddleBackend::new(files)
+pub fn engine_factory(device: Device) -> server::Factory {
+    Arc::new(move |files: &ModelFiles| match device {
+        Device::Cpu => PaddleBackend::new(files)
             .map(|backend| server::Engine {
                 backend: Box::new(backend),
                 device: "cpu".into(),
             })
-            .map_err(|e| server::BuildError::Failed(e.to_string()))
+            .map_err(|e| server::BuildError::Failed(e.to_string())),
+        Device::Auto | Device::Gpu => Err(server::BuildError::NoGpu),
     })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Strike {
+    NoGpu,
+    Failed,
 }
 
 const STRIKE_LIMIT: usize = 3;
 const STRIKE_WINDOW_SECS: u64 = 600;
 const STRIKES_KEPT: usize = 8;
 
-pub fn record_strike(paths: &Paths, build: &str) {
+pub fn record_strike(paths: &Paths, build: &str, strike: Strike) {
     let old = read_strikes(paths);
     let mut lines: Vec<&str> = old.lines().collect();
-    let line = format!("{} {build}", unix_now());
+    let word = match strike {
+        Strike::NoGpu => "no-gpu",
+        Strike::Failed => "failed",
+    };
+    let line = format!("{} {word} {build}", unix_now());
     lines.push(&line);
     let text = lines[lines.len().saturating_sub(STRIKES_KEPT)..].join("\n") + "\n";
     if let Err(e) = fs::create_dir_all(&paths.dir).and_then(|()| fs::write(&paths.strikes, text)) {
@@ -124,17 +146,31 @@ pub fn read_strikes(paths: &Paths) -> String {
 
 /// Do not spawn the daemo. Cause build lacks GPU support, or the daemon has crashed 3 times within 10 minutes.
 pub fn daemon_blocked(strikes: &str, build: &str, now: u64) -> bool {
-    strikes_of(strikes, build)
-        .filter(|&time| now.saturating_sub(time) < STRIKE_WINDOW_SECS)
-        .count()
-        >= STRIKE_LIMIT
+    let mut failures = 0;
+    for (time, strike) in strikes_of(strikes, build) {
+        match strike {
+            Strike::NoGpu => return true,
+            Strike::Failed if now.saturating_sub(time) < STRIKE_WINDOW_SECS => failures += 1,
+            Strike::Failed => {}
+        }
+    }
+    failures >= STRIKE_LIMIT
 }
 
-fn strikes_of<'a>(strikes: &'a str, build: &'a str) -> impl Iterator<Item = u64> + 'a {
+pub fn gpu_ruled_out(strikes: &str, build: &str) -> bool {
+    strikes_of(strikes, build).any(|(_, strike)| strike == Strike::NoGpu)
+}
+
+fn strikes_of<'a>(strikes: &'a str, build: &'a str) -> impl Iterator<Item = (u64, Strike)> + 'a {
     strikes.lines().filter_map(move |line| {
-        let mut parts = line.splitn(2, ' ');
+        let mut parts = line.splitn(3, ' ');
         let time = parts.next()?.parse().ok()?;
-        (parts.next()? == build).then_some(time)
+        let strike = match parts.next()? {
+            "no-gpu" => Strike::NoGpu,
+            "failed" => Strike::Failed,
+            _ => return None,
+        };
+        (parts.next()? == build).then_some((time, strike))
     })
 }
 
@@ -232,7 +268,7 @@ fn serve(paths: Paths) -> Result<(), Box<dyn Error>> {
         paths,
         build_id().to_owned(),
         settings.daemon_idle,
-        engine_factory(),
+        engine_factory(settings.device),
     );
     server::serve(config)?;
     Ok(())
@@ -253,6 +289,7 @@ fn status(paths: &Paths) -> Result<(), Box<dyn Error>> {
         EngineState::Loading { model } => format!("loading {}", file_name(model)),
         EngineState::Ready { device, model } => format!("ready on {device}, {}", file_name(model)),
         EngineState::Failed(e) => format!("failed: {e}"),
+        EngineState::NoGpu => "no GPU available, leaving (OCR runs in the overlay instead)".to_owned(),
     };
     println!("ocr daemon: running, pid {}, up {}", status.pid, human(status.uptime_secs));
     println!("engine:     {engine}");
