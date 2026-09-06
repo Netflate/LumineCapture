@@ -34,7 +34,7 @@ pub struct EngineSettings {
 }
 
 // (feature = "ocr-gpu")
-pub const GPU_BUILD: bool = false;
+pub const GPU_BUILD: bool = cfg!(feature = "ocr-gpu");
 
 impl Default for EngineSettings {
     fn default() -> Self {

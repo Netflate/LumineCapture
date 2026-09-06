@@ -38,16 +38,29 @@ pub struct PaddleBackend {
 
 impl PaddleBackend {
     pub fn new(files: &ModelFiles) -> Result<Self, OcrError> {
+        Self::build(files, false)
+    }
+
+    pub fn on_gpu(files: &ModelFiles) -> Result<Self, OcrError> {
+        Self::build(files, true)
+    }
+
+    fn build(files: &ModelFiles, gpu: bool) -> Result<Self, OcrError> {
         let total = Instant::now();
         let threads = std::thread::available_parallelism()
             .map(|n| n.get())
             .unwrap_or(4);
+        let mut providers = Vec::new();
+        if gpu && cfg!(feature = "ocr-gpu") {
+            providers.push(OrtExecutionProvider::WebGPU);
+        }
         // Explicitly configuring the CPU Execution Provider disables ORT's arena allocator.
         // With the arena allocator enabled, scanning a 1920x2160 frame retains +-1.1 GB resident memory indefinitely;
         // without it, memory drops to ~145 MB, at the cost of a ~5-10% latency penalty per scan.
+        providers.push(OrtExecutionProvider::CPU);
         let ort = OrtSessionConfig::new()
             .with_intra_threads(threads)
-            .with_execution_providers(vec![OrtExecutionProvider::CPU]);
+            .with_execution_providers(providers);
 
         let stage = Instant::now();
         let detector = TextDetectionPredictor::builder()

@@ -86,15 +86,21 @@ pub fn resolve_mode(settings: &EngineSettings) -> Mode {
         let why = if paths.is_none() {
             "no XDG_RUNTIME_DIR"
         } else if ruled_out {
-            "this build already failed to run this engine on a GPU before"
+            "this binary already failed to put the engine on a GPU here"
         } else {
-            "this build has no GPU support yet"
+            "this binary has no GPU engine compiled in yet (nothing to do with your graphics card)"
         };
         eprintln!(
-            "ocr: engine mode = {mode:?} (config wants {:?}, but {why} -- \
-             set device = cpu in ~/.config/LumineCapture/ocr-engine to force a CPU daemon)",
+            "ocr: engine mode = {mode:?} (config wants {:?}; {why} -- \
+             set device = cpu in ~/.config/LumineCapture/ocr-engine to run the daemon on the CPU anyway)",
             settings.mode
         );
+    }
+    if mode != Mode::Daemon
+        && let Some(paths) = &paths
+        && !lock_free(&paths.lock)
+    {
+        eprintln!("ocr: a daemon from an earlier run is still up, this mode does not use it (--ocr-daemon stop)");
     }
     mode
 }
@@ -105,14 +111,28 @@ pub fn model_name(files: &ModelFiles) -> String {
 
 pub fn engine_factory(device: Device) -> server::Factory {
     Arc::new(move |files: &ModelFiles| match device {
-        Device::Cpu => PaddleBackend::new(files)
-            .map(|backend| server::Engine {
-                backend: Box::new(backend),
-                device: "cpu".into(),
-            })
-            .map_err(|e| server::BuildError::Failed(e.to_string())),
+        Device::Cpu => cpu_engine(files),
+        Device::Gpu if GPU_BUILD => gpu_engine(files),
         Device::Auto | Device::Gpu => Err(server::BuildError::NoGpu),
     })
+}
+
+fn cpu_engine(files: &ModelFiles) -> Result<server::Engine, server::BuildError> {
+    PaddleBackend::new(files)
+        .map(|backend| server::Engine {
+            backend: Box::new(backend),
+            device: "cpu".into(),
+        })
+        .map_err(|e| server::BuildError::Failed(e.to_string()))
+}
+
+fn gpu_engine(files: &ModelFiles) -> Result<server::Engine, server::BuildError> {
+    PaddleBackend::on_gpu(files)
+        .map(|backend| server::Engine {
+            backend: Box::new(backend),
+            device: "webgpu".into(),
+        })
+        .map_err(|e| server::BuildError::Failed(e.to_string()))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -142,6 +162,12 @@ pub fn record_strike(paths: &Paths, build: &str, strike: Strike) {
 
 pub fn read_strikes(paths: &Paths) -> String {
     fs::read_to_string(&paths.strikes).unwrap_or_default()
+}
+
+pub fn clear_strikes(paths: &Paths) {
+    if !read_strikes(paths).is_empty() {
+        let _ = fs::remove_file(&paths.strikes);
+    }
 }
 
 /// Do not spawn the daemo. Cause build lacks GPU support, or the daemon has crashed 3 times within 10 minutes.

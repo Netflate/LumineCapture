@@ -88,6 +88,7 @@ struct Shared {
     engine: Mutex<Option<Box<dyn OcrBackend>>>,
     activity: Mutex<Instant>,
     busy: AtomicUsize,
+    connections: AtomicUsize,
     quit: AtomicBool,
     served: AtomicU64,
     last_ms: AtomicU32,
@@ -152,6 +153,7 @@ pub fn serve(config: Config) -> Result<Outcome, String> {
         engine: Mutex::new(None),
         activity: Mutex::new(Instant::now()),
         busy: AtomicUsize::new(0),
+        connections: AtomicUsize::new(0),
         quit: AtomicBool::new(false),
         served: AtomicU64::new(0),
         last_ms: AtomicU32::new(0),
@@ -173,7 +175,10 @@ pub fn serve(config: Config) -> Result<Outcome, String> {
         let timeout = match shared.deadline() {
             Deadline::Never => PollTimeout::NONE,
             Deadline::In(left) if left.is_zero() => {
-                break if shared.unusable() { Outcome::Unusable } else { Outcome::Idle };
+                if shared.connections.load(Ordering::SeqCst) == 0 {
+                    break if shared.unusable() { Outcome::Unusable } else { Outcome::Idle };
+                }
+                PollTimeout::try_from(Duration::from_millis(50)).unwrap_or(PollTimeout::MAX)
             }
             // Add 1 ms: `poll` rounds timeouts down and would otherwise spin redundantly on the final millisecond.
             Deadline::In(left) => {
@@ -247,11 +252,13 @@ fn accept_all(listener: &UnixListener, shared: &Arc<Shared>) {
     loop {
         match listener.accept() {
             Ok((stream, _)) => {
-                let shared = shared.clone();
+                shared.connections.fetch_add(1, Ordering::SeqCst);
+                let owned = shared.clone();
                 let spawned = std::thread::Builder::new()
                     .name("ocr-conn".into())
-                    .spawn(move || handle(shared, stream));
+                    .spawn(move || handle(owned, stream));
                 if let Err(e) = spawned {
+                    shared.connections.fetch_sub(1, Ordering::SeqCst);
                     eprintln!("ocr-daemon: cannot serve a connection: {e}");
                 }
             }
@@ -268,6 +275,7 @@ fn accept_all(listener: &UnixListener, shared: &Arc<Shared>) {
 }
 
 fn handle(shared: Arc<Shared>, stream: UnixStream) {
+    let _open = Open(&shared);
     let timeout = Some(shared.io_timeout);
     let configured = stream
         .set_nonblocking(false)
@@ -386,6 +394,15 @@ fn recognize(shared: &Shared, peer: BorrowedFd, image: OcrImage) -> Reply {
     // Reclaim memory freed from thread arenas by calling glibc memory trim on long-running daemons.
     unsafe { nix::libc::malloc_trim(0) };
     reply
+}
+
+struct Open<'a>(&'a Shared);
+
+impl Drop for Open<'_> {
+    fn drop(&mut self) {
+        self.0.connections.fetch_sub(1, Ordering::SeqCst);
+        self.0.wake();
+    }
 }
 
 struct Busy<'a>(&'a Shared);

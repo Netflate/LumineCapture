@@ -20,8 +20,8 @@ use nix::unistd::Pid;
 
 use super::protocol::{self, EngineState, Outgoing, PROTO, Reply, Status, Welcome};
 use super::{
-    Paths, Strike, build_id, daemon_blocked, lock_file_pid, lock_free, model_name, read_strikes,
-    record_strike, spawn_daemon, unix_now, wait_lock_free,
+    Paths, Strike, build_id, clear_strikes, daemon_blocked, lock_file_pid, lock_free, model_name,
+    read_strikes, record_strike, spawn_daemon, unix_now, wait_lock_free,
 };
 use crate::ocr::models::ModelFiles;
 use crate::ocr::{CANCELLED, OcrBackend, OcrError, OcrImage, OcrText, default_backend};
@@ -152,19 +152,21 @@ impl OcrBackend for DaemonBackend {
             match self.remote(&image, cancelled) {
                 Remote::Done(text) => {
                     eprintln!("ocr: read by the daemon");
+                    clear_strikes(&self.config.paths);
                     // if there is daemon, no need in additional local engine, dropping it
                     self.local.borrow_mut().take();
                     return Ok(text);
                 }
                 Remote::Cancelled => return Err(CANCELLED.into()),
-                Remote::Local => {}
+                Remote::Local => eprintln!("ocr: the daemon is not ready yet, reading in this process"),
                 Remote::Fail(fail) => {
                     self.strike(&fail);
                     self.broken.set(true);
                 }
             }
+        } else {
+            eprintln!("ocr: reading in this process (no daemon)");
         }
-        eprintln!("ocr: reading in this process (no daemon)");
         let mut local = self.local.borrow_mut();
         if local.is_none() {
             *local = Some((self.config.local)(&self.files)?);
@@ -175,6 +177,13 @@ impl OcrBackend for DaemonBackend {
 
 impl DaemonBackend {
     fn open(&self) -> Result<Session, Fail> {
+        match self.open_once() {
+            Err(Fail::Protocol(_)) if lock_free(&self.config.paths.lock) => self.open_once(),
+            result => result,
+        }
+    }
+
+    fn open_once(&self) -> Result<Session, Fail> {
         let mut session = self.handshake()?;
         if self.foreign(&session.welcome) {
             eprintln!(

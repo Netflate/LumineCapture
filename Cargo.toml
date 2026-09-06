@@ -42,6 +42,7 @@ zune-png = "0.5.2"
 
 # ocr - PaddleOCR (PP-OCRv5) via ONNX Runtime; models are downloaded at runtime (ocr/models.rs)
 oar-ocr = "0.9"
+ort = { version = "=2.0.0-rc.13", features = ["webgpu"], optional = true }
 hmac-sha256 = "1.1"
 ureq = { version = "3.4", default-features = false, features = ["native-tls"] }
 
@@ -51,6 +52,9 @@ strum = { version = "0.28", features = ["derive"] }
 
 # optimize dependencies in dev builds too. ONNX Runtime's glue and image
 # decode/resize are +-2x slower without it; recompiles of this crate are unaffected.
+[features]
+ocr-gpu = ["dep:ort", "oar-ocr/webgpu"]
+
 [profile.dev.package."*"]
 opt-level = 3
 

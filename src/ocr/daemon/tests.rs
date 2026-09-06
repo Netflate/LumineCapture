@@ -426,6 +426,23 @@ fn idle_timer_does_not_fire_during_a_scan() {
 }
 
 #[test]
+fn idle_exit_waits_for_an_open_connection() {
+    let (dir, paths) = dir_and_paths("idle-conn");
+    let server = start(server::Config {
+        idle: Some(Duration::from_millis(200)),
+        io_timeout: Duration::from_millis(900),
+        ..config(&dir, factory(Fake::new("d")))
+    });
+    let held = Conn::open(&paths);
+    assert!(matches!(held.ask(Outgoing::Hello(BUILD)), Reply::Welcome(_)));
+    thread::sleep(Duration::from_millis(500));
+    assert!(!server.is_finished(), "left while a client was mid-conversation");
+
+    drop(held);
+    assert_eq!(finish(server), Outcome::Idle);
+}
+
+#[test]
 fn shutdown_does_not_wait_for_a_long_scan() {
     let (dir, paths) = dir_and_paths("shutdown");
     let fake = Fake::new("d").slow(400, Duration::from_millis(5)).deaf();
@@ -511,6 +528,36 @@ fn only_the_latest_requested_model_is_kept() {
     assert!(wait_until(LONG, || state(&paths).as_ref() == Some(&wanted)));
     thread::sleep(Duration::from_millis(450));
     assert_eq!(state(&paths), Some(wanted), "the slow, older build overwrote the newer model");
+
+    shutdown(&paths);
+    assert_eq!(finish(server), Outcome::Shutdown);
+}
+
+#[test]
+fn switching_models_during_a_scan_keeps_the_answer() {
+    let (dir, paths) = dir_and_paths("switch-scan");
+    let make: Factory = Arc::new(|files: &ModelFiles| {
+        let label = if model_name(files).contains("second") { "second" } else { "first" };
+        Ok(Engine {
+            backend: Box::new(Fake::new(label).slow(60, Duration::from_millis(5))),
+            device: "fake".into(),
+        })
+    });
+    let server = start(config(&dir, make));
+    let (first, second) = (testing::files("first"), testing::files("second"));
+    load(&paths, &first);
+    wait_ready(&paths);
+
+    let (scan, _) = Conn::greeted(&paths);
+    scan.send(Outgoing::Recognize(&img()));
+    thread::sleep(Duration::from_millis(50));
+    load(&paths, &second);
+    match scan.reply() {
+        Reply::Lines(text) => assert_eq!(label_of(&text), "first", "the running scan kept its engine"),
+        other => panic!("expected lines, got {other:?}"),
+    }
+    let wanted = ready(&second);
+    assert!(wait_until(LONG, || state(&paths).as_ref() == Some(&wanted)));
 
     shutdown(&paths);
     assert_eq!(finish(server), Outcome::Shutdown);
@@ -620,6 +667,45 @@ fn hung_daemon_is_killed_and_the_scan_read_locally() {
     assert!(read_strikes(&paths).contains("failed"));
     drop(release);
     daemon.join().unwrap();
+}
+
+#[test]
+fn handshake_with_a_leaving_daemon_is_retried_without_a_strike() {
+    let (dir, paths) = dir_and_paths("leaving");
+    let probe = Probe::default();
+    let servers = Servers::default();
+    let spawn = thread_spawner(&dir, factory(Fake::new("fresh")), &probe, &servers);
+    let socket = paths.socket.clone();
+    let leaving = fake_daemon(&paths, 1, move |stream| {
+        let _ = fs::remove_file(&socket);
+        drop(stream);
+    });
+
+    let backend = client::connect_with(client_config(&paths, spawn, &probe), &testing::files("m")).unwrap();
+    leaving.join().unwrap();
+    assert!(read_strikes(&paths).is_empty(), "a daemon on its way out is not a failure");
+    assert_eq!(probe.spawns(), 1);
+    assert!(wait_until(LONG, || read(&*backend) == "fresh"));
+
+    shutdown(&paths);
+    assert_eq!(finish_all(&servers), vec![Outcome::Shutdown]);
+}
+
+#[test]
+fn a_successful_scan_clears_old_strikes() {
+    let (dir, paths) = dir_and_paths("clear-strikes");
+    record_strike(&paths, BUILD, Strike::Failed);
+    record_strike(&paths, BUILD, Strike::Failed);
+    let probe = Probe::default();
+    let servers = Servers::default();
+    let spawn = thread_spawner(&dir, factory(Fake::new("daemon")), &probe, &servers);
+
+    let backend = client::connect_with(client_config(&paths, spawn, &probe), &testing::files("m")).unwrap();
+    assert!(wait_until(LONG, || read(&*backend) == "daemon"));
+    assert!(read_strikes(&paths).is_empty(), "a working daemon forgets old failures");
+
+    shutdown(&paths);
+    assert_eq!(finish_all(&servers), vec![Outcome::Shutdown]);
 }
 
 #[test]
