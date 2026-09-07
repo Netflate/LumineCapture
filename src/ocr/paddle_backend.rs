@@ -59,9 +59,16 @@ impl PaddleBackend {
         // With the arena allocator enabled, scanning a 1920x2160 frame retains +-1.1 GB resident memory indefinitely;
         // without it, memory drops to ~145 MB, at the cost of a ~5-10% latency penalty per scan.
         providers.push(OrtExecutionProvider::CPU);
-        let ort = OrtSessionConfig::new()
+        let mut ort = OrtSessionConfig::new()
             .with_intra_threads(threads)
             .with_execution_providers(providers);
+        if gpu {
+            // WebGPU keeps buffers sized for the largest image
+            // Without cache it stays under +-130 MB, with only a +-5% slowdown on scans.
+            for kind in ["storage", "uniform", "queryResolve", "default"] {
+                ort = ort.add_config_entry(format!("ep.webgpuexecutionprovider.{kind}BufferCacheMode"), "disabled");
+            }
+        }
 
         let stage = Instant::now();
         let detector = TextDetectionPredictor::builder()
