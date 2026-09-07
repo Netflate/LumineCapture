@@ -135,6 +135,7 @@ mode = on-demand
 # Only the daemon uses this. A GPU engine reads text about twice as fast, but holds
 # video memory for as long as the daemon lives, so nothing runs on the GPU unless
 # you ask for the daemon. auto measures this machine once and keeps the faster one.
+# The GPU needs libwebgpu_dawn.so (14 MB); the daemon downloads it the first time.
 # auto | cpu | gpu
 device = auto
 

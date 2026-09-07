@@ -852,6 +852,7 @@ fn cancelling_while_the_daemon_scans_returns_at_once() {
 const CHILD_DIR: &str = "LUMINE_TEST_DAEMON_DIR";
 const CHILD_SCAN_MS: &str = "LUMINE_TEST_DAEMON_SCAN_MS";
 const CHILD_FD: &str = "LUMINE_TEST_DAEMON_FD";
+const CHILD_CRASH: &str = "LUMINE_TEST_DAEMON_CRASH";
 
 #[test]
 #[ignore = "entry point of the daemon processes started by the tests below"]
@@ -870,9 +871,13 @@ fn child_daemon() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
     let fake = Fake::new("child").slow(scan_ms / 5, Duration::from_millis(5));
+    let factory = match std::env::var_os(CHILD_CRASH) {
+        Some(_) => Arc::new(|_: &ModelFiles| -> Result<Engine, BuildError> { std::process::abort() }),
+        None => factory(fake),
+    };
     let _ = server::serve(server::Config {
         idle: Some(Duration::from_secs(30)),
-        ..config(&dir, factory(fake))
+        ..config(&dir, factory)
     });
     std::process::exit(0);
 }
@@ -1007,6 +1012,40 @@ fn hung_real_daemon_is_killed_by_the_watchdog() {
     assert!(started.elapsed() < Duration::from_secs(3));
     assert!(wait_until(LONG, || !alive(pid)), "the hung daemon is still alive");
     assert!(wait_until(LONG, || lock_free(&paths.lock)));
+}
+
+#[test]
+fn daemon_that_dies_while_loading_is_not_respawned_forever() {
+    let (dir, paths) = dir_and_paths("proc-crash");
+    let probe = Probe::default();
+    let spawns = probe.spawns.clone();
+    let root = dir.to_path_buf();
+    let spawn: Spawner = Arc::new(move || {
+        spawns.fetch_add(1, Ordering::SeqCst);
+        let mut command = child_command(&root, 0);
+        command.env(CHILD_CRASH, "1");
+        spawn_detached(command, Some(&root.join("child.log")))
+    });
+    let backend = client::connect_with(client_config(&paths, spawn, &probe), &testing::files("m")).unwrap();
+    for _ in 0..6 {
+        assert!(wait_until(LONG, || children(&dir).is_empty()));
+        assert_eq!(read(&*backend), "local");
+    }
+    assert_eq!(probe.spawns(), 1, "every scan started a daemon that died");
+    assert!(read_strikes(&paths).contains("failed"));
+    assert!(wait_until(LONG, || children(&dir).is_empty()));
+}
+
+#[test]
+fn a_daemon_that_died_on_the_gpu_is_not_followed_onto_it() {
+    if !crate::ocr::settings::GPU_BUILD {
+        return;
+    }
+    let (_dir, paths) = dir_and_paths("gpu-marker");
+    fs::write(paths.dir.join("ocr.gpu-loading"), "1").unwrap();
+    let factory = super::engine_factory(crate::ocr::settings::Device::Gpu, paths.clone());
+    assert!(matches!(factory(&testing::files("m")), Err(BuildError::NoGpu)));
+    assert!(!paths.dir.join("ocr.gpu-loading").exists());
 }
 
 #[test]
@@ -1146,7 +1185,7 @@ fn auto_lands_on_the_device_this_machine_measured() {
     let record = super::measurement().expect("run --ocr-daemon calibrate first");
 
     let (dir, paths) = dir_and_paths("auto-real");
-    let factory = super::engine_factory(crate::ocr::settings::Device::Auto);
+    let factory = super::engine_factory(crate::ocr::settings::Device::Auto, paths.clone());
     let server = start(config(&dir, factory));
     load(&paths, &files);
     assert!(wait_until(Duration::from_secs(300), || matches!(
@@ -1163,4 +1202,72 @@ fn auto_lands_on_the_device_this_machine_measured() {
         (verdict, reached) => panic!("measured {verdict:?} but the daemon reached {reached:?}"),
     }
     finish(server);
+}
+
+fn gpu_traces() -> Vec<String> {
+    let maps = fs::read_to_string("/proc/self/maps").unwrap_or_default();
+    let mut traces: Vec<String> = maps
+        .lines()
+        .filter_map(|line| line.split_whitespace().nth(5))
+        .filter(|lib| ["libwebgpu_dawn", "libvulkan", "libnvidia", "libGLX", "libEGL", "libdrm", "_dri"].iter().any(|name| lib.contains(name)))
+        .map(str::to_owned)
+        .collect();
+    for fd in fs::read_dir("/proc/self/fd").into_iter().flatten().filter_map(Result::ok) {
+        if let Ok(target) = fs::read_link(fd.path())
+            && (target.starts_with("/dev/dri") || target.to_string_lossy().starts_with("/dev/nvidia"))
+        {
+            traces.push(target.display().to_string());
+        }
+    }
+    traces.sort();
+    traces.dedup();
+    traces
+}
+
+fn read_probe(gpu: bool) -> Vec<String> {
+    let models = crate::ocr::models::OcrModels::load();
+    let files = models
+        .active()
+        .and_then(|idx| models.files(idx))
+        .expect("install an OCR model first");
+    let backend: Box<dyn OcrBackend> = if gpu {
+        Box::new(crate::ocr::paddle_backend::PaddleBackend::on_gpu(&files).expect("gpu engine"))
+    } else {
+        crate::ocr::build_backend(crate::ocr::settings::Mode::OnDemand, &files).expect("local engine")
+    };
+    backend.recognize(super::calibrate::probe_image(), &never).expect("scan");
+    gpu_traces()
+}
+
+#[test]
+#[ignore]
+fn the_local_engine_never_touches_the_gpu() {
+    let traces = read_probe(false);
+    assert!(traces.is_empty(), "on-demand OCR opened the GPU: {traces:?}");
+}
+
+#[test]
+#[ignore]
+fn the_gpu_engine_is_seen_by_the_check_above() {
+    let traces = read_probe(true);
+    assert!(!traces.is_empty(), "the GPU engine left no trace, so the check proves nothing");
+}
+
+#[test]
+#[ignore]
+fn local_engine_cost() {
+    let models = crate::ocr::models::OcrModels::load();
+    let files = models.active().and_then(|idx| models.files(idx)).expect("install an OCR model first");
+    let started = Instant::now();
+    let backend = crate::ocr::build_backend(crate::ocr::settings::Mode::OnDemand, &files).unwrap();
+    let build_ms = started.elapsed().as_millis();
+    let mut scans = Vec::new();
+    for _ in 0..5 {
+        let started = Instant::now();
+        backend.recognize(super::calibrate::probe_image(), &never).unwrap();
+        scans.push(started.elapsed().as_millis());
+    }
+    let status = fs::read_to_string("/proc/self/status").unwrap();
+    let field = |name: &str| status.lines().find(|l| l.starts_with(name)).unwrap_or_default().to_owned();
+    println!("COST build {build_ms} ms, scans {scans:?} ms, {}, {}", field("VmHWM"), field("Threads"));
 }

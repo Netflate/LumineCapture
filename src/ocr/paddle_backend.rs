@@ -51,7 +51,8 @@ impl PaddleBackend {
             .map(|n| n.get())
             .unwrap_or(4);
         let mut providers = Vec::new();
-        if gpu && cfg!(feature = "ocr-gpu") {
+        if gpu {
+            super::dawn::load()?;
             providers.push(OrtExecutionProvider::WebGPU);
         }
         // Explicitly configuring the CPU Execution Provider disables ORT's arena allocator.

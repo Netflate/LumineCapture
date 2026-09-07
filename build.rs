@@ -1,22 +1,123 @@
+use std::fmt::Write as _;
 use std::fs;
 use std::path::PathBuf;
+
+// Dawn functions called by ORT. If ORT starts calling a new one, the linker will re-add libwebgpu_dawn.so
+// to NEEDED, which will be caught by the the_local_engine_never_touches_the_gpu test
+const DAWN: &[&str] = &[
+    "wgpuAdapterGetLimits",
+    "wgpuAdapterHasFeature",
+    "wgpuAdapterInfoFreeMembers",
+    "wgpuAdapterPropertiesSubgroupMatrixConfigsFreeMembers",
+    "wgpuAdapterRelease",
+    "wgpuAdapterRequestDevice",
+    "wgpuBindGroupLayoutRelease",
+    "wgpuBindGroupRelease",
+    "wgpuBufferAddRef",
+    "wgpuBufferDestroy",
+    "wgpuBufferGetConstMappedRange",
+    "wgpuBufferGetMappedRange",
+    "wgpuBufferGetMapState",
+    "wgpuBufferGetSize",
+    "wgpuBufferGetUsage",
+    "wgpuBufferMapAsync",
+    "wgpuBufferRelease",
+    "wgpuBufferUnmap",
+    "wgpuCommandBufferRelease",
+    "wgpuCommandEncoderBeginComputePass",
+    "wgpuCommandEncoderClearBuffer",
+    "wgpuCommandEncoderCopyBufferToBuffer",
+    "wgpuCommandEncoderFinish",
+    "wgpuCommandEncoderRelease",
+    "wgpuCommandEncoderResolveQuerySet",
+    "wgpuComputePassEncoderDispatchWorkgroups",
+    "wgpuComputePassEncoderDispatchWorkgroupsIndirect",
+    "wgpuComputePassEncoderEnd",
+    "wgpuComputePassEncoderRelease",
+    "wgpuComputePassEncoderSetBindGroup",
+    "wgpuComputePassEncoderSetPipeline",
+    "wgpuComputePassEncoderWriteTimestamp",
+    "wgpuComputePipelineAddRef",
+    "wgpuComputePipelineGetBindGroupLayout",
+    "wgpuComputePipelineRelease",
+    "wgpuCreateInstance",
+    "wgpuDeviceAddRef",
+    "wgpuDeviceCreateBindGroup",
+    "wgpuDeviceCreateBuffer",
+    "wgpuDeviceCreateCommandEncoder",
+    "wgpuDeviceCreateComputePipelineAsync",
+    "wgpuDeviceCreateQuerySet",
+    "wgpuDeviceCreateShaderModule",
+    "wgpuDeviceGetAdapterInfo",
+    "wgpuDeviceGetFeatures",
+    "wgpuDeviceGetLimits",
+    "wgpuDeviceGetQueue",
+    "wgpuDevicePopErrorScope",
+    "wgpuDevicePushErrorScope",
+    "wgpuDeviceRelease",
+    "wgpuInstanceAddRef",
+    "wgpuInstanceRelease",
+    "wgpuInstanceRequestAdapter",
+    "wgpuInstanceWaitAny",
+    "wgpuPipelineLayoutRelease",
+    "wgpuQuerySetAddRef",
+    "wgpuQuerySetRelease",
+    "wgpuQueueRelease",
+    "wgpuQueueSubmit",
+    "wgpuQueueWriteBuffer",
+    "wgpuShaderModuleAddRef",
+    "wgpuShaderModuleRelease",
+    "wgpuSupportedFeaturesFreeMembers",
+    "wgpuSurfaceRelease",
+];
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     if std::env::var_os("CARGO_FEATURE_OCR_GPU").is_none() {
         return;
     }
+    let dist = dawn_dir();
+    if std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("x86_64") {
+        // launching without Dawn, ORT hits the trampolines
+        // while the library itself is loaded via dlopen only for GPU (ocr/dawn.rs)
+        if let Some(dir) = &dist {
+            println!("cargo:rustc-env=LUMINE_DAWN_DIST={}", dir.display());
+        }
+        write_trampolines();
+        return;
+    }
     // The GPU dist links libwebgpu_dawn.so dynamically and the binary does not
     // start without it. Look next to the binary first, so a packaged copy works,
     // then in the ort cache this build took the library from.
     println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN");
-    match dawn_dir() {
+    match dist {
         Some(dir) => println!("cargo:rustc-link-arg=-Wl,-rpath,{}", dir.display()),
         None => println!(
             "cargo:warning=libwebgpu_dawn.so not found in the ort cache; \
              an installed binary may need LD_LIBRARY_PATH"
         ),
     }
+}
+
+fn write_trampolines() {
+    let out = PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR"));
+    let mut asm = String::from(".section .text.lumine_dawn,\"ax\",@progbits\n");
+    let mut names = format!("pub const NAMES: [&std::ffi::CStr; {}] = [\n", DAWN.len());
+    for (i, name) in DAWN.iter().enumerate() {
+        let _ = write!(
+            asm,
+            ".p2align 4\n.globl {name}\n.hidden {name}\n.type {name},@function\n{name}:\n    jmp qword ptr [rip + lumine_dawn_slots + {}]\n",
+            i * 8
+        );
+        let _ = writeln!(names, "    c\"{name}\",");
+    }
+    asm.push_str(".section .data.lumine_dawn,\"aw\",@progbits\n.p2align 3\n.globl lumine_dawn_slots\n.hidden lumine_dawn_slots\nlumine_dawn_slots:\n");
+    for _ in DAWN {
+        asm.push_str("    .quad lumine_dawn_missing\n");
+    }
+    names.push_str("];\n");
+    fs::write(out.join("dawn.s"), asm).expect("write dawn.s");
+    fs::write(out.join("dawn_names.rs"), names).expect("write dawn_names.rs");
 }
 
 fn dawn_dir() -> Option<PathBuf> {

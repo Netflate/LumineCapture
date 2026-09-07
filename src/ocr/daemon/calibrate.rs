@@ -162,16 +162,24 @@ pub fn parse(text: &str, key: &str) -> Option<Record> {
 
 /// Measures the execution time of a single warm scan on each device. Runs on the daemon's
 /// engine thread so the overlay process can continue recognizing text while this runs.
-pub fn run(files: &ModelFiles) -> Record {
+pub fn run(files: &ModelFiles, save: &dyn Fn(&Record)) -> Record {
     eprintln!("ocr-daemon: measuring this machine once (CPU against GPU), takes a few seconds");
     let cpu_ms = guarded(files, false);
-    let gpu_ms = if GPU_BUILD { guarded(files, true) } else { None };
-    let record = Record {
-        verdict: decide(cpu_ms, gpu_ms),
+    let mut record = Record {
+        verdict: decide(cpu_ms, None),
         cpu_ms,
-        gpu_ms,
+        gpu_ms: None,
         at: unix_now(),
     };
+    if GPU_BUILD {
+        // FIX 
+        // If gpu fails, the whoole process will crash, record remains "CPU, GPU failed"
+        // and the measurement will not be repeated in an inifnite glitched loop
+        save(&record);
+        record.gpu_ms = guarded(files, true);
+        record.verdict = decide(cpu_ms, record.gpu_ms);
+    }
+    save(&record);
     eprintln!("ocr-daemon: measured, {}", record.summary());
     record
 }

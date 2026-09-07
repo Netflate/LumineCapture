@@ -34,6 +34,7 @@
 // daemon with always 100+mb taken is not a good idea, sooo it's not optimal
 pub mod bidi;
 pub mod daemon;
+pub mod dawn;
 pub mod download;
 pub mod draw;
 pub mod layout;

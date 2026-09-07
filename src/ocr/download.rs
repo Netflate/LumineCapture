@@ -119,7 +119,7 @@ fn run(jobs: Receiver<Job>, updates: Sender<Update>, stop: Arc<AtomicBool>) {
     }
 }
 
-fn agent() -> ureq::Agent {
+pub fn agent() -> ureq::Agent {
     let tls = TlsConfig::builder()
         .provider(TlsProvider::NativeTls)
         .root_certs(RootCerts::PlatformVerifier)
@@ -156,7 +156,8 @@ fn fetch_model(
     let mut finished = 0;
     let mut shown = 0;
     for asset in missing {
-        fetch(agent, asset, &job.dir, &job.cancel, stop, |got| {
+        let url = format!("{BASE_URL}/{}", asset.file);
+        fetch(agent, &url, asset, &job.dir, &job.cancel, stop, |got| {
             let percent = ((finished + got) * 100 / total.max(1)) as u8;
             if percent != shown {
                 shown = percent;
@@ -168,8 +169,9 @@ fn fetch_model(
     Ok(())
 }
 
-fn fetch(
+pub fn fetch(
     agent: &ureq::Agent,
+    url: &str,
     asset: &Asset,
     dir: &Path,
     cancel: &AtomicBool,
@@ -199,8 +201,7 @@ fn fetch(
     }
 
     if have < asset.size {
-        let url = format!("{BASE_URL}/{}", asset.file);
-        let mut request = agent.get(url.as_str());
+        let mut request = agent.get(url);
         if have > 0 {
             request = request.header("Range", format!("bytes={have}-"));
         }

@@ -25,7 +25,7 @@ use nix::fcntl::{Flock, FlockArg};
 use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
 
 use super::protocol::{self, EngineState, PROTO, Reply, Request, Status, Welcome};
-use super::{Paths, model_name};
+use super::{Paths, Strike, model_name, record_strike};
 use crate::ocr::models::ModelFiles;
 use crate::ocr::{OcrBackend, OcrImage};
 
@@ -76,6 +76,7 @@ pub enum Outcome {
 }
 
 struct Shared {
+    paths: Paths,
     build: String,
     factory: Factory,
     idle: Option<Duration>,
@@ -141,6 +142,7 @@ pub fn serve(config: Config) -> Result<Outcome, String> {
     }
 
     let shared = Arc::new(Shared {
+        paths: paths.clone(),
         build,
         factory,
         idle,
@@ -357,7 +359,12 @@ fn load(shared: &Arc<Shared>, files: ModelFiles) {
                     model: model_name(&files),
                 }
             }
-            Err(BuildError::NoGpu) => EngineState::NoGpu,
+            Err(BuildError::NoGpu) => {
+                // client might not catch this state before the daemon exits
+                // so we remember it here to prevent repeated attempts to load a GPU engine
+                record_strike(&shared.paths, &shared.build, Strike::NoGpu);
+                EngineState::NoGpu
+            }
             Err(BuildError::Failed(e)) => EngineState::Failed(e),
         };
         eprintln!("ocr-daemon: engine {state:?} after {} ms", started.elapsed().as_millis());

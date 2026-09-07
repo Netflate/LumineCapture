@@ -25,6 +25,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use nix::fcntl::{Flock, FlockArg};
 
+use super::dawn;
 use super::models::ModelFiles;
 use super::paddle_backend::PaddleBackend;
 use super::settings::{Device, EngineSettings, GPU_BUILD, Mode};
@@ -88,6 +89,27 @@ pub fn save_measurement(record: &Record) {
 
 pub fn resolve_mode(settings: &EngineSettings) -> Mode {
     let paths = Paths::from_env();
+    // local modes read neither strikes nor measurements nor /sys
+    // daemon and GPU do not exist for them to keep them isolated to avoid bugs
+    if settings.mode != Mode::Daemon {
+        eprintln!(
+            "ocr: engine mode = {:?} (nothing stays in the background; mode = daemon in \
+             ~/.config/LumineCapture/ocr-engine keeps a faster engine warm instead)",
+            settings.mode
+        );
+        if let Some(paths) = paths
+            && !lock_free(&paths.lock)
+        {
+            // daemon left over from mode = daemon would otherwise hold memory (and VRAM) until idling out
+            std::thread::spawn(move || {
+                if client::stop(&paths, Duration::from_secs(2), &client::kill_hard) == Ok(true) {
+                    eprintln!("ocr: stopped the daemon left from mode = daemon");
+                }
+            });
+        }
+        return settings.mode;
+    }
+
     let ruled_out = paths
         .as_ref()
         .is_some_and(|paths| gpu_ruled_out(&read_strikes(paths), build_id()));
@@ -97,11 +119,6 @@ pub fn resolve_mode(settings: &EngineSettings) -> Mode {
 
     if mode == settings.mode {
         let how = match (mode, measured) {
-            (Mode::OnDemand | Mode::AtLaunch, _) => {
-                "nothing stays in the background; mode = daemon in ~/.config/LumineCapture/ocr-engine \
-                 keeps a faster engine warm instead"
-                    .to_owned()
-            }
             (_, Some(record)) if settings.device == Device::Auto => match record.verdict {
                 Verdict::Gpu => {
                     format!("{}, the daemon holds that engine in video memory", record.summary())
@@ -113,7 +130,12 @@ pub fn resolve_mode(settings: &EngineSettings) -> Mode {
             }
             _ => format!("device {:?}", settings.device),
         };
-        eprintln!("ocr: engine mode = {mode:?} ({how})");
+        let fetch = if mode == Mode::Daemon && settings.device != Device::Cpu && dawn::find().is_none() {
+            format!("; the daemon downloads {} (14 MB) first, OCR runs here meanwhile", dawn::LIBRARY)
+        } else {
+            String::new()
+        };
+        eprintln!("ocr: engine mode = {mode:?} ({how}{fetch})");
     } else {
         let why = if paths.is_none() {
             "no XDG_RUNTIME_DIR".to_owned()
@@ -147,21 +169,18 @@ pub fn model_name(files: &ModelFiles) -> String {
     files.recognizer.to_string_lossy().into_owned()
 }
 
-pub fn engine_factory(device: Device) -> server::Factory {
+pub fn engine_factory(device: Device, paths: Paths) -> server::Factory {
     Arc::new(move |files: &ModelFiles| match device {
         Device::Cpu => cpu_engine(files),
-        Device::Gpu if GPU_BUILD => gpu_engine(files),
+        Device::Gpu if GPU_BUILD => gpu_engine(&paths, files),
         Device::Auto if GPU_BUILD => match measurement().map(|record| record.verdict) {
-            Some(Verdict::Gpu) => gpu_engine(files),
+            Some(Verdict::Gpu) => gpu_engine(&paths, files),
             Some(Verdict::Cpu) => Err(server::BuildError::NoGpu),
-            None => {
-                let record = calibrate::run(files);
-                save_measurement(&record);
-                match record.verdict {
-                    Verdict::Gpu => gpu_engine(files),
-                    Verdict::Cpu => Err(server::BuildError::NoGpu),
-                }
-            }
+            None if let Err(e) = gpu_library() => Err(e),
+            None => match calibrate::run(files, &save_measurement).verdict {
+                Verdict::Gpu => gpu_engine(&paths, files),
+                Verdict::Cpu => Err(server::BuildError::NoGpu),
+            },
         },
         Device::Auto | Device::Gpu => Err(server::BuildError::NoGpu),
     })
@@ -176,13 +195,35 @@ fn cpu_engine(files: &ModelFiles) -> Result<server::Engine, server::BuildError> 
         .map_err(|e| server::BuildError::Failed(e.to_string()))
 }
 
-fn gpu_engine(files: &ModelFiles) -> Result<server::Engine, server::BuildError> {
-    PaddleBackend::on_gpu(files)
+// failed load is marked as Failed, not NoGpu
+// so without network, it ll try again later rather than waiting until reboot
+fn gpu_library() -> Result<(), server::BuildError> {
+    dawn::ensure().map_err(|e| {
+        eprintln!("ocr-daemon: {e}");
+        server::BuildError::Failed(e)
+    })
+}
+
+fn gpu_engine(paths: &Paths, files: &ModelFiles) -> Result<server::Engine, server::BuildError> {
+    gpu_library()?;
+    // fixxxx, segfault in the driver cannot be caught by catch_unwind 
+    // next daemon learns about it from the leftover file
+    let marker = paths.dir.join("ocr.gpu-loading");
+    let pid = std::process::id().to_string();
+    if fs::read_to_string(&marker).is_ok_and(|owner| owner.trim() != pid) {
+        let _ = fs::remove_file(&marker);
+        eprintln!("ocr-daemon: the previous daemon died while putting the engine on the GPU, not trying again");
+        return Err(server::BuildError::NoGpu);
+    }
+    let _ = fs::write(&marker, &pid);
+    let built = PaddleBackend::on_gpu(files)
         .map(|backend| server::Engine {
             backend: Box::new(backend),
             device: "webgpu".into(),
         })
-        .map_err(|e| server::BuildError::Failed(e.to_string()))
+        .map_err(|e| server::BuildError::Failed(e.to_string()));
+    let _ = fs::remove_file(&marker);
+    built
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -347,8 +388,11 @@ fn recalibrate(paths: &Paths) -> Result<(), Box<dyn Error>> {
         .active()
         .and_then(|idx| models.files(idx))
         .ok_or("no OCR model is installed yet, install one in the overlay first")?;
-    let record = calibrate::run(&files);
-    save_measurement(&record);
+    if GPU_BUILD {
+        dawn::ensure()?;
+    }
+    let record = calibrate::run(&files, &save_measurement);
+    clear_strikes(paths);
     println!("ocr: {}", record.summary());
     if let Some(path) = calibrate::cache_path() {
         println!("saved to {}", path.display());
@@ -362,10 +406,10 @@ fn recalibrate(paths: &Paths) -> Result<(), Box<dyn Error>> {
 fn serve(paths: Paths) -> Result<(), Box<dyn Error>> {
     let settings = EngineSettings::load();
     let config = server::Config::new(
-        paths,
+        paths.clone(),
         build_id().to_owned(),
         settings.daemon_idle,
-        engine_factory(settings.device),
+        engine_factory(settings.device, paths.clone()),
     );
     server::serve(config)?;
     Ok(())
@@ -392,6 +436,12 @@ fn status(paths: &Paths) -> Result<(), Box<dyn Error>> {
     println!("engine:     {engine}");
     if let Some(record) = measurement() {
         println!("measured:   {}", record.summary());
+    }
+    if GPU_BUILD {
+        match dawn::find() {
+            Some(path) => println!("gpu lib:    {}", path.display()),
+            None => println!("gpu lib:    not downloaded yet, the daemon fetches it when it needs the GPU"),
+        }
     }
     println!("served:     {} scan(s), last took {} ms", status.served, status.last_ms);
     println!("memory:     {} MB", status.rss_kb / 1024);

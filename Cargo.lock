@@ -16,6 +16,7 @@ dependencies = [
  "futures",
  "hmac-sha256",
  "image",
+ "lzma-rust2",
  "memmap2",
  "nix 0.31.2",
  "oar-ocr",

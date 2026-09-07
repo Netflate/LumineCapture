@@ -101,6 +101,7 @@ pub fn connect_with(config: Config, files: &ModelFiles) -> Result<Box<dyn OcrBac
         files: files.clone(),
         local: RefCell::new(None),
         broken: Cell::new(false),
+        spawned: Cell::new(false),
     };
     match client.open() {
         Ok(session) => {
@@ -124,6 +125,7 @@ pub struct DaemonBackend {
     files: ModelFiles,
     local: RefCell<Option<Box<dyn OcrBackend>>>,
     broken: Cell<bool>,
+    spawned: Cell<bool>,
 }
 
 struct Session {
@@ -133,6 +135,7 @@ struct Session {
 }
 
 enum Fail {
+    Blocked,
     Unreachable(String),
     NoGpu,
     Failed(String),
@@ -230,11 +233,19 @@ impl DaemonBackend {
         let socket = &self.config.paths.socket;
         match UnixStream::connect(socket) {
             Ok(stream) => return Ok(stream),
+            // socket remains, but nobody is listening: the daemon we spawned has crashed. when GPU driver failed during load
+            Err(e) if e.kind() == io::ErrorKind::ConnectionRefused && self.spawned.get() => {
+                return Err(Fail::Unreachable("the daemon started for this session crashed".into()));
+            }
             Err(e) if !matches!(e.kind(), io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused) => {
                 return Err(Fail::Unreachable(e.to_string()));
             }
             Err(_) => {}
         }
+        if daemon_blocked(&read_strikes(&self.config.paths), &self.config.build, unix_now()) {
+            return Err(Fail::Blocked);
+        }
+        self.spawned.set(true);
         eprintln!("ocr: no daemon at {}, starting one", socket.display());
         (self.config.spawn)().map_err(|e| Fail::Unreachable(format!("cannot start the daemon: {e}")))?;
         let deadline = Instant::now() + self.config.timing.connect;
@@ -329,6 +340,10 @@ impl DaemonBackend {
 
     fn strike(&self, fail: &Fail) {
         let (strike, reason) = match fail {
+            Fail::Blocked => {
+                eprintln!("ocr: the daemon failed here recently, OCR runs in this process");
+                return;
+            }
             Fail::NoGpu => (Strike::NoGpu, "no GPU".to_owned()),
             Fail::Unreachable(e) | Fail::Failed(e) | Fail::Protocol(e) => (Strike::Failed, e.clone()),
         };
