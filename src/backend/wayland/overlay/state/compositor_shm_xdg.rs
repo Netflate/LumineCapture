@@ -106,8 +106,12 @@ impl WindowHandler for OverlayState {
         // creating buffers and attaching
         let pool = &mut self.pool;
 
-        let Ok(shm_buffer) = create_shm_buffer(pool, w, h) else {
-            return;
+        let shm_buffer = match create_shm_buffer(pool, w, h) {
+            Ok(buffer) => buffer,
+            Err(e) => {
+                self.configure_error = Some(e.to_string());
+                return;
+            }
         };
 
         let transparent_pixels = vec![0u8; (w * h * 4) as usize];

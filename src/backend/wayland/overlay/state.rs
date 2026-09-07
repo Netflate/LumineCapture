@@ -52,6 +52,7 @@ pub struct OverlayState {
     pub events: VecDeque<OverlayEvent>,
     pub scale: f64,
     pub pending_flush: bool,
+    pub configure_error: Option<String>,
     pub ctrl: bool,
     pub shift: bool,
 }
@@ -152,6 +153,7 @@ impl OverlayState {
             pointer_surface_idx: None,
             scale: 0.0,
             pending_flush: false,
+            configure_error: None,
             ctrl: false,
             shift: false,
             pointer_enter_serial: 0,

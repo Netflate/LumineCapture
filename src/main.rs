@@ -24,8 +24,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("--pin") => run_pin(args),
         Some("--ocr-daemon") => ocr::daemon::cli(args),
         _ => tokio::runtime::Runtime::new()?.block_on(async {
-            let wayland_ = wayland_client::Connection::connect_to_env().ok();
-            let result = app::make_screenshot(wayland_).await;
+            let result = match wayland_client::Connection::connect_to_env() {
+                Ok(conn) => app::make_screenshot(conn).await,
+                Err(e) => Err(format!("can't connect to Wayland: {e}").into()),
+            };
             if let Err(e) = &result {
                 backend::notify::send(backend::notify::Notice::Failed(e.to_string())).await;
             }

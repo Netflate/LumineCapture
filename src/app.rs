@@ -38,14 +38,12 @@ const SAVE_ALWAYS: bool = true;
 // ************************* //
 
 pub async fn make_screenshot(
-    wayland_: Option<wayland_client::Connection>,
+    conn: wayland_client::Connection,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut prof = Profiler::new();
 
     let icons_handle = std::thread::spawn(init::load_icons_cache);
     let text_handle = std::thread::spawn(|| (SwashCache::new(), FontSystem::new()));
-
-    let conn = wayland_.unwrap();
 
     let mut overlay = initialize_overlay(conn)?;
     prof.mark("overlay init");

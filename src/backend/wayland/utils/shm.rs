@@ -53,14 +53,19 @@ impl ShmBuffer {
             return;
         }
 
+        let w = w.min(width.saturating_sub(x));
         let stride = (width * 4) as usize;
         let row_bytes = (w * 4) as usize;
 
         if let Some(dst) = pool.canvas(&self.buffer) {
+            let len = dst.len().min(pixels.len());
             for row in 0..h {
                 let sy = (y + row) as usize;
                 let sx = x as usize;
                 let off = sy * stride + sx * 4;
+                if off + row_bytes > len {
+                    break;
+                }
 
                 copy_swizzled(
                     &mut dst[off..off + row_bytes],

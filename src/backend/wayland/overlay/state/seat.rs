@@ -25,18 +25,15 @@ impl SeatHandler for OverlayState {
             Capability::Pointer => {
                 // Initialize pointer and bind the cursor shape manager
                 // to allow controlling cursors shape on our overlay
-                let pointer = self
-                    .seat
-                    .get_pointer(qh, &seat)
-                    .expect("Failed to get pointer");
+                let Ok(pointer) = self.seat.get_pointer(qh, &seat) else {
+                    return;
+                };
                 let device = self.cursor_shape_manager.get_shape_device(&pointer, qh);
                 self.cursor_shape_device = Some(device);
             }
             Capability::Keyboard => {
                 // Initialize keyboard
-                self.seat
-                    .get_keyboard(qh, &seat, None)
-                    .expect("Failed to get keyboard");
+                let _ = self.seat.get_keyboard(qh, &seat, None);
             }
             _ => {}
         }

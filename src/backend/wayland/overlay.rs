@@ -7,13 +7,19 @@ use rustix::{
     event::{PollFd, PollFlags, poll},
     time::Timespec,
 };
+use std::io::ErrorKind;
 use std::os::unix::io::AsFd;
+use std::time::{Duration, Instant};
+use wayland_client::backend::WaylandError;
 
 pub mod state;
 
 use crate::backend::ScreenOverlay;
 use crate::backend::wayland::utils::surface::SurfaceData;
 use crate::types::{CursorIcon, DamageRect, Output, OverlayEvent};
+
+const CONFIGURE_TIMEOUT: Duration = Duration::from_secs(5);
+
 pub struct WaylandOverlay {
     runtime: state::OverlayRunTime,
 }
@@ -31,6 +37,9 @@ impl ScreenOverlay for WaylandOverlay {
         let rt = &mut self.runtime;
         let qh = rt.event_queue.handle();
 
+        if rt.state.outputs.is_empty() {
+            return Err("compositor reported no outputs".into());
+        }
         let outputs_snapshot: Vec<_> = rt
             .state
             .outputs
@@ -61,13 +70,9 @@ impl ScreenOverlay for WaylandOverlay {
             window.set_fullscreen(Some(&wl_output));
 
             // handle fractional scaling calculations for HiDPI setups
-            let frac_scale = rt
-                .state
-                .frac
-                .as_ref()
-                .expect("no fractional scale manager")
-                .get_fractional_scale(&surface, &qh, ());
-            rt.state.frac_scale = Some(frac_scale);
+            if let Some(frac) = rt.state.frac.as_ref() {
+                rt.state.frac_scale = Some(frac.get_fractional_scale(&surface, &qh, ()));
+            }
 
             surface.commit();
 
@@ -84,10 +89,17 @@ impl ScreenOverlay for WaylandOverlay {
             );
         }
 
+        let deadline = Instant::now() + CONFIGURE_TIMEOUT;
         while rt.state.surfaces.values().any(|sd| sd.shm_buffer.is_none()) {
             // freezes untill WindowHandler create necessary buffers in utils/compositor_shm_xdg.rs
             // if we continue without waiting compositor response, app will crash
             rt.event_queue.roundtrip(&mut rt.state)?;
+            if let Some(e) = rt.state.configure_error.take() {
+                return Err(format!("can't allocate overlay buffer: {e}").into());
+            }
+            if Instant::now() > deadline {
+                return Err("compositor didn't configure the overlay windows".into());
+            }
         }
 
         Ok(&rt.state.outputs)
@@ -149,7 +161,11 @@ impl ScreenOverlay for WaylandOverlay {
         loop {
             // prepare the wayland connection socket for reading incoming server events
             if let Some(guard) = rt.event_queue.prepare_read() {
-                let _ = guard.read();
+                match guard.read() {
+                    Ok(_) => {}
+                    Err(WaylandError::Io(e)) if e.kind() == ErrorKind::WouldBlock => {}
+                    Err(e) => return Err(e.into()),
+                }
             }
             rt.event_queue.dispatch_pending(&mut rt.state)?;
 
@@ -185,6 +201,9 @@ impl ScreenOverlay for WaylandOverlay {
 
             poll(&mut fds, timeout.as_ref())?;
 
+            if fds[0].revents().intersects(PollFlags::ERR | PollFlags::HUP) {
+                return Err("Wayland connection closed".into());
+            }
             // but if poll timed out without events, emit a Tick event to drive internal ui animations
             if !fds[0].revents().contains(PollFlags::IN) {
                 return Ok(OverlayEvent::Tick);
