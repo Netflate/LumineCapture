@@ -258,7 +258,6 @@ impl ToolBehavior for TextTool {
 
             state.text_editing = Some(TextEditState {
                 annotation_id: ann_id,
-                cursor: 0,
             });
             state.selected_annotation = Some(i);
             state.annotations_dirty = true;
@@ -364,7 +363,6 @@ impl ToolBehavior for TextTool {
 
         state.text_editing = Some(TextEditState {
             annotation_id: id,
-            cursor: 0,
         });
         state.selected_annotation = Some(state.annotations.len() - 1);
         state.annotations_dirty = true;

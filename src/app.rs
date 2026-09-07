@@ -47,7 +47,7 @@ pub async fn make_screenshot(
 
     let conn = wayland_.unwrap();
 
-    let mut overlay = initialize_overlay(conn.clone())?;
+    let mut overlay = initialize_overlay(conn)?;
     prof.mark("overlay init");
 
     let outputs = overlay.discovered_outputs().to_vec();
@@ -61,7 +61,7 @@ pub async fn make_screenshot(
     let screenshots = capture.capture_frame(&outputs).await?;
     prof.mark("capture");
 
-    let clipboard = initialize_clipboard(conn);
+    let clipboard = initialize_clipboard();
 
     let base_pixmaps: Vec<Pixmap> = init::build_base_pixmap(&screenshots.frames);
     let (canvas, dimmed, annotations_layer) = init::build_layers(&base_pixmaps);

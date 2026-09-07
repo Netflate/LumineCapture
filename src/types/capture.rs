@@ -13,13 +13,6 @@ pub struct Output {
     pub info: SctkOutputInfo,
 }
 
-#[derive(Debug, Clone)]
-pub enum SourceType {
-    Monitor = 1,
-    Window = 2,
-    Virtual = 4,
-}
-
 // Pipewire and pixels
 pub struct StreamInfo {
     pub node_id: u32,

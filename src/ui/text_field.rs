@@ -90,10 +90,6 @@ impl LineEditState {
         self.cursor = self.text.chars().count();
     }
 
-    pub fn clear_selection(&mut self) {
-        self.selection_anchor = None;
-    }
-
     fn begin_or_clear_selection(&mut self, extend: bool) {
         if extend {
             if self.selection_anchor.is_none() {
@@ -197,10 +193,6 @@ impl<K: Eq + Hash + Copy> TextFieldGroup<K> {
             }
         }
         self.editing = Some(FieldEdit { key, field });
-    }
-
-    pub fn cancel_edit(&mut self) -> bool {
-        self.editing.take().is_some()
     }
 
     pub fn commit_edit(&mut self) -> Option<(K, String)> {

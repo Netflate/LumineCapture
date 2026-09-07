@@ -347,13 +347,6 @@ pub fn finish_ocr(
     state.ocr_view.set_lines(text.lines);
     eprintln!("ocr: {} line(s)", state.ocr_view.lines.len());
 
-    if std::env::var_os("LUMINE_OCR_DUMP").is_some() {
-        match ocr::write_text_file(&state.ocr_view.text_to_copy()) {
-            Ok(path) => eprintln!("ocr: written to {}", path.display()),
-            Err(e) => eprintln!("ocr: failed to write output file: {e}"),
-        }
-    }
-
     damage_all(state);
     mark_all_dirty(state, dirty_mask);
 }

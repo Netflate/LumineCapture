@@ -15,7 +15,6 @@ use crate::backend::ScreenOverlay;
 use crate::backend::wayland::utils::surface::SurfaceData;
 use crate::types::{CursorIcon, DamageRect, Output, OverlayEvent};
 pub struct WaylandOverlay {
-    pub connection: wayland_client::Connection,
     runtime: state::OverlayRunTime,
 }
 
@@ -23,10 +22,7 @@ impl WaylandOverlay {
     pub fn new(connection: wayland_client::Connection) -> Result<Self, Box<dyn std::error::Error>> {
         let rt = state::OverlayRunTime::new(&connection)?;
 
-        Ok(Self {
-            connection,
-            runtime: rt,
-        })
+        Ok(Self { runtime: rt })
     }
 }
 

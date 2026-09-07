@@ -436,12 +436,6 @@ impl SettingsPanel {
         self.dirty = true;
     }
 
-    pub fn cancel_edit(&mut self) {
-        if self.fields.cancel_edit() {
-            self.dirty = true;
-        }
-    }
-
     pub fn commit_edit(&mut self) -> Option<(usize, String)> {
         let result = self.fields.commit_edit();
         if result.is_some() {

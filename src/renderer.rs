@@ -7,8 +7,7 @@ pub mod paths;
 pub mod text;
 
 pub use annotations::{
-    draw_annotation, draw_annotation_handles_only, draw_pen_active_tail, draw_pen_tail,
-    selection_chrome_pad, shadow_color_for, stroke_pen_segment, visual_pad,
+    draw_annotation, selection_chrome_pad, shadow_color_for, stroke_pen_segment, visual_pad,
 };
 pub use paths::{rect_bounds, rounded_rect_path};
 pub use text::measure_line_width;

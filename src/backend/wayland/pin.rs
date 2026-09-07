@@ -58,7 +58,7 @@ pub fn run(image: &[u8], at: Option<(i32, i32)>) -> Result<(), Box<dyn std::erro
         seat: SeatState::new(&globals, &qh),
         cursor_shapes: CursorShapeManager::bind(&globals, &qh).ok(),
         relative: RelativePointerState::bind(&globals, &qh),
-        clipboard: initialize_clipboard(conn.clone()),
+        clipboard: initialize_clipboard(),
         compositor: CompositorState::bind(&globals, &qh)?,
         layer_shell: LayerShell::bind(&globals, &qh)?,
         shm,

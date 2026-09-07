@@ -147,25 +147,6 @@ impl Annotation {
         }
     }
 
-    // to render only new pixels from pen, insted of rendering the whole rectangle
-    pub fn last_segment_bbox(&self) -> Rect {
-        let pad = self.stroke_width / 2.0 + shadow::WIDTH_BONUS / 2.0;
-        match &self.shape {
-            AnnotationShape::Pen { points } if points.len() >= 2 => {
-                let from = points[points.len() - 2];
-                let to = points[points.len() - 1];
-                Rect::from_ltrb(
-                    from.0.min(to.0) - pad,
-                    from.1.min(to.1) - pad,
-                    from.0.max(to.0) + pad,
-                    from.1.max(to.1) + pad,
-                )
-                .unwrap()
-            }
-            _ => self.bbox,
-        }
-    }
-
     pub fn pen_active_tail_bbox(&self) -> Rect {
         let pad = crate::renderer::visual_pad(self.stroke_width);
         match &self.shape {
@@ -244,12 +225,6 @@ impl Annotation {
             }
             _ => self.update_bbox(),
         }
-    }
-
-    pub fn translate(&self, dx: f32, dy: f32) -> Annotation {
-        let mut result = self.clone();
-        result.translate_mut(dx, dy);
-        result
     }
 
     pub fn resize_to_bbox(&self, new_bbox: SignedRect) -> Annotation {

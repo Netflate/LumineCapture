@@ -507,47 +507,6 @@ pub fn draw_pen_active_tail(
     }
 }
 
-pub fn draw_pen_tail(
-    canvas: &mut Pixmap,
-    tail: &[(f32, f32)],
-    color: Color,
-    stroke_width: f32,
-    offset: (f32, f32),
-) {
-    if tail.len() < 2 {
-        return;
-    }
-
-    let transform = Transform::from_translate(-offset.0, -offset.1);
-    let mut paint = Paint::default();
-    paint.set_color(color);
-    paint.anti_alias = true;
-    let mut stroke = Stroke::default();
-    stroke.width = stroke_width;
-    stroke.line_cap = LineCap::Round;
-    stroke.line_join = LineJoin::Round;
-
-    let mut pb = PathBuilder::new();
-    pb.move_to(tail[0].0, tail[0].1);
-
-    if tail.len() == 2 {
-        pb.line_to(tail[1].0, tail[1].1);
-    } else {
-        for i in 1..tail.len() - 1 {
-            let curr = tail[i];
-            let next = tail[i + 1];
-            let mid = ((curr.0 + next.0) / 2.0, (curr.1 + next.1) / 2.0);
-            pb.quad_to(curr.0, curr.1, mid.0, mid.1);
-        }
-        let last = tail[tail.len() - 1];
-        pb.line_to(last.0, last.1);
-    }
-
-    if let Some(path) = pb.finish() {
-        canvas.stroke_path(&path, &paint, &stroke, transform, None);
-    }
-}
-
 fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32)) {
     let mut paint = Paint::default();
     paint.set_color(Color::WHITE);

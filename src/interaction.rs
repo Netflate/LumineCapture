@@ -75,15 +75,6 @@ impl<T: PartialEq + Copy> DoubleClickTracker<T> {
 
         is_double
     }
-
-    /// Manually clears the tracked click state.
-    ///
-    /// Useful when the application context changes
-    /// to prevent accidental cross-context double-clicks.
-    #[allow(dead_code)]
-    pub fn reset(&mut self) {
-        self.last = None;
-    }
 }
 
 fn dist(a: (f32, f32), b: (f32, f32)) -> f32 {

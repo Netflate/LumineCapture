@@ -5,11 +5,6 @@ pub enum MouseButton {
     Middle,
 }
 
-pub enum MouseState {
-    Up,
-    Down(MouseButton),
-}
-
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PointerState {
     pub monitor_idx: usize,

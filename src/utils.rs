@@ -252,24 +252,6 @@ pub fn get_full_workspace_rect(placements: &[Placement]) -> Option<Rect> {
 
 // pixels swap
 #[inline]
-pub fn swizzle_rect(pixels: &mut [u8], total_width: u32, x: u32, y: u32, w: u32, h: u32) {
-    let stride = (total_width * 4) as usize;
-    let start_byte = (x * 4) as usize;
-    let width_bytes = (w * 4) as usize;
-
-    for row in y..(y + h) {
-        let row_start = (row as usize) * stride + start_byte;
-        let row_end = row_start + width_bytes;
-
-        let row_pixels = &mut pixels[row_start..row_end];
-
-        for chunk in row_pixels.chunks_exact_mut(4) {
-            chunk.swap(0, 2);
-        }
-    }
-}
-
-#[inline]
 pub fn swizzle_all(pixels: &mut [u8]) {
     for chunk in pixels.chunks_exact_mut(4) {
         chunk.swap(0, 2);
@@ -292,17 +274,6 @@ pub fn copy_swizzled(dst: &mut [u8], src: &[u8]) {
     }
 }
 
-pub fn intersect_area(a: &Rect, b: &Rect) -> f32 {
-    let left = a.left().max(b.left());
-    let right = a.right().min(b.right());
-    let top = a.top().max(b.top());
-    let bottom = a.bottom().min(b.bottom());
-    if right > left && bottom > top {
-        (right - left) * (bottom - top)
-    } else {
-        0.0
-    }
-}
 
 /// Spawns a new instance of this binary and passes image bytes via stdin.
 /// Runs in its own process group so Ctrl+C in the terminal won't kill pins or the clipboard handler.

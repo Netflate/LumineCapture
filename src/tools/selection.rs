@@ -38,16 +38,6 @@ pub fn selection_edges_for_monitor(sel: &Rect, placement: &Placement) -> Selecti
     }
 }
 
-pub fn point_in_monitor(p: (f32, f32), placement: &Placement) -> bool {
-    let (x, y) = p;
-    let mx = placement.position.0 as f32;
-    let my = placement.position.1 as f32;
-    let mw = placement.size.0 as f32;
-    let mh = placement.size.1 as f32;
-
-    x >= mx && x < mx + mw && y >= my && y < my + mh
-}
-
 impl ToolBehavior for SelectionTool {
     fn on_button(
         &self,

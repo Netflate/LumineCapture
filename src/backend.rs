@@ -21,12 +21,10 @@ pub fn initialize_capture() -> Box<dyn CaptureMethod> {
     }
 }
 
-#[async_trait]
 pub trait ClipboardProvider {
     fn copy_image_to_clipboard(&self, png_data: Vec<u8>) -> Result<(), Box<dyn std::error::Error>>;
 }
 
-#[async_trait]
 pub trait ScreenOverlay: Send {
     fn present(&mut self) -> Result<&[Output], Box<dyn std::error::Error>>;
     fn stage_frame(
@@ -44,20 +42,11 @@ pub trait ScreenOverlay: Send {
 pub fn initialize_overlay(
     conn: Connection,
 ) -> Result<Box<dyn ScreenOverlay>, Box<dyn std::error::Error>> {
-    let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
-
-    let overlay = match desktop.as_str() {
-        "GNOME" => {
-            // TODO: won't work on gnome anyways :p will be implemented in the future
-            Box::new(wayland::overlay::WaylandOverlay::new(conn)?) as Box<dyn ScreenOverlay>
-        }
-        _ => Box::new(wayland::overlay::WaylandOverlay::new(conn)?) as Box<dyn ScreenOverlay>,
-    };
-
-    Ok(overlay)
+    // TODO: won't work on gnome anyways :p will be implemented in the future
+    Ok(Box::new(wayland::overlay::WaylandOverlay::new(conn)?))
 }
 
-pub fn initialize_clipboard(_: Connection) -> Box<dyn ClipboardProvider> {
+pub fn initialize_clipboard() -> Box<dyn ClipboardProvider> {
     Box::new(wayland::clipboard::ext_data_control::ClipboardMethod)
 }
 
@@ -71,8 +60,5 @@ pub trait Notifier {
 
 pub fn initialize_notifier() -> Box<dyn Notifier> {
     let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
-    match desktop.as_str() {
-        "KDE" => Box::new(notify::freedesktop::FreedesktopNotifier { kde: true }),
-        _ => Box::new(notify::freedesktop::FreedesktopNotifier { kde: false }),
-    }
+    Box::new(notify::freedesktop::FreedesktopNotifier { kde: desktop == "KDE" })
 }

@@ -187,15 +187,6 @@ impl Toolbar {
         toolbar
     }
 
-    pub fn get_selected_tool(&self) -> Option<&Tool> {
-        self.selected
-            .and_then(|idx| self.items.get(idx))
-            .and_then(|item| match item {
-                ToolbarItem::Button(ToolbarButton::Tool(tool)) => Some(tool),
-                ToolbarItem::Button(ToolbarButton::Finish(_)) | ToolbarItem::Seperator => None,
-            })
-    }
-
     /// hit-tests a local point against the toolbar's current render rect
     /// Returns (is_inside, option_of_button_index).
     pub fn hit_test(&self, local: (f64, f64)) -> (bool, Option<usize>) {
@@ -276,15 +267,9 @@ impl Toolbar {
 // 3. UI Elements Definition
 // ==========================================
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ToolbarAction {
-    //SideChange,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ToolbarButton {
     Tool(Tool),
     Finish(Finish),
-    //Action(ToolbarAction),
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -15,7 +15,6 @@ impl EditorState {
 
         dirty = union_rect(dirty, self.calc_selection_dirty(placement));
         dirty = union_rect(dirty, self.calc_magnifier_dirty(monitor_idx, placement));
-        //dirty = union_rect(dirty, self.calc_toolbar_dirty(monitor_idx));
         dirty = union_rect(dirty, self.calc_damage_zones_dirty(monitor_idx, placement));
 
         dirty
@@ -217,13 +216,6 @@ impl EditorState {
                 layer_damage_rects.push(ann_b.damage_bbox(false));
             }
         }
-    }
-
-    // when code push dirty zones in damage_dirty
-    // sometimes it pushes local monitor zones (like for toolbar)
-    // sometimes global (which is necessary for )
-    pub fn damage_global(&mut self, rect: Rect) {
-        self.damage_rects.push(DamageZone::Global(rect));
     }
 
     pub fn damage_local(&mut self, monitor_idx: usize, rect: Rect) {

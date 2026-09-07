@@ -12,12 +12,10 @@ dependencies = [
  "chrono",
  "cosmic-text",
  "dirs",
- "exr",
  "futures",
  "hmac-sha256",
  "image",
  "lzma-rust2",
- "memmap2",
  "nix 0.31.2",
  "oar-ocr",
  "ort",
@@ -31,14 +29,9 @@ dependencies = [
  "ureq",
  "usvg",
  "wayland-client",
- "wayland-cursor",
  "wayland-protocols",
- "wayland-protocols-plasma",
- "wayland-protocols-wlr",
  "wl-clipboard-rs",
  "zbus",
- "zune-core",
- "zune-png",
 ]
 
 [[package]]
@@ -4179,19 +4172,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "wayland-protocols-plasma"
-version = "0.3.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b6d8cf1eb2c1c31ed1f5643c88a6e53538129d4af80030c8cabd1f9fa884d91"
-dependencies = [
- "bitflags",
- "wayland-backend",
- "wayland-client",
- "wayland-protocols",
- "wayland-scanner",
-]
-
-[[package]]
 name = "wayland-protocols-wlr"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4794,16 +4774,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec5f41c76397b7da451efd19915684f727d7e1d516384ca6bd0ec43ec94de23c"
 dependencies = [
  "zune-core",
-]
-
-[[package]]
-name = "zune-png"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a321146329f7617ba0a5b26982cba45b7ce78163135aba78be25850aefcea80"
-dependencies = [
- "zune-core",
- "zune-inflate",
 ]
 
 [[package]]

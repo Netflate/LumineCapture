@@ -49,7 +49,7 @@ pub mod view;
 use tiny_skia::{Pixmap, PixmapPaint, Rect, Transform};
 
 pub use runtime::{OcrRuntime, StartOutcome};
-pub use view::{LineSelection, OcrView};
+pub use view::OcrView;
 
 use crate::types::Placement;
 use models::ModelFiles;
@@ -185,15 +185,4 @@ pub fn composite_region(
         height: h,
         origin: (left as f32, top as f32),
     })
-}
-
-/// Write recognized text to a timestamped `.txt` in the current working
-/// directory (temporary)
-pub fn write_text_file(text: &str) -> std::io::Result<std::path::PathBuf> {
-    let name = chrono::Local::now()
-        .format("ocr_%Y-%m-%d_%H-%M-%S.txt")
-        .to_string();
-    let path = std::env::current_dir()?.join(name);
-    std::fs::write(&path, text)?;
-    Ok(path)
 }

@@ -55,8 +55,4 @@ impl Profiler {
         }
         eprintln!("--- timing ---\n{}", self.lines.join("\n"));
     }
-
-    pub fn t0(&self) -> Instant {
-        self.t0
-    }
 }
