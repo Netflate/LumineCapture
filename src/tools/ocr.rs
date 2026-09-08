@@ -291,8 +291,10 @@ pub fn copy_selection(state: &mut EditorState, _dirty_mask: &mut u32) {
     if text.is_empty() {
         return;
     }
-    crate::utils::copy_to_clipboard(&text);
-    eprintln!("ocr: copied {} line(s)", text.lines().count());
+    match crate::utils::copy_to_clipboard(&text) {
+        Ok(()) => eprintln!("ocr: copied {} line(s)", text.lines().count()),
+        Err(e) => eprintln!("ocr: can't copy: {e}"),
+    }
 }
 
 /// Select everything, then copy it, so the panel's copy button also shows what

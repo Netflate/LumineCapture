@@ -18,10 +18,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // wayland clipboard requires the source process to stay alive to serve data.
         // we spawn a short-lived daemon so clipboard managers can fetch the capture
         Some("--clipboard-daemon") => {
-            run_clipboard_daemon();
+            run_clipboard_daemon(args.next().as_deref() == Some("text"));
             Ok(())
         }
-        Some("--pin") => run_pin(args),
+        Some("--pin") => {
+            let result = run_pin(args);
+            if let Err(e) = &result {
+                backend::notify::send_blocking(backend::notify::Notice::PinFailed(e.to_string()));
+            }
+            result
+        }
         Some("--ocr-daemon") => ocr::daemon::cli(args),
         _ => tokio::runtime::Runtime::new()?.block_on(async {
             let result = match wayland_client::Connection::connect_to_env() {
@@ -64,33 +70,54 @@ fn run_pin(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::er
     backend::wayland::pin::run(&image, at)
 }
 
-fn run_clipboard_daemon() {
-    use std::io::Read;
+fn run_clipboard_daemon(text: bool) {
+    use std::io::{Read, Write};
     use wl_clipboard_rs::copy::{MimeSource, MimeType, Options, Source};
 
     let mut buf = Vec::new();
-    std::io::stdin().read_to_end(&mut buf).expect("read stdin");
+    if let Err(e) = std::io::stdin().read_to_end(&mut buf) {
+        println!("can't read clipboard data: {e}");
+        std::process::exit(1);
+    }
 
     let mut opts = Options::new();
     opts.foreground(true);
 
-    let result = opts.copy_multi(vec![
-        MimeSource {
-            source: Source::Bytes(buf.clone().into()),
-            mime_type: MimeType::Specific("image/png".to_string()),
-        },
-        MimeSource {
-            source: Source::Bytes(buf.clone().into()),
-            mime_type: MimeType::Specific("application/x-qt-image".to_string()),
-        },
-        MimeSource {
+    let sources = if text {
+        vec![MimeSource {
             source: Source::Bytes(buf.into()),
-            mime_type: MimeType::Specific("x-kde-force-image-copy".to_string()),
-        },
-    ]);
+            mime_type: MimeType::Text,
+        }]
+    } else {
+        vec![
+            MimeSource {
+                source: Source::Bytes(buf.clone().into()),
+                mime_type: MimeType::Specific("image/png".to_string()),
+            },
+            MimeSource {
+                source: Source::Bytes(buf.clone().into()),
+                mime_type: MimeType::Specific("application/x-qt-image".to_string()),
+            },
+            MimeSource {
+                source: Source::Bytes(buf.into()),
+                mime_type: MimeType::Specific("x-kde-force-image-copy".to_string()),
+            },
+        ]
+    };
 
-    if let Err(e) = result {
-        backend::notify::send_blocking(backend::notify::Notice::CopyFailed(e.to_string()));
-        std::process::exit(1);
+    // the parent reads this line: empty once the selection is ours
+    let mut stdout = std::io::stdout();
+    match opts.prepare_copy_multi(sources) {
+        Ok(copy) => {
+            let _ = writeln!(stdout);
+            let _ = stdout.flush();
+            if copy.serve().is_err() {
+                std::process::exit(1);
+            }
+        }
+        Err(e) => {
+            let _ = writeln!(stdout, "{}", e.to_string().replace('\n', " "));
+            std::process::exit(1);
+        }
     }
 }

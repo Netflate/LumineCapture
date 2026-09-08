@@ -13,7 +13,7 @@ use crate::utils::cursor_for_handle;
 use cosmic_text::{
     Action, Attrs, Buffer, Edit, Editor, Family, Metrics, Motion, Selection, Shaping, SwashCache,
 };
-use tiny_skia::{Color, PixmapMut, Rect};
+use tiny_skia::{PixmapMut, Rect};
 
 pub struct TextTool;
 
@@ -85,8 +85,11 @@ pub fn apply_key_to_editor(
     if ctrl {
         match key {
             SpecialKey::KeyC | SpecialKey::KeyX => {
-                if let Some(text) = extract_selected_text(editor) {
-                    crate::utils::copy_to_clipboard(&text);
+                if let Some(text) = extract_selected_text(editor)
+                    && let Err(e) = crate::utils::copy_to_clipboard(&text)
+                {
+                    eprintln!("text: can't copy: {e}");
+                    return false;
                 }
 
                 if matches!(key, SpecialKey::KeyX) {
@@ -342,8 +345,8 @@ impl ToolBehavior for TextTool {
                 bold,
                 italic,
             },
-            color: Color::from_rgba8(255, 255, 255, 255),
-            shadow_color: shadow_color_for(Color::from_rgba8(255, 255, 255, 255)),
+            color: state.tool_settings.color,
+            shadow_color: shadow_color_for(state.tool_settings.color),
             stroke_width: 0.0,
             bbox: Rect::from_xywh(pos.0, pos.1, 10.0, metrics.line_height).unwrap(),
         };

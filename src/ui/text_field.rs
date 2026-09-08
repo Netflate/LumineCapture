@@ -233,8 +233,11 @@ impl<K: Eq + Hash + Copy> TextFieldGroup<K> {
                     return (true, false);
                 }
                 SpecialKey::KeyC | SpecialKey::KeyX => {
-                    if let Some(sel) = edit.field.selected_text() {
-                        crate::utils::copy_to_clipboard(&sel);
+                    if let Some(sel) = edit.field.selected_text()
+                        && let Err(e) = crate::utils::copy_to_clipboard(&sel)
+                    {
+                        eprintln!("text field: can't copy: {e}");
+                        return (false, false);
                     }
                     if matches!(key, SpecialKey::KeyX) {
                         edit.field.backspace_selection_only();

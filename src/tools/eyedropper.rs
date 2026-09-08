@@ -84,12 +84,11 @@ pub fn end_pick_once(state: &mut EditorState, dirty_mask: &mut u32) {
 
 pub fn copy_value(state: &mut EditorState, field: ValueField, color: Color) {
     let text = field.text(color);
-    crate::utils::copy_to_clipboard(&text);
-    state.toasts.show_text(
-        ToastKind::ColorCopied,
-        format!("Copied {text}"),
-        &mut state.font_system,
-    );
+    let message = match crate::utils::copy_to_clipboard(&text) {
+        Ok(()) => format!("Copied {text}"),
+        Err(e) => format!("Couldn't copy: {e}"),
+    };
+    state.toasts.show_text(ToastKind::ColorCopied, message, &mut state.font_system);
 }
 
 fn color_under_pointer(state: &EditorState) -> Option<Color> {

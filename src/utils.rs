@@ -63,17 +63,35 @@ pub fn save_to_file(png_data: &[u8]) -> Result<PathBuf, Box<dyn std::error::Erro
     let now = chrono::Local::now();
 
     let dir = dirs::picture_dir()
-        .unwrap_or_else(|| PathBuf::from("~/Pictures")) // hardcoded TOFIX
-        .join("screenshots")
+        .or_else(|| dirs::home_dir().map(|home| home.join("Pictures")))
+        .ok_or("can't find a pictures or home directory")?
+        .join("screenshots") // hardcoded TOFIX
         .join(now.format("%Y-%m").to_string());
 
     std::fs::create_dir_all(&dir)?;
 
-    let filename = now.format("%Y-%m-%d_%H-%M.png").to_string(); // hardcoded TOFIX
-    let path = dir.join(filename);
+    let stem = now.format("%Y-%m-%d_%H-%M").to_string(); // hardcoded TOFIX
+    Ok(write_unique(&dir, &stem, png_data)?)
+}
 
-    std::fs::write(&path, png_data)?;
-    Ok(path)
+/// Writes `<stem>.png`, or `<stem>_N.png` if taken, never overwriting a file.
+fn write_unique(dir: &std::path::Path, stem: &str, data: &[u8]) -> std::io::Result<PathBuf> {
+    let mut n = 0;
+    loop {
+        let filename = match n {
+            0 => format!("{stem}.png"),
+            n => format!("{stem}_{n}.png"),
+        };
+        let path = dir.join(filename);
+        match std::fs::File::create_new(&path) {
+            Ok(mut file) => {
+                std::io::Write::write_all(&mut file, data)?;
+                return Ok(path);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => n += 1,
+            Err(e) => return Err(e),
+        }
+    }
 }
 
 // to render necessary monitors
@@ -278,6 +296,42 @@ pub fn copy_swizzled(dst: &mut [u8], src: &[u8]) {
 /// Spawns a new instance of this binary and passes image bytes via stdin.
 /// Runs in its own process group so Ctrl+C in the terminal won't kill pins or the clipboard handler.
 pub fn spawn_self(args: &[&str], stdin: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+    spawn_self_with(args, stdin, std::process::Stdio::null()).map(|_| ())
+}
+
+/// Like `spawn_self`, but waits for the child's first stdout line:
+/// empty once it is ready, the error message otherwise.
+pub fn spawn_self_ready(
+    args: &[&str],
+    stdin: &[u8],
+    timeout: std::time::Duration,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::BufRead;
+
+    let stdout = spawn_self_with(args, stdin, std::process::Stdio::piped())?
+        .ok_or("child has no stdout")?;
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut line = String::new();
+        let read = std::io::BufReader::new(stdout).read_line(&mut line);
+        let _ = tx.send(read.map(|_| line));
+    });
+
+    match rx.recv_timeout(timeout) {
+        Ok(Ok(line)) if line == "\n" => Ok(()),
+        Ok(Ok(line)) if line.is_empty() => Err("helper process exited unexpectedly".into()),
+        Ok(Ok(line)) => Err(line.trim_end().into()),
+        Ok(Err(e)) => Err(e.into()),
+        Err(_) => Err("helper process didn't respond in time".into()),
+    }
+}
+
+fn spawn_self_with(
+    args: &[&str],
+    stdin: &[u8],
+    stdout: std::process::Stdio,
+) -> Result<Option<std::process::ChildStdout>, Box<dyn std::error::Error>> {
     use std::io::Write;
     use std::os::unix::process::CommandExt;
     use std::process::{Command, Stdio};
@@ -285,24 +339,55 @@ pub fn spawn_self(args: &[&str], stdin: &[u8]) -> Result<(), Box<dyn std::error:
     let mut child = Command::new(std::env::current_exe()?)
         .args(args)
         .stdin(Stdio::piped())
-        .stdout(Stdio::null())
+        .stdout(stdout)
         .process_group(0)
         .spawn()?;
 
     child.stdin.take().ok_or("child has no stdin")?.write_all(stdin)?;
+    let stdout = child.stdout.take();
 
     std::thread::spawn(move || {
         let _ = child.wait();
     });
-    Ok(())
+    Ok(stdout)
 }
 
-pub fn copy_to_clipboard(text: &str) {
-    if let Ok(mut cb) = arboard::Clipboard::new() {
-        let _ = cb.set_text(text.to_owned());
-    }
+pub fn copy_to_clipboard(text: &str) -> Result<(), Box<dyn std::error::Error>> {
+    spawn_self_ready(
+        &["--clipboard-daemon", "text"],
+        text.as_bytes(),
+        CLIPBOARD_READY_TIMEOUT,
+    )
 }
 
 pub fn paste_from_clipboard() -> Option<String> {
-    arboard::Clipboard::new().ok()?.get_text().ok()
+    use std::io::Read;
+    use wl_clipboard_rs::paste::{ClipboardType, MimeType, Seat, get_contents};
+
+    let (mut pipe, _) = get_contents(ClipboardType::Regular, Seat::Unspecified, MimeType::Text).ok()?;
+    let mut text = String::new();
+    pipe.read_to_string(&mut text).ok()?;
+    Some(text)
+}
+
+pub const CLIPBOARD_READY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
+#[cfg(test)]
+mod tests {
+    use super::write_unique;
+
+    #[test]
+    fn saving_twice_with_the_same_name_keeps_both_files() {
+        let dir = std::env::temp_dir().join(format!("lumine-save-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let first = write_unique(&dir, "shot", b"one").unwrap();
+        let second = write_unique(&dir, "shot", b"two").unwrap();
+
+        assert_eq!(first.file_name().unwrap(), "shot.png");
+        assert_eq!(second.file_name().unwrap(), "shot_1.png");
+        assert_eq!(std::fs::read(&first).unwrap(), b"one");
+        assert_eq!(std::fs::read(&second).unwrap(), b"two");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }
