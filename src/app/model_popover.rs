@@ -5,6 +5,7 @@ use crate::editor::dirty::apply_damage_rects;
 use crate::ocr::models::{MODELS, ModelEvent, ModelStatus};
 use crate::ui::model_popover::{self, ModelPopoverElement, ModelRow};
 use crate::ui::panel::{UiPanel, emit_panel_damage, sync_panel_hover, sync_panel_rect};
+use crate::ui::toast::ToastKind;
 use crate::ui::settings_panel::{SettingsAction, SettingsWidget};
 
 use super::settings_logic::{compute_popover_placement, update_settings_panel};
@@ -118,7 +119,10 @@ pub fn handle_model_popover_click(editor_state: &mut EditorState, dirty_mask: &m
             crate::tools::ocr::use_model(editor_state, idx, dirty_mask)
         }
         ModelStatus::Installed if !is_active => editor_state.ocr_models.remove(idx),
-        ModelStatus::Missing | ModelStatus::Failed => editor_state.ocr_models.download(idx),
+        ModelStatus::Missing | ModelStatus::Failed => {
+            editor_state.toasts.dismiss(ToastKind::OcrDownloadFailed);
+            editor_state.ocr_models.download(idx);
+        }
         ModelStatus::Queued | ModelStatus::Downloading(_) if on_button => {
             crate::tools::ocr::cancel_model_download(editor_state, idx)
         }

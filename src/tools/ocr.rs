@@ -135,6 +135,7 @@ impl ToolBehavior for OcrTool {
         state.model_popover.open = false;
         state.toasts.dismiss(ToastKind::OcrPickRegion);
         state.toasts.dismiss(ToastKind::OcrNoModel);
+        dismiss_scan_toasts(state);
     }
 
     fn cursor(&self, state: &EditorState) -> CursorIcon {
@@ -150,6 +151,13 @@ fn cancel_scan(state: &mut EditorState) {
     state.ocr.cancel();
     state.ocr_scan_started = None;
     damage_all(state);
+}
+
+/// Takes down what the previous scan said, it no longer describes the screen.
+fn dismiss_scan_toasts(state: &mut EditorState) {
+    for kind in [ToastKind::OcrNoText, ToastKind::OcrFailed, ToastKind::CopyFailed] {
+        state.toasts.dismiss(kind);
+    }
 }
 
 /// waiting for drag with showing toast
@@ -198,6 +206,7 @@ fn begin_region_drag(state: &mut EditorState) {
     }
 
     state.toasts.dismiss(ToastKind::OcrPickRegion);
+    dismiss_scan_toasts(state);
     state.ocr_redrag = true;
     state.ocr_redrag_from = state.selection.zone;
     state.tool_active = true;
@@ -256,6 +265,7 @@ fn start_ocr(state: &mut EditorState) {
     let Some(region) = state.selection.zone else {
         return;
     };
+    dismiss_scan_toasts(state);
 
     if !state.ocr_models.active_installed() {
         ask_for_model(state);
