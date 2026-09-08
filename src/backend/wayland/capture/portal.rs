@@ -1,5 +1,6 @@
 pub struct PortalMethod;
 
+use log::warn;
 use crate::backend::wayland::capture::stream;
 use std::fs;
 use std::os::fd::AsFd;
@@ -41,7 +42,7 @@ fn write_token(token: &str) {
                 let _ = fs::remove_file(legacy);
             }
         }
-        Err(e) => eprintln!("Can't save portal token to {}: {}", path.display(), e),
+        Err(e) => warn!("Can't save portal token to {}: {}", path.display(), e),
     }
 }
 
@@ -162,7 +163,7 @@ impl CaptureMethod for PortalMethod {
         }
 
         if let Err(e) = session.close().await {
-            eprintln!("Can't close portal session: {e}");
+            warn!("Can't close portal session: {e}");
         }
 
         Ok(CaptureResult { frames })

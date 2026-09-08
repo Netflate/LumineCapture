@@ -14,6 +14,7 @@ pub mod server;
 #[cfg(test)]
 mod tests;
 
+use log::{error, info, warn};
 use std::error::Error;
 use std::fs::{self, OpenOptions};
 use std::io;
@@ -92,7 +93,7 @@ pub fn resolve_mode(settings: &EngineSettings) -> Mode {
     // local modes read neither strikes nor measurements nor /sys
     // daemon and GPU do not exist for them to keep them isolated to avoid bugs
     if settings.mode != Mode::Daemon {
-        eprintln!(
+        info!(
             "ocr: engine mode = {:?} (nothing stays in the background; mode = daemon in \
              ~/.config/LumineCapture/ocr-engine keeps a faster engine warm instead)",
             settings.mode
@@ -103,7 +104,7 @@ pub fn resolve_mode(settings: &EngineSettings) -> Mode {
             // daemon left over from mode = daemon would otherwise hold memory (and VRAM) until idling out
             std::thread::spawn(move || {
                 if client::stop(&paths, Duration::from_secs(2), &client::kill_hard) == Ok(true) {
-                    eprintln!("ocr: stopped the daemon left from mode = daemon");
+                    info!("ocr: stopped the daemon left from mode = daemon");
                 }
             });
         }
@@ -135,7 +136,7 @@ pub fn resolve_mode(settings: &EngineSettings) -> Mode {
         } else {
             String::new()
         };
-        eprintln!("ocr: engine mode = {mode:?} ({how}{fetch})");
+        info!("ocr: engine mode = {mode:?} ({how}{fetch})");
     } else {
         let why = if paths.is_none() {
             "no XDG_RUNTIME_DIR".to_owned()
@@ -151,7 +152,7 @@ pub fn resolve_mode(settings: &EngineSettings) -> Mode {
         } else {
             "set device = cpu in ~/.config/LumineCapture/ocr-engine to run the daemon on the CPU anyway"
         };
-        eprintln!(
+        info!(
             "ocr: engine mode = {mode:?} (config wants {:?}; {why} -- {hint})",
             settings.mode
         );
@@ -160,7 +161,7 @@ pub fn resolve_mode(settings: &EngineSettings) -> Mode {
         && let Some(paths) = &paths
         && !lock_free(&paths.lock)
     {
-        eprintln!("ocr: a daemon from an earlier run is still up, this mode does not use it (--ocr-daemon stop)");
+        warn!("ocr: a daemon from an earlier run is still up, this mode does not use it (--ocr-daemon stop)");
     }
     mode
 }
@@ -199,7 +200,7 @@ fn cpu_engine(files: &ModelFiles) -> Result<server::Engine, server::BuildError> 
 // so without network, it ll try again later rather than waiting until reboot
 fn gpu_library() -> Result<(), server::BuildError> {
     dawn::ensure().map_err(|e| {
-        eprintln!("ocr-daemon: {e}");
+        error!("ocr-daemon: {e}");
         server::BuildError::Failed(e)
     })
 }
@@ -212,7 +213,7 @@ fn gpu_engine(paths: &Paths, files: &ModelFiles) -> Result<server::Engine, serve
     let pid = std::process::id().to_string();
     if fs::read_to_string(&marker).is_ok_and(|owner| owner.trim() != pid) {
         let _ = fs::remove_file(&marker);
-        eprintln!("ocr-daemon: the previous daemon died while putting the engine on the GPU, not trying again");
+        warn!("ocr-daemon: the previous daemon died while putting the engine on the GPU, not trying again");
         return Err(server::BuildError::NoGpu);
     }
     let _ = fs::write(&marker, &pid);
@@ -247,7 +248,7 @@ pub fn record_strike(paths: &Paths, build: &str, strike: Strike) {
     lines.push(&line);
     let text = lines[lines.len().saturating_sub(STRIKES_KEPT)..].join("\n") + "\n";
     if let Err(e) = fs::create_dir_all(&paths.dir).and_then(|()| fs::write(&paths.strikes, text)) {
-        eprintln!("ocr: cannot record a daemon failure: {e}");
+        warn!("ocr: cannot record a daemon failure: {e}");
     }
 }
 
@@ -326,25 +327,12 @@ pub fn lock_file_pid(paths: &Paths) -> Option<i32> {
 pub fn spawn_daemon() -> io::Result<()> {
     let mut command = Command::new(std::env::current_exe()?);
     command.args(["--ocr-daemon", "serve"]);
-    spawn_detached(command, log_path().as_deref())
+    spawn_detached(command, crate::logging::open_log_file())
 }
 
 const CLOSE_RANGE_CLOEXEC: u32 = 4;
-const LOG_LIMIT: u64 = 512 * 1024;
 
-pub fn spawn_detached(mut command: Command, log: Option<&Path>) -> io::Result<()> {
-    let log = log.and_then(|path| {
-        if let Some(dir) = path.parent() {
-            let _ = fs::create_dir_all(dir);
-        }
-        // An unheld lock indicates the daemon is inactive; 
-        // kernel automatically releases the `flock` upon process termination.
-        let file = OpenOptions::new().create(true).append(true).open(path).ok()?;
-        if file.metadata().is_ok_and(|meta| meta.len() > LOG_LIMIT) {
-            let _ = file.set_len(0);
-        }
-        Some(file)
-    });
+pub fn spawn_detached(mut command: Command, log: Option<std::fs::File>) -> io::Result<()> {
     command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -363,10 +351,6 @@ pub fn spawn_detached(mut command: Command, log: Option<&Path>) -> io::Result<()
         let _ = child.wait();
     });
     Ok(())
-}
-
-fn log_path() -> Option<PathBuf> {
-    Some(dirs::state_dir()?.join("LumineCapture").join("ocr-daemon.log"))
 }
 
 pub fn cli(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn Error>> {
@@ -450,7 +434,7 @@ fn status(paths: &Paths) -> Result<(), Box<dyn Error>> {
         None => println!("idle exit:  never"),
     }
     println!("socket:     {}", paths.socket.display());
-    if let Some(log) = log_path() {
+    if let Some(log) = crate::logging::log_file_path() {
         println!("log:        {}", log.display());
     }
     Ok(())

@@ -6,6 +6,7 @@
 // Uses a shared text detector across all languages, while each language has its own 
 // recognizer and dictionary file.
 
+use log::{error, warn};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -267,7 +268,7 @@ impl OcrModels {
 
     pub fn download(&mut self, idx: usize) {
         let Some(dir) = self.dir.clone() else {
-            eprintln!("ocr: no data directory to download models into");
+            error!("ocr: no data directory to download models into");
             self.status[idx] = ModelStatus::Failed;
             return;
         };
@@ -311,7 +312,7 @@ impl OcrModels {
             if let Err(e) = std::fs::remove_file(dir.join(file))
                 && e.kind() != std::io::ErrorKind::NotFound
             {
-                eprintln!("ocr: failed to remove {file}: {e}");
+                warn!("ocr: failed to remove {file}: {e}");
             }
         }
         self.refresh();
@@ -373,7 +374,7 @@ impl OcrModels {
             .map_or(Ok(()), std::fs::create_dir_all)
             .and_then(|_| std::fs::write(&path, id));
         if let Err(e) = written {
-            eprintln!("ocr: failed to save the model choice: {e}");
+            warn!("ocr: failed to save the model choice: {e}");
         }
     }
 }

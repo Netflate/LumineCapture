@@ -22,6 +22,9 @@ pub enum ToastKind {
     OcrPickRegion,
     OcrNoModel,
     OcrDownloadFailed,
+    OcrFailed,
+    OcrNoText,
+    CopyFailed,
     ColorCopied,
     PickColor,
 }
@@ -81,6 +84,27 @@ impl ToastKind {
             },
             ToastKind::OcrDownloadFailed => ToastSpec {
                 text: "Couldn't download the language, check the connection",
+                anchor: ToastAnchor::SelectionCenter,
+                life: ToastLife::Timed(Duration::from_secs(4)),
+                fade_in: 0.18,
+                fade_out: 0.14,
+            },
+            ToastKind::OcrFailed => ToastSpec {
+                text: "Couldn't read this area",
+                anchor: ToastAnchor::SelectionCenter,
+                life: ToastLife::Timed(Duration::from_secs(4)),
+                fade_in: 0.18,
+                fade_out: 0.14,
+            },
+            ToastKind::OcrNoText => ToastSpec {
+                text: "No text found here",
+                anchor: ToastAnchor::SelectionCenter,
+                life: ToastLife::Timed(Duration::from_secs(3)),
+                fade_in: 0.18,
+                fade_out: 0.14,
+            },
+            ToastKind::CopyFailed => ToastSpec {
+                text: "Couldn't copy to the clipboard",
                 anchor: ToastAnchor::SelectionCenter,
                 life: ToastLife::Timed(Duration::from_secs(4)),
                 fade_in: 0.18,

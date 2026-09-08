@@ -1,3 +1,4 @@
+use log::warn;
 use crate::editor::{DamageZone, EditorState};
 use crate::renderer::shadow_color_for;
 use crate::tools::ToolBehavior;
@@ -88,7 +89,7 @@ pub fn apply_key_to_editor(
                 if let Some(text) = extract_selected_text(editor)
                     && let Err(e) = crate::utils::copy_to_clipboard(&text)
                 {
-                    eprintln!("text: can't copy: {e}");
+                    warn!("text: can't copy: {e}");
                     return false;
                 }
 

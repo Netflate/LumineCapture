@@ -5,6 +5,7 @@
 // timeout, binary mismatch, or missing GPU support, ensuring text recognition always succeeds.
 // Operates on a single-connection-per-request model.
 
+use log::{debug, info, warn};
 use std::cell::{Cell, RefCell};
 use std::io;
 use std::os::fd::AsFd;
@@ -105,7 +106,7 @@ pub fn connect_with(config: Config, files: &ModelFiles) -> Result<Box<dyn OcrBac
     };
     match client.open() {
         Ok(session) => {
-            eprintln!(
+            info!(
                 "ocr: connected to the OCR daemon (pid {}, {:?})",
                 session.pid.map_or("?".to_owned(), |pid| pid.to_string()),
                 session.welcome.state
@@ -154,21 +155,21 @@ impl OcrBackend for DaemonBackend {
         if !self.broken.get() {
             match self.remote(&image, cancelled) {
                 Remote::Done(text) => {
-                    eprintln!("ocr: read by the daemon");
+                    debug!("ocr: read by the daemon");
                     clear_strikes(&self.config.paths);
                     // if there is daemon, no need in additional local engine, dropping it
                     self.local.borrow_mut().take();
                     return Ok(text);
                 }
                 Remote::Cancelled => return Err(CANCELLED.into()),
-                Remote::Local => eprintln!("ocr: the daemon is not ready yet, reading in this process"),
+                Remote::Local => debug!("ocr: the daemon is not ready yet, reading in this process"),
                 Remote::Fail(fail) => {
                     self.strike(&fail);
                     self.broken.set(true);
                 }
             }
         } else {
-            eprintln!("ocr: reading in this process (no daemon)");
+            debug!("ocr: reading in this process (no daemon)");
         }
         let mut local = self.local.borrow_mut();
         if local.is_none() {
@@ -189,7 +190,7 @@ impl DaemonBackend {
     fn open_once(&self) -> Result<Session, Fail> {
         let mut session = self.handshake()?;
         if self.foreign(&session.welcome) {
-            eprintln!(
+            info!(
                 "ocr: the running daemon is from another build ({}), replacing it",
                 session.welcome.build
             );
@@ -246,7 +247,7 @@ impl DaemonBackend {
             return Err(Fail::Blocked);
         }
         self.spawned.set(true);
-        eprintln!("ocr: no daemon at {}, starting one", socket.display());
+        info!("ocr: no daemon at {}, starting one", socket.display());
         (self.config.spawn)().map_err(|e| Fail::Unreachable(format!("cannot start the daemon: {e}")))?;
         let deadline = Instant::now() + self.config.timing.connect;
         loop {
@@ -330,7 +331,7 @@ impl DaemonBackend {
         match protocol::read_reply(&mut &session.stream) {
             Ok(Reply::Lines(text)) => Remote::Done(text),
             Ok(Reply::Error(e)) => {
-                eprintln!("ocr: the daemon could not read the image ({e}), reading it here");
+                warn!("ocr: the daemon could not read the image ({e}), reading it here");
                 Remote::Local
             }
             Ok(_) => Remote::Fail(Fail::Protocol("unexpected answer to recognize".into())),
@@ -341,13 +342,13 @@ impl DaemonBackend {
     fn strike(&self, fail: &Fail) {
         let (strike, reason) = match fail {
             Fail::Blocked => {
-                eprintln!("ocr: the daemon failed here recently, OCR runs in this process");
+                warn!("ocr: the daemon failed here recently, OCR runs in this process");
                 return;
             }
             Fail::NoGpu => (Strike::NoGpu, "no GPU".to_owned()),
             Fail::Unreachable(e) | Fail::Failed(e) | Fail::Protocol(e) => (Strike::Failed, e.clone()),
         };
-        eprintln!("ocr: daemon unusable ({reason}), OCR runs in this process");
+        warn!("ocr: daemon unusable ({reason}), OCR runs in this process");
         record_strike(&self.config.paths, &self.config.build, strike);
     }
 }

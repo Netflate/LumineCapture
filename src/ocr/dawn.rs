@@ -65,6 +65,7 @@ pub fn ensure() -> Result<(), String> {
 
 #[cfg(all(feature = "ocr-gpu", target_arch = "x86_64"))]
 mod fetch {
+    use log::info;
     use std::fs::{self, File};
     use std::io::{self, BufReader, Read, Write};
     use std::path::Path;
@@ -87,7 +88,7 @@ mod fetch {
     pub fn download() -> Result<(), String> {
         let dir = super::download_dir().ok_or("no data directory to download the GPU library into")?;
         fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
-        eprintln!("ocr: downloading {LIBRARY} ({} MB) from {URL}", ARCHIVE.size / 1_000_000);
+        info!("ocr: downloading {LIBRARY} ({} MB) from {URL}", ARCHIVE.size / 1_000_000);
         let started = Instant::now();
         let never = AtomicBool::new(false);
         download::fetch(&download::agent(), URL, &ARCHIVE, &dir, &never, &never, |_| {})
@@ -97,7 +98,7 @@ mod fetch {
         let _ = fs::remove_file(&archive);
         extracted?;
         remove_other_versions(&dir);
-        eprintln!("ocr: {LIBRARY} is ready in {:.1} s, {}", started.elapsed().as_secs_f32(), dir.display());
+        info!("ocr: {LIBRARY} is ready in {:.1} s, {}", started.elapsed().as_secs_f32(), dir.display());
         Ok(())
     }
 
@@ -193,6 +194,7 @@ mod fetch {
 
 #[cfg(all(feature = "ocr-gpu", target_arch = "x86_64"))]
 mod trampolines {
+    use log::{error, info};
     use std::ffi::{CStr, CString};
     use std::os::unix::ffi::OsStrExt;
     use std::sync::Mutex;
@@ -208,7 +210,7 @@ mod trampolines {
 
     #[unsafe(no_mangle)]
     extern "C" fn lumine_dawn_missing() -> ! {
-        eprintln!("ocr: WebGPU was used before {} was loaded", super::LIBRARY);
+        error!("ocr: WebGPU was used before {} was loaded", super::LIBRARY);
         std::process::abort()
     }
 
@@ -248,7 +250,7 @@ mod trampolines {
         for (i, address) in found.into_iter().enumerate() {
             unsafe { slots.add(i).write(address) };
         }
-        eprintln!("ocr: loaded {}", path.display());
+        info!("ocr: loaded {}", path.display());
         Ok(())
     }
 }

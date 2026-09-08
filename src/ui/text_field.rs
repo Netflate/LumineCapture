@@ -2,6 +2,7 @@
 /// so i couldn't use the same functions in both files, since tool one is for rich text and use editor
 use std::collections::HashMap;
 use std::hash::Hash;
+use log::warn;
 use crate::types::SpecialKey;
 
 
@@ -236,7 +237,7 @@ impl<K: Eq + Hash + Copy> TextFieldGroup<K> {
                     if let Some(sel) = edit.field.selected_text()
                         && let Err(e) = crate::utils::copy_to_clipboard(&sel)
                     {
-                        eprintln!("text field: can't copy: {e}");
+                        warn!("text field: can't copy: {e}");
                         return (false, false);
                     }
                     if matches!(key, SpecialKey::KeyX) {

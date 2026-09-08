@@ -10,6 +10,7 @@
 // - on-demand: engine doesn't build up, before choosing ocr tool (prepare / start).
 // - cancellation flag: polled by the engine between pipeline stages.
 
+use log::error;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
@@ -222,7 +223,7 @@ impl OcrRuntime {
                 self.warm_rx = None;
             }
             Ok(Err(e)) => {
-                eprintln!("ocr: failed to initialise engine: {e}");
+                error!("ocr: failed to initialise engine: {e}");
                 self.failed = Some(e);
                 self.warm_rx = None;
             }

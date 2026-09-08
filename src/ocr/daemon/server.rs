@@ -8,6 +8,7 @@
 // Recognition scans are executed sequentially (protected by an engine `Mutex`), while `Hello` 
 // and `Status` requests always respond immediately, even during active scanning.
 
+use log::{info, warn};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufReader, Read, Write};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
@@ -161,7 +162,7 @@ pub fn serve(config: Config) -> Result<Outcome, String> {
         last_ms: AtomicU32::new(0),
         wake,
     });
-    eprintln!(
+    info!(
         "ocr-daemon: pid {} listening on {}",
         std::process::id(),
         paths.socket.display()
@@ -194,7 +195,7 @@ pub fn serve(config: Config) -> Result<Outcome, String> {
         if let Err(e) = poll(&mut fds, timeout)
             && e != Errno::EINTR
         {
-            eprintln!("ocr-daemon: poll failed: {e}");
+            warn!("ocr-daemon: poll failed: {e}");
             break Outcome::Shutdown;
         }
         let mut sink = [0u8; 64];
@@ -204,7 +205,7 @@ pub fn serve(config: Config) -> Result<Outcome, String> {
 
     let _ = fs::remove_file(&paths.socket);
     drop(lock);
-    eprintln!("ocr-daemon: leaving ({outcome:?})");
+    info!("ocr-daemon: leaving ({outcome:?})");
     Ok(outcome)
 }
 
@@ -261,13 +262,13 @@ fn accept_all(listener: &UnixListener, shared: &Arc<Shared>) {
                     .spawn(move || handle(owned, stream));
                 if let Err(e) = spawned {
                     shared.connections.fetch_sub(1, Ordering::SeqCst);
-                    eprintln!("ocr-daemon: cannot serve a connection: {e}");
+                    warn!("ocr-daemon: cannot serve a connection: {e}");
                 }
             }
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => return,
             Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
             Err(e) => {
-                eprintln!("ocr-daemon: accept failed: {e}");
+                warn!("ocr-daemon: accept failed: {e}");
                 // prevent spinning inside `poll` if file descriptors are exhausted, for instance.
                 std::thread::sleep(Duration::from_millis(100));
                 return;
@@ -367,7 +368,7 @@ fn load(shared: &Arc<Shared>, files: ModelFiles) {
             }
             Err(BuildError::Failed(e)) => EngineState::Failed(e),
         };
-        eprintln!("ocr-daemon: engine {state:?} after {} ms", started.elapsed().as_millis());
+        info!("ocr-daemon: engine {state:?} after {} ms", started.elapsed().as_millis());
         *lock(&shared.state) = state;
         drop(wanted);
         shared.touch();

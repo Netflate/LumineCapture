@@ -8,6 +8,7 @@
 //   for precise sub-line text selection.
 // - Logs performance metrics (`ocr: timing`) to stderr. (temporary).
 
+use log::debug;
 use std::time::Instant;
 
 use oar_ocr::core::config::{OrtExecutionProvider, OrtSessionConfig};
@@ -106,7 +107,7 @@ impl PaddleBackend {
         );
         let recognizer_ms = ms(stage);
 
-        eprintln!(
+        debug!(
             "ocr: engine ready in {:.0}ms  (detector {:.0} | recognizer {:.0})",
             ms(total),
             detector_ms,
@@ -254,7 +255,7 @@ impl OcrBackend for PaddleBackend {
         });
         let sort_ms = ms(stage);
 
-        eprintln!(
+        debug!(
             "ocr: timing {}x{}px -> {} lines in {:.0}ms  (decode {:.0} | detect {:.0} | \
              crop {:.0} [{} boxes -> {} crops] | recognize {:.0} | sort {:.1})",
             width,

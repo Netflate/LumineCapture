@@ -1,3 +1,4 @@
+use log::{info, warn};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{RecvTimeoutError, channel};
@@ -113,7 +114,7 @@ pub fn store(path: &Path, record: &Record, key: &str) {
         .map_or(Ok(()), fs::create_dir_all)
         .and_then(|()| fs::write(path, render(record, key)));
     if let Err(e) = written {
-        eprintln!("ocr: cannot save the device measurement: {e}");
+        warn!("ocr: cannot save the device measurement: {e}");
     }
 }
 
@@ -163,7 +164,7 @@ pub fn parse(text: &str, key: &str) -> Option<Record> {
 /// Measures the execution time of a single warm scan on each device. Runs on the daemon's
 /// engine thread so the overlay process can continue recognizing text while this runs.
 pub fn run(files: &ModelFiles, save: &dyn Fn(&Record)) -> Record {
-    eprintln!("ocr-daemon: measuring this machine once (CPU against GPU), takes a few seconds");
+    info!("ocr-daemon: measuring this machine once (CPU against GPU), takes a few seconds");
     let cpu_ms = guarded(files, false);
     let mut record = Record {
         verdict: decide(cpu_ms, None),
@@ -180,7 +181,7 @@ pub fn run(files: &ModelFiles, save: &dyn Fn(&Record)) -> Record {
         record.verdict = decide(cpu_ms, record.gpu_ms);
     }
     save(&record);
-    eprintln!("ocr-daemon: measured, {}", record.summary());
+    info!("ocr-daemon: measured, {}", record.summary());
     record
 }
 
@@ -193,11 +194,11 @@ fn guarded(files: &ModelFiles, gpu: bool) -> Option<u32> {
     match rx.recv_timeout(BUDGET) {
         Ok(result) => result,
         Err(RecvTimeoutError::Timeout) => {
-            eprintln!("ocr-daemon: the {} engine did not answer in {BUDGET:?}", device(gpu));
+            warn!("ocr-daemon: the {} engine did not answer in {BUDGET:?}", device(gpu));
             None
         }
         Err(RecvTimeoutError::Disconnected) => {
-            eprintln!("ocr-daemon: the {} engine crashed while measuring", device(gpu));
+            warn!("ocr-daemon: the {} engine crashed while measuring", device(gpu));
             None
         }
     }
@@ -216,7 +217,7 @@ fn measure(files: &ModelFiles, gpu: bool) -> Option<u32> {
     let backend = match built {
         Ok(backend) => backend,
         Err(e) => {
-            eprintln!("ocr-daemon: no {} engine for the measurement: {e}", device(gpu));
+            info!("ocr-daemon: no {} engine for the measurement: {e}", device(gpu));
             return None;
         }
     };
@@ -225,11 +226,11 @@ fn measure(files: &ModelFiles, gpu: bool) -> Option<u32> {
         let started = Instant::now();
         let read: Result<OcrText, _> = crate::ocr::OcrBackend::recognize(&backend, probe_image(), &|| false);
         let Ok(text) = read else {
-            eprintln!("ocr-daemon: the {} engine could not read the probe image", device(gpu));
+            warn!("ocr-daemon: the {} engine could not read the probe image", device(gpu));
             return None;
         };
         let ms = u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX);
-        eprintln!(
+        info!(
             "ocr-daemon: probe on {} #{} took {ms} ms ({} lines)",
             device(gpu),
             scan + 1,

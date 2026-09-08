@@ -46,6 +46,7 @@ ureq = { version = "3.4", default-features = false, features = ["native-tls"] }
 
 # utilities
 chrono = { version = "0.4", features = ["clock"] }
+log = "0.4"
 strum = { version = "0.28", features = ["derive"] }
 
 [features]

@@ -8,6 +8,8 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use log::warn;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
     /// build up when ocr tool is selected, dies with the overlay
@@ -68,7 +70,7 @@ impl EngineSettings {
                 continue;
             }
             let Some((key, value)) = line.split_once('=') else {
-                eprintln!("ocr: ignoring setting line without '=': {line}");
+                warn!("ocr: ignoring setting line without '=': {line}");
                 continue;
             };
             let (key, value) = (key.trim(), value.trim());
@@ -84,7 +86,7 @@ impl EngineSettings {
                 _ => true,
             };
             if !understood {
-                eprintln!("ocr: ignoring setting {key} = {value}");
+                warn!("ocr: ignoring setting {key} = {value}");
             }
         }
         settings
@@ -149,7 +151,7 @@ fn write_template(path: &Path) {
         .map_or(Ok(()), std::fs::create_dir_all)
         .and_then(|()| std::fs::write(path, TEMPLATE));
     if let Err(e) = written {
-        eprintln!("ocr: cannot write {}: {e}", path.display());
+        warn!("ocr: cannot write {}: {e}", path.display());
     }
 }
 

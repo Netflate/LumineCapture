@@ -2,6 +2,7 @@
 //
 // Bypasses xdg-desktop-portal entirely and talks directly to kwin's private protocol
 
+use log::warn;
 use std::collections::HashMap;
 use std::error::Error;
 use std::os::fd::{AsFd, OwnedFd};
@@ -96,7 +97,7 @@ async fn capture_one_screen(
     let needed = stride as usize * height as usize;
     if raw.len() < needed {
         let missing = needed - raw.len();
-        eprintln!(
+        warn!(
             "warning: short read for '{output_name}': padding {missing} missing bytes with transparent"
         );
         raw.resize(needed, 0); // zero-pad remaining tail with black pixels

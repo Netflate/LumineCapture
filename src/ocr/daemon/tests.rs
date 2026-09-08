@@ -897,11 +897,19 @@ fn child_command(dir: &Path, scan_ms: u64) -> Command {
     command
 }
 
+fn child_log(dir: &Path) -> Option<fs::File> {
+    fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("child.log"))
+        .ok()
+}
+
 fn child_spawner(dir: &Path, scan_ms: u64, probe: &Probe) -> Spawner {
     let (dir, spawns) = (dir.to_path_buf(), probe.spawns.clone());
     Arc::new(move || {
         spawns.fetch_add(1, Ordering::SeqCst);
-        spawn_detached(child_command(&dir, scan_ms), Some(&dir.join("child.log")))
+        spawn_detached(child_command(&dir, scan_ms), child_log(&dir))
     })
 }
 
@@ -1024,7 +1032,7 @@ fn daemon_that_dies_while_loading_is_not_respawned_forever() {
         spawns.fetch_add(1, Ordering::SeqCst);
         let mut command = child_command(&root, 0);
         command.env(CHILD_CRASH, "1");
-        spawn_detached(command, Some(&root.join("child.log")))
+        spawn_detached(command, child_log(&root))
     });
     let backend = client::connect_with(client_config(&paths, spawn, &probe), &testing::files("m")).unwrap();
     for _ in 0..6 {
@@ -1070,7 +1078,7 @@ fn daemon_does_not_inherit_descriptors() {
     let leaked = nix::unistd::dup(&file).unwrap();
     let mut command = child_command(&dir, 0);
     command.env(CHILD_FD, leaked.as_raw_fd().to_string());
-    spawn_detached(command, Some(&dir.join("child.log"))).unwrap();
+    spawn_detached(command, child_log(&dir)).unwrap();
 
     let marker = dir.join("fd-inherited");
     assert!(wait_until(LONG, || fs::read_to_string(&marker).is_ok_and(|s| !s.is_empty())));

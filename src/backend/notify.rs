@@ -1,5 +1,6 @@
 pub mod freedesktop;
 
+use log::warn;
 use std::error::Error;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -67,7 +68,7 @@ pub async fn send(notice: Notice) {
         Ok(Err(e)) => e.to_string(),
         Err(_) => "timed out".to_string(),
     };
-    eprintln!("notification failed: {reason}");
+    warn!("notification failed: {reason}");
     let _ = StderrNotifier.notify(&n).await;
 }
 

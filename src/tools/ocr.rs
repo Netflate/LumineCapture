@@ -1,3 +1,4 @@
+use log::{error, info, warn};
 use crate::editor::dirty::mark_dirty;
 use crate::editor::{DamageZone, EditorState};
 use crate::ocr::{self, StartOutcome};
@@ -272,8 +273,11 @@ fn start_ocr(state: &mut EditorState) {
             // The shade and the badge both go up on the next frame.
             state.damage_rects.push(DamageZone::Global(region));
         }
-        StartOutcome::Busy => eprintln!("ocr: still working on the previous region"),
-        StartOutcome::Unavailable(e) => eprintln!("ocr: engine unavailable: {e}"),
+        StartOutcome::Busy => info!("ocr: still working on the previous region"),
+        StartOutcome::Unavailable(e) => {
+            error!("ocr: engine unavailable: {e}");
+            state.toasts.show(ToastKind::OcrFailed, &mut state.font_system);
+        }
     }
 }
 
@@ -292,8 +296,11 @@ pub fn copy_selection(state: &mut EditorState, _dirty_mask: &mut u32) {
         return;
     }
     match crate::utils::copy_to_clipboard(&text) {
-        Ok(()) => eprintln!("ocr: copied {} line(s)", text.lines().count()),
-        Err(e) => eprintln!("ocr: can't copy: {e}"),
+        Ok(()) => info!("ocr: copied {} line(s)", text.lines().count()),
+        Err(e) => {
+            warn!("ocr: can't copy: {e}");
+            state.toasts.show(ToastKind::CopyFailed, &mut state.font_system);
+        }
     }
 }
 
@@ -330,7 +337,8 @@ pub fn finish_ocr(
     let text = match result {
         Ok(text) => text,
         Err(e) => {
-            eprintln!("ocr: recognition failed: {e}");
+            error!("ocr: recognition failed: {e}");
+            state.toasts.show(ToastKind::OcrFailed, &mut state.font_system);
             state.ocr_view.clear();
             mark_all_dirty(state, dirty_mask);
             return;
@@ -338,7 +346,8 @@ pub fn finish_ocr(
     };
 
     if text.is_empty() {
-        eprintln!("ocr: no text found in the selected region");
+        info!("ocr: no text found in the selected region");
+        state.toasts.show(ToastKind::OcrNoText, &mut state.font_system);
         // Nothing to shade or select: drop the overlay rather than leaving the
         // region sitting under a wash with no text in it.
         state.ocr_view.clear();
@@ -347,7 +356,7 @@ pub fn finish_ocr(
     }
 
     state.ocr_view.set_lines(text.lines);
-    eprintln!("ocr: {} line(s)", state.ocr_view.lines.len());
+    info!("ocr: {} line(s)", state.ocr_view.lines.len());
 
     damage_all(state);
     mark_all_dirty(state, dirty_mask);
@@ -400,7 +409,7 @@ pub fn model_ready(state: &mut EditorState, idx: usize, dirty_mask: &mut u32) {
 }
 
 pub fn model_failed(state: &mut EditorState, idx: usize, err: &str) {
-    eprintln!("ocr: failed to download {}: {err}", MODELS[idx].name);
+    error!("ocr: failed to download {}: {err}", MODELS[idx].name);
     if state.selected_tool == Tool::Ocr {
         state
             .toasts
