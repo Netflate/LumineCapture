@@ -1,4 +1,5 @@
 pub mod dirty;
+pub mod edits;
 pub mod history;
 
 use cosmic_text::{Editor, FontSystem, SwashCache};
@@ -14,19 +15,77 @@ use crate::ui::color_popover::ColorPickerPopover;
 use crate::ui::magnifier::MagnifierState;
 use crate::ui::settings_panel::SettingsPanel;
 use crate::ui::toolbar::Toolbar;
+use crate::utils::rects_overlap;
+
+/// Pointer and keyboard state of the current gesture.
+pub struct InputState {
+    pub pointer: PointerState,
+    pub drag_start: Option<(f64, f64)>,
+    pub mouse_down: bool,
+    pub ctrl: bool,
+    pub shift: bool,
+    pub clicks: DoubleClickTracker<ClickTarget>,
+}
+
+impl Default for InputState {
+    fn default() -> Self {
+        Self {
+            pointer: PointerState::default(),
+            drag_start: None,
+            mouse_down: false,
+            ctrl: false,
+            shift: false,
+            clicks: DoubleClickTracker::new(),
+        }
+    }
+}
+
+/// The loupe under the cursor: where it is now, where it was, and when it moved.
+#[derive(Default)]
+pub struct Magnifier {
+    pub current: Option<MagnifierState>,
+    pub prev: Option<MagnifierState>,
+    pub last_update: Option<Instant>,
+}
+
+/// Text shaping and the live editors, one per text annotation.
+///
+/// Its fields are borrowed apart all over the tools (an editor and the font
+/// system at the same time), so this deliberately has no `&mut self` methods.
+pub struct TextState {
+    pub font_system: FontSystem,
+    pub swash_cache: SwashCache,
+    pub editors: HashMap<u64, Editor<'static>>,
+    pub editing: Option<TextEditState>,
+}
+
+/// The OCR engine, the installed models and the result on screen.
+pub struct OcrState {
+    pub runtime: crate::ocr::OcrRuntime,
+    pub models: crate::ocr::models::OcrModels,
+    pub view: crate::ocr::OcrView,
+    /// Set when the user drags to select a new OCR area. It saves the original
+    /// selection from before the drag started.
+    ///
+    /// When the drag ends, OCR only re-runs if the box size actually changed.
+    /// This prevents a simple click from clearing the current result.
+    pub redrag: bool,
+    pub redrag_from: Option<Rect>,
+    pub await_region: bool,
+    /// When the running recognition started, driving the progress badge's spin.
+    /// `None` whenever nothing is in flight.
+    pub scan_started: Option<Instant>,
+}
+
 pub struct EditorState {
     pub base: Vec<Pixmap>,
     pub canvas: Vec<Pixmap>,
     pub dimmed: Vec<Pixmap>,
     pub placements: Vec<Placement>,
-    pub drag_start: Option<(f64, f64)>,
     pub selected_tool: Tool,
     pub tool_active: bool,
-    pub pointer: PointerState,
-    pub magnifier: Option<MagnifierState>,
-    pub prev_magnifier: Option<MagnifierState>,
-    pub last_mag_update: Option<Instant>,
-    pub mouse_down_left: bool,
+    pub input: InputState,
+    pub magnifier: Magnifier,
     pub selection: SelectionState,
     pub icons_cache: HashMap<&'static str, Tree>,
     pub damage_rects: Vec<DamageZone>,
@@ -57,39 +116,14 @@ pub struct EditorState {
     // while damage_rects describes what must be rerendered on the final canvas.
     pub layer_damage_rects: Vec<Rect>,
     pub pending_pen_baked: usize,
-    pub font_system: FontSystem,
-    pub swash_cache: SwashCache,
-    pub text_editors: HashMap<u64, Editor<'static>>,
-    pub text_editing: Option<TextEditState>,
+    pub text: TextState,
     pub tool_settings: ToolSettings,
 
     /// Set to true when the user is about to pick a color from the palette, since the action is a one-time thing
     pub pick_once: bool,
     pub finish: Option<crate::types::Finish>,
-    pub click_tracker: DoubleClickTracker<ClickTarget>,
 
-    pub mod_ctrl: bool,
-    pub mod_shift: bool,
-
-    // OCR engine and its recognition jobs
-    pub ocr: crate::ocr::OcrRuntime,
-    // downloaded & downloading models, and selected
-    pub ocr_models: crate::ocr::models::OcrModels,
-    // recognized lines and the selection over them
-    pub ocr_view: crate::ocr::OcrView,
-    /// Set when the user drags to select a new OCR area. It saves the original
-    /// selection from before the drag started.
-    ///
-    /// When the drag ends, OCR only re-runs if the box size actually changed.
-    /// This prevents a simple click from clearing the current result.
-    pub ocr_redrag: bool,
-    pub ocr_redrag_from: Option<Rect>,
-
-    pub ocr_await_region: bool,
-
-    /// When the running recognition started, driving the progress badge's spin.
-    /// `None` whenever nothing is in flight.
-    pub ocr_scan_started: Option<Instant>,
+    pub ocr: OcrState,
 }
 
 // types.rs
@@ -99,7 +133,65 @@ pub enum DamageZone {
     Local { monitor_idx: usize, rect: Rect },
 }
 
+/// What the capture pipeline has to build before the editor can start.
+pub struct Layers {
+    pub base: Vec<Pixmap>,
+    pub canvas: Vec<Pixmap>,
+    pub dimmed: Vec<Pixmap>,
+    pub annotations: Vec<Pixmap>,
+}
+
 impl EditorState {
+    pub fn new(
+        layers: Layers,
+        placements: Vec<Placement>,
+        icons_cache: HashMap<&'static str, Tree>,
+        text: TextState,
+        ocr: OcrState,
+    ) -> Self {
+        Self {
+            base: layers.base,
+            canvas: layers.canvas,
+            dimmed: layers.dimmed,
+            annotations_layer: layers.annotations,
+            placements,
+            icons_cache,
+            text,
+            ocr,
+
+            selected_tool: Tool::Selection,
+            tool_active: false,
+            selection: SelectionState::default(),
+            input: InputState::default(),
+            magnifier: Magnifier::default(),
+
+            toolbar: Toolbar::new(),
+            settings_panel: SettingsPanel::new(),
+            color_popover: ColorPickerPopover::new(),
+            model_popover: crate::ui::model_popover::ModelPopover::new(),
+            toasts: crate::ui::toast::Toasts::default(),
+
+            annotations: Vec::new(),
+            pending: None,
+            prev_pending: None,
+            next_id: 0,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
+            selected_annotation: None,
+            ann_drag: None,
+            annotations_dirty: false,
+            // Number of points of the current pending Pen already baked into persistent layer
+            pending_pen_baked: 0,
+
+            damage_rects: Vec::new(),
+            layer_damage_rects: Vec::new(),
+
+            tool_settings: ToolSettings::default(),
+            pick_once: false,
+            finish: None,
+        }
+    }
+
     /// Returns true if the user is currently picking a color
     pub fn picking(&self) -> bool {
         self.selected_tool == Tool::Eyedropper || self.pick_once
@@ -110,7 +202,7 @@ impl EditorState {
     // so there will be absolutely no lags while drawing something on top of 10000th circles
     pub fn bake_annotation(&mut self, ann: &Annotation) {
         for (i, placement) in self.placements.iter().enumerate() {
-            let offset = (placement.position.0 as f32, placement.position.1 as f32);
+            let offset = placement.offset();
             let pad = crate::renderer::visual_pad(ann.stroke_width);
             let visual = Rect::from_ltrb(
                 ann.bbox.left() - offset.0 - pad,
@@ -118,22 +210,17 @@ impl EditorState {
                 ann.bbox.right() - offset.0 + pad,
                 ann.bbox.bottom() - offset.1 + pad,
             );
-            let monitor_rect =
-                Rect::from_xywh(0.0, 0.0, placement.size.0 as f32, placement.size.1 as f32);
-            if let (Some(vis), Some(mon)) = (visual, monitor_rect)
-                && vis.left() < mon.right()
-                    && vis.right() > mon.left()
-                    && vis.top() < mon.bottom()
-                    && vis.bottom() > mon.top()
+            if let (Some(vis), Some(mon)) = (visual, placement.rect())
+                && rects_overlap(&vis, &mon)
                 {
                     crate::renderer::draw_annotation(
                         &mut self.annotations_layer[i],
                         ann,
                         offset,
                         false,
-                        &mut self.font_system,
-                        &mut self.swash_cache,
-                        &mut self.text_editors,
+                        &mut self.text.font_system,
+                        &mut self.text.swash_cache,
+                        &mut self.text.editors,
                         None,
                     );
                 }
@@ -167,20 +254,15 @@ impl EditorState {
 
         if let Some(path) = pb.finish() {
             for (i, placement) in self.placements.iter().enumerate() {
-                let offset = (placement.position.0 as f32, placement.position.1 as f32);
+                let offset = placement.offset();
                 let visual = Rect::from_ltrb(
                     segment_bbox.left() - offset.0,
                     segment_bbox.top() - offset.1,
                     segment_bbox.right() - offset.0,
                     segment_bbox.bottom() - offset.1,
                 );
-                let monitor_rect =
-                    Rect::from_xywh(0.0, 0.0, placement.size.0 as f32, placement.size.1 as f32);
-                if let (Some(vis), Some(mon)) = (visual, monitor_rect)
-                    && vis.left() < mon.right()
-                        && vis.right() > mon.left()
-                        && vis.top() < mon.bottom()
-                        && vis.bottom() > mon.top()
+                if let (Some(vis), Some(mon)) = (visual, placement.rect())
+                    && rects_overlap(&vis, &mon)
                     {
                         crate::renderer::stroke_pen_segment(
                             &mut self.annotations_layer[i],

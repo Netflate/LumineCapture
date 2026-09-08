@@ -76,15 +76,15 @@ impl EditorState {
                 }
             };
 
-            add_mag_dirty(&self.magnifier);
-            add_mag_dirty(&self.prev_magnifier);
+            add_mag_dirty(&self.magnifier.current);
+            add_mag_dirty(&self.magnifier.prev);
         }
         dirty
     }
 
     fn calc_damage_zones_dirty(&self, monitor_idx: usize, placement: &Placement) -> Option<Rect> {
         let mut dirty = None;
-        let offset = (placement.position.0 as f32, placement.position.1 as f32);
+        let offset = placement.offset();
         let (mw, mh) = (placement.size.0 as f32, placement.size.1 as f32);
 
         fn global_to_local_padded(
@@ -166,7 +166,7 @@ impl EditorState {
 
     pub fn monitor_layer_dirty_rect(&self, monitor_idx: usize) -> Option<Rect> {
         let placement = &self.placements[monitor_idx];
-        let offset = (placement.position.0 as f32, placement.position.1 as f32);
+        let offset = placement.offset();
         let (mw, mh) = (placement.size.0 as f32, placement.size.1 as f32);
         let mut dirty: Option<Rect> = None;
 
@@ -199,21 +199,17 @@ impl EditorState {
         for ann_a in state_a {
             if let Some(ann_b) = state_b.iter().find(|b| b.id == ann_a.id) {
                 if ann_a != ann_b {
-                    damage_rects.push(DamageZone::Global(ann_a.damage_bbox(true)));
-                    layer_damage_rects.push(ann_a.damage_bbox(false));
-                    damage_rects.push(DamageZone::Global(ann_b.damage_bbox(true)));
-                    layer_damage_rects.push(ann_b.damage_bbox(false));
+                    damage_annotation(damage_rects, layer_damage_rects, ann_a);
+                    damage_annotation(damage_rects, layer_damage_rects, ann_b);
                 }
             } else {
-                damage_rects.push(DamageZone::Global(ann_a.damage_bbox(true)));
-                layer_damage_rects.push(ann_a.damage_bbox(false));
+                damage_annotation(damage_rects, layer_damage_rects, ann_a);
             }
         }
 
         for ann_b in state_b {
             if !state_a.iter().any(|a| a.id == ann_b.id) {
-                damage_rects.push(DamageZone::Global(ann_b.damage_bbox(true)));
-                layer_damage_rects.push(ann_b.damage_bbox(false));
+                damage_annotation(damage_rects, layer_damage_rects, ann_b);
             }
         }
     }
@@ -246,8 +242,25 @@ fn union_rect(a: Option<Rect>, b: Option<Rect>) -> Option<Rect> {
     }
 }
 
+/// marks an annotation dirty on both the main canvas and cached layer.
+/// takes separate vector references to work while the annotation is borrowed.
+pub fn damage_annotation(
+    damage_rects: &mut Vec<DamageZone>,
+    layer_damage_rects: &mut Vec<Rect>,
+    ann: &Annotation,
+) {
+    damage_rects.push(DamageZone::Global(ann.damage_bbox(true)));
+    layer_damage_rects.push(ann.damage_bbox(false));
+}
+
 pub fn mark_dirty(mask: &mut u32, idx: usize) {
     *mask |= 1 << idx;
+}
+
+pub fn mark_all_dirty(mask: &mut u32, monitors: usize) {
+    for idx in 0..monitors {
+        mark_dirty(mask, idx);
+    }
 }
 
 pub fn is_dirty(mask: u32, idx: usize) -> bool {
