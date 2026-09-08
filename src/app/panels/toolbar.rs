@@ -68,7 +68,7 @@ pub fn update_toolbar(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     );
 
     if editor_state.toolbar.rect().is_some() {
-        let (_, hovered) = editor_state.toolbar.hit_test(editor_state.pointer.local);
+        let (_, hovered) = editor_state.toolbar.hit_test(editor_state.input.pointer.local);
         sync_panel_hover(
             &mut editor_state.toolbar,
             hovered,
@@ -88,14 +88,14 @@ fn compute_toolbar_placement(editor_state: &EditorState) -> (usize, (f32, f32), 
     }
 
     let Some(sel) = editor_state.selection.zone else {
-        let monitor_idx = editor_state.pointer.monitor_idx;
+        let monitor_idx = editor_state.input.pointer.monitor_idx;
         let placement = &editor_state.placements[monitor_idx];
         let mon_w = placement.size.0 as f32;
         let pos = ((mon_w - editor_state.toolbar.size.0) / 2.0, toolbar::OFFSET);
         return (monitor_idx, pos, false);
     };
 
-    let monitor_idx = editor_state.pointer.monitor_idx;
+    let monitor_idx = editor_state.input.pointer.monitor_idx;
     let placement = &editor_state.placements[monitor_idx];
 
     let local_sel = global_selection_to_local(&sel, placement).unwrap_or_else(|| {

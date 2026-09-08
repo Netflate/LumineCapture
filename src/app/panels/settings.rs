@@ -1,25 +1,16 @@
 // Settings panel animation and positioning logic.
-// TODO: need to comment a lot of stuff here before forgetting details
-
-use crate::editor::dirty::{apply_damage_rects, mark_dirty};
-use crate::editor::{DamageZone, EditorState};
+use crate::editor::dirty::apply_damage_rects;
+use crate::editor::edits::{active_annotation_idx, commit_settings_change};
+use crate::editor::EditorState;
 use crate::tools::Tool;
-use crate::types::annotations::rebuild_annotation;
 use crate::ui::panel::{emit_panel_damage, sync_panel_hover, sync_panel_rect};
-use crate::types::{Annotation, AnnotationShape, SpecialKey, ToolSettings};
+use crate::types::{AnnotationShape, SpecialKey};
 use crate::interaction::{HOLD_ACCEL_AFTER, HOLD_FAST_INTERVAL, HOLD_INITIAL_DELAY, HOLD_REPEAT_INTERVAL};
 use crate::ui::panel::UiPanel;
 use crate::ui::settings_panel::{OCR_AWAITING_WIDGETS, OCR_DOWNLOADING_WIDGETS, OCR_NO_MODEL_WIDGETS, OCR_SCANNING_WIDGETS, OCR_WIDGETS, OCR_WIDGETS_DOWNLOADING, SettingsAction, SettingsSource, SettingsWidget, StepperArrow, ToggleField, compute_settings_placement, widgets_for_annotation, widgets_for_tool};
 use std::time::Instant;
 
 
-pub fn active_annotation_idx(editor_state: &EditorState) -> Option<usize> {
-    if editor_state.selected_tool == Tool::Pick || editor_state.selected_tool == Tool::Text {
-        editor_state.selected_annotation
-    } else {
-        None
-    }
-}
 
 pub fn current_color(editor_state: &EditorState) -> tiny_skia::Color {
     active_annotation_idx(editor_state)
@@ -34,10 +25,10 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
     // A running scan owns the panel outright: its buttons act on a result that
     // isn't there yet.
     let ocr = editor_state.selected_tool == Tool::Ocr;
-    let scanning = ocr && editor_state.ocr.is_busy();
-    let awaiting = ocr && editor_state.ocr_await_region;
-    let no_model = ocr && editor_state.ocr_models.installed_count() == 0;
-    let downloading = editor_state.ocr_models.is_downloading();
+    let scanning = ocr && editor_state.ocr.runtime.is_busy();
+    let awaiting = ocr && editor_state.ocr.await_region;
+    let no_model = ocr && editor_state.ocr.models.installed_count() == 0;
+    let downloading = editor_state.ocr.models.is_downloading();
 
     let new_source = match selected_ann {
         _ if no_model => SettingsSource::OcrNoModel { downloading },
@@ -122,7 +113,7 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
         editor_state.settings_panel.arrow_held = None;
     }
 
-    let download = editor_state.ocr_models.download_progress();
+    let download = editor_state.ocr.models.download_progress();
     let download_changed = editor_state.settings_panel.download != download;
     editor_state.settings_panel.download = download;
 
@@ -139,20 +130,18 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
         let prev_hover = editor_state.settings_panel.hovered;
         let (_, hovered) = editor_state
             .settings_panel
-            .hit_test(editor_state.pointer.local);
+            .hit_test(editor_state.input.pointer.local);
         let hovered_arrow = hovered.and_then(|idx| {
             editor_state
                 .settings_panel
-                .stepper_arrow_hit(idx, editor_state.pointer.local)
+                .stepper_arrow_hit(idx, editor_state.input.pointer.local)
                 .map(|arrow| (idx, arrow))
         });
 
-        if hovered != prev_hover && !editor_state.settings_panel.is_editing()
-            && let Some(snapshot) = editor_state.settings_panel.pre_edit_snapshot.take()
-                && editor_state.annotations != snapshot {
-                    editor_state.undo_stack.push(snapshot);
-                    editor_state.redo_stack.clear();
-                }
+        if hovered != prev_hover && !editor_state.settings_panel.is_editing() {
+            let snapshot = editor_state.settings_panel.pre_edit_snapshot.take();
+            editor_state.commit_snapshot(snapshot);
+        }
 
         sync_panel_hover(
             &mut editor_state.settings_panel,
@@ -167,12 +156,10 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
                 editor_state.settings_panel.arrow_held = None;
             }
         }
-    } else if !editor_state.settings_panel.is_editing()
-        && let Some(snapshot) = editor_state.settings_panel.pre_edit_snapshot.take()
-            && editor_state.annotations != snapshot {
-                editor_state.undo_stack.push(snapshot);
-                editor_state.redo_stack.clear();
-            }
+    } else if !editor_state.settings_panel.is_editing() {
+        let snapshot = editor_state.settings_panel.pre_edit_snapshot.take();
+        editor_state.commit_snapshot(snapshot);
+    }
 }
 
 /// Run a one-shot panel button. Kept here rather than in `input` so the panel's
@@ -186,7 +173,7 @@ pub fn run_settings_action(
         SettingsAction::OcrRescan => crate::tools::ocr::restart_ocr(editor_state, dirty_mask),
         SettingsAction::OcrCopyAll => crate::tools::ocr::copy_all(editor_state, dirty_mask),
         SettingsAction::OcrLanguages => {
-            super::model_popover::toggle_model_popover(editor_state, dirty_mask)
+            super::model::toggle_model_popover(editor_state, dirty_mask)
         }
     }
     update_settings_panel(editor_state, dirty_mask);
@@ -334,8 +321,8 @@ pub fn handle_settings_key_press(
         return;
     };
 
-    let ctrl = editor_state.mod_ctrl;
-    let shift = editor_state.mod_shift;
+    let ctrl = editor_state.input.ctrl;
+    let shift = editor_state.input.shift;
 
     let (changed, commit) = editor_state.settings_panel.handle_key(key, ctrl, shift);
 
@@ -387,53 +374,9 @@ pub fn commit_stepper_text_edit(editor_state: &mut EditorState, dirty_mask: &mut
     update_settings_panel(editor_state, dirty_mask);
     apply_damage_rects(editor_state, dirty_mask);
 
-    if let Some(snapshot) = snapshot
-        && editor_state.annotations != snapshot {
-            editor_state.undo_stack.push(snapshot);
-            editor_state.redo_stack.clear();
-        }
+    editor_state.commit_snapshot(snapshot);
 }
 
-pub fn commit_settings_change(
-    editor_state: &mut EditorState,
-    changed: bool,
-    record_undo: bool,
-    apply_to_tool: impl FnOnce(&mut ToolSettings),
-    apply_to_annotation: impl FnOnce(&mut Annotation),
-    dirty_mask: &mut u32,
-) {
-    if !changed {
-        return;
-    }
-
-    apply_to_tool(&mut editor_state.tool_settings);
-
-    if let Some(idx) = active_annotation_idx(editor_state) {
-        let old_damage = editor_state.annotations[idx].damage_bbox(true);
-        let old_layer_damage = editor_state.annotations[idx].damage_bbox(false);
-        editor_state
-            .damage_rects
-            .push(DamageZone::Global(old_damage));
-        editor_state.layer_damage_rects.push(old_layer_damage);
-
-        if record_undo {
-            editor_state.push_undo();
-        }
-        apply_to_annotation(&mut editor_state.annotations[idx]);
-        rebuild_annotation(editor_state, idx);
-    }
-
-    editor_state.settings_panel.dirty = true;
-    let monitor_idx = editor_state.settings_panel.monitor_idx;
-    if let Some(rect) = editor_state.settings_panel.rect() {
-        editor_state
-            .damage_rects
-            .push(DamageZone::Local { monitor_idx, rect });
-    }
-    mark_dirty(dirty_mask, monitor_idx);
-
-    apply_damage_rects(editor_state, dirty_mask);
-}
 
 fn try_apply_stepper_text(
     editor_state: &mut EditorState,

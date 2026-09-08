@@ -1,13 +1,13 @@
-use super::settings_logic::{commit_settings_change, compute_popover_placement};
+use super::settings::compute_popover_placement;
+use crate::editor::edits::{apply_color_selection, damage_color_popover, use_color};
 use crate::editor::EditorState;
 use crate::ui::settings_panel::char_index_for_x;
 use crate::types::SpecialKey;
 use crate::interaction::ClickTarget;
 use crate::ui::color_popover::{ColorField, ColorPopoverElement, FIELD_FONT_SIZE, step_hex_text};
 use crate::ui::color_popover;
-use crate::ui::panel::{UiPanel, emit_panel_damage, sync_panel_hover, sync_panel_rect};
+use crate::ui::panel::{UiPanel, sync_panel_hover, sync_panel_rect};
 use crate::ui::text_field::{CursorInit, is_hex_char, is_rgba_channel_char};
-use tiny_skia::Color;
 
 
 pub fn update_color_popover(editor_state: &mut EditorState, dirty_mask: &mut u32) {
@@ -46,16 +46,15 @@ pub fn update_color_popover(editor_state: &mut EditorState, dirty_mask: &mut u32
 
     if editor_state.color_popover.rect().is_some() {
         let prev_hover = editor_state.color_popover.hovered;
-        let hovered = hover_test(editor_state, editor_state.pointer.local);
+        let hovered = hover_test(editor_state, editor_state.input.pointer.local);
         if prev_hover != hovered
             && !editor_state.color_popover.fields.is_editing()
             && !editor_state.color_popover.sv_square.dragging
             && !editor_state.color_popover.hue_dragging
-            && let Some(snapshot) = editor_state.color_popover.pre_edit_snapshot.take()
-                && editor_state.annotations != snapshot {
-                    editor_state.undo_stack.push(snapshot);
-                    editor_state.redo_stack.clear();
-                }
+        {
+            let snapshot = editor_state.color_popover.pre_edit_snapshot.take();
+            editor_state.commit_snapshot(snapshot);
+        }
         sync_panel_hover(
             &mut editor_state.color_popover,
             hovered,
@@ -65,11 +64,10 @@ pub fn update_color_popover(editor_state: &mut EditorState, dirty_mask: &mut u32
     } else if !editor_state.color_popover.fields.is_editing()
         && !editor_state.color_popover.sv_square.dragging
         && !editor_state.color_popover.hue_dragging
-        && let Some(snapshot) = editor_state.color_popover.pre_edit_snapshot.take()
-            && editor_state.annotations != snapshot {
-                editor_state.undo_stack.push(snapshot);
-                editor_state.redo_stack.clear();
-            }
+    {
+        let snapshot = editor_state.color_popover.pre_edit_snapshot.take();
+        editor_state.commit_snapshot(snapshot);
+    }
 }
 
 /// One hit-test for all clickable elements for hover
@@ -98,44 +96,7 @@ fn hover_test(editor_state: &EditorState, local: (f64, f64)) -> Option<ColorPopo
     None
 }
 
-fn emit_color_popover_damage(editor_state: &mut EditorState, dirty_mask: &mut u32) {
-    let monitor_idx = editor_state.color_popover.monitor_idx;
-    if let Some(rect) = editor_state.color_popover.rect() {
-        emit_panel_damage(
-            rect,
-            monitor_idx,
-            &mut editor_state.damage_rects,
-            dirty_mask,
-        );
-    }
-}
 
-/// common path for color selection, since we have two ways to use color selection
-/// swatch click and eyedropper pick
-pub fn use_color(editor_state: &mut EditorState, color: Color, dirty_mask: &mut u32) {
-    editor_state.color_popover.select_color(color);
-    editor_state.color_popover.record_used_color(color);
-    editor_state.color_popover.sync_field_values();
-    editor_state.color_popover.dirty = true;
-    emit_color_popover_damage(editor_state, dirty_mask);
-    apply_color_selection(editor_state, color, true, dirty_mask);
-}
-
-pub fn apply_color_selection(
-    editor_state: &mut EditorState,
-    color: Color,
-    record_undo: bool,
-    dirty_mask: &mut u32,
-) {
-    commit_settings_change(
-        editor_state,
-        true,
-        record_undo,
-        move |ts| ts.color = color,
-        move |ann| ann.color = color,
-        dirty_mask,
-    );
-}
 
 fn field_char_filter(field: ColorField) -> impl Fn(char) -> bool {
     move |ch| match field {
@@ -198,7 +159,7 @@ fn begin_color_field_edit(
 
     let click_pos = (local.0 as f32, local.1 as f32);
     let is_double_click = editor_state
-        .click_tracker
+        .input.clicks
         .register(ClickTarget::ColorField(field), click_pos);
 
     let cursor_init = if is_double_click {
@@ -209,7 +170,7 @@ fn begin_color_field_edit(
             &current_text,
             click_x,
             FIELD_FONT_SIZE,
-            &mut editor_state.font_system,
+            &mut editor_state.text.font_system,
         );
         CursorInit::At(idx)
     } else {
@@ -220,8 +181,7 @@ fn begin_color_field_edit(
         .color_popover
         .fields
         .begin_edit(field, current_text, cursor_init);
-    editor_state.color_popover.dirty = true;
-    emit_color_popover_damage(editor_state, dirty_mask);
+    damage_color_popover(editor_state, dirty_mask);
 }
 
 pub fn commit_color_field_edit(editor_state: &mut EditorState, dirty_mask: &mut u32) {
@@ -240,8 +200,7 @@ pub fn commit_color_field_edit(editor_state: &mut EditorState, dirty_mask: &mut 
         }
 
     editor_state.color_popover.sync_field_values();
-    editor_state.color_popover.dirty = true;
-    emit_color_popover_damage(editor_state, dirty_mask);
+    damage_color_popover(editor_state, dirty_mask);
 }
 
 pub fn handle_color_field_text_input(
@@ -260,8 +219,7 @@ pub fn handle_color_field_text_input(
     };
     let allowed = field_char_filter(field);
     if editor_state.color_popover.fields.insert_char(ch, allowed) {
-        editor_state.color_popover.dirty = true;
-        emit_color_popover_damage(editor_state, dirty_mask);
+        damage_color_popover(editor_state, dirty_mask);
         live_apply_color_field(editor_state, field, dirty_mask);
     }
 }
@@ -281,8 +239,8 @@ pub fn handle_color_field_key_press(
         return;
     };
     let allowed = field_char_filter(field);
-    let ctrl = editor_state.mod_ctrl;
-    let shift = editor_state.mod_shift;
+    let ctrl = editor_state.input.ctrl;
+    let shift = editor_state.input.shift;
 
     let (changed, commit) = editor_state
         .color_popover
@@ -290,8 +248,7 @@ pub fn handle_color_field_key_press(
         .handle_key(key, ctrl, shift, allowed);
 
     if changed {
-        editor_state.color_popover.dirty = true;
-        emit_color_popover_damage(editor_state, dirty_mask);
+        damage_color_popover(editor_state, dirty_mask);
         live_apply_color_field(editor_state, field, dirty_mask);
     }
 
@@ -325,8 +282,7 @@ pub fn step_color_field(
     };
 
     if apply_color_field_text(editor_state, field, &new_text, true, false, dirty_mask) {
-        editor_state.color_popover.dirty = true;
-        emit_color_popover_damage(editor_state, dirty_mask);
+        damage_color_popover(editor_state, dirty_mask);
 
         editor_state
             .color_popover
@@ -349,7 +305,7 @@ pub fn handle_color_field_scroll(
 }
 
 pub fn handle_color_popover_click(editor_state: &mut EditorState, dirty_mask: &mut u32) {
-    let local = editor_state.pointer.local;
+    let local = editor_state.input.pointer.local;
 
     if editor_state.pick_once && !editor_state.color_popover.eyedropper_hit(local) {
         crate::tools::eyedropper::end_pick_once(editor_state, dirty_mask);
@@ -360,8 +316,7 @@ pub fn handle_color_popover_click(editor_state: &mut EditorState, dirty_mask: &m
         editor_state.color_popover.sv_square.dragging = true;
         editor_state.color_popover.set_sv_from_local(local);
         editor_state.color_popover.sync_field_values();
-        editor_state.color_popover.dirty = true;
-        emit_color_popover_damage(editor_state, dirty_mask);
+        damage_color_popover(editor_state, dirty_mask);
 
         let color = editor_state.color_popover.sv_square.color();
         apply_color_selection(editor_state, color, false, dirty_mask);
@@ -373,8 +328,7 @@ pub fn handle_color_popover_click(editor_state: &mut EditorState, dirty_mask: &m
         editor_state.color_popover.hue_dragging = true;
         editor_state.color_popover.set_hue_from_local(local);
         editor_state.color_popover.sync_field_values();
-        editor_state.color_popover.dirty = true;
-        emit_color_popover_damage(editor_state, dirty_mask);
+        damage_color_popover(editor_state, dirty_mask);
 
         let color = editor_state.color_popover.sv_square.color();
         apply_color_selection(editor_state, color, false, dirty_mask);
@@ -407,7 +361,7 @@ pub fn handle_color_popover_click(editor_state: &mut EditorState, dirty_mask: &m
 }
 
 pub fn handle_color_popover_drag(editor_state: &mut EditorState, dirty_mask: &mut u32) {
-    let local = editor_state.pointer.local;
+    let local = editor_state.input.pointer.local;
 
     let changed = if editor_state.color_popover.sv_square.dragging {
         editor_state.color_popover.set_sv_from_local(local);
@@ -423,8 +377,7 @@ pub fn handle_color_popover_drag(editor_state: &mut EditorState, dirty_mask: &mu
         return;
     }
 
-    editor_state.color_popover.dirty = true;
-    emit_color_popover_damage(editor_state, dirty_mask);
+    damage_color_popover(editor_state, dirty_mask);
 
     let color = editor_state.color_popover.sv_square.color();
     apply_color_selection(editor_state, color, false, dirty_mask);
@@ -450,8 +403,7 @@ pub fn handle_color_popover_release(editor_state: &mut EditorState, dirty_mask: 
 
     let color = editor_state.color_popover.sv_square.color();
     editor_state.color_popover.record_used_color(color);
-    editor_state.color_popover.dirty = true;
-    emit_color_popover_damage(editor_state, dirty_mask);
+    damage_color_popover(editor_state, dirty_mask);
 }
 
 pub fn close_color_popover(editor_state: &mut EditorState, dirty_mask: &mut u32) {

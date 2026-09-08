@@ -8,7 +8,7 @@ use crate::ui::panel::{UiPanel, emit_panel_damage, sync_panel_hover, sync_panel_
 use crate::ui::toast::ToastKind;
 use crate::ui::settings_panel::{SettingsAction, SettingsWidget};
 
-use super::settings_logic::{compute_popover_placement, update_settings_panel};
+use super::settings::{compute_popover_placement, update_settings_panel};
 
 pub fn update_model_popover(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     let old_rect = editor_state.model_popover.rect();
@@ -23,7 +23,7 @@ pub fn update_model_popover(editor_state: &mut EditorState, dirty_mask: &mut u32
         editor_state.model_popover.monitor_idx = monitor_idx;
     }
 
-    let models = &editor_state.ocr_models;
+    let models = &editor_state.ocr.models;
     let no_model = models.installed_count() == 0;
     let rows = (0..MODELS.len()).map(|idx| ModelRow {
         status: models.status(idx),
@@ -45,7 +45,7 @@ pub fn update_model_popover(editor_state: &mut EditorState, dirty_mask: &mut u32
     if editor_state.model_popover.rect().is_some() {
         let hovered = editor_state
             .model_popover
-            .element_at(editor_state.pointer.local);
+            .element_at(editor_state.input.pointer.local);
         sync_panel_hover(
             &mut editor_state.model_popover,
             hovered,
@@ -104,7 +104,7 @@ pub fn close_model_popover(editor_state: &mut EditorState, dirty_mask: &mut u32)
 pub fn handle_model_popover_click(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     let Some(element) = editor_state
         .model_popover
-        .element_at(editor_state.pointer.local)
+        .element_at(editor_state.input.pointer.local)
     else {
         return;
     };
@@ -112,16 +112,16 @@ pub fn handle_model_popover_click(editor_state: &mut EditorState, dirty_mask: &m
         ModelPopoverElement::Row(idx) => (idx, false),
         ModelPopoverElement::Button(idx) => (idx, true),
     };
-    let is_active = editor_state.ocr_models.active() == Some(idx);
+    let is_active = editor_state.ocr.models.active() == Some(idx);
 
-    match editor_state.ocr_models.status(idx) {
+    match editor_state.ocr.models.status(idx) {
         ModelStatus::Installed if !on_button => {
             crate::tools::ocr::use_model(editor_state, idx, dirty_mask)
         }
-        ModelStatus::Installed if !is_active => editor_state.ocr_models.remove(idx),
+        ModelStatus::Installed if !is_active => editor_state.ocr.models.remove(idx),
         ModelStatus::Missing | ModelStatus::Failed => {
             editor_state.toasts.dismiss(ToastKind::OcrDownloadFailed);
-            editor_state.ocr_models.download(idx);
+            editor_state.ocr.models.download(idx);
         }
         ModelStatus::Queued | ModelStatus::Downloading(_) if on_button => {
             crate::tools::ocr::cancel_model_download(editor_state, idx)
@@ -135,7 +135,7 @@ pub fn handle_model_popover_click(editor_state: &mut EditorState, dirty_mask: &m
 
 /// once per iteration takes the download progress and updates everything that use it
 pub fn tick_model_downloads(editor_state: &mut EditorState, dirty_mask: &mut u32) {
-    let events = editor_state.ocr_models.poll();
+    let events = editor_state.ocr.models.poll();
     if events.is_empty() {
         return;
     }
