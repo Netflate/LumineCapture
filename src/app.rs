@@ -61,7 +61,7 @@ pub async fn make_screenshot(
 
     let clipboard = initialize_clipboard();
 
-    let base_pixmaps: Vec<Pixmap> = init::build_base_pixmap(&screenshots.frames);
+    let base_pixmaps: Vec<Pixmap> = init::build_base_pixmap(&screenshots.frames)?;
     let (canvas, dimmed, annotations_layer) = init::build_layers(&base_pixmaps);
     let placements = init::build_placements(&outputs);
     prof.mark("base_pixmaps + layers + placements");

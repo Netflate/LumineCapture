@@ -16,35 +16,37 @@ use usvg::Tree;
 
 use super::selection_render_info;
 
-pub fn build_base_pixmap(frames: &Vec<MonitorFrame>) -> Vec<Pixmap> {
+pub fn build_base_pixmap(frames: &[MonitorFrame]) -> Result<Vec<Pixmap>, String> {
     frames
         .iter()
         .enumerate()
         .map(|(monitor_idx, f)| {
             let (src_w, src_h) = (f.pw_width, f.pw_height);
-            let mut src_pixmap =
-                Pixmap::new(src_w, src_h).expect("Failed to create source Pixmap for monitor");
+            let mut src_pixmap = Pixmap::new(src_w, src_h).ok_or_else(|| {
+                format!("Invalid frame size for monitor {monitor_idx}: {src_w}x{src_h}")
+            })?;
 
             let row_bytes = (src_w as usize) * 4;
             let src_stride = f.pw_stride as usize;
             let dst = src_pixmap.data_mut();
 
             if src_stride < row_bytes {
-                panic!(
+                return Err(format!(
                     "Invalid stride for monitor {}: stride={} row_bytes={}",
                     monitor_idx, src_stride, row_bytes
-                );
+                ));
             }
 
-            let needed = src_stride * (src_h as usize);
-            let src = f.pixels.get(..needed).unwrap_or_else(|| {
-                panic!(
+            // the last row may come without stride padding
+            let needed = src_stride * (src_h as usize - 1) + row_bytes;
+            let src = f.pixels.get(..needed).ok_or_else(|| {
+                format!(
                     "Not enough pixel data for monitor {}: have={} need={}",
                     monitor_idx,
                     f.pixels.len(),
                     needed
                 )
-            });
+            })?;
 
             for row in 0..(src_h as usize) {
                 let src_off = row * src_stride;
@@ -59,11 +61,12 @@ pub fn build_base_pixmap(frames: &Vec<MonitorFrame>) -> Vec<Pixmap> {
             let logical_h = logical_h_i32.max(1) as u32;
 
             if logical_w == src_w && logical_h == src_h {
-                return src_pixmap;
+                return Ok(src_pixmap);
             }
 
-            let mut logical_pixmap = Pixmap::new(logical_w, logical_h)
-                .expect("Failed to create logical Pixmap for monitor");
+            let mut logical_pixmap = Pixmap::new(logical_w, logical_h).ok_or_else(|| {
+                format!("Invalid logical size for monitor {monitor_idx}: {logical_w}x{logical_h}")
+            })?;
             let sx = logical_w as f32 / src_w as f32;
             let sy = logical_h as f32 / src_h as f32;
             logical_pixmap.draw_pixmap(
@@ -74,7 +77,7 @@ pub fn build_base_pixmap(frames: &Vec<MonitorFrame>) -> Vec<Pixmap> {
                 Transform::from_row(sx, 0.0, 0.0, sy, 0.0, 0.0),
                 None,
             );
-            logical_pixmap
+            Ok(logical_pixmap)
         })
         .collect()
 }

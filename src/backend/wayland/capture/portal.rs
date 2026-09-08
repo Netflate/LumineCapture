@@ -13,16 +13,36 @@ use ashpd::desktop::{
 };
 use async_trait::async_trait;
 
-fn get_token_path() -> PathBuf {
-    let mut path = dirs::config_dir().expect("Could not find config directory");
-    path.push("LumineCapture");
+fn token_path() -> Option<PathBuf> {
+    Some(dirs::state_dir()?.join("LumineCapture").join("token"))
+}
 
-    if let Err(e) = fs::create_dir_all(&path) {
-        eprintln!("Can't create directory {}: {}", path.display(), e);
+// older builds kept the token in the config dir
+fn legacy_token_path() -> Option<PathBuf> {
+    Some(dirs::config_dir()?.join("LumineCapture").join("token"))
+}
+
+fn read_token() -> Option<String> {
+    [token_path(), legacy_token_path()]
+        .into_iter()
+        .flatten()
+        .find_map(|path| fs::read_to_string(path).ok())
+}
+
+fn write_token(token: &str) {
+    let Some(path) = token_path() else { return };
+    let written = path
+        .parent()
+        .map_or(Ok(()), fs::create_dir_all)
+        .and_then(|()| fs::write(&path, token));
+    match written {
+        Ok(()) => {
+            if let Some(legacy) = legacy_token_path() {
+                let _ = fs::remove_file(legacy);
+            }
+        }
+        Err(e) => eprintln!("Can't save portal token to {}: {}", path.display(), e),
     }
-
-    path.push("token");
-    path
 }
 
 // reconcile portal-reported monitor streams against the wayland output list.
@@ -84,9 +104,7 @@ impl CaptureMethod for PortalMethod {
         let proxy = Screencast::new().await?;
         let session = proxy.create_session(Default::default()).await?;
 
-        let token_path = get_token_path();
-
-        let token_string = fs::read_to_string(&token_path).ok();
+        let token_string = read_token();
         let token = token_string.as_deref();
 
         proxy
@@ -107,7 +125,7 @@ impl CaptureMethod for PortalMethod {
             .response()?;
 
         if let Some(new_token) = response.restore_token() {
-            fs::write(&token_path, new_token)?;
+            write_token(new_token);
         }
 
         let streams_data: Vec<StreamInfo> = response
@@ -143,7 +161,9 @@ impl CaptureMethod for PortalMethod {
             });
         }
 
-        session.close().await?;
+        if let Err(e) = session.close().await {
+            eprintln!("Can't close portal session: {e}");
+        }
 
         Ok(CaptureResult { frames })
     }
