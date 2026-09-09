@@ -41,6 +41,43 @@ use crate::utils::copy_swizzled;
 const BTN_LEFT: u32 = 0x110;
 const KEY_C: u32 = 46;
 
+/// Argv the overlay re-execs itself with to pin a finished capture.
+pub const PIN_ARG: &str = "--pin";
+const AT_ARG: &str = "--at";
+
+/// Handles `--pin [--at X,Y] [FILE]`. Reads the image from stdin if no file path is provided.
+pub fn cli(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::Read;
+
+    let mut at = None;
+    let mut file = None;
+    while let Some(arg) = args.next() {
+        if arg == AT_ARG {
+            at = args.next().and_then(|v| {
+                let (x, y) = v.split_once(',')?;
+                Some((x.parse().ok()?, y.parse().ok()?))
+            });
+        } else {
+            file = Some(arg);
+        }
+    }
+
+    let image = match file {
+        Some(path) => std::fs::read(path)?,
+        None => {
+            let mut buf = Vec::new();
+            std::io::stdin().read_to_end(&mut buf)?;
+            buf
+        }
+    };
+    run(&image, at)
+}
+
+/// Re execs this binary to pin a finished capture at a known spot.
+pub fn spawn_at(png: &[u8], x: i32, y: i32) -> Result<(), Box<dyn std::error::Error>> {
+    crate::utils::spawn_self(&[PIN_ARG, AT_ARG, &format!("{x},{y}")], png)
+}
+
 pub fn run(image: &[u8], at: Option<(i32, i32)>) -> Result<(), Box<dyn std::error::Error>> {
     let frame = render_pin(image)?;
     let size = (frame.width(), frame.height());
