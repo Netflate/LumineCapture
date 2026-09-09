@@ -168,6 +168,10 @@ pub trait AnimatedPanel: UiPanel {
     }
 }
 
+/// A frame that arrived late is simulated in several steps, but only so many:
+/// after a long stall the animation jumps rather than replaying every step.
+const MAX_CATCH_UP_STEPS: u32 = 4;
+
 pub fn tick_panel_animation<P: AnimatedPanel>(
     panel: &mut P,
     damage_rects: &mut Vec<DamageZone>,
@@ -186,7 +190,7 @@ pub fn tick_panel_animation<P: AnimatedPanel>(
         return;
     }
 
-    let steps = ((elapsed.as_secs_f32() / dt).floor() as u32).clamp(1, 4);
+    let steps = ((elapsed.as_secs_f32() / dt).floor() as u32).clamp(1, MAX_CATCH_UP_STEPS);
     panel.set_last_tick(now);
 
     let old_render_pos = panel.render_pos();

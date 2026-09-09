@@ -325,7 +325,7 @@ fn draw_selection_marker(pm: &mut Pixmap, cx: f32, cy: f32, fill: Color) {
     );
 
     let mut ring_paint = Paint::default();
-    ring_paint.set_color(Color::WHITE);
+    ring_paint.set_color(color::ON_PANEL.color());
     ring_paint.anti_alias = true;
     let ring_stroke = Stroke {
         width: MARKER_STROKE,

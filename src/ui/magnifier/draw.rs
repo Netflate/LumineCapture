@@ -107,7 +107,7 @@ pub fn draw_magnifier(
     );
 
     let mut paint = Paint::default();
-    paint.set_color(Color::WHITE);
+    paint.set_color(color::ON_PANEL.color());
     paint.anti_alias = true;
     let mut stroke = Stroke::default();
     stroke.width = OUTLINE;
@@ -191,7 +191,7 @@ fn stroke_outline(canvas: &mut Pixmap, rect: Rect, radius: f32) {
         return;
     };
     let mut paint = Paint::default();
-    paint.set_color(Color::WHITE);
+    paint.set_color(color::ON_PANEL.color());
     paint.anti_alias = true;
     let stroke = Stroke {
         width: OUTLINE,

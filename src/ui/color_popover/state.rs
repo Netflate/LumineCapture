@@ -1,6 +1,6 @@
 use crate::types::Annotation;
 use crate::interaction::ScrollAccumulator;
-use crate::theme::anim;
+use crate::theme::{anim, font, radius, size};
 use crate::ui::panel::{AnimatedPanel, HoverablePanel, PanelItem, UiPanel};
 use crate::ui::text_field::TextFieldGroup;
 use crate::types::tool_settings::DEFAULT_COLOR;
@@ -9,9 +9,9 @@ use std::time::{Duration, Instant};
 use tiny_skia::{Color, Mask, Pixmap, Rect};
 
 pub const WIDTH: f32 = 230.0;
-pub const OFFSET: f32 = 5.0;
+pub const OFFSET: f32 = size::OFFSET;
 pub const PADDING: f32 = 15.0;
-pub const RADIUS: f32 = 15.0;
+pub const RADIUS: f32 = radius::PANEL;
 
 
 pub const SV_SQUARE_SIZE: f32 = 170.0;
@@ -45,7 +45,7 @@ pub const FIELD_ROW_GAP: f32 = 10.0;
 pub const FIELD_LABEL_WIDTH: f32 = 28.0;
 pub const RGBA_LABEL_WIDTH: f32 = 14.0;
 pub const FIELD_HEIGHT: f32 = 24.0;
-pub const FIELD_FONT_SIZE: f32 = 12.0;
+pub const FIELD_FONT_SIZE: f32 = font::SMALL;
 pub const FIELD_GAP: f32 = 6.0;
 
 const RECENT_ROW_OFFSET: f32 =
@@ -716,13 +716,13 @@ impl AnimatedPanel for ColorPickerPopover {
 
     fn is_animating(&self) -> bool {
         let target = if self.open { 1.0 } else { 0.0 };
-        (self.opacity - target).abs() > 0.001
+        (self.opacity - target).abs() > anim::OPACITY_EPSILON
     }
 
     fn animate_step(&mut self, dt: f32) -> bool {
         let target = if self.open { 1.0 } else { 0.0 };
-        if (self.opacity - target).abs() > 0.001 {
-            let delta = 8.0 * dt;
+        if (self.opacity - target).abs() > anim::OPACITY_EPSILON {
+            let delta = anim::POPOVER_FADE * dt;
             self.opacity += (target - self.opacity).signum() * delta;
             self.opacity = self.opacity.clamp(0.0, 1.0);
             true

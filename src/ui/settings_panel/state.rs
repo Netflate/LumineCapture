@@ -4,6 +4,7 @@ use crate::ui::text_field::CursorInit;
 use crate::types::SpecialKey;
 use crate::types::annotations::{Annotation, AnnotationShape};
 use crate::interaction::ScrollAccumulator;
+use crate::theme::size;
 use crate::ui::panel::{HoverablePanel, PanelItem, UiPanel};
 use crate::ui::text_field::{TextFieldGroup, is_stepper_char};
 use crate::ui::toolbar;
@@ -12,8 +13,8 @@ use tiny_skia::{Pixmap, Rect};
 use std::collections::HashMap;
 use std::time::Instant;
 
-pub const HEIGHT: f32 = 42.0;
-pub const PADDING: f32 = 8.0;
+pub const HEIGHT: f32 = size::PANEL_HEIGHT;
+pub const PADDING: f32 = size::PADDING;
 pub const ITEM_GAP: f32 = 8.0;
 pub const SWATCH_SIZE: f32 = 28.0;
 pub const SEPARATOR_SIZE: f32 = 16.0;
@@ -130,6 +131,15 @@ pub enum ToggleField {
     Italic,
 }
 
+/// Range of the stroke width and of the font size steppers.
+const STROKE_RANGE: (f32, f32) = (1.0, 40.0);
+const FONT_RANGE: (f32, f32) = (8.0, 72.0);
+const STEP: f32 = 1.0;
+/// Size of an icon drawn inside a panel button.
+const ICON_SIZE: f32 = 16.0;
+/// The copy glyph reads bigger than the rest at the same size.
+const COPY_ICON_SIZE: f32 = 15.0;
+
 pub fn widgets_for_tool(tool: Tool) -> &'static [SettingsWidget] {
     match tool {
         Tool::Pen | Tool::Line | Tool::Arrow | Tool::NumeratedArrow => &[
@@ -137,9 +147,9 @@ pub fn widgets_for_tool(tool: Tool) -> &'static [SettingsWidget] {
             SettingsWidget::Separator,
             SettingsWidget::Stepper {
                 label: "",
-                min: 1.0,
-                max: 40.0,
-                step: 1.0,
+                min: STROKE_RANGE.0,
+                max: STROKE_RANGE.1,
+                step: STEP,
                 unit: "px",
             },
         ],
@@ -148,23 +158,23 @@ pub fn widgets_for_tool(tool: Tool) -> &'static [SettingsWidget] {
             SettingsWidget::Separator,
             SettingsWidget::Stepper {
                 label: "",
-                min: 8.0,
-                max: 72.0,
-                step: 1.0,
+                min: FONT_RANGE.0,
+                max: FONT_RANGE.1,
+                step: STEP,
                 unit: "px",
             },
             SettingsWidget::Separator,
             SettingsWidget::Toggle {
                 visual: ToggleVisual::Icon {
                     svg: crate::ui::icons::BOLD,
-                    icon_size: 16.0,
+                    icon_size: ICON_SIZE,
                 },
                 field: ToggleField::Bold,
             },
             SettingsWidget::Toggle {
                 visual: ToggleVisual::Icon {
                     svg: crate::ui::icons::ITALIC,
-                    icon_size: 16.0,
+                    icon_size: ICON_SIZE,
                 },
                 field: ToggleField::Italic,
             },
@@ -174,9 +184,9 @@ pub fn widgets_for_tool(tool: Tool) -> &'static [SettingsWidget] {
             SettingsWidget::Separator,
             SettingsWidget::Stepper {
                 label: "",
-                min: 1.0,
-                max: 40.0,
-                step: 1.0,
+                min: STROKE_RANGE.0,
+                max: STROKE_RANGE.1,
+                step: STEP,
                 unit: "px",
             },
         ],
@@ -237,19 +247,19 @@ pub const OCR_DOWNLOADING_WIDGETS: &[SettingsWidget] = &[
 const OCR_LANGUAGES: SettingsWidget = SettingsWidget::Action {
     action: SettingsAction::OcrLanguages,
     svg: crate::ui::icons::GLOBE,
-    icon_size: 16.0,
+    icon_size: ICON_SIZE,
 };
 
 const OCR_RESCAN: SettingsWidget = SettingsWidget::Action {
     action: SettingsAction::OcrRescan,
     svg: crate::ui::icons::RETRY,
-    icon_size: 16.0,
+    icon_size: ICON_SIZE,
 };
 
 const OCR_COPY_ALL: SettingsWidget = SettingsWidget::Action {
     action: SettingsAction::OcrCopyAll,
     svg: crate::ui::icons::COPY,
-    icon_size: 15.0,
+    icon_size: COPY_ICON_SIZE,
 };
 
 pub fn widgets_for_annotation(ann: &Annotation) -> &'static [SettingsWidget] {

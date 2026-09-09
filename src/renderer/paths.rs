@@ -132,13 +132,16 @@ pub fn tint_pixmap(pixmap: &mut tiny_skia::Pixmap, color: usvg::Color) {
     }
 }
 
-pub fn panel_border_color(bg: Color) -> Color {
-    let r = bg.red();
-    let g = bg.green();
-    let b = bg.blue();
-    let luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+/// Perceived luminance (ITU-R BT.601)
+pub fn luminance(color: Color) -> f32 {
+    0.299 * color.red() + 0.587 * color.green() + 0.114 * color.blue()
+}
 
-    if luminance > 0.5 {
+/// Above this a panel is light enough to need a dark border.
+const BORDER_FLIP: f32 = 0.5;
+
+pub fn panel_border_color(bg: Color) -> Color {
+    if luminance(bg) > BORDER_FLIP {
         color::BORDER_ON_LIGHT.color()
     } else {
         color::BORDER_ON_DARK.color()

@@ -15,6 +15,12 @@ use log::{Level, LevelFilter, Log, Metadata, Record};
 
 const FILE_LIMIT: u64 = 1024 * 1024;
 
+/// Levels used when `LUMINE_LOG` says nothing; the daemon logs to the file
+/// through its stderr, so it starts one step lower.
+const DEFAULT_STDERR_LEVEL: LevelFilter = LevelFilter::Warn;
+const DEFAULT_DAEMON_STDERR_LEVEL: LevelFilter = LevelFilter::Info;
+const DEFAULT_FILE_LEVEL: LevelFilter = LevelFilter::Info;
+
 /// Which process a line came from.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Process {
@@ -57,11 +63,15 @@ pub fn init(process: Process) {
     // the daemon's stderr is already redirected into the log file (which also catches panics and
     // native ONNX Runtime output), so it logs everything there through stderr and keeps no sink
     let daemon = process == Process::OcrDaemon;
-    let stderr_level = asked.unwrap_or(if daemon { LevelFilter::Info } else { LevelFilter::Warn });
+    let stderr_level = asked.unwrap_or(if daemon {
+        DEFAULT_DAEMON_STDERR_LEVEL
+    } else {
+        DEFAULT_STDERR_LEVEL
+    });
     let file_level = if daemon {
         LevelFilter::Off
     } else {
-        asked.unwrap_or(LevelFilter::Info)
+        asked.unwrap_or(DEFAULT_FILE_LEVEL)
     };
 
     let file = (file_level != LevelFilter::Off)

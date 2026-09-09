@@ -17,6 +17,7 @@ use crate::types::{SelectionEdges};
 use crate::ui::magnifier::MagnifierState;
 use crate::ui::color_popover::ColorPickerPopover;
 use crate::ui::settings_panel::SettingsPanel;
+use crate::theme::color;
 use crate::ui::toolbar::Toolbar;
 use cosmic_text::{Editor, FontSystem, SwashCache};
 use std::collections::HashMap;
@@ -324,7 +325,7 @@ pub fn init_dimming(
 
 fn draw_selection_border(canvas: &mut Pixmap, sel: &Rect, edges: Option<&SelectionEdges>) {
     let mut paint = Paint::default();
-    paint.set_color(Color::WHITE);
+    paint.set_color(color::ON_PANEL.color());
     paint.anti_alias = true;
     let stroke = Stroke {
         width: SELECTION_STROKE,

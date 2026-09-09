@@ -7,7 +7,7 @@ use crate::ui::color_popover::ColorField;
 // Thresholds
 // ==========================================
 
-pub const DOUBLE_CLICK_MS: u64 = 400;
+pub const DOUBLE_CLICK: Duration = Duration::from_millis(400);
 pub const DOUBLE_CLICK_DIST: f32 = 6.0;
 
 // pixels around selection border
@@ -41,7 +41,7 @@ pub const PEN_MIN_DIST_SQ: f32 = 1.0;
 
 /// A double-click is counted only if all of:
 /// 1. Both clicks occur on the exact same target
-/// 2. Time elapsed between the two clicks is less than `DOUBLE_CLICK_MS`.
+/// 2. Time elapsed between the two clicks is less than `DOUBLE_CLICK`.
 /// 3. Distance between the two clicks is within `DOUBLE_CLICK_DIST`.
 #[derive(Debug, Default)]
 pub struct DoubleClickTracker<T> {
@@ -67,7 +67,7 @@ impl<T: PartialEq + Copy> DoubleClickTracker<T> {
         let now = Instant::now();
         let is_double = self.last.is_some_and(|(t, prev_target, prev_pos)| {
             prev_target == target
-                && now.duration_since(t) < Duration::from_millis(DOUBLE_CLICK_MS)
+                && now.duration_since(t) < DOUBLE_CLICK
                 && dist(prev_pos, pos) <= DOUBLE_CLICK_DIST
         });
 

@@ -11,6 +11,7 @@ use crate::types::{
     Annotation, AnnotationShape, CursorIcon, MouseButton, SpecialKey, TextEditState,
 };
 use crate::interaction::ClickTarget;
+use crate::theme::{color, font};
 use crate::utils::cursor_for_handle;
 use cosmic_text::{
     Action, Attrs, Buffer, Edit, Editor, Family, Metrics, Motion, Selection, Shaping, SwashCache,
@@ -312,7 +313,7 @@ impl ToolBehavior for TextTool {
         let font_size = state.tool_settings.font_size;
         let bold = state.tool_settings.bold;
         let italic = state.tool_settings.italic;
-        let metrics = Metrics::new(font_size, font_size * 1.2);
+        let metrics = Metrics::new(font_size, font_size * font::LINE_HEIGHT);
 
         let weight = if bold {
             cosmic_text::Weight::BOLD
@@ -552,7 +553,7 @@ fn sync_content_from_editor(
     *content = new_content;
 
     let (x, y) = *start;
-    let fallback_h = *font_size * 1.2;
+    let fallback_h = *font_size * font::LINE_HEIGHT;
 
     let (w, h) = editor.with_buffer(|buf| {
         let lh = buf.metrics().line_height;
@@ -609,7 +610,7 @@ pub fn ensure_text_editor<'a>(
     } else {
         cosmic_text::Style::Normal
     };
-    let metrics = Metrics::new(*font_size, *font_size * 1.2);
+    let metrics = Metrics::new(*font_size, *font_size * font::LINE_HEIGHT);
 
     let editor = text_editors.entry(ann.id).or_insert_with(|| {
         let mut buffer = Buffer::new_empty(metrics);
@@ -686,9 +687,9 @@ pub fn update_text_bbox_inline(
     };
     let (x, y) = *start;
     let current_font_size = *font_size;
-    let fallback_h = current_font_size * 1.2;
+    let fallback_h = current_font_size * font::LINE_HEIGHT;
 
-    let new_metrics = Metrics::new(current_font_size, current_font_size * 1.2);
+    let new_metrics = Metrics::new(current_font_size, current_font_size * font::LINE_HEIGHT);
     let weight = if *bold {
         cosmic_text::Weight::BOLD
     } else {
@@ -752,9 +753,9 @@ pub fn render_text_annotation(
     let ann_y = start.1 - offset.1;
 
     let text_color = tiny_skia_to_cosmic(ann.color);
-    let cursor_color = cosmic_text::Color::rgba(255, 255, 255, 220);
-    let sel_color = cosmic_text::Color::rgba(100, 150, 255, 160);
-    let sel_text_color = cosmic_text::Color::rgba(255, 255, 255, 255);
+    let cursor_color = color::CARET.cosmic();
+    let sel_color = color::SELECT.cosmic();
+    let sel_text_color = color::ON_PANEL.cosmic();
     let transparent = cosmic_text::Color::rgba(0, 0, 0, 0);
 
     let (cur_col, sel_col) = if is_editing {

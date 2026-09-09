@@ -7,6 +7,20 @@ use crate::theme::shadow;
 use tiny_skia::{Color, Rect};
 
 
+/// Arrow head size for a stroke over a shaft of `len`. The renderer and the
+/// bbox must agree on it, otherwise the damage rect clips the drawn head.
+pub fn arrow_head(stroke_width: f32, len: f32) -> (f32, f32) {
+    let head_len = (stroke_width * HEAD_PER_STROKE)
+        .max(HEAD_MIN)
+        .min(len * HEAD_MAX_OF_SHAFT);
+    (head_len, head_len * HEAD_WIDTH_RATIO)
+}
+
+const HEAD_PER_STROKE: f32 = 4.0;
+const HEAD_MIN: f32 = 12.0;
+const HEAD_MAX_OF_SHAFT: f32 = 0.6;
+const HEAD_WIDTH_RATIO: f32 = 0.55;
+
 #[derive(Clone, PartialEq, Debug)]
 pub enum AnnotationShape {
     NumeratedArrow {
@@ -96,8 +110,7 @@ impl Annotation {
                 let dx = end.0 - start.0;
                 let dy = end.1 - start.1;
                 let len = (dx * dx + dy * dy).sqrt().max(1.0);
-                let head_len = (self.stroke_width * 4.0).max(12.0).min(len * 0.6);
-                let head_width = head_len * 0.55;
+                let (head_len, head_width) = arrow_head(self.stroke_width, len);
 
                 let ux = dx / len;
                 let uy = dy / len;

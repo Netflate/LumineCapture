@@ -1,10 +1,10 @@
-use super::paths::{normalized_rect, oval_path};
+use super::paths::{luminance, normalized_rect, oval_path};
 use super::text::{draw_text_buffer, shape_single_line};
 use crate::tools::text::render_text_annotation;
 use crate::interaction::HANDLE_PAD;
 use crate::renderer::paths::KAPPA;
 use crate::theme::{color, shadow};
-use crate::types::annotations::{Annotation, AnnotationShape};
+use crate::types::annotations::{Annotation, AnnotationShape, arrow_head};
 
 use cosmic_text::{Editor, FontSystem, SwashCache};
 use std::collections::HashMap;
@@ -24,12 +24,7 @@ fn shadow_alpha_for(color: Color) -> u8 {
 }
 
 pub fn shadow_color_for(color: Color) -> Color {
-    Color::from_rgba8(
-        color::SHADOW.0,
-        color::SHADOW.1,
-        color::SHADOW.2,
-        shadow_alpha_for(color),
-    )
+    color::SHADOW.with_alpha(shadow_alpha_for(color)).color()
 }
 
 /// Builds the "real" transform plus the same transform shifted by
@@ -172,19 +167,14 @@ pub fn draw_annotation_handles_only(canvas: &mut Pixmap, ann: &Annotation, offse
 
 fn draw_text_box(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32)) {
     let mut paint = Paint::default();
-    paint.set_color(Color::WHITE);
+    paint.set_color(color::ON_PANEL.color());
     paint.anti_alias = true;
     let mut stroke = Stroke::default();
     stroke.width = 3.0;
     stroke.line_cap = tiny_skia::LineCap::Round;
     stroke.line_join = tiny_skia::LineJoin::Round;
 
-    let base_shadow_color = Color::from_rgba8(
-        color::SHADOW.0,
-        color::SHADOW.1,
-        color::SHADOW.2,
-        color::SHADOW.3,
-    );
+    let base_shadow_color = color::SHADOW.color();
 
     // Selection chrome, not the annotation itself — halo (no offset) reads
     // better than a drop shadow on a rounded-rect outline.
@@ -254,8 +244,7 @@ fn draw_arrow(
     let ux = dx / len;
     let uy = dy / len;
 
-    let head_len = (stroke_width * 4.0).max(12.0).min(len * 0.6);
-    let head_width = head_len * 0.55;
+    let (head_len, head_width) = arrow_head(stroke_width, len);
 
     let px = -uy;
     let py = ux;
@@ -509,7 +498,7 @@ pub fn draw_pen_active_tail(
 
 fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32)) {
     let mut paint = Paint::default();
-    paint.set_color(Color::WHITE);
+    paint.set_color(color::ON_PANEL.color());
     paint.anti_alias = true;
 
     let mut stroke = Stroke::default();
@@ -517,12 +506,7 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
     stroke.line_cap = tiny_skia::LineCap::Round;
     stroke.line_join = tiny_skia::LineJoin::Round;
 
-    let base_shadow_color = Color::from_rgba8(
-        color::SHADOW.0,
-        color::SHADOW.1,
-        color::SHADOW.2,
-        color::SHADOW.3,
-    );
+    let base_shadow_color = color::SHADOW.color();
 
     // Eight small, disjoint segments — halo (no offset) instead of a drop shadow.
     let transform = Transform::from_translate(-offset.0, -offset.1);
@@ -639,12 +623,11 @@ fn stroke_with_shadow(
     );
 }
 
-fn contrasting_text_color(circle_color: Color) -> Color {
-    // Perceived luminance (ITU-R BT.601)
-    let luminance =
-        0.299 * circle_color.red() + 0.587 * circle_color.green() + 0.114 * circle_color.blue();
+/// Above this the circle is bright enough to carry black digits.
+const LABEL_FLIP: f32 = 0.55;
 
-    if luminance > 0.55 {
+fn contrasting_text_color(circle_color: Color) -> Color {
+    if luminance(circle_color) > LABEL_FLIP {
         Color::BLACK
     } else {
         Color::WHITE

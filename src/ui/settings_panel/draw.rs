@@ -557,7 +557,7 @@ pub fn char_index_for_x(
         return 0;
     }
 
-    let metrics = cosmic_text::Metrics::new(font_size, font_size * 1.2);
+    let metrics = cosmic_text::Metrics::new(font_size, font_size * font::LINE_HEIGHT);
     let mut buffer = cosmic_text::Buffer::new_empty(metrics);
     buffer.set_size(None, None);
     buffer.set_text(

@@ -2,7 +2,7 @@ use cosmic_text::{Attrs, Buffer, FontSystem, Metrics, Shaping, SwashCache, Swash
 use tiny_skia::{Color, Paint, Pixmap, PixmapPaint, PremultipliedColorU8, Rect, Transform};
 
 use super::paths::rounded_rect_path;
-use crate::theme::color;
+use crate::theme::{color, font};
 use crate::ui::text_field::LineEditState;
 
 pub enum HAlign {
@@ -75,7 +75,7 @@ pub fn shape_single_line(
     weight: cosmic_text::Weight,
     style: cosmic_text::Style,
 ) -> (Buffer, f32, f32) {
-    let line_height = font_size * 1.1;
+    let line_height = font_size * font::LINE_HEIGHT;
     let mut buffer = Buffer::new(font_system, Metrics::new(font_size, line_height));
 
     buffer.set_size(None, None);
@@ -172,7 +172,7 @@ pub fn measure_text_prefix_width(
         return 0.0;
     }
 
-    let metrics = Metrics::new(font_size, font_size * 1.2);
+    let metrics = Metrics::new(font_size, font_size * font::LINE_HEIGHT);
     let mut buffer = Buffer::new_empty(metrics);
     buffer.set_size(None, None);
     buffer.set_text(

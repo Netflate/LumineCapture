@@ -4,20 +4,20 @@ use std::time::{Duration, Instant};
 use tiny_skia::{Pixmap, Rect};
 
 use crate::ocr::models::{MODELS, ModelStatus};
-use crate::theme::anim;
+use crate::theme::{anim, font, radius, size};
 use crate::ui::panel::{AnimatedPanel, HoverablePanel, PanelItem, UiPanel};
 
 pub const WIDTH: f32 = 320.0;
-pub const OFFSET: f32 = 5.0;
-pub const PADDING: f32 = 8.0;
-pub const RADIUS: f32 = 12.0;
+pub const OFFSET: f32 = size::OFFSET;
+pub const PADDING: f32 = size::PADDING;
+pub const RADIUS: f32 = radius::PANEL;
 
 pub const TITLE_HEIGHT: f32 = 30.0;
 pub const ROW_HEIGHT: f32 = 44.0;
 pub const ROW_PAD_X: f32 = 10.0;
 pub const BUTTON_SIZE: f32 = 26.0;
 pub const ICON_SIZE: f32 = 14.0;
-pub const NOTE_FONT_SIZE: f32 = 12.0;
+pub const NOTE_FONT_SIZE: f32 = font::SMALL;
 pub const STATUS_WIDTH: f32 = 62.0;
 
 pub const HEIGHT: f32 = PADDING * 2.0 + TITLE_HEIGHT + ROW_HEIGHT * MODELS.len() as f32;
@@ -223,13 +223,13 @@ impl AnimatedPanel for ModelPopover {
 
     fn is_animating(&self) -> bool {
         let target = if self.open { 1.0 } else { 0.0 };
-        (self.opacity - target).abs() > 0.001
+        (self.opacity - target).abs() > anim::OPACITY_EPSILON
     }
 
     fn animate_step(&mut self, dt: f32) -> bool {
         let target = if self.open { 1.0 } else { 0.0 };
-        if (self.opacity - target).abs() > 0.001 {
-            let delta = 8.0 * dt;
+        if (self.opacity - target).abs() > anim::OPACITY_EPSILON {
+            let delta = anim::POPOVER_FADE * dt;
             self.opacity += (target - self.opacity).signum() * delta;
             self.opacity = self.opacity.clamp(0.0, 1.0);
             true

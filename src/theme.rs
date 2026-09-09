@@ -26,6 +26,10 @@ impl Rgba {
         c
     }
 
+    pub fn cosmic(self) -> cosmic_text::Color {
+        cosmic_text::Color::rgba(self.0, self.1, self.2, self.3)
+    }
+
     pub fn usvg(self) -> usvg::Color {
         usvg::Color {
             red: self.0,
@@ -36,6 +40,10 @@ impl Rgba {
 
     pub fn alpha(self) -> u8 {
         self.3
+    }
+
+    pub fn with_alpha(self, alpha: u8) -> Self {
+        Self(self.0, self.1, self.2, alpha)
     }
 }
 
@@ -75,6 +83,19 @@ pub mod color {
 }
 
 // ==========================================
+// Panel geometry
+// ==========================================
+
+pub mod size {
+    /// Height of the toolbar and of the settings panel.
+    pub const PANEL_HEIGHT: f32 = 42.0;
+    /// Padding between a panel's edge and its items.
+    pub const PADDING: f32 = 8.0;
+    /// Gap between a panel and whatever it is anchored to.
+    pub const OFFSET: f32 = 5.0;
+}
+
+// ==========================================
 // Border Radius
 // ==========================================
 
@@ -100,6 +121,9 @@ pub mod stroke {
 
 pub mod font {
     pub const LABEL: f32 = 14.0;
+    pub const SMALL: f32 = 12.0;
+    /// Line height as a factor of the font size.
+    pub const LINE_HEIGHT: f32 = 1.2;
 }
 
 // ==========================================
@@ -113,6 +137,11 @@ pub mod anim {
     const FRAME_MS: u64 = 10;
     pub const FRAME: Duration = Duration::from_millis(FRAME_MS);
     pub const DT: f32 = FRAME_MS as f32 / 1000.0;
+
+    /// Opacity per second while a popover fades in or out.
+    pub const POPOVER_FADE: f32 = 8.0;
+    /// Closer than this to the target opacity counts as settled.
+    pub const OPACITY_EPSILON: f32 = 0.001;
 }
 
 // ==========================================

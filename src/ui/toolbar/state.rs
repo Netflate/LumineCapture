@@ -1,5 +1,5 @@
 use crate::tools::Tool;
-use crate::theme::anim;
+use crate::theme::{anim, size};
 use crate::types::{Finish, Placement};
 use crate::ui::panel::{AnimatedPanel, HoverablePanel, PanelItem, UiPanel};
 use std::time::{Duration, Instant};
@@ -9,10 +9,16 @@ use tiny_skia::{Pixmap, Rect};
 // 1. UI Layout Constants
 // ==========================================
 pub const TRANSITION_OFFSET: f32 = 340.0; // max cap on the transition entrance distance
+/// Opacity per second while the toolbar fades out of the way.
+const FADE_RATE: f32 = 5.0;
+/// Fraction of the remaining distance covered per second while it slides.
+const SLIDE_RATE: f32 = 12.0;
+/// Closer than this to the target position counts as arrived.
+const POSITION_EPSILON: f32 = 0.5;
 
-pub const HEIGHT: f32 = 42.0;
-pub const OFFSET: f32 = 5.0;
-pub const PADDING: f32 = 8.0;
+pub const HEIGHT: f32 = size::PANEL_HEIGHT;
+pub const OFFSET: f32 = size::OFFSET;
+pub const PADDING: f32 = size::PADDING;
 
 pub const BUTTON_CELL: f32 = 35.0;
 const SEPARATOR_CELL: f32 = 20.0;
@@ -131,17 +137,17 @@ impl AnimatedPanel for Toolbar {
 
     fn is_animating(&self) -> bool {
         let target_opacity = if self.interferes { 0.0 } else { 1.0 };
-        (self.opacity - target_opacity).abs() > 0.001
-            || (self.position.0 - self.render_pos.0).abs() > 0.5
-            || (self.position.1 - self.render_pos.1).abs() > 0.5
+        (self.opacity - target_opacity).abs() > anim::OPACITY_EPSILON
+            || (self.position.0 - self.render_pos.0).abs() > POSITION_EPSILON
+            || (self.position.1 - self.render_pos.1).abs() > POSITION_EPSILON
     }
 
     fn animate_step(&mut self, dt: f32) -> bool {
         let mut changed = false;
 
         let target_opacity = if self.interferes { 0.0 } else { 1.0 };
-        if (self.opacity - target_opacity).abs() > 0.001 {
-            let delta = 5.0 * dt;
+        if (self.opacity - target_opacity).abs() > anim::OPACITY_EPSILON {
+            let delta = FADE_RATE * dt;
             self.opacity += (target_opacity - self.opacity).signum() * delta;
             self.opacity = self.opacity.clamp(0.0, 1.0);
             changed = true;
@@ -150,8 +156,8 @@ impl AnimatedPanel for Toolbar {
         let target = self.position;
         let dx = target.0 - self.render_pos.0;
         let dy = target.1 - self.render_pos.1;
-        if dx.abs() > 0.5 || dy.abs() > 0.5 {
-            let t = (12.0 * dt).min(1.0);
+        if dx.abs() > POSITION_EPSILON || dy.abs() > POSITION_EPSILON {
+            let t = (SLIDE_RATE * dt).min(1.0);
             self.render_pos.0 += dx * t;
             self.render_pos.1 += dy * t;
             changed = true;

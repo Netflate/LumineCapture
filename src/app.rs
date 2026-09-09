@@ -9,6 +9,7 @@ use crate::editor::{EditorState, Layers, OcrState, TextState};
 use crate::editor::dirty::{is_dirty, mark_all_dirty, mark_dirty};
 use crate::profiler::Profiler;
 use crate::renderer;
+use crate::theme::anim;
 use crate::tools::Tool;
 use crate::tools::selection::{global_selection_to_local, selection_edges_for_monitor};
 use crate::ui::panel::{AnimatedPanel, panel_to_draw, tick_panel_animation};
@@ -18,14 +19,15 @@ use crate::utils::{encode_png, get_full_workspace_rect, save_to_file};
 
 use cosmic_text::{FontSystem, SwashCache};
 use std::collections::HashMap;
+use std::time::Duration;
 use tiny_skia::Rect;
 
 /// download progress updates each tick, but if there is no animation
 /// then manually after each 50ms
-const DOWNLOAD_POLL_MS: i32 = 50;
+const DOWNLOAD_POLL: Duration = Duration::from_millis(50);
 
 /// later in config
-const SAVE_ALWAYS: bool = true;
+const DEFAULT_SAVE_ALWAYS: bool = true;
 
 // ************************* //
 //      ENTRY POINT          //
@@ -175,7 +177,7 @@ fn run_overlay(
 
 /// system can't sleep waiting only for events, since we have animation and 
 /// download beat and etc
-fn poll_timeout(editor_state: &EditorState) -> i32 {
+fn poll_timeout(editor_state: &EditorState) -> Option<Duration> {
     let is_animating = editor_state.toolbar.is_animating()
         || editor_state.color_popover.is_animating()
         || editor_state.model_popover.is_animating()
@@ -184,11 +186,11 @@ fn poll_timeout(editor_state: &EditorState) -> i32 {
     let ocr_working = editor_state.ocr.runtime.needs_poll();
 
     if is_animating || stepper_holding || ocr_working {
-        16
+        Some(anim::FRAME)
     } else if editor_state.ocr.models.is_downloading() {
-        DOWNLOAD_POLL_MS
+        Some(DOWNLOAD_POLL)
     } else {
-        -1
+        None
     }
 }
 
@@ -469,7 +471,7 @@ async fn finish_capture(editor_state: &mut EditorState) -> Result<(), Box<dyn st
     {
         notify::send(Notice::PinFailed(e.to_string())).await;
     }
-    let saved = if finish == Finish::Save || SAVE_ALWAYS {
+    let saved = if finish == Finish::Save || DEFAULT_SAVE_ALWAYS {
         match save_to_file(&png) {
             Ok(path) => Some(path),
             Err(e) => {

@@ -155,7 +155,10 @@ impl ScreenOverlay for WaylandOverlay {
         Ok(())
     }
 
-    fn next_event(&mut self, timeout_ms: i32) -> Result<OverlayEvent, Box<dyn std::error::Error>> {
+    fn next_event(
+        &mut self,
+        timeout: Option<Duration>,
+    ) -> Result<OverlayEvent, Box<dyn std::error::Error>> {
         let rt = &mut self.runtime;
 
         loop {
@@ -190,16 +193,12 @@ impl ScreenOverlay for WaylandOverlay {
             // block and wait until the Wayland connection file descriptor has data available (poll)
             let fd = rt.event_queue.as_fd();
             let mut fds = [PollFd::new(&fd, PollFlags::IN)];
-            let timeout = if timeout_ms < 0 {
-                None
-            } else {
-                Some(Timespec {
-                    tv_sec: (timeout_ms / 1000) as i64,
-                    tv_nsec: ((timeout_ms % 1000) * 1_000_000) as i64,
-                })
-            };
+            let deadline = timeout.map(|t| Timespec {
+                tv_sec: t.as_secs() as i64,
+                tv_nsec: t.subsec_nanos() as i64,
+            });
 
-            poll(&mut fds, timeout.as_ref())?;
+            poll(&mut fds, deadline.as_ref())?;
 
             if fds[0].revents().intersects(PollFlags::ERR | PollFlags::HUP) {
                 return Err("Wayland connection closed".into());

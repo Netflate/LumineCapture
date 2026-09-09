@@ -8,12 +8,12 @@ use cosmic_text::FontSystem;
 use tiny_skia::Rect;
 
 use crate::editor::DamageZone;
-use crate::theme::anim;
+use crate::theme::{anim, radius};
 use crate::ui::panel::emit_panel_damage;
 
 pub const HEIGHT: f32 = 38.0;
 pub const PAD_X: f32 = 18.0;
-pub const RADIUS: f32 = 10.0;
+pub const RADIUS: f32 = radius::PANEL;
 pub const MARGIN: f32 = 8.0;
 
 
@@ -155,6 +155,10 @@ pub struct ToastPlace {
     pub focus: Option<Rect>,
 }
 
+/// Longest step a single tick may advance by, so a stalled frame doesn't
+/// fast-forward a toast through its whole fade.
+const MAX_STEP: f32 = 0.1;
+
 #[derive(Default)]
 pub struct Toasts {
     pub items: Vec<Toast>,
@@ -228,7 +232,7 @@ impl Toasts {
             return;
         }
         self.last_tick = Some(now);
-        let dt = elapsed.as_secs_f32().min(0.1);
+        let dt = elapsed.as_secs_f32().min(MAX_STEP);
 
         self.items.retain_mut(|toast| {
             let was = (toast.monitor_idx, toast.rect);

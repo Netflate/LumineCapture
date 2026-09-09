@@ -1,5 +1,5 @@
 use cosmic_text::{FontSystem, SwashCache};
-use tiny_skia::{Color, Paint, Pixmap, Rect, Transform};
+use tiny_skia::{Paint, Pixmap, Rect, Transform};
 
 use crate::renderer::paths::{draw_panel_border, rounded_rect_path};
 use crate::theme::{color, font};
@@ -65,7 +65,7 @@ pub fn draw_toasts(
             swash_cache,
             rect,
             font::LABEL,
-            Color::from_rgba(1.0, 1.0, 1.0, opacity).unwrap_or(Color::WHITE),
+            color::ON_PANEL.fade(opacity),
             HAlign::Center,
             (0.0, 0.0),
             cosmic_text::Weight::NORMAL,

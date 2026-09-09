@@ -2,6 +2,7 @@ pub mod notify;
 pub mod wayland;
 
 use crate::types::{CaptureResult, CursorIcon, DamageRect, Output, OverlayEvent};
+use std::time::Duration;
 use async_trait::async_trait;
 use wayland_client::Connection;
 
@@ -34,7 +35,12 @@ pub trait ScreenOverlay: Send {
         damage: Option<DamageRect>,
     ) -> Result<(), Box<dyn std::error::Error>>;
     fn flush(&mut self) -> Result<(), Box<dyn std::error::Error>>;
-    fn next_event(&mut self, timeout_ms: i32) -> Result<OverlayEvent, Box<dyn std::error::Error>>;
+    /// `None` waits for the compositor indefinitely, a duration wakes up with
+    /// `OverlayEvent::Tick` once it runs out.
+    fn next_event(
+        &mut self,
+        timeout: Option<Duration>,
+    ) -> Result<OverlayEvent, Box<dyn std::error::Error>>;
     fn discovered_outputs(&self) -> &[Output];
     fn set_cursor(&mut self, icon: CursorIcon);
 }
