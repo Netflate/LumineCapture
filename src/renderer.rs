@@ -23,6 +23,12 @@ use std::collections::HashMap;
 use tiny_skia::{Color, Paint, PathBuilder, Pixmap, Rect, Stroke, Transform};
 use usvg::Tree;
 
+pub struct TextContext<'a> {
+    pub font_system: &'a mut FontSystem,
+    pub swash_cache: &'a mut SwashCache,
+    pub editors: &'a mut HashMap<u64, Editor<'static>>,
+}
+
 pub struct RenderRequest<'a> {
     // basic layers
     pub canvas: &'a mut Pixmap,
@@ -52,9 +58,9 @@ pub struct RenderRequest<'a> {
     pub is_pending_selected: bool,
     pub selected_annotation: Option<usize>,
     pub annotations: &'a [Annotation],
-    pub font_system: Option<&'a mut FontSystem>,
-    pub swash_cache: Option<&'a mut SwashCache>,
-    pub text_editors: Option<&'a mut HashMap<u64, Editor<'static>>>,
+    /// Everything needed to lay out and draw text. The first paint runs on
+    /// several threads with nothing textual on screen, so it has none of this.
+    pub text: Option<TextContext<'a>>,
     pub active_text_id: Option<u64>,
     // OCR tool: recognized lines + selection overlay
     pub ocr_view: Option<&'a crate::ocr::OcrView>,
@@ -63,6 +69,36 @@ pub struct RenderRequest<'a> {
     pub ocr_scan: Option<(Rect, f32)>,
     pub monitor_idx: usize,
     pub toasts: &'a crate::ui::toast::Toasts,
+}
+
+/// Copies the part of the screens covered by `region` (global coords) into one
+/// pixmap, together with the global position of its top-left corner.
+pub fn composite_base(
+    base: &[Pixmap],
+    placements: &[crate::types::Placement],
+    region: Rect,
+) -> Option<(Pixmap, (i32, i32))> {
+    let left = region.left().floor() as i32;
+    let top = region.top().floor() as i32;
+    let width = (region.right().ceil() as i32 - left).max(0) as u32;
+    let height = (region.bottom().ceil() as i32 - top).max(0) as u32;
+    if width == 0 || height == 0 {
+        return None;
+    }
+
+    let mut out = Pixmap::new(width, height)?;
+    for (placement, monitor) in placements.iter().zip(base) {
+        out.draw_pixmap(
+            placement.position.0 - left,
+            placement.position.1 - top,
+            monitor.as_ref(),
+            &tiny_skia::PixmapPaint::default(),
+            Transform::identity(),
+            None,
+        );
+    }
+
+    Some((out, (left, top)))
 }
 
 pub fn render_frame(req: &mut RenderRequest) {
@@ -104,11 +140,7 @@ pub fn render_frame(req: &mut RenderRequest) {
 
     // Dynamic annotations: pending (in-progress drawing or dragging)
     if let Some(p) = req.pending {
-        if let (Some(font_system), Some(swash_cache), Some(text_editors)) = (
-            req.font_system.as_deref_mut(),
-            req.swash_cache.as_deref_mut(),
-            req.text_editors.as_deref_mut(),
-        ) {
+        if let Some(text) = req.text.as_mut() {
             if !req.is_pending_selected
                 && let crate::types::AnnotationShape::Pen { points } = &p.shape
             {
@@ -125,9 +157,9 @@ pub fn render_frame(req: &mut RenderRequest) {
                     p,
                     req.offset,
                     false,
-                    font_system,
-                    swash_cache,
-                    text_editors,
+                    text.font_system,
+                    text.swash_cache,
+                    text.editors,
                     req.active_text_id,
                 );
             }
@@ -164,14 +196,11 @@ pub fn render_frame(req: &mut RenderRequest) {
     if req.is_mag_monitor
         && let Some(mag) = req.magnifier
     {
-        let label = match (
-            req.mag_label,
-            req.font_system.as_deref_mut(),
-            req.swash_cache.as_deref_mut(),
-        ) {
-            (true, Some(font_system), Some(swash_cache)) => Some((font_system, swash_cache)),
-            _ => None,
-        };
+        let label = req
+            .text
+            .as_mut()
+            .filter(|_| req.mag_label)
+            .map(|text| (&mut *text.font_system, &mut *text.swash_cache));
         crate::ui::magnifier::draw_magnifier(
             req.canvas,
             req.base,
@@ -188,78 +217,56 @@ pub fn render_frame(req: &mut RenderRequest) {
 
     if let Some(settings) = req.settings_panel.as_deref_mut()
         && settings.dirty
+        && let Some(text) = req.text.as_mut()
     {
-        match (
-            req.font_system.as_deref_mut(),
-            req.swash_cache.as_deref_mut(),
-        ) {
-            (Some(font_system), Some(swash_cache)) => {
-                crate::ui::settings_panel::draw_settings_panel(
-                    req.canvas,
-                    settings,
-                    req.current_color,
-                    req.icons_cache,
-                    font_system,
-                    swash_cache,
-                );
-            }
-            _ => debug_assert!(
-                false,
-                "font_system/swash_cache are required for drawing settings panel"
-            ),
+        {
+            crate::ui::settings_panel::draw_settings_panel(
+                req.canvas,
+                settings,
+                req.current_color,
+                req.icons_cache,
+                text.font_system,
+                text.swash_cache,
+            );
         }
     }
     if let Some(color_picker) = req.color_picker.as_deref_mut()
         && color_picker.dirty
+        && let Some(text) = req.text.as_mut()
     {
-        match (
-            req.font_system.as_deref_mut(),
-            req.swash_cache.as_deref_mut(),
-        ) {
-            (Some(font_system), Some(swash_cache)) => {
-                crate::ui::color_popover::draw_color_popover(
-                    req.canvas,
-                    color_picker,
-                    req.icons_cache,
-                    font_system,
-                    swash_cache,
-                );
-            }
-            _ => debug_assert!(
-                false,
-                "font_system/swash_cache are required for drawing color popover"
-            ),
+        {
+            crate::ui::color_popover::draw_color_popover(
+                req.canvas,
+                color_picker,
+                req.icons_cache,
+                text.font_system,
+                text.swash_cache,
+            );
         }
     }
     if let Some(model_popover) = req.model_popover.as_deref_mut()
         && model_popover.dirty
-        && let (Some(font_system), Some(swash_cache)) = (
-            req.font_system.as_deref_mut(),
-            req.swash_cache.as_deref_mut(),
-        )
+        && let Some(text) = req.text.as_mut()
     {
         crate::ui::model_popover::draw_model_popover(
             req.canvas,
             model_popover,
             req.icons_cache,
-            font_system,
-            swash_cache,
+            text.font_system,
+            text.swash_cache,
         );
     }
 
     if !req.toasts.items.is_empty()
-        && let (Some(font_system), Some(swash_cache)) = (
-            req.font_system.as_deref_mut(),
-            req.swash_cache.as_deref_mut(),
-        )
+        && let Some(text) = req.text.as_mut()
     {
         crate::ui::toast::draw_toasts(
             req.canvas,
             req.toasts,
             req.monitor_idx,
             dirty_rect,
-            font_system,
-            swash_cache,
+            text.font_system,
+            text.swash_cache,
         );
     }
 }

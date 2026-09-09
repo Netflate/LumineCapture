@@ -94,6 +94,11 @@ fn write_unique(dir: &std::path::Path, stem: &str, data: &[u8]) -> std::io::Resu
     }
 }
 
+#[inline]
+pub fn rects_overlap(a: &Rect, b: &Rect) -> bool {
+    a.left() < b.right() && a.right() > b.left() && a.top() < b.bottom() && a.bottom() > b.top()
+}
+
 // to render necessary monitors
 #[inline]
 pub fn get_overlapping_monitors(selection: &Rect, placements: &[crate::types::Placement]) -> u32 {
@@ -353,11 +358,9 @@ fn spawn_self_with(
 }
 
 pub fn copy_to_clipboard(text: &str) -> Result<(), Box<dyn std::error::Error>> {
-    spawn_self_ready(
-        &["--clipboard-daemon", "text"],
-        text.as_bytes(),
-        CLIPBOARD_READY_TIMEOUT,
-    )
+    use crate::backend::wayland::clipboard::{DAEMON_ARG, READY_TIMEOUT, TEXT_ARG};
+
+    spawn_self_ready(&[DAEMON_ARG, TEXT_ARG], text.as_bytes(), READY_TIMEOUT)
 }
 
 pub fn paste_from_clipboard() -> Option<String> {
@@ -369,8 +372,6 @@ pub fn paste_from_clipboard() -> Option<String> {
     pipe.read_to_string(&mut text).ok()?;
     Some(text)
 }
-
-pub const CLIPBOARD_READY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
 #[cfg(test)]
 mod tests {

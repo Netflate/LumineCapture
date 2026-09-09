@@ -87,6 +87,9 @@ impl UiPanel for Toolbar {
     fn set_dirty(&mut self) {
         self.dirty = true;
     }
+    fn is_dirty(&self) -> bool {
+        self.dirty
+    }
 
     // Same pattern as SettingsPanel: once fully faded out there's nothing
     // to hit-test or damage, so say so explicitly here instead of every

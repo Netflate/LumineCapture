@@ -532,6 +532,12 @@ impl UiPanel for SettingsPanel {
     fn set_dirty(&mut self) {
         self.dirty = true;
     }
+    fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+    fn is_visible(&self) -> bool {
+        self.visible
+    }
 
     fn rect(&self) -> Option<Rect> {
         if !self.visible {

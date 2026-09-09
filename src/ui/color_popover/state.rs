@@ -458,10 +458,6 @@ impl ColorPickerPopover {
         }
     }
 
-    pub fn is_visible(&self) -> bool {
-        self.open || self.opacity > 0.0
-    }
-
     pub fn hit_test(&self, local: (f64, f64)) -> bool {
         let Some(rect) = self.rect() else {
             return false;
@@ -675,6 +671,12 @@ impl UiPanel for ColorPickerPopover {
     }
     fn set_dirty(&mut self) {
         self.dirty = true;
+    }
+    fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+    fn is_visible(&self) -> bool {
+        self.open || self.opacity > 0.0
     }
 
     fn rect(&self) -> Option<Rect> {

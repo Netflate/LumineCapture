@@ -30,9 +30,9 @@ const DEFAULT_ICON_SIZE: f32 = toolbar::BUTTON_CELL - 4.0;
 /// Icons tied to a drawing Tool (used in the toolbar).
 pub fn get_svg_for_tool(tool: Tool) -> (&'static str, f32) {
     match tool {
-        Tool::Selection => (SELECTION, DEFAULT_ICON_SIZE - 10.0),
+        Tool::Selection => (SELECTION, DEFAULT_ICON_SIZE),
         Tool::Pick => (PICK, DEFAULT_ICON_SIZE - 5.0),
-        Tool::Eyedropper => (EYEDROPPER, DEFAULT_ICON_SIZE - 9.0),
+        Tool::Eyedropper => (EYEDROPPER, DEFAULT_ICON_SIZE - 3.0),
         Tool::Text => (TEXT, DEFAULT_ICON_SIZE - 9.0),
         Tool::Pen => (PEN, DEFAULT_ICON_SIZE - 11.0),
         Tool::Line => (LINE, DEFAULT_ICON_SIZE - 3.0),
@@ -40,7 +40,7 @@ pub fn get_svg_for_tool(tool: Tool) -> (&'static str, f32) {
         Tool::Rectangle => (RECTANGLE, DEFAULT_ICON_SIZE),
         Tool::Circle => (CIRCLE, DEFAULT_ICON_SIZE - 6.0),
         Tool::NumeratedArrow => (NUMERATED_ARROW, DEFAULT_ICON_SIZE - 6.0),
-        Tool::Ocr => (OCR, DEFAULT_ICON_SIZE - 7.0),
+        Tool::Ocr => (OCR, DEFAULT_ICON_SIZE - 1.5),
     }
 }
 

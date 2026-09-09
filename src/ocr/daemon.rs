@@ -326,7 +326,7 @@ pub fn lock_file_pid(paths: &Paths) -> Option<i32> {
 
 pub fn spawn_daemon() -> io::Result<()> {
     let mut command = Command::new(std::env::current_exe()?);
-    command.args(["--ocr-daemon", "serve"]);
+    command.args([DAEMON_ARG, "serve"]);
     spawn_detached(command, crate::logging::open_log_file())
 }
 
@@ -352,6 +352,9 @@ pub fn spawn_detached(mut command: Command, log: Option<std::fs::File>) -> io::R
     });
     Ok(())
 }
+
+/// Arguments used by the overlay to re-run itself as the daemon
+pub const DAEMON_ARG: &str = "--ocr-daemon";
 
 pub fn cli(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn Error>> {
     let paths = Paths::from_env().ok_or("XDG_RUNTIME_DIR is not set, the OCR daemon has nowhere to live")?;

@@ -117,10 +117,6 @@ impl ModelPopover {
         }
     }
 
-    pub fn is_visible(&self) -> bool {
-        self.open || self.opacity > 0.0
-    }
-
     pub fn hit_test(&self, local: (f64, f64)) -> bool {
         self.rect().is_some_and(|rect| point_in_rect(local, rect))
     }
@@ -182,6 +178,12 @@ impl UiPanel for ModelPopover {
     }
     fn set_dirty(&mut self) {
         self.dirty = true;
+    }
+    fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+    fn is_visible(&self) -> bool {
+        self.open || self.opacity > 0.0
     }
 
     fn rect(&self) -> Option<Rect> {

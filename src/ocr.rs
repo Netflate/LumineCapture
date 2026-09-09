@@ -46,7 +46,7 @@ pub mod settings;
 pub mod testing;
 pub mod view;
 
-use tiny_skia::{Pixmap, PixmapPaint, Rect, Transform};
+use tiny_skia::{Pixmap, Rect};
 
 pub use runtime::{OcrRuntime, StartOutcome};
 pub use view::OcrView;
@@ -140,49 +140,26 @@ pub fn build_backend(mode: settings::Mode, files: &ModelFiles) -> Result<Box<dyn
 }
 
 /// Composite the pixels covered by `region` (global coords) out of the
-/// per-monitor `base` layers into one contiguous RGB8 buffer. Repeats
-/// base-compositing half of `app::render_final`, without annotations.
+/// per-monitor `base` layers into one contiguous RGB8 buffer, without annotations.
 pub fn composite_region(
     base: &[Pixmap],
     placements: &[Placement],
     region: Rect,
 ) -> Option<OcrImage> {
-    let left = region.left().floor() as i32;
-    let top = region.top().floor() as i32;
-    let right = region.right().ceil() as i32;
-    let bottom = region.bottom().ceil() as i32;
-    let w = (right - left).max(0) as u32;
-    let h = (bottom - top).max(0) as u32;
-    if w == 0 || h == 0 {
-        return None;
-    }
-
-    let mut out = Pixmap::new(w, h)?;
-    for (i, placement) in placements.iter().enumerate() {
-        let Some(base_i) = base.get(i) else {
-            continue;
-        };
-        out.draw_pixmap(
-            placement.position.0 - left,
-            placement.position.1 - top,
-            base_i.as_ref(),
-            &PixmapPaint::default(),
-            Transform::identity(),
-            None,
-        );
-    }
+    let (out, (left, top)) = crate::renderer::composite_base(base, placements, region)?;
+    let (width, height) = (out.width(), out.height());
 
     // RGBA -> RGB
     let rgba = out.data();
-    let mut rgb = vec![0u8; (w as usize) * (h as usize) * 3];
+    let mut rgb = vec![0u8; (width as usize) * (height as usize) * 3];
     for (dst, src) in rgb.chunks_exact_mut(3).zip(rgba.chunks_exact(4)) {
         dst.copy_from_slice(&src[..3]);
     }
 
     Some(OcrImage {
         rgb,
-        width: w,
-        height: h,
+        width,
+        height,
         origin: (left as f32, top as f32),
     })
 }

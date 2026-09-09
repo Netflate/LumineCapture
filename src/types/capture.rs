@@ -3,6 +3,17 @@ pub struct Placement {
     pub size: (i32, i32),
     pub position: (i32, i32),
 }
+
+impl Placement {
+    /// Where this monitor starts in global coordinates, ready for drawing.
+    pub fn offset(&self) -> (f32, f32) {
+        (self.position.0 as f32, self.position.1 as f32)
+    }
+
+    pub fn rect(&self) -> Option<tiny_skia::Rect> {
+        tiny_skia::Rect::from_xywh(0.0, 0.0, self.size.0 as f32, self.size.1 as f32)
+    }
+}
 // Wayland outputs
 use smithay_client_toolkit::output::OutputInfo as SctkOutputInfo;
 use wayland_client::protocol::wl_output;

@@ -4,6 +4,7 @@ use tiny_skia::Rect;
 use crate::editor::DamageZone;
 use crate::theme::anim;
 use crate::editor::dirty::mark_dirty;
+use crate::utils::rects_overlap;
 
 pub trait PanelItem {
     fn size(&self) -> f32;
@@ -24,6 +25,12 @@ pub trait UiPanel {
     fn monitor_idx(&self) -> usize;
 
     fn set_dirty(&mut self);
+    fn is_dirty(&self) -> bool;
+
+    /// Panels that come and go override this; the toolbar is always up.
+    fn is_visible(&self) -> bool {
+        true
+    }
 
     /// Panel's rect right now, or None if there's nothing to show/
     fn rect(&self) -> Option<Rect> {
@@ -53,6 +60,24 @@ pub fn emit_panel_damage(
 ) {
     damage_rects.push(DamageZone::Local { monitor_idx, rect });
     mark_dirty(dirty_mask, monitor_idx);
+}
+
+/// Picks the monitor's panel for rendering and marks it dirty if damaged by now
+pub fn panel_to_draw<'p, P: UiPanel>(
+    panel: &'p mut P,
+    monitor_idx: usize,
+    dirty_rect: Option<&Rect>,
+) -> Option<&'p mut P> {
+    if panel.monitor_idx() != monitor_idx || !panel.is_visible() {
+        return None;
+    }
+    if !panel.is_dirty()
+        && let (Some(dirty), Some(rect)) = (dirty_rect, panel.rect())
+        && rects_overlap(dirty, &rect)
+    {
+        panel.set_dirty();
+    }
+    panel.is_dirty().then_some(panel)
 }
 
 pub fn sync_panel_rect<P: UiPanel>(

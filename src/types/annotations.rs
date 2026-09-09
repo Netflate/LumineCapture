@@ -354,12 +354,12 @@ pub fn handle_hit_test_for_annotation(ann: &Annotation, pos: (f64, f64)) -> Sele
 
 pub fn begin_drag_for_annotation(state: &mut EditorState, idx: usize) {
     let ann = &state.annotations[idx];
-    let handle = handle_hit_test_for_annotation(ann, state.pointer.global);
+    let handle = handle_hit_test_for_annotation(ann, state.input.pointer.global);
 
     state.ann_drag = Some(AnnDragState {
         handle,
-        start_global: state.pointer.global,
-        prev_global: state.pointer.global,
+        start_global: state.input.pointer.global,
+        prev_global: state.input.pointer.global,
         orig: ann.clone(),
         orig_index: idx,
     });
@@ -445,10 +445,10 @@ pub fn apply_annotation_drag(state: &mut EditorState, global: (f64, f64)) {
                 apply_text_resize_incremental(ann, handle, prev_global, global);
                 let editor = crate::tools::text::ensure_text_editor(
                     ann,
-                    &mut state.text_editors,
-                    &mut state.font_system,
+                    &mut state.text.editors,
+                    &mut state.text.font_system,
                 );
-                update_text_bbox_inline(ann, editor, &mut state.font_system);
+                update_text_bbox_inline(ann, editor, &mut state.text.font_system);
             } else {
                 // shape resize: always from orig + total delta to avoid accumulated error
                 let total_dx = (global.0 - start_global.0) as f32;
@@ -480,10 +480,10 @@ pub fn rebuild_annotation(state: &mut EditorState, idx: usize) {
     if matches!(state.annotations[idx].shape, AnnotationShape::Text { .. }) {
         let editor = crate::tools::text::ensure_text_editor(
             &state.annotations[idx],
-            &mut state.text_editors,
-            &mut state.font_system,
+            &mut state.text.editors,
+            &mut state.text.font_system,
         );
-        update_text_bbox_inline(&mut state.annotations[idx], editor, &mut state.font_system);
+        update_text_bbox_inline(&mut state.annotations[idx], editor, &mut state.text.font_system);
     } else {
         state.annotations[idx].update_bbox();
     }
