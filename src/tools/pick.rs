@@ -1,3 +1,4 @@
+use crate::editor::dirty::damage_annotation;
 use crate::editor::{DamageZone, EditorState};
 use crate::tools::ToolBehavior;
 use crate::types::{
@@ -27,7 +28,7 @@ impl ToolBehavior for PickTool {
         if pressed {
             let mut selected_annotation = None;
             for (i, ann) in state.annotations.iter().enumerate().rev() {
-                if ann.initial_hit_test(state.pointer.global) {
+                if ann.initial_hit_test(state.input.pointer.global) {
                     selected_annotation = Some(i);
                     break;
                 }
@@ -42,17 +43,18 @@ impl ToolBehavior for PickTool {
             if selected_annotation.is_none() {
                 if let Some(old_idx) = state.selected_annotation
                     && let Some(old_ann) = state.annotations.get(old_idx) {
-                        state
-                            .damage_rects
-                            .push(DamageZone::Global(old_ann.damage_bbox(true)));
-                        state.layer_damage_rects.push(old_ann.damage_bbox(false));
-                        if let Some(editor) = state.text_editors.get_mut(&old_ann.id) {
+                        damage_annotation(
+                            &mut state.damage_rects,
+                            &mut state.layer_damage_rects,
+                            old_ann,
+                        );
+                        if let Some(editor) = state.text.editors.get_mut(&old_ann.id) {
                             editor.set_selection(cosmic_text::Selection::None);
                         }
                     }
                 state.selected_annotation = None;
                 state.ann_drag = None;
-                state.text_editing = None;
+                state.text.editing = None;
                 state.annotations_dirty = true;
                 return;
             }
@@ -61,11 +63,12 @@ impl ToolBehavior for PickTool {
             if state.selected_annotation != selected_annotation {
                 if let Some(old_idx) = state.selected_annotation
                     && let Some(old_ann) = state.annotations.get(old_idx) {
-                        state
-                            .damage_rects
-                            .push(DamageZone::Global(old_ann.damage_bbox(true)));
-                        state.layer_damage_rects.push(old_ann.damage_bbox(false));
-                        if let Some(editor) = state.text_editors.get_mut(&old_ann.id) {
+                        damage_annotation(
+                            &mut state.damage_rects,
+                            &mut state.layer_damage_rects,
+                            old_ann,
+                        );
+                        if let Some(editor) = state.text.editors.get_mut(&old_ann.id) {
                             editor.set_selection(cosmic_text::Selection::None);
                         }
                     }
@@ -75,13 +78,13 @@ impl ToolBehavior for PickTool {
                 state
                     .damage_rects
                     .push(DamageZone::Global(ann.damage_bbox(true)));
-                state.text_editing = None;
+                state.text.editing = None;
 
                 // always start as Move when switching selection
                 state.ann_drag = Some(AnnDragState {
                     handle: SelectionHandle::Move,
-                    start_global: state.pointer.global,
-                    prev_global: state.pointer.global,
+                    start_global: state.input.pointer.global,
+                    prev_global: state.input.pointer.global,
                     orig: ann.clone(),
                     orig_index: idx,
                 });
@@ -107,10 +110,11 @@ impl ToolBehavior for PickTool {
                 && idx < state.annotations.len() {
                     state.push_undo();
                     let ann = state.annotations.remove(idx);
-                    state
-                        .damage_rects
-                        .push(DamageZone::Global(ann.damage_bbox(true)));
-                    state.layer_damage_rects.push(ann.damage_bbox(false));
+                    damage_annotation(
+                        &mut state.damage_rects,
+                        &mut state.layer_damage_rects,
+                        &ann,
+                    );
                     state.ann_drag = None;
                     state.annotations_dirty = true;
                     *dirty_mask = u32::MAX;
@@ -137,7 +141,7 @@ impl ToolBehavior for PickTool {
         else {
             return CursorIcon::Default;
         };
-        let handle = handle_hit_test_for_annotation(ann, state.pointer.global);
+        let handle = handle_hit_test_for_annotation(ann, state.input.pointer.global);
         cursor_for_handle(handle, false).unwrap_or(CursorIcon::Default)
     }
 }

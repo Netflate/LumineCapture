@@ -35,7 +35,7 @@ impl ToolBehavior for EyedropperTool {
     fn on_move(&self, _state: &mut EditorState, _global: (f64, f64), _dirty_mask: &mut u32) {}
 
     fn on_key(&self, state: &mut EditorState, key: SpecialKey, _dirty_mask: &mut u32) {
-        if state.mod_ctrl && matches!(key, SpecialKey::KeyC) {
+        if state.input.ctrl && matches!(key, SpecialKey::KeyC) {
             let color = state.tool_settings.color;
             copy_value(state, ValueField::Hex, color);
         }
@@ -55,7 +55,7 @@ pub fn pick(state: &mut EditorState, dirty_mask: &mut u32) {
         return;
     };
 
-    crate::app::color_popover::use_color(state, color, dirty_mask);
+    crate::editor::edits::use_color(state, color, dirty_mask);
     copy_value(state, ValueField::Hex, color);
 
     if state.pick_once {
@@ -69,7 +69,7 @@ pub fn toggle_pick_once(state: &mut EditorState, dirty_mask: &mut u32) {
         return;
     }
     state.pick_once = true;
-    state.toasts.show(ToastKind::PickColor, &mut state.font_system);
+    state.toasts.show(ToastKind::PickColor, &mut state.text.font_system);
     damage_loupe(state, dirty_mask);
 }
 
@@ -88,21 +88,21 @@ pub fn copy_value(state: &mut EditorState, field: ValueField, color: Color) {
         Ok(()) => format!("Copied {text}"),
         Err(e) => format!("Couldn't copy: {e}"),
     };
-    state.toasts.show_text(ToastKind::ColorCopied, message, &mut state.font_system);
+    state.toasts.show_text(ToastKind::ColorCopied, message, &mut state.text.font_system);
 }
 
 fn color_under_pointer(state: &EditorState) -> Option<Color> {
-    let base = state.base.get(state.pointer.monitor_idx)?;
-    sample_pixel(base, state.pointer.local)
+    let base = state.base.get(state.input.pointer.monitor_idx)?;
+    sample_pixel(base, state.input.pointer.local)
 }
 
 fn damage_loupe(state: &mut EditorState, dirty_mask: &mut u32) {
-    let monitor_idx = state.pointer.monitor_idx;
+    let monitor_idx = state.input.pointer.monitor_idx;
     let Some(placement) = state.placements.get(monitor_idx) else {
         return;
     };
     let (mw, mh) = (placement.size.0 as f32, placement.size.1 as f32);
-    let cursor = (state.pointer.local.0 as f32, state.pointer.local.1 as f32);
+    let cursor = (state.input.pointer.local.0 as f32, state.input.pointer.local.1 as f32);
     let rect = magnifier_rect(cursor, mw, mh, true);
     state.damage_rects.push(DamageZone::Local { monitor_idx, rect });
     crate::editor::dirty::mark_dirty(dirty_mask, monitor_idx);

@@ -1,5 +1,5 @@
 use log::{error, info, warn};
-use crate::editor::dirty::mark_dirty;
+use crate::editor::dirty::mark_all_dirty;
 use crate::editor::{DamageZone, EditorState};
 use crate::ocr::{self, StartOutcome};
 use crate::ocr::draw::scan_badge_rect;
@@ -19,20 +19,20 @@ impl ToolBehavior for OcrTool {
     // there. The work runs on a background thread; `app` polls for the result
     // and calls `finish_ocr`.
     fn on_activate(&self, state: &mut EditorState, _dirty_mask: &mut u32) {
-        state.ocr.prepare();
-        if state.ocr.is_busy() {
+        state.ocr.runtime.prepare();
+        if state.ocr.runtime.is_busy() {
             return;
         }
 
         damage_all(state);
 
         // If this selection zone is already scanned, shows older result without recanning
-        if state.ocr_view.is_active() && state.ocr_view.region() == state.selection.zone {
+        if state.ocr.view.is_active() && state.ocr.view.region() == state.selection.zone {
             return;
         }
-        state.ocr_view.clear();
+        state.ocr.view.clear();
 
-        if state.ocr_models.installed_count() == 0 {
+        if state.ocr.models.installed_count() == 0 {
             ask_for_model(state);
             return;
         }
@@ -55,18 +55,18 @@ impl ToolBehavior for OcrTool {
         if !matches!(button, MouseButton::Left) {
             return;
         }
-        state.mouse_down_left = pressed;
+        state.input.mouse_down = pressed;
 
         if !pressed {
             end_region_drag(state);
             return;
         }
 
-        let hit = state.ocr_view.line_at(state.pointer.global);
+        let hit = state.ocr.view.line_at(state.input.pointer.global);
         if let Some(line) = hit {
-            let pos = (state.pointer.global.0 as f32, state.pointer.global.1 as f32);
-            if state.click_tracker.register(ClickTarget::OcrLine(line), pos) {
-                let damage = state.ocr_view.select_block(line);
+            let pos = (state.input.pointer.global.0 as f32, state.input.pointer.global.1 as f32);
+            if state.input.clicks.register(ClickTarget::OcrLine(line), pos) {
+                let damage = state.ocr.view.select_block(line);
                 damage_overlay(state, damage);
                 return;
             }
@@ -74,44 +74,44 @@ impl ToolBehavior for OcrTool {
 
         // Empty space inside the scanned area still starts a text drag
         if hit.is_some() || pressed_inside_region(state) {
-            let damage = state.ocr_view.begin_drag(state.pointer.global);
+            let damage = state.ocr.view.begin_drag(state.input.pointer.global);
             damage_overlay(state, damage);
             return;
         }
 
-        let damage = state.ocr_view.deselect();
+        let damage = state.ocr.view.deselect();
         damage_overlay(state, damage);
         begin_region_drag(state);
     }
 
     fn on_move(&self, state: &mut EditorState, global: (f64, f64), dirty_mask: &mut u32) {
-        if state.ocr_redrag {
+        if state.ocr.redrag {
             SelectionTool.on_move(state, global, dirty_mask);
-            if boxed_out(state) && state.ocr_view.is_active() {
+            if boxed_out(state) && state.ocr.view.is_active() {
                 // A real drag, not a stray click: the old result no longer
                 // describes what is on screen, so take it down now rather than
                 // leaving stale plates floating over the new box.
                 damage_all(state);
-                state.ocr_view.clear();
+                state.ocr.view.clear();
             }
             return;
         }
 
-        if !state.mouse_down_left || !state.ocr_view.is_active() {
+        if !state.input.mouse_down || !state.ocr.view.is_active() {
             return;
         }
 
-        let damage = state.ocr_view.extend_drag(global);
+        let damage = state.ocr.view.extend_drag(global);
         damage_overlay(state, damage);
     }
 
     fn on_key(&self, state: &mut EditorState, key: SpecialKey, dirty_mask: &mut u32) {
-        if !state.ocr_view.is_active() || !state.mod_ctrl {
+        if !state.ocr.view.is_active() || !state.input.ctrl {
             return;
         }
         match key {
             SpecialKey::KeyA => {
-                let damage = state.ocr_view.select_all();
+                let damage = state.ocr.view.select_all();
                 damage_overlay(state, damage);
             }
             SpecialKey::KeyC | SpecialKey::KeyX => copy_selection(state, dirty_mask),
@@ -122,16 +122,16 @@ impl ToolBehavior for OcrTool {
     // on deactivate we cancel scan in progress, or cache scanned text if it was done.
     // and in both cases clear the visuals
     fn on_deactivate(&self, state: &mut EditorState, _dirty_mask: &mut u32) {
-        let scanning = state.ocr.is_busy();
+        let scanning = state.ocr.runtime.is_busy();
         cancel_scan(state);
         if scanning {
-            state.ocr_view.clear();
+            state.ocr.view.clear();
         } else {
-            let _ = state.ocr_view.deselect();
+            let _ = state.ocr.view.deselect();
         }
-        state.ocr_redrag = false;
+        state.ocr.redrag = false;
         state.tool_active = false;
-        state.ocr_await_region = false;
+        state.ocr.await_region = false;
         state.model_popover.open = false;
         state.toasts.dismiss(ToastKind::OcrPickRegion);
         state.toasts.dismiss(ToastKind::OcrNoModel);
@@ -139,7 +139,7 @@ impl ToolBehavior for OcrTool {
     }
 
     fn cursor(&self, state: &EditorState) -> CursorIcon {
-        if state.ocr_view.is_active() && state.ocr_view.line_at(state.pointer.global).is_some() {
+        if state.ocr.view.is_active() && state.ocr.view.line_at(state.input.pointer.global).is_some() {
             CursorIcon::Text
         } else {
             CursorIcon::Crosshair
@@ -148,8 +148,8 @@ impl ToolBehavior for OcrTool {
 }
 
 fn cancel_scan(state: &mut EditorState) {
-    state.ocr.cancel();
-    state.ocr_scan_started = None;
+    state.ocr.runtime.cancel();
+    state.ocr.scan_started = None;
     damage_all(state);
 }
 
@@ -162,23 +162,23 @@ fn dismiss_scan_toasts(state: &mut EditorState) {
 
 /// waiting for drag with showing toast
 fn await_region(state: &mut EditorState) {
-    state.ocr_await_region = true;
+    state.ocr.await_region = true;
     state
         .toasts
-        .show(ToastKind::OcrPickRegion, &mut state.font_system);
+        .show(ToastKind::OcrPickRegion, &mut state.text.font_system);
 }
 
 fn ask_for_model(state: &mut EditorState) {
     state.model_popover.open = true;
     state
         .toasts
-        .show(ToastKind::OcrNoModel, &mut state.font_system);
+        .show(ToastKind::OcrNoModel, &mut state.text.font_system);
 }
 
 
 fn boxed_out(state: &EditorState) -> bool {
     state.selection.zone.is_some_and(|zone| {
-        Some(zone) != state.ocr_redrag_from
+        Some(zone) != state.ocr.redrag_from
             && zone.width() >= OCR_MIN_REGION
             && zone.height() >= OCR_MIN_REGION
     })
@@ -188,8 +188,8 @@ fn boxed_out(state: &EditorState) -> bool {
 /// the text should not clear the result, so only a click far outside means
 /// "select a new area".
 fn pressed_inside_region(state: &EditorState) -> bool {
-    state.ocr_view.region().is_some_and(|region| {
-        let (x, y) = (state.pointer.global.0 as f32, state.pointer.global.1 as f32);
+    state.ocr.view.region().is_some_and(|region| {
+        let (x, y) = (state.input.pointer.global.0 as f32, state.input.pointer.global.1 as f32);
         x >= region.left() && x <= region.right() && y >= region.top() && y <= region.bottom()
     })
 }
@@ -200,43 +200,43 @@ fn pressed_inside_region(state: &EditorState) -> bool {
 /// In the OCR tool, dragging anywhere on empty space always starts a new selection.
 /// This prevents accidentally moving a full-screen box off the monitor.
 fn begin_region_drag(state: &mut EditorState) {
-    if state.ocr.is_busy() {
+    if state.ocr.runtime.is_busy() {
         cancel_scan(state);
-        state.ocr_view.clear();
+        state.ocr.view.clear();
     }
 
     state.toasts.dismiss(ToastKind::OcrPickRegion);
     dismiss_scan_toasts(state);
-    state.ocr_redrag = true;
-    state.ocr_redrag_from = state.selection.zone;
+    state.ocr.redrag = true;
+    state.ocr.redrag_from = state.selection.zone;
     state.tool_active = true;
     state.selection.set_drag(SelectionHandle::None, None, None);
-    state.drag_start = Some(state.pointer.global);
+    state.input.drag_start = Some(state.input.pointer.global);
 }
 
 fn end_region_drag(state: &mut EditorState) {
-    if !state.ocr_redrag {
+    if !state.ocr.redrag {
         return;
     }
-    state.ocr_redrag = false;
+    state.ocr.redrag = false;
     state.tool_active = false;
-    state.drag_start = None;
+    state.input.drag_start = None;
     state.selection.set_drag(SelectionHandle::None, None, None);
 
     if boxed_out(state) {
-        state.ocr_await_region = false;
+        state.ocr.await_region = false;
         start_ocr(state);
         return;
     }
 
-    if state.selection.zone != state.ocr_redrag_from {
-        for zone in [state.selection.zone, state.ocr_redrag_from].into_iter().flatten() {
+    if state.selection.zone != state.ocr.redrag_from {
+        for zone in [state.selection.zone, state.ocr.redrag_from].into_iter().flatten() {
             state.damage_rects.push(DamageZone::Global(zone));
         }
-        state.selection.zone = state.ocr_redrag_from;
+        state.selection.zone = state.ocr.redrag_from;
     }
 
-    if state.ocr_await_region {
+    if state.ocr.await_region {
         await_region(state);
     }
 }
@@ -244,8 +244,8 @@ fn end_region_drag(state: &mut EditorState) {
 /// Redraw the entire overlay: all covered areas, plus the progress badge if
 /// a scan is active (since the background behind the badge must be redrawn too).
 fn damage_all(state: &mut EditorState) {
-    let mut rects: Vec<Rect> = state.ocr_view.bounds().into_iter().collect();
-    if let Some(region) = state.ocr_view.region() {
+    let mut rects: Vec<Rect> = state.ocr.view.bounds().into_iter().collect();
+    if let Some(region) = state.ocr.view.region() {
         rects.push(scan_badge_rect(region));
     }
     for rect in rects {
@@ -267,7 +267,7 @@ fn start_ocr(state: &mut EditorState) {
     };
     dismiss_scan_toasts(state);
 
-    if !state.ocr_models.active_installed() {
+    if !state.ocr.models.active_installed() {
         ask_for_model(state);
         return;
     }
@@ -276,17 +276,17 @@ fn start_ocr(state: &mut EditorState) {
         return;
     };
 
-    match state.ocr.start(capture) {
+    match state.ocr.runtime.start(capture) {
         StartOutcome::Started => {
-            state.ocr_view.set_region(region);
-            state.ocr_scan_started = Some(Instant::now());
+            state.ocr.view.set_region(region);
+            state.ocr.scan_started = Some(Instant::now());
             // The shade and the badge both go up on the next frame.
             state.damage_rects.push(DamageZone::Global(region));
         }
         StartOutcome::Busy => info!("ocr: still working on the previous region"),
         StartOutcome::Unavailable(e) => {
             error!("ocr: engine unavailable: {e}");
-            state.toasts.show(ToastKind::OcrFailed, &mut state.font_system);
+            state.toasts.show(ToastKind::OcrFailed, &mut state.text.font_system);
         }
     }
 }
@@ -295,13 +295,13 @@ fn start_ocr(state: &mut EditorState) {
 /// button; another area is picked by dragging a new box instead.
 pub fn restart_ocr(state: &mut EditorState, _dirty_mask: &mut u32) {
     damage_all(state);
-    state.ocr_view.clear();
+    state.ocr.view.clear();
     start_ocr(state);
 }
 
 /// Copy what is selected, or everything when nothing is.
 pub fn copy_selection(state: &mut EditorState, _dirty_mask: &mut u32) {
-    let text = state.ocr_view.text_to_copy();
+    let text = state.ocr.view.text_to_copy();
     if text.is_empty() {
         return;
     }
@@ -309,7 +309,7 @@ pub fn copy_selection(state: &mut EditorState, _dirty_mask: &mut u32) {
         Ok(()) => info!("ocr: copied {} line(s)", text.lines().count()),
         Err(e) => {
             warn!("ocr: can't copy: {e}");
-            state.toasts.show(ToastKind::CopyFailed, &mut state.font_system);
+            state.toasts.show(ToastKind::CopyFailed, &mut state.text.font_system);
         }
     }
 }
@@ -317,7 +317,7 @@ pub fn copy_selection(state: &mut EditorState, _dirty_mask: &mut u32) {
 /// Select everything, then copy it, so the panel's copy button also shows what
 /// it took.
 pub fn copy_all(state: &mut EditorState, dirty_mask: &mut u32) {
-    let damage = state.ocr_view.select_all();
+    let damage = state.ocr.view.select_all();
     damage_overlay(state, damage);
     copy_selection(state, dirty_mask);
 }
@@ -325,7 +325,7 @@ pub fn copy_all(state: &mut EditorState, dirty_mask: &mut u32) {
 /// One animation step of the progress badge while recognition runs. Only the
 /// badge is damaged
 pub fn tick_scan_badge(state: &mut EditorState, dirty_mask: &mut u32) {
-    let Some(region) = state.ocr_view.region() else {
+    let Some(region) = state.ocr.view.region() else {
         return;
     };
     let badge = scan_badge_rect(region);
@@ -340,7 +340,7 @@ pub fn finish_ocr(
     result: Result<ocr::OcrText, String>,
     dirty_mask: &mut u32,
 ) {
-    state.ocr_scan_started = None;
+    state.ocr.scan_started = None;
     // Whatever happens next, the progress badge has to come off the canvas.
     damage_all(state);
 
@@ -348,65 +348,65 @@ pub fn finish_ocr(
         Ok(text) => text,
         Err(e) => {
             error!("ocr: recognition failed: {e}");
-            state.toasts.show(ToastKind::OcrFailed, &mut state.font_system);
-            state.ocr_view.clear();
-            mark_all_dirty(state, dirty_mask);
+            state.toasts.show(ToastKind::OcrFailed, &mut state.text.font_system);
+            state.ocr.view.clear();
+            mark_all_dirty(dirty_mask, state.placements.len());
             return;
         }
     };
 
     if text.is_empty() {
         info!("ocr: no text found in the selected region");
-        state.toasts.show(ToastKind::OcrNoText, &mut state.font_system);
+        state.toasts.show(ToastKind::OcrNoText, &mut state.text.font_system);
         // Nothing to shade or select: drop the overlay rather than leaving the
         // region sitting under a wash with no text in it.
-        state.ocr_view.clear();
-        mark_all_dirty(state, dirty_mask);
+        state.ocr.view.clear();
+        mark_all_dirty(dirty_mask, state.placements.len());
         return;
     }
 
-    state.ocr_view.set_lines(text.lines);
-    info!("ocr: {} line(s)", state.ocr_view.lines.len());
+    state.ocr.view.set_lines(text.lines);
+    info!("ocr: {} line(s)", state.ocr.view.lines.len());
 
     damage_all(state);
-    mark_all_dirty(state, dirty_mask);
+    mark_all_dirty(dirty_mask, state.placements.len());
 }
 
 /// after downloading starts reading immediately
 pub fn use_model(state: &mut EditorState, idx: usize, dirty_mask: &mut u32) {
-    if state.ocr_models.active() == Some(idx) {
+    if state.ocr.models.active() == Some(idx) {
         return;
     }
-    let Some(files) = state.ocr_models.files(idx) else {
+    let Some(files) = state.ocr.models.files(idx) else {
         return;
     };
-    state.ocr_models.set_active(Some(idx));
-    state.ocr.load(files);
+    state.ocr.models.set_active(Some(idx));
+    state.ocr.runtime.load(files);
 
     if state.selected_tool != Tool::Ocr {
-        state.ocr_view.clear();
+        state.ocr.view.clear();
         return;
     }
-    state.ocr.prepare();
-    if state.ocr.is_busy() || state.ocr_view.is_active() {
+    state.ocr.runtime.prepare();
+    if state.ocr.runtime.is_busy() || state.ocr.view.is_active() {
         cancel_scan(state);
         restart_ocr(state, dirty_mask);
     }
 }
 
 pub fn model_ready(state: &mut EditorState, idx: usize, dirty_mask: &mut u32) {
-    if state.ocr_models.active() == Some(idx) {
-        if let Some(files) = state.ocr_models.files(idx) {
-            state.ocr.load(files);
+    if state.ocr.models.active() == Some(idx) {
+        if let Some(files) = state.ocr.models.files(idx) {
+            state.ocr.runtime.load(files);
             if state.selected_tool == Tool::Ocr {
-                state.ocr.prepare();
+                state.ocr.runtime.prepare();
             }
         }
-    } else if !state.ocr_models.active_installed() {
+    } else if !state.ocr.models.active_installed() {
         use_model(state, idx, dirty_mask);
     }
 
-    if state.ocr_models.installed_count() != 1 || state.selected_tool != Tool::Ocr {
+    if state.ocr.models.installed_count() != 1 || state.selected_tool != Tool::Ocr {
         return;
     }
     state.model_popover.open = false;
@@ -423,19 +423,14 @@ pub fn model_failed(state: &mut EditorState, idx: usize, err: &str) {
     if state.selected_tool == Tool::Ocr {
         state
             .toasts
-            .show(ToastKind::OcrDownloadFailed, &mut state.font_system);
+            .show(ToastKind::OcrDownloadFailed, &mut state.text.font_system);
     }
 }
 
 pub fn cancel_model_download(state: &mut EditorState, idx: usize) {
-    state.ocr_models.cancel(idx);
-    if state.ocr_models.active() == Some(idx) {
-        state.ocr_models.set_active(None);
+    state.ocr.models.cancel(idx);
+    if state.ocr.models.active() == Some(idx) {
+        state.ocr.models.set_active(None);
     }
 }
 
-fn mark_all_dirty(state: &EditorState, dirty_mask: &mut u32) {
-    for i in 0..state.placements.len() {
-        mark_dirty(dirty_mask, i);
-    }
-}

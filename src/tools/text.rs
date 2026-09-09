@@ -1,4 +1,5 @@
 use log::warn;
+use crate::editor::dirty::damage_annotation;
 use crate::editor::{DamageZone, EditorState};
 use crate::renderer::shadow_color_for;
 use crate::tools::ToolBehavior;
@@ -188,18 +189,18 @@ impl ToolBehavior for TextTool {
             return;
         }
 
-        let pos = (state.pointer.global.0 as f32, state.pointer.global.1 as f32);
+        let pos = (state.input.pointer.global.0 as f32, state.input.pointer.global.1 as f32);
 
         // 1. possibility to select other text fields (replacing tools/pick.rs)
         for (i, ann) in state.annotations.iter().enumerate().rev() {
             if !matches!(ann.shape, AnnotationShape::Text { .. }) {
                 continue;
             }
-            if !ann.initial_hit_test(state.pointer.global) {
+            if !ann.initial_hit_test(state.input.pointer.global) {
                 continue;
             }
 
-            if let Some(prev) = state.text_editing.as_ref()
+            if let Some(prev) = state.text.editing.as_ref()
                 && prev.annotation_id != ann.id
             {
                 if let Some(prev_ann) = state
@@ -207,12 +208,13 @@ impl ToolBehavior for TextTool {
                     .iter()
                     .find(|a| a.id == prev.annotation_id)
                 {
-                    state
-                        .damage_rects
-                        .push(DamageZone::Global(prev_ann.damage_bbox(true)));
-                    state.layer_damage_rects.push(prev_ann.damage_bbox(false));
+                    damage_annotation(
+                        &mut state.damage_rects,
+                        &mut state.layer_damage_rects,
+                        prev_ann,
+                    );
                 }
-                if let Some(prev_editor) = state.text_editors.get_mut(&prev.annotation_id) {
+                if let Some(prev_editor) = state.text.editors.get_mut(&prev.annotation_id) {
                     prev_editor.set_selection(Selection::None);
                 }
             }
@@ -220,11 +222,12 @@ impl ToolBehavior for TextTool {
             if let Some(old_idx) = state.selected_annotation
                 && old_idx != i
                     && let Some(old_ann) = state.annotations.get(old_idx) {
-                        state
-                            .damage_rects
-                            .push(DamageZone::Global(old_ann.damage_bbox(true)));
-                        state.layer_damage_rects.push(old_ann.damage_bbox(false));
-                        if let Some(old_editor) = state.text_editors.get_mut(&old_ann.id) {
+                        damage_annotation(
+                            &mut state.damage_rects,
+                            &mut state.layer_damage_rects,
+                            old_ann,
+                        );
+                        if let Some(old_editor) = state.text.editors.get_mut(&old_ann.id) {
                             old_editor.set_selection(Selection::None);
                         }
                     }
@@ -237,15 +240,15 @@ impl ToolBehavior for TextTool {
             let AnnotationShape::Text { start, .. } = &ann.shape else {
                 unreachable!("checked Text shape above")
             };
-            let local_x = (state.pointer.global.0 as f32 - start.0).round() as i32;
-            let local_y = (state.pointer.global.1 as f32 - start.1).round() as i32;
+            let local_x = (state.input.pointer.global.0 as f32 - start.0).round() as i32;
+            let local_y = (state.input.pointer.global.1 as f32 - start.1).round() as i32;
 
-            let click_pos = (state.pointer.global.0 as f32, state.pointer.global.1 as f32);
+            let click_pos = (state.input.pointer.global.0 as f32, state.input.pointer.global.1 as f32);
             let is_double = state
-                .click_tracker
+                .input.clicks
                 .register(ClickTarget::TextAnnotation(ann_id), click_pos);
 
-            if let Some(editor) = state.text_editors.get_mut(&ann_id) {
+            if let Some(editor) = state.text.editors.get_mut(&ann_id) {
                 let click_action = if is_double {
                     Action::DoubleClick {
                         x: local_x,
@@ -257,10 +260,10 @@ impl ToolBehavior for TextTool {
                         y: local_y,
                     }
                 };
-                editor.action(&mut state.font_system, click_action);
+                editor.action(&mut state.text.font_system, click_action);
             }
 
-            state.text_editing = Some(TextEditState {
+            state.text.editing = Some(TextEditState {
                 annotation_id: ann_id,
             });
             state.selected_annotation = Some(i);
@@ -270,9 +273,9 @@ impl ToolBehavior for TextTool {
         }
 
         // 2. clicking on empty > remove prev text focus / selection if exists
-        let had_selection = state.selected_annotation.is_some() || state.text_editing.is_some();
+        let had_selection = state.selected_annotation.is_some() || state.text.editing.is_some();
         if had_selection {
-            if let Some(edit) = state.text_editing.take() {
+            if let Some(edit) = state.text.editing.take() {
                 if let Some(prev_ann) = state
                     .annotations
                     .iter()
@@ -283,7 +286,7 @@ impl ToolBehavior for TextTool {
                         .damage_rects
                         .push(DamageZone::Global(prev_ann.damage_bbox(true)));
                 }
-                if let Some(editor) = state.text_editors.get_mut(&edit.annotation_id) {
+                if let Some(editor) = state.text.editors.get_mut(&edit.annotation_id) {
                     editor.set_selection(Selection::None);
                 }
             }
@@ -293,7 +296,7 @@ impl ToolBehavior for TextTool {
                     state
                         .damage_rects
                         .push(DamageZone::Global(old_ann.damage_bbox(true)));
-                    if let Some(editor) = state.text_editors.get_mut(&old_ann.id) {
+                    if let Some(editor) = state.text.editors.get_mut(&old_ann.id) {
                         editor.set_selection(Selection::None);
                     }
                 }
@@ -335,7 +338,7 @@ impl ToolBehavior for TextTool {
         );
 
         let editor = Editor::new(buffer);
-        state.text_editors.insert(id, editor);
+        state.text.editors.insert(id, editor);
 
         let mut ann = Annotation {
             id,
@@ -354,8 +357,8 @@ impl ToolBehavior for TextTool {
 
         update_text_bbox_inline(
             &mut ann,
-            state.text_editors.get_mut(&id).unwrap(),
-            &mut state.font_system,
+            state.text.editors.get_mut(&id).unwrap(),
+            &mut state.text.font_system,
         );
 
         state.push_undo();
@@ -365,7 +368,7 @@ impl ToolBehavior for TextTool {
             .push(DamageZone::Global(ann.damage_bbox(true)));
         state.annotations.push(ann);
 
-        state.text_editing = Some(TextEditState {
+        state.text.editing = Some(TextEditState {
             annotation_id: id,
         });
         state.selected_annotation = Some(state.annotations.len() - 1);
@@ -381,7 +384,7 @@ impl ToolBehavior for TextTool {
             return;
         }
 
-        let Some(edit) = state.text_editing.as_ref() else {
+        let Some(edit) = state.text.editing.as_ref() else {
             return;
         };
         let id = edit.annotation_id;
@@ -393,9 +396,9 @@ impl ToolBehavior for TextTool {
                 .push(DamageZone::Global(ann.damage_bbox(true)));
         }
 
-        if let Some(editor) = state.text_editors.get_mut(&id) {
-            editor.action(&mut state.font_system, Action::Insert(ch));
-            sync_content_from_editor(id, editor, &mut state.annotations, &mut state.font_system);
+        if let Some(editor) = state.text.editors.get_mut(&id) {
+            editor.action(&mut state.text.font_system, Action::Insert(ch));
+            sync_content_from_editor(id, editor, &mut state.annotations, &mut state.text.font_system);
         }
 
         if let Some(ann) = state.annotations.iter().find(|a| a.id == id) {
@@ -411,12 +414,12 @@ impl ToolBehavior for TextTool {
             return;
         }
 
-        let Some(edit) = state.text_editing.as_ref() else {
+        let Some(edit) = state.text.editing.as_ref() else {
             return;
         };
         let id = edit.annotation_id;
-        let ctrl = state.mod_ctrl;
-        let shift = state.mod_shift;
+        let ctrl = state.input.ctrl;
+        let shift = state.input.shift;
 
         if let Some(ann) = state.annotations.iter().find(|a| a.id == id) {
             state.layer_damage_rects.push(ann.damage_bbox(false));
@@ -425,15 +428,15 @@ impl ToolBehavior for TextTool {
                 .push(DamageZone::Global(ann.damage_bbox(true)));
         }
 
-        if let Some(editor) = state.text_editors.get_mut(&id) {
+        if let Some(editor) = state.text.editors.get_mut(&id) {
             let text_changed =
-                apply_key_to_editor(editor, &mut state.font_system, key, ctrl, shift);
+                apply_key_to_editor(editor, &mut state.text.font_system, key, ctrl, shift);
             if text_changed {
                 sync_content_from_editor(
                     id,
                     editor,
                     &mut state.annotations,
-                    &mut state.font_system,
+                    &mut state.text.font_system,
                 );
             }
         }
@@ -447,7 +450,7 @@ impl ToolBehavior for TextTool {
     }
 
     fn on_deactivate(&self, state: &mut EditorState, _dirty_mask: &mut u32) {
-        if let Some(edit) = state.text_editing.take() {
+        if let Some(edit) = state.text.editing.take() {
             if let Some(ann) = state
                 .annotations
                 .iter()
@@ -458,7 +461,7 @@ impl ToolBehavior for TextTool {
                     .damage_rects
                     .push(DamageZone::Global(ann.damage_bbox(true)));
             }
-            if let Some(editor) = state.text_editors.get_mut(&edit.annotation_id) {
+            if let Some(editor) = state.text.editors.get_mut(&edit.annotation_id) {
                 editor.set_selection(Selection::None);
             }
         }
@@ -468,11 +471,11 @@ impl ToolBehavior for TextTool {
                 state
                     .damage_rects
                     .push(DamageZone::Global(old_ann.damage_bbox(true)));
-                if let Some(editor) = state.text_editors.get_mut(&old_ann.id) {
+                if let Some(editor) = state.text.editors.get_mut(&old_ann.id) {
                     editor.set_selection(Selection::None);
                 }
             }
-        state.text_editing = None;
+        state.text.editing = None;
         state.selected_annotation = None;
         state.annotations_dirty = true;
     }
@@ -486,7 +489,7 @@ impl ToolBehavior for TextTool {
             .and_then(|idx| state.annotations.get(idx))
             && matches!(ann.shape, AnnotationShape::Text { .. })
             && let Some(icon) =
-                cursor_for_handle(handle_hit_test_for_annotation(ann, state.pointer.global), false)
+                cursor_for_handle(handle_hit_test_for_annotation(ann, state.input.pointer.global), false)
         {
             return icon;
         }

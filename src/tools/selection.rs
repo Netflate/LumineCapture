@@ -7,8 +7,7 @@ use tiny_skia::Rect;
 pub struct SelectionTool;
 
 pub fn global_selection_to_local(selection: &Rect, placement: &Placement) -> Option<Rect> {
-    let mx = placement.position.0 as f32;
-    let my = placement.position.1 as f32;
+    let (mx, my) = placement.offset();
     let mw = placement.size.0 as f32;
     let mh = placement.size.1 as f32;
 
@@ -25,7 +24,7 @@ pub fn global_selection_to_local(selection: &Rect, placement: &Placement) -> Opt
 }
 
 pub fn selection_edges_for_monitor(sel: &Rect, placement: &Placement) -> SelectionEdges {
-    let (mx, my) = (placement.position.0 as f32, placement.position.1 as f32);
+    let (mx, my) = placement.offset();
     let (mw, mh) = (placement.size.0 as f32, placement.size.1 as f32);
     let limit_x = mx + mw;
     let limit_y = my + mh;
@@ -50,31 +49,31 @@ impl ToolBehavior for SelectionTool {
             return;
         }
 
-        state.mouse_down_left = pressed;
+        state.input.mouse_down = pressed;
         if pressed {
             state.tool_active = true;
             let handle = state
                 .selection
                 .zone
                 .as_ref()
-                .map(|sel| hit_test_rect_handle(sel, state.pointer.global))
+                .map(|sel| hit_test_rect_handle(sel, state.input.pointer.global))
                 .unwrap_or(SelectionHandle::None);
 
             if handle != SelectionHandle::None {
                 if let Some(sel) = state.selection.zone {
                     state
                         .selection
-                        .set_drag(handle, Some(state.pointer.global), Some(sel));
-                    state.drag_start = None;
+                        .set_drag(handle, Some(state.input.pointer.global), Some(sel));
+                    state.input.drag_start = None;
                 }
             } else {
                 state.selection.set_drag(SelectionHandle::None, None, None);
-                state.drag_start = Some(state.pointer.global);
+                state.input.drag_start = Some(state.input.pointer.global);
             }
         } else {
             state.tool_active = false;
 
-            state.drag_start = None;
+            state.input.drag_start = None;
             state.selection.set_drag(SelectionHandle::None, None, None);
         }
     }
@@ -84,7 +83,7 @@ impl ToolBehavior for SelectionTool {
         let mut selection_changed = false;
 
         // handle drag (resize/move existing selection)
-        if state.mouse_down_left && state.selection.active_handle != SelectionHandle::None {
+        if state.input.mouse_down && state.selection.active_handle != SelectionHandle::None {
             if let (Some(origin), Some(sel_start)) = (
                 state.selection.drag_origin,
                 state.selection.selection_at_drag_start,
@@ -94,9 +93,9 @@ impl ToolBehavior for SelectionTool {
                     apply_handle_drag(&sel_start, state.selection.active_handle, delta).to_rect();
                 selection_changed = true;
             }
-        } else if state.mouse_down_left {
+        } else if state.input.mouse_down {
             // new selection drag
-            if let Some(start) = state.drag_start {
+            if let Some(start) = state.input.drag_start {
                 state.selection.zone = make_rect(start, global);
                 selection_changed = true;
             }
@@ -113,12 +112,12 @@ impl ToolBehavior for SelectionTool {
     }
 
     fn cursor(&self, state: &EditorState) -> CursorIcon {
-        if state.mouse_down_left && state.selection.active_handle != SelectionHandle::None {
+        if state.input.mouse_down && state.selection.active_handle != SelectionHandle::None {
             return cursor_for_handle(state.selection.active_handle, true)
                 .unwrap_or(CursorIcon::Crosshair);
         }
         if let Some(sel) = state.selection.zone
-            && let Some(icon) = cursor_for_handle(hit_test_rect_handle(&sel, state.pointer.global), false)
+            && let Some(icon) = cursor_for_handle(hit_test_rect_handle(&sel, state.input.pointer.global), false)
         {
             return icon;
         }

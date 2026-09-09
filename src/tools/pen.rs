@@ -16,7 +16,7 @@ impl ToolBehavior for PenTool {
         pressed: bool,
         dirty_mask: &mut u32,
     ) {
-        let pos = (state.pointer.global.0 as f32, state.pointer.global.1 as f32);
+        let pos = (state.input.pointer.global.0 as f32, state.input.pointer.global.1 as f32);
 
         if pressed {
             state.pending_pen_baked = 0;
@@ -55,7 +55,7 @@ impl ToolBehavior for PenTool {
     }
 
     fn on_move(&self, state: &mut EditorState, _global: (f64, f64), dirty_mask: &mut u32) {
-        let raw_pos = (state.pointer.global.0 as f32, state.pointer.global.1 as f32);
+        let raw_pos = (state.input.pointer.global.0 as f32, state.input.pointer.global.1 as f32);
 
         let Some(ann) = state.pending.as_ref() else {
             return;

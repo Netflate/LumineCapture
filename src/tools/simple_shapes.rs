@@ -19,7 +19,7 @@ impl ToolBehavior for SimpleShapeTool {
         pressed: bool,
         _dirty_mask: &mut u32,
     ) {
-        let pos = (state.pointer.global.0 as f32, state.pointer.global.1 as f32);
+        let pos = (state.input.pointer.global.0 as f32, state.input.pointer.global.1 as f32);
         if pressed {
             let color = self.color;
             let mut ann = Annotation {
@@ -51,7 +51,7 @@ impl ToolBehavior for SimpleShapeTool {
         if let Some(ann) = state.pending.as_mut() {
             state.damage_rects.push(DamageZone::Global(ann.bbox));
 
-            let pos = (state.pointer.global.0 as f32, state.pointer.global.1 as f32);
+            let pos = (state.input.pointer.global.0 as f32, state.input.pointer.global.1 as f32);
             let start = ann.shape.start_point();
             ann.shape = (self.make_shape)(start, pos);
             ann.update_bbox();
