@@ -161,7 +161,7 @@ pub fn initial_paint(
     let sel_zone = &selection.zone;
     let prev_zone = &selection.prev_zone;
     let icons_cache_ref = &*icons_cache;
-    let magnifier_ref = &*magnifier;
+    let magnifier_ref = magnifier.current.as_ref();
 
     let no_toasts = crate::ui::toast::Toasts::default();
     let no_toasts = &no_toasts;
@@ -193,7 +193,7 @@ pub fn initial_paint(
                     dirty_rect: None,
                     selection_edges: edges.as_ref(),
                     selection_dirty: false,
-                    magnifier: magnifier_ref.as_ref(),
+                    magnifier: magnifier_ref,
                     is_mag_monitor: false,
                     mag_label: false,
                     toolbar: None,
@@ -208,9 +208,7 @@ pub fn initial_paint(
                     is_pending_selected: false,
                     selected_annotation: None,
                     annotations: &[],
-                    font_system: None,
-                    swash_cache: None,
-                    text_editors: None,
+                    text: None,
                     active_text_id: None,
                     current_color: DEFAULT_COLOR.color(),
                     ocr_view: None,

@@ -1,30 +1,24 @@
-pub mod color_popover;
 mod init;
 mod input;
-mod model_popover;
-mod settings_logic;
-mod toolbar_logic;
+mod panels;
 
 use crate::backend::notify::{self, Notice};
 use crate::backend::{initialize_capture, initialize_clipboard, initialize_overlay};
-use crate::editor::EditorState;
-use crate::editor::dirty::is_dirty;
+use crate::backend::ScreenOverlay;
+use crate::editor::{EditorState, Layers, OcrState, TextState};
+use crate::editor::dirty::{is_dirty, mark_all_dirty, mark_dirty};
 use crate::profiler::Profiler;
 use crate::renderer;
 use crate::tools::Tool;
 use crate::tools::selection::{global_selection_to_local, selection_edges_for_monitor};
-use crate::interaction::DoubleClickTracker;
-use crate::ui::panel::{AnimatedPanel, tick_panel_animation};
-use crate::ui::toolbar::Toolbar;
-use crate::types::{DamageRect, Finish, OverlayEvent, Placement, PointerState, SelectionEdges, SelectionState, ToolSettings};
-use crate::ui::color_popover::ColorPickerPopover;
+use crate::ui::panel::{AnimatedPanel, panel_to_draw, tick_panel_animation};
+use crate::types::{DamageRect, Finish, OverlayEvent, Placement, SelectionEdges};
 use crate::ui::panel::UiPanel;
-use crate::ui::settings_panel::SettingsPanel;
-use crate::utils::{encode_png, get_full_workspace_rect, get_overlapping_monitors, save_to_file, spawn_self};
+use crate::utils::{encode_png, get_full_workspace_rect, save_to_file};
 
 use cosmic_text::{FontSystem, SwashCache};
 use std::collections::HashMap;
-use tiny_skia::{Pixmap, PixmapPaint, Rect, Transform};
+use tiny_skia::Rect;
 
 /// download progress updates each tick, but if there is no animation
 /// then manually after each 50ms
@@ -42,6 +36,23 @@ pub async fn make_screenshot(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut prof = Profiler::new();
 
+    let (mut editor_state, mut overlay) = start_capture(conn, &mut prof).await?;
+
+    init::initial_paint(&mut editor_state, &mut overlay, &mut prof)?;
+    prof.dump();
+
+    run_overlay(&mut editor_state, overlay)?;
+
+    editor_state.ocr.models.shutdown();
+    finish_capture(&mut editor_state).await
+}
+
+/// Shows the overlay and builds the editor at the same time. The overlay renders
+/// on its own thread while screens are captured, running both slow setup steps in parallel.
+async fn start_capture(
+    conn: wayland_client::Connection,
+    prof: &mut Profiler,
+) -> Result<(EditorState, Box<dyn ScreenOverlay>), Box<dyn std::error::Error>> {
     let icons_handle = std::thread::spawn(init::load_icons_cache);
     let text_handle = std::thread::spawn(|| (SwashCache::new(), FontSystem::new()));
 
@@ -59,10 +70,8 @@ pub async fn make_screenshot(
     let screenshots = capture.capture_frame(&outputs).await?;
     prof.mark("capture");
 
-    let clipboard = initialize_clipboard();
-
-    let base_pixmaps: Vec<Pixmap> = init::build_base_pixmap(&screenshots.frames)?;
-    let (canvas, dimmed, annotations_layer) = init::build_layers(&base_pixmaps);
+    let base = init::build_base_pixmap(&screenshots.frames)?;
+    let (canvas, dimmed, annotations) = init::build_layers(&base);
     let placements = init::build_placements(&outputs);
     prof.mark("base_pixmaps + layers + placements");
 
@@ -71,508 +80,392 @@ pub async fn make_screenshot(
     let (swash_cache, font_system) = text_handle.join().expect("Failed to join text thread");
     let icons_cache = icons_handle.join().expect("Failed to join icons thread");
 
-    let ocr_models = crate::ocr::models::OcrModels::load();
-    let ocr_settings = crate::ocr::settings::EngineSettings::load();
-    let mut ocr = crate::ocr::OcrRuntime::new(crate::ocr::daemon::resolve_mode(&ocr_settings));
-    if let Some(files) = ocr_models.active().and_then(|idx| ocr_models.files(idx)) {
-        ocr.load(files);
-    }
-
-    let mut editor_state = EditorState {
-        base: base_pixmaps,
-        canvas,
-        dimmed,
-        selected_tool: Tool::Selection,
-        tool_active: false,
-        selection: SelectionState::default(),
+    let editor_state = EditorState::new(
+        Layers {
+            base,
+            canvas,
+            dimmed,
+            annotations,
+        },
         placements,
-        drag_start: None,
-        pointer: PointerState::default(),
-        magnifier: None,
-        prev_magnifier: None,
-        last_mag_update: None,
-        mouse_down_left: false,
-        toolbar: Toolbar::new(),
-        settings_panel: SettingsPanel::new(),
-        tool_settings: ToolSettings::default(),
-        pick_once: false,
-        finish: None,
-        color_popover: ColorPickerPopover::new(),
-        model_popover: crate::ui::model_popover::ModelPopover::new(),
-        toasts: crate::ui::toast::Toasts::default(),
         icons_cache,
-        annotations: Vec::new(),
-        pending: None,
-        next_id: 0,
-        prev_pending: None,
-        undo_stack: Vec::new(),
-        redo_stack: Vec::new(),
-        damage_rects: Vec::new(),
-        selected_annotation: None,
-        ann_drag: None,
-
-        annotations_layer,
-        annotations_dirty: false,
-        layer_damage_rects: Vec::new(),
-        // Number of points of the current pending Pen already baked into persistent layer
-        pending_pen_baked: 0,
-        font_system,
-        swash_cache,
-        text_editors: HashMap::new(),
-        text_editing: None,
-
-        mod_ctrl: false,
-        mod_shift: false,
-
-        click_tracker: DoubleClickTracker::new(),
-
-        ocr,
-        ocr_models,
-        ocr_view: crate::ocr::OcrView::default(),
-        ocr_redrag: false,
-        ocr_redrag_from: None,
-        ocr_await_region: false,
-        ocr_scan_started: None,
-    };
+        TextState {
+            font_system,
+            swash_cache,
+            editors: HashMap::new(),
+            editing: None,
+        },
+        build_ocr_state(),
+    );
     prof.mark("editor_state built");
 
-    let (mut overlay, present_res, present_dt) = present_handle
+    let (overlay, present_res, present_dt) = present_handle
         .join()
         .map_err(|_| "present thread panicked")?;
     present_res.map_err(|msg| -> Box<dyn std::error::Error> { msg.into() })?;
     prof.mark("present() joined");
     prof.mark_external("  ^ present_dt (thread-internal duration)", present_dt);
 
-    init::initial_paint(&mut editor_state, &mut overlay, &mut prof)?;
-    prof.dump();
+    Ok((editor_state, overlay))
+}
 
+fn build_ocr_state() -> OcrState {
+    let models = crate::ocr::models::OcrModels::load();
+    let settings = crate::ocr::settings::EngineSettings::load();
+    let mut runtime = crate::ocr::OcrRuntime::new(crate::ocr::daemon::resolve_mode(&settings));
+    if let Some(files) = models.active().and_then(|idx| models.files(idx)) {
+        runtime.load(files);
+    }
+
+    OcrState {
+        runtime,
+        models,
+        view: crate::ocr::OcrView::default(),
+        redrag: false,
+        redrag_from: None,
+        await_region: false,
+        scan_started: None,
+    }
+}
+
+/// Runs the overlay until the user completes or cancels the selection.
+/// By the time this returns, the overlay is already closed and capture is complete.
+fn run_overlay(
+    editor_state: &mut EditorState,
+    mut overlay: Box<dyn ScreenOverlay>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut dirty_mask: u32 = 0;
-
     let mut annotations_were_hidden = false;
 
     loop {
-        let is_animating = editor_state.toolbar.is_animating()
-            || editor_state.color_popover.is_animating()
-            || editor_state.model_popover.is_animating()
-            || editor_state.toasts.is_animating();
-        let stepper_holding = editor_state.settings_panel.arrow_held.is_some();
-        let ocr_working = editor_state.ocr.needs_poll();
-        let timeout = if is_animating || stepper_holding || ocr_working {
-            16
-        } else if editor_state.ocr_models.is_downloading() {
-            DOWNLOAD_POLL_MS
-        } else {
-            -1
-        };
+        let timeout = poll_timeout(editor_state);
+        poll_background_work(editor_state, &mut dirty_mask);
 
-        if let Some(result) = editor_state.ocr.poll() {
-            crate::tools::ocr::finish_ocr(&mut editor_state, result, &mut dirty_mask);
-            settings_logic::update_settings_panel(&mut editor_state, &mut dirty_mask);
-        }
-        model_popover::tick_model_downloads(&mut editor_state, &mut dirty_mask);
-        if editor_state.ocr.is_busy() {
-            crate::tools::ocr::tick_scan_badge(&mut editor_state, &mut dirty_mask);
-        }
-
-        let ev = overlay.next_event(timeout)?;
-        match ev {
-            OverlayEvent::Tick => {}
+        match overlay.next_event(timeout)? {
             OverlayEvent::EscapePressed => break,
-            OverlayEvent::PointerMove { monitor_idx, x, y } => {
-                input::handle_pointer_move(&mut editor_state, monitor_idx, x, y, &mut dirty_mask);
-            }
-            OverlayEvent::PointerButton { button, pressed } => {
-                input::handle_pointer_button(&mut editor_state, button, pressed, &mut dirty_mask);
-            }
-            OverlayEvent::Undo => {
-                editor_state.undo(&mut dirty_mask);
-                settings_logic::update_settings_panel(&mut editor_state, &mut dirty_mask);
-                editor_state.settings_panel.dirty = true;
-                let sp_mon = editor_state.settings_panel.monitor_idx;
-                if let Some(rect) = editor_state.settings_panel.rect() {
-                    editor_state.damage_local(sp_mon, rect);
-                }
-                dirty_mask |= 1 << sp_mon;
-
-                if editor_state.color_popover.open {
-                    if let Some(ann_idx) = settings_logic::active_annotation_idx(&editor_state)
-                        && let Some(ann) = editor_state.annotations.get(ann_idx) {
-                            editor_state.color_popover.select_color(ann.color);
-                        }
-                    color_popover::update_color_popover(&mut editor_state, &mut dirty_mask);
-                    editor_state.color_popover.dirty = true;
-                    let cp_mon = editor_state.color_popover.monitor_idx;
-                    if let Some(rect) = editor_state.color_popover.rect() {
-                        editor_state.damage_local(cp_mon, rect);
-                    }
-                    dirty_mask |= 1 << cp_mon;
-                }
-            }
-            OverlayEvent::Redo => {
-                editor_state.redo(&mut dirty_mask);
-                settings_logic::update_settings_panel(&mut editor_state, &mut dirty_mask);
-                editor_state.settings_panel.dirty = true;
-                let sp_mon = editor_state.settings_panel.monitor_idx;
-                if let Some(rect) = editor_state.settings_panel.rect() {
-                    editor_state.damage_local(sp_mon, rect);
-                }
-                dirty_mask |= 1 << sp_mon;
-
-                if editor_state.color_popover.open {
-                    if let Some(ann_idx) = settings_logic::active_annotation_idx(&editor_state)
-                        && let Some(ann) = editor_state.annotations.get(ann_idx) {
-                            editor_state.color_popover.select_color(ann.color);
-                        }
-                    color_popover::update_color_popover(&mut editor_state, &mut dirty_mask);
-                    editor_state.color_popover.dirty = true;
-                    let cp_mon = editor_state.color_popover.monitor_idx;
-                    if let Some(rect) = editor_state.color_popover.rect() {
-                        editor_state.damage_local(cp_mon, rect);
-                    }
-                    dirty_mask |= 1 << cp_mon;
-                }
-            }
-            OverlayEvent::TextInput(ch) => {
-                input::handle_text_input(&mut editor_state, ch, &mut dirty_mask);
-            }
-            OverlayEvent::KeyPress(key) => {
-                input::handle_key_press(&mut editor_state, key, &mut dirty_mask);
-            }
-            OverlayEvent::ModifiersChanged { ctrl, shift } => {
-                editor_state.mod_ctrl = ctrl;
-                editor_state.mod_shift = shift;
-            }
-            OverlayEvent::Scroll { delta_x, delta_y } => {
-                input::handle_scroll(&mut editor_state, delta_x, delta_y, &mut dirty_mask);
-            }
+            ev => handle_event(editor_state, ev, &mut dirty_mask),
         }
 
         if editor_state.finish.is_some() {
-            drop(overlay);
             break;
         }
 
-        overlay.set_cursor(input::compute_cursor(&editor_state));
+        overlay.set_cursor(input::compute_cursor(editor_state));
+        tick_panels(editor_state, &mut dirty_mask);
 
-        tick_panel_animation(
-            &mut editor_state.toolbar,
-            &mut editor_state.damage_rects,
-            &mut dirty_mask,
-        );
-        tick_panel_animation(
-            &mut editor_state.color_popover,
-            &mut editor_state.damage_rects,
-            &mut dirty_mask,
-        );
-        tick_panel_animation(
-            &mut editor_state.model_popover,
-            &mut editor_state.damage_rects,
-            &mut dirty_mask,
-        );
-        settings_logic::tick_stepper_arrow_hold(&mut editor_state, &mut dirty_mask);
-
-        let toast_place = {
-            let idx = editor_state.pointer.monitor_idx;
-            let placement = &editor_state.placements[idx];
-            crate::ui::toast::ToastPlace {
-                monitor_idx: idx,
-                size: (placement.size.0 as f32, placement.size.1 as f32),
-                focus: editor_state
-                    .selection
-                    .zone
-                    .as_ref()
-                    .and_then(|zone| global_selection_to_local(zone, placement)),
-            }
-        };
-        editor_state.toasts.tick(
-            toast_place,
-            &mut editor_state.damage_rects,
-            &mut dirty_mask,
-        );
-
-        if editor_state.toolbar.is_animating()
-            || editor_state.color_popover.is_animating()
-            || editor_state.model_popover.is_animating()
-        {
-            if editor_state.settings_panel.visible {
-                settings_logic::update_settings_panel(&mut editor_state, &mut dirty_mask);
-            }
-            if editor_state.color_popover.is_visible() {
-                color_popover::update_color_popover(&mut editor_state, &mut dirty_mask);
-            }
-            if editor_state.model_popover.is_visible() {
-                model_popover::update_model_popover(&mut editor_state, &mut dirty_mask);
-            }
-        }
-
-        // ocr tool hides annotations, so need to mark diryt everything
         let annotations_hidden = editor_state.selected_tool == Tool::Ocr;
         if annotations_hidden != annotations_were_hidden {
             annotations_were_hidden = annotations_hidden;
-            let has_annotations = !editor_state.annotations.is_empty()
-                || editor_state.pending_pen_baked != 0;
-            if has_annotations
-                && let Some(workspace) = get_full_workspace_rect(&editor_state.placements)
-            {
-                editor_state
-                    .damage_rects
-                    .push(crate::editor::DamageZone::Global(workspace));
-                for i in 0..editor_state.placements.len() {
-                    crate::editor::dirty::mark_dirty(&mut dirty_mask, i);
-                }
-            }
+            damage_hidden_annotations(editor_state, &mut dirty_mask);
         }
 
         if dirty_mask != 0 {
-            let selection_dirty = editor_state.selection.zone != editor_state.selection.prev_zone;
-            let active_text_id = editor_state.text_editing.as_ref().map(|e| e.annotation_id);
-
-            let scan_badge = editor_state.ocr_scan_started.and_then(|started| {
-                Some((editor_state.ocr_view.region()?, started.elapsed().as_secs_f32()))
-            });
-
-            let current_color = settings_logic::current_color(&editor_state);
-
-            for i in 0..editor_state.base.len() {
-                if is_dirty(dirty_mask, i) {
-                    // No loupe while reading text: it sits right where the
-                    // pointer is selecting and hides the line under it.
-                    let picking = editor_state.picking();
-                    let is_mag_monitor = editor_state.selected_tool != Tool::Ocr
-                        && editor_state
-                            .magnifier
-                            .as_ref()
-                            .is_some_and(|m| m.monitor_idx == i);
-
-                    let (local_sel, prev_local, edges) = selection_render_info(
-                        &editor_state.selection.zone,
-                        &editor_state.selection.prev_zone,
-                        &editor_state.placements[i],
-                    );
-
-                    let dirty_rect = editor_state.monitor_dirty_rect(i);
-                    let layer_dirty = editor_state.monitor_layer_dirty_rect(i);
-
-                    if let Some(target_dirty) = layer_dirty {
-                        let offset = (
-                            editor_state.placements[i].position.0 as f32,
-                            editor_state.placements[i].position.1 as f32,
-                        );
-                        renderer::rebuild_annotations_layer(
-                            &mut editor_state.annotations_layer[i],
-                            &editor_state.annotations,
-                            offset,
-                            &mut editor_state.font_system,
-                            &mut editor_state.swash_cache,
-                            &mut editor_state.text_editors,
-                            active_text_id,
-                            Some(target_dirty),
-                        );
-                    } else if editor_state.annotations_dirty {
-                        let offset = (
-                            editor_state.placements[i].position.0 as f32,
-                            editor_state.placements[i].position.1 as f32,
-                        );
-                        renderer::rebuild_annotations_layer(
-                            &mut editor_state.annotations_layer[i],
-                            &editor_state.annotations,
-                            offset,
-                            &mut editor_state.font_system,
-                            &mut editor_state.swash_cache,
-                            &mut editor_state.text_editors,
-                            active_text_id,
-                            None,
-                        );
-                    }
-
-                    let damage: Option<DamageRect> = dirty_rect
-                        .as_ref()
-                        .and_then(|r| {
-                            renderer::rect_bounds(
-                                r,
-                                editor_state.base[i].width(),
-                                editor_state.base[i].height(),
-                            )
-                        });
-
-                    if i == editor_state.toolbar.monitor_idx
-                        && !editor_state.toolbar.dirty
-                        && let Some(dirty) = dirty_rect.as_ref()
-                        && let Some(tb_r) = editor_state.toolbar.rect()
-                    {
-                        let intersects = dirty.left() < tb_r.right()
-                            && dirty.right() > tb_r.left()
-                            && dirty.top() < tb_r.bottom()
-                            && dirty.bottom() > tb_r.top();
-                        if intersects {
-                            editor_state.toolbar.dirty = true;
-                        }
-                    }
-
-                    let toolbar =
-                        if i == editor_state.toolbar.monitor_idx && editor_state.toolbar.dirty {
-                            Some(&mut editor_state.toolbar)
-                        } else {
-                            None
-                        };
-
-                    if i == editor_state.settings_panel.monitor_idx
-                        && editor_state.settings_panel.visible
-                        && !editor_state.settings_panel.dirty
-                        && let Some(dirty) = dirty_rect.as_ref()
-                        && let Some(sp_r) = editor_state.settings_panel.rect()
-                    {
-                        let intersects = dirty.left() < sp_r.right()
-                            && dirty.right() > sp_r.left()
-                            && dirty.top() < sp_r.bottom()
-                            && dirty.bottom() > sp_r.top();
-                        if intersects {
-                            editor_state.settings_panel.dirty = true;
-                        }
-                    }
-
-                    let settings_panel = if i == editor_state.settings_panel.monitor_idx
-                        && editor_state.settings_panel.visible
-                        && editor_state.settings_panel.dirty
-                    {
-                        Some(&mut editor_state.settings_panel)
-                    } else {
-                        None
-                    };
-
-                    if i == editor_state.color_popover.monitor_idx
-                        && editor_state.color_popover.is_visible()
-                        && !editor_state.color_popover.dirty
-                        && let Some(dirty) = dirty_rect.as_ref()
-                        && let Some(cp_r) = editor_state.color_popover.rect()
-                    {
-                        let intersects = dirty.left() < cp_r.right()
-                            && dirty.right() > cp_r.left()
-                            && dirty.top() < cp_r.bottom()
-                            && dirty.bottom() > cp_r.top();
-                        if intersects {
-                            editor_state.color_popover.dirty = true;
-                        }
-                    }
-
-                    let color_picker = if i == editor_state.color_popover.monitor_idx
-                        && editor_state.color_popover.dirty
-                        && editor_state.color_popover.is_visible()
-                    {
-                        Some(&mut editor_state.color_popover)
-                    } else {
-                        None
-                    };
-
-                    if i == editor_state.model_popover.monitor_idx
-                        && editor_state.model_popover.is_visible()
-                        && !editor_state.model_popover.dirty
-                        && let Some(dirty) = dirty_rect.as_ref()
-                        && let Some(mp_r) = editor_state.model_popover.rect()
-                    {
-                        let intersects = dirty.left() < mp_r.right()
-                            && dirty.right() > mp_r.left()
-                            && dirty.top() < mp_r.bottom()
-                            && dirty.bottom() > mp_r.top();
-                        if intersects {
-                            editor_state.model_popover.dirty = true;
-                        }
-                    }
-
-                    let model_list = if i == editor_state.model_popover.monitor_idx
-                        && editor_state.model_popover.dirty
-                        && editor_state.model_popover.is_visible()
-                    {
-                        Some(&mut editor_state.model_popover)
-                    } else {
-                        None
-                    };
-
-                    let offset = (
-                        editor_state.placements[i].position.0 as f32,
-                        editor_state.placements[i].position.1 as f32,
-                    );
-
-                    renderer::render_frame(&mut renderer::RenderRequest {
-                        canvas: &mut editor_state.canvas[i],
-                        base: &editor_state.base[i],
-                        dimmed: &mut editor_state.dimmed[i],
-                        selection: local_sel.as_ref(),
-                        prev_selection: prev_local.as_ref(),
-                        dirty_rect: dirty_rect.as_ref(),
-                        selection_dirty,
-                        selection_edges: edges.as_ref(),
-                        magnifier: editor_state.magnifier.as_ref(),
-                        mag_label: picking,
-                        is_mag_monitor,
-                        toolbar,
-                        settings_panel,
-                        current_color,
-                        color_picker,
-                        model_popover: model_list,
-                        icons_cache: &editor_state.icons_cache,
-                        annotations_layer: &editor_state.annotations_layer[i],
-                        offset,
-                        // Nothing is ever drawn into the layer without also
-                        // landing in `annotations` or bumping the baked-pen
-                        // counter, so this is exactly "the layer is blank" -
-                        // and it skips a full-canvas composite on every whole
-                        // frame.
-                        annotations_layer_empty: annotations_hidden
-                            || (editor_state.annotations.is_empty()
-                                && editor_state.pending_pen_baked == 0),
-                        pending: editor_state.pending.as_ref().filter(|_| !annotations_hidden),
-                        is_pending_selected: editor_state.ann_drag.is_some(),
-                        selected_annotation: editor_state
-                            .selected_annotation
-                            .filter(|_| !annotations_hidden),
-                        annotations: &editor_state.annotations,
-                        font_system: Some(&mut editor_state.font_system),
-                        swash_cache: Some(&mut editor_state.swash_cache),
-                        text_editors: Some(&mut editor_state.text_editors),
-                        active_text_id,
-
-                        ocr_view: if editor_state.selected_tool == Tool::Ocr
-                            && editor_state.ocr_view.is_active()
-                        {
-                            Some(&editor_state.ocr_view)
-                        } else {
-                            None
-                        },
-                        ocr_scan: scan_badge,
-                        monitor_idx: i,
-                        toasts: &editor_state.toasts,
-                    });
-
-                    overlay.stage_frame(i, editor_state.canvas[i].data(), damage)?;
-                }
-            }
-            overlay.flush()?;
-
-            editor_state.selection.prev_zone = editor_state.selection.zone;
-            editor_state.toolbar.dirty = false;
-            dirty_mask = 0;
-            editor_state.prev_pending = editor_state.pending.clone();
-            editor_state.annotations_dirty = false;
-            editor_state.damage_rects.clear();
-            editor_state.layer_damage_rects.clear();
-            editor_state.settings_panel.dirty = false;
-            editor_state.color_popover.dirty = false;
-            editor_state.model_popover.dirty = false;
+            render_dirty_monitors(
+                editor_state,
+                overlay.as_mut(),
+                dirty_mask,
+                annotations_hidden,
+            )?;
+            clear_frame_state(editor_state, &mut dirty_mask);
         }
     }
 
-    editor_state.ocr_models.shutdown();
+    Ok(())
+}
 
+/// system can't sleep waiting only for events, since we have animation and 
+/// download beat and etc
+fn poll_timeout(editor_state: &EditorState) -> i32 {
+    let is_animating = editor_state.toolbar.is_animating()
+        || editor_state.color_popover.is_animating()
+        || editor_state.model_popover.is_animating()
+        || editor_state.toasts.is_animating();
+    let stepper_holding = editor_state.settings_panel.arrow_held.is_some();
+    let ocr_working = editor_state.ocr.runtime.needs_poll();
+
+    if is_animating || stepper_holding || ocr_working {
+        16
+    } else if editor_state.ocr.models.is_downloading() {
+        DOWNLOAD_POLL_MS
+    } else {
+        -1
+    }
+}
+
+fn poll_background_work(editor_state: &mut EditorState, dirty_mask: &mut u32) {
+    if let Some(result) = editor_state.ocr.runtime.poll() {
+        crate::tools::ocr::finish_ocr(editor_state, result, dirty_mask);
+        panels::settings::update_settings_panel(editor_state, dirty_mask);
+    }
+    panels::model::tick_model_downloads(editor_state, dirty_mask);
+    if editor_state.ocr.runtime.is_busy() {
+        crate::tools::ocr::tick_scan_badge(editor_state, dirty_mask);
+    }
+}
+
+fn handle_event(editor_state: &mut EditorState, ev: OverlayEvent, dirty_mask: &mut u32) {
+    match ev {
+        OverlayEvent::Tick | OverlayEvent::EscapePressed => {}
+        OverlayEvent::PointerMove { monitor_idx, x, y } => {
+            input::handle_pointer_move(editor_state, monitor_idx, x, y, dirty_mask);
+        }
+        OverlayEvent::PointerButton { button, pressed } => {
+            input::handle_pointer_button(editor_state, button, pressed, dirty_mask);
+        }
+        OverlayEvent::Undo => {
+            editor_state.undo(dirty_mask);
+            refresh_panels_after_history(editor_state, dirty_mask);
+        }
+        OverlayEvent::Redo => {
+            editor_state.redo(dirty_mask);
+            refresh_panels_after_history(editor_state, dirty_mask);
+        }
+        OverlayEvent::TextInput(ch) => {
+            input::handle_text_input(editor_state, ch, dirty_mask);
+        }
+        OverlayEvent::KeyPress(key) => {
+            input::handle_key_press(editor_state, key, dirty_mask);
+        }
+        OverlayEvent::ModifiersChanged { ctrl, shift } => {
+            editor_state.input.ctrl = ctrl;
+            editor_state.input.shift = shift;
+        }
+        OverlayEvent::Scroll { delta_x, delta_y } => {
+            input::handle_scroll(editor_state, delta_x, delta_y, dirty_mask);
+        }
+    }
+}
+
+/// tick animation
+fn tick_panels(editor_state: &mut EditorState, dirty_mask: &mut u32) {
+    tick_panel_animation(
+        &mut editor_state.toolbar,
+        &mut editor_state.damage_rects,
+        dirty_mask,
+    );
+    tick_panel_animation(
+        &mut editor_state.color_popover,
+        &mut editor_state.damage_rects,
+        dirty_mask,
+    );
+    tick_panel_animation(
+        &mut editor_state.model_popover,
+        &mut editor_state.damage_rects,
+        dirty_mask,
+    );
+    panels::settings::tick_stepper_arrow_hold(editor_state, dirty_mask);
+
+    let toast_place = {
+        let idx = editor_state.input.pointer.monitor_idx;
+        let placement = &editor_state.placements[idx];
+        crate::ui::toast::ToastPlace {
+            monitor_idx: idx,
+            size: (placement.size.0 as f32, placement.size.1 as f32),
+            focus: editor_state
+                .selection
+                .zone
+                .as_ref()
+                .and_then(|zone| global_selection_to_local(zone, placement)),
+        }
+    };
+    editor_state
+        .toasts
+        .tick(toast_place, &mut editor_state.damage_rects, dirty_mask);
+
+    if editor_state.toolbar.is_animating()
+        || editor_state.color_popover.is_animating()
+        || editor_state.model_popover.is_animating()
+    {
+        if editor_state.settings_panel.visible {
+            panels::settings::update_settings_panel(editor_state, dirty_mask);
+        }
+        if editor_state.color_popover.is_visible() {
+            panels::color::update_color_popover(editor_state, dirty_mask);
+        }
+        if editor_state.model_popover.is_visible() {
+            panels::model::update_model_popover(editor_state, dirty_mask);
+        }
+    }
+}
+
+// ocr tool hides annotations, so need to mark diryt everything
+fn damage_hidden_annotations(editor_state: &mut EditorState, dirty_mask: &mut u32) {
+    let has_annotations =
+        !editor_state.annotations.is_empty() || editor_state.pending_pen_baked != 0;
+    if has_annotations
+        && let Some(workspace) = get_full_workspace_rect(&editor_state.placements)
+    {
+        editor_state
+            .damage_rects
+            .push(crate::editor::DamageZone::Global(workspace));
+        mark_all_dirty(dirty_mask, editor_state.placements.len());
+    }
+}
+
+/// What every monitor of one frame draws from.
+struct Frame {
+    selection_dirty: bool,
+    active_text_id: Option<u64>,
+    scan_badge: Option<(Rect, f32)>,
+    current_color: tiny_skia::Color,
+    annotations_hidden: bool,
+}
+
+fn render_dirty_monitors(
+    editor_state: &mut EditorState,
+    overlay: &mut dyn ScreenOverlay,
+    dirty_mask: u32,
+    annotations_hidden: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let frame = Frame {
+        selection_dirty: editor_state.selection.zone != editor_state.selection.prev_zone,
+        active_text_id: editor_state.text.editing.as_ref().map(|e| e.annotation_id),
+        scan_badge: editor_state.ocr.scan_started.and_then(|started| {
+            Some((
+                editor_state.ocr.view.region()?,
+                started.elapsed().as_secs_f32(),
+            ))
+        }),
+        current_color: panels::settings::current_color(editor_state),
+        annotations_hidden,
+    };
+
+    for i in 0..editor_state.base.len() {
+        if !is_dirty(dirty_mask, i) {
+            continue;
+        }
+        let damage = render_monitor(editor_state, i, &frame);
+        overlay.stage_frame(i, editor_state.canvas[i].data(), damage)?;
+    }
+    overlay.flush()?;
+
+    Ok(())
+}
+
+/// Draws one monitor's canvas and returns the region that changed
+fn render_monitor(editor_state: &mut EditorState, i: usize, frame: &Frame) -> Option<DamageRect> {
+    // No loupe while reading text: it sits right where the
+    // pointer is selecting and hides the line under it.
+    let picking = editor_state.picking();
+    let is_mag_monitor = editor_state.selected_tool != Tool::Ocr
+        && editor_state
+            .magnifier
+            .current
+            .as_ref()
+            .is_some_and(|m| m.monitor_idx == i);
+
+    let (local_sel, prev_local, edges) = selection_render_info(
+        &editor_state.selection.zone,
+        &editor_state.selection.prev_zone,
+        &editor_state.placements[i],
+    );
+
+    let dirty_rect = editor_state.monitor_dirty_rect(i);
+    let layer_dirty = editor_state.monitor_layer_dirty_rect(i);
+    let offset = editor_state.placements[i].offset();
+
+    if layer_dirty.is_some() || editor_state.annotations_dirty {
+        renderer::rebuild_annotations_layer(
+            &mut editor_state.annotations_layer[i],
+            &editor_state.annotations,
+            offset,
+            &mut editor_state.text.font_system,
+            &mut editor_state.text.swash_cache,
+            &mut editor_state.text.editors,
+            frame.active_text_id,
+            layer_dirty,
+        );
+    }
+
+    let damage = dirty_rect.as_ref().and_then(|r| {
+        renderer::rect_bounds(
+            r,
+            editor_state.base[i].width(),
+            editor_state.base[i].height(),
+        )
+    });
+
+    let dirty = dirty_rect.as_ref();
+    let toolbar = panel_to_draw(&mut editor_state.toolbar, i, dirty);
+    let settings_panel = panel_to_draw(&mut editor_state.settings_panel, i, dirty);
+    let color_picker = panel_to_draw(&mut editor_state.color_popover, i, dirty);
+    let model_list = panel_to_draw(&mut editor_state.model_popover, i, dirty);
+
+    let hidden = frame.annotations_hidden;
+
+    renderer::render_frame(&mut renderer::RenderRequest {
+        canvas: &mut editor_state.canvas[i],
+        base: &editor_state.base[i],
+        dimmed: &mut editor_state.dimmed[i],
+        selection: local_sel.as_ref(),
+        prev_selection: prev_local.as_ref(),
+        dirty_rect: dirty_rect.as_ref(),
+        selection_dirty: frame.selection_dirty,
+        selection_edges: edges.as_ref(),
+        magnifier: editor_state.magnifier.current.as_ref(),
+        mag_label: picking,
+        is_mag_monitor,
+        toolbar,
+        settings_panel,
+        current_color: frame.current_color,
+        color_picker,
+        model_popover: model_list,
+        icons_cache: &editor_state.icons_cache,
+        annotations_layer: &editor_state.annotations_layer[i],
+        offset,
+        // Nothing is ever drawn into the layer without also
+        // landing in `annotations` or bumping the baked-pen
+        // counter, so this is exactly "the layer is blank" -
+        // and it skips a full-canvas composite on every whole
+        // frame.
+        annotations_layer_empty: hidden
+            || (editor_state.annotations.is_empty() && editor_state.pending_pen_baked == 0),
+        pending: editor_state.pending.as_ref().filter(|_| !hidden),
+        is_pending_selected: editor_state.ann_drag.is_some(),
+        selected_annotation: editor_state.selected_annotation.filter(|_| !hidden),
+        annotations: &editor_state.annotations,
+        text: Some(renderer::TextContext {
+            font_system: &mut editor_state.text.font_system,
+            swash_cache: &mut editor_state.text.swash_cache,
+            editors: &mut editor_state.text.editors,
+        }),
+        active_text_id: frame.active_text_id,
+
+        ocr_view: (editor_state.selected_tool == Tool::Ocr && editor_state.ocr.view.is_active())
+            .then_some(&editor_state.ocr.view),
+        ocr_scan: frame.scan_badge,
+        monitor_idx: i,
+        toasts: &editor_state.toasts,
+    });
+
+    damage
+}
+
+/// Everything the next frame starts from a clean slate.
+fn clear_frame_state(editor_state: &mut EditorState, dirty_mask: &mut u32) {
+    editor_state.selection.prev_zone = editor_state.selection.zone;
+    editor_state.prev_pending = editor_state.pending.clone();
+    editor_state.annotations_dirty = false;
+    editor_state.damage_rects.clear();
+    editor_state.layer_damage_rects.clear();
+    editor_state.toolbar.dirty = false;
+    editor_state.settings_panel.dirty = false;
+    editor_state.color_popover.dirty = false;
+    editor_state.model_popover.dirty = false;
+    *dirty_mask = 0;
+}
+
+/// Saves, copies or pins the finished capture and tells the user about it.
+async fn finish_capture(editor_state: &mut EditorState) -> Result<(), Box<dyn std::error::Error>> {
     let Some(finish) = editor_state.finish else {
         return Ok(());
     };
-    let Some((png, (x, y))) = render_final(&mut editor_state) else {
+    let Some((png, (x, y))) = render_final(editor_state) else {
         return Ok(());
     };
 
     if finish == Finish::Pin
-        && let Err(e) = spawn_self(&["--pin", "--at", &format!("{x},{y}")], &png)
+        && let Err(e) = crate::backend::wayland::pin::spawn_at(&png, x, y)
     {
         notify::send(Notice::PinFailed(e.to_string())).await;
     }
@@ -593,7 +486,7 @@ pub async fn make_screenshot(
                 notify::send(Notice::Saved(path)).await;
             }
         }
-        Finish::Copy => match clipboard.copy_image_to_clipboard(png) {
+        Finish::Copy => match initialize_clipboard().copy_image_to_clipboard(png) {
             Ok(()) => notify::send(Notice::Copied(saved)).await,
             Err(e) => notify::send(Notice::CopyFailed(e.to_string())).await,
         },
@@ -607,6 +500,35 @@ pub async fn make_screenshot(
 //      RENDER HELPERS       //
 // ************************* //
 
+
+
+/// Undo and redo can change what the panels show, so refresh is needed
+fn refresh_panels_after_history(editor_state: &mut EditorState, dirty_mask: &mut u32) {
+    panels::settings::update_settings_panel(editor_state, dirty_mask);
+    editor_state.settings_panel.dirty = true;
+    let sp_mon = editor_state.settings_panel.monitor_idx;
+    if let Some(rect) = editor_state.settings_panel.rect() {
+        editor_state.damage_local(sp_mon, rect);
+    }
+    mark_dirty(dirty_mask, sp_mon);
+
+    if !editor_state.color_popover.open {
+        return;
+    }
+
+    if let Some(ann_idx) = crate::editor::edits::active_annotation_idx(editor_state)
+        && let Some(ann) = editor_state.annotations.get(ann_idx)
+    {
+        editor_state.color_popover.select_color(ann.color);
+    }
+    panels::color::update_color_popover(editor_state, dirty_mask);
+    editor_state.color_popover.dirty = true;
+    let cp_mon = editor_state.color_popover.monitor_idx;
+    if let Some(rect) = editor_state.color_popover.rect() {
+        editor_state.damage_local(cp_mon, rect);
+    }
+    mark_dirty(dirty_mask, cp_mon);
+}
 
 pub fn selection_render_info(
     selection: &Option<Rect>,
@@ -635,48 +557,22 @@ fn render_final(editor_state: &mut EditorState) -> Option<(Vec<u8>, (i32, i32))>
         None => get_full_workspace_rect(&editor_state.placements)?,
     };
 
-    let mask = get_overlapping_monitors(&sel, &editor_state.placements);
+    let (mut out, origin) =
+        renderer::composite_base(&editor_state.base, &editor_state.placements, sel)?;
 
-    let sel_left = sel.left().floor() as i32;
-    let sel_top = sel.top().floor() as i32;
-    let sel_right = sel.right().ceil() as i32;
-    let sel_bottom = sel.bottom().ceil() as i32;
-    let sel_w = (sel_right - sel_left).max(0) as u32;
-    let sel_h = (sel_bottom - sel_top).max(0) as u32;
-    if sel_w == 0 || sel_h == 0 {
-        return None;
-    }
-
-    let mut out = Pixmap::new(sel_w, sel_h).unwrap();
-    for (i, placement) in editor_state.placements.iter().enumerate() {
-        if (mask & (1 << i)) == 0 {
-            continue;
-        }
-        let dst_x = placement.position.0 - sel_left;
-        let dst_y = placement.position.1 - sel_top;
-        out.draw_pixmap(
-            dst_x,
-            dst_y,
-            editor_state.base[i].as_ref(),
-            &PixmapPaint::default(),
-            Transform::identity(),
-            None,
-        );
-    }
-
-    let offset = (sel_left as f32, sel_top as f32);
+    let offset = (origin.0 as f32, origin.1 as f32);
     for ann in &editor_state.annotations {
         renderer::draw_annotation(
             &mut out,
             ann,
             offset,
             false,
-            &mut editor_state.font_system,
-            &mut editor_state.swash_cache,
-            &mut editor_state.text_editors,
+            &mut editor_state.text.font_system,
+            &mut editor_state.text.swash_cache,
+            &mut editor_state.text.editors,
             None,
         );
     }
 
-    Some((encode_png(&out), (sel_left, sel_top)))
+    Some((encode_png(&out), origin))
 }
