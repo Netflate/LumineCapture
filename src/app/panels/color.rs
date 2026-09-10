@@ -4,7 +4,7 @@ use crate::editor::EditorState;
 use crate::ui::settings_panel::char_index_for_x;
 use crate::types::SpecialKey;
 use crate::interaction::ClickTarget;
-use crate::ui::color_popover::{ColorField, ColorPopoverElement, FIELD_FONT_SIZE, step_hex_text};
+use crate::ui::color_popover::{ColorField, ColorPopoverElement, field_font_size, step_hex_text};
 use crate::ui::color_popover;
 use crate::ui::panel::{UiPanel, sync_panel_hover, sync_panel_rect};
 use crate::ui::text_field::{CursorInit, is_hex_char, is_rgba_channel_char};
@@ -169,7 +169,7 @@ fn begin_color_field_edit(
         let idx = char_index_for_x(
             &current_text,
             click_x,
-            FIELD_FONT_SIZE,
+            field_font_size(),
             &mut editor_state.text.font_system,
         );
         CursorInit::At(idx)

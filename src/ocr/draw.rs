@@ -76,7 +76,7 @@ pub fn draw_ocr_overlay(
             sel.y.1 + PLATE_PAD_Y,
         )
     });
-    painter.fill_union(spans, 2.0, color::SELECT);
+    painter.fill_union(spans, 2.0, color::select());
 
     painter.finish(canvas);
 }
@@ -99,7 +99,7 @@ pub fn draw_ocr_scan(
     painter.fill(region, 0.0, REGION_SHADE);
 
     let badge = scan_badge_rect(region);
-    painter.fill(badge, BADGE_RADIUS, color::PANEL);
+    painter.fill(badge, BADGE_RADIUS, color::panel());
 
     let left = badge.left() - offset.0;
     let top = badge.top() - offset.1;
@@ -127,7 +127,7 @@ pub fn draw_ocr_scan(
 
     let half = SCAN_WIDTH / 2.0;
     if let Some(bar) = Rect::from_ltrb(x - half, bar_top, x + half, bar_top + track) {
-        painter.fill_local(bar, half, color::ACCENT_BRIGHT);
+        painter.fill_local(bar, half, color::accent_bright());
     }
 
     painter.finish(canvas);

@@ -754,7 +754,7 @@ pub fn render_text_annotation(
 
     let text_color = tiny_skia_to_cosmic(ann.color);
     let cursor_color = color::CARET.cosmic();
-    let sel_color = color::SELECT.cosmic();
+    let sel_color = color::select().cosmic();
     let sel_text_color = color::ON_PANEL.cosmic();
     let transparent = cosmic_text::Color::rgba(0, 0, 0, 0);
 

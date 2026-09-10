@@ -18,7 +18,7 @@ pub fn draw_progress_bar(canvas: &mut Pixmap, x: f32, y: f32, w: f32, percent: u
         anti_alias: true,
         ..Paint::default()
     };
-    for (width, fill) in [(w, color::TRACK), (filled, color::ACCENT_BRIGHT)] {
+    for (width, fill) in [(w, color::TRACK), (filled, color::accent_bright())] {
         if width <= 0.0 {
             continue;
         }
@@ -179,11 +179,11 @@ pub fn draw_item_border(
 
     let mut paint = Paint::default();
     paint.set_color(if is_selected {
-        color::ACCENT_BRIGHT.color()
+        color::accent_bright().color()
     } else if is_hovered {
-        color::ACCENT.color()
+        color::accent().color()
     } else {
-        panel_border_color(color::PANEL.color())
+        panel_border_color(color::panel().color())
     });
     paint.anti_alias = true;
 
@@ -236,7 +236,7 @@ pub fn draw_panel_border(
 
     let Some(path) = pb.finish() else { return };
 
-    let mut border = panel_border_color(color::PANEL.color());
+    let mut border = panel_border_color(color::panel().color());
     border.set_alpha(border.alpha() * opacity);
 
     let mut paint = Paint::default();

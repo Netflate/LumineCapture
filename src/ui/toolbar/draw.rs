@@ -76,7 +76,7 @@ fn draw_toolbar_content(
     };
 
     let mut paint = Paint::default();
-    paint.set_color(color::PANEL.color());
+    paint.set_color(color::panel().color());
     paint.anti_alias = true;
     canvas.fill_path(
         &path,
@@ -101,9 +101,9 @@ fn draw_toolbar_content(
                         {
                             let mut cell_paint = Paint::default();
                             let color = if toolbar.selected == Some(index) {
-                                color::ACCENT_BRIGHT.color()
+                                color::accent_bright().color()
                             } else {
-                                color::ACCENT.color()
+                                color::accent().color()
                             };
                             cell_paint.set_color(color);
                             cell_paint.anti_alias = true;

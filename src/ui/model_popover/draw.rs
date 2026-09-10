@@ -14,7 +14,7 @@ use crate::renderer::text::{HAlign, draw_aligned_text, measure_line_width};
 use crate::theme::{Rgba, color, font, radius, stroke};
 use crate::ui::icons;
 use crate::ui::model_popover::{
-    BUTTON_SIZE, ICON_SIZE, ModelPopover, ModelPopoverElement, ModelRow, NOTE_FONT_SIZE, PADDING,
+    BUTTON_SIZE, ICON_SIZE, ModelPopover, ModelPopoverElement, ModelRow, note_font_size, PADDING,
     RADIUS, ROW_HEIGHT, ROW_PAD_X, STATUS_WIDTH, TITLE_HEIGHT, WIDTH, button_geom, row_geom,
 };
 use crate::ui::panel::UiPanel;
@@ -91,18 +91,18 @@ fn draw_content(
 ) {
     let (w, h) = popover.size;
     if let Some(bg) = Rect::from_xywh(0.0, 0.0, w, h) {
-        fill(canvas, bg, RADIUS, color::PANEL.color());
+        fill(canvas, bg, RADIUS, color::panel().color());
     }
 
     let title_x = PADDING + ROW_PAD_X;
     let title_w = WIDTH - title_x * 2.0;
     let no_model = popover.rows.iter().all(|row| row.status != ModelStatus::Installed);
     let parts: &[(&str, Rgba, f32)] = if no_model {
-        &[(TITLE_NO_MODEL, color::ACCENT_BRIGHT, font::LABEL)]
+        &[(TITLE_NO_MODEL, color::accent_bright(), font::label())]
     } else {
         &[
-            (TITLE, color::MUTED, NOTE_FONT_SIZE),
-            (TITLE_ENGLISH, color::ACCENT_BRIGHT, NOTE_FONT_SIZE),
+            (TITLE, color::MUTED, note_font_size()),
+            (TITLE_ENGLISH, color::accent_bright(), note_font_size()),
         ]
     };
     let mut x = title_x;
@@ -174,7 +174,7 @@ fn draw_row(
     let text_w = (button.left() - STATUS_WIDTH - left).max(0.0);
 
     let name_color = if row.active {
-        color::ACCENT_BRIGHT
+        color::accent_bright()
     } else {
         color::ON_PANEL
     };
@@ -185,7 +185,7 @@ fn draw_row(
             font_system,
             swash_cache,
             name_rect,
-            font::LABEL,
+            font::label(),
             name_color.color(),
             HAlign::Left,
             (0.0, 0.0),
@@ -204,7 +204,7 @@ fn draw_row(
                 Rect::from_xywh(left, rect.top() + NOTE_TOP, text_w, NOTE_HEIGHT)
             {
                 let (note, note_color) = if row.recommended {
-                    (RECOMMENDED, color::ACCENT_BRIGHT)
+                    (RECOMMENDED, color::accent_bright())
                 } else {
                     (model.note, color::MUTED)
                 };
@@ -214,7 +214,7 @@ fn draw_row(
                     font_system,
                     swash_cache,
                     note_rect,
-                    NOTE_FONT_SIZE,
+                    note_font_size(),
                     note_color.color(),
                     HAlign::Left,
                     (0.0, 0.0),
@@ -241,7 +241,7 @@ fn draw_row(
             font_system,
             swash_cache,
             status_rect,
-            NOTE_FONT_SIZE,
+            note_font_size(),
             color::MUTED.color(),
             HAlign::Center,
             (0.0, 0.0),
@@ -274,9 +274,9 @@ fn draw_row(
         );
     }
     let tint = if checked {
-        color::ACCENT_BRIGHT
+        color::accent_bright()
     } else if button_hovered {
-        color::ACCENT
+        color::accent()
     } else {
         color::ON_PANEL
     };

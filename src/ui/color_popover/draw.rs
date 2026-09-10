@@ -4,7 +4,7 @@ use usvg::Tree;
 
 use crate::renderer::paths::{draw_item_border, draw_panel_border, draw_svg_icon, rounded_rect_path};
 use crate::renderer::text::{HAlign, draw_aligned_text, draw_input_box, draw_line_edit};
-use crate::ui::color_popover::{ColorField, ColorPickerPopover, ColorPopoverElement, ColorSquareState, FIELD_FONT_SIZE, FIELD_HEIGHT, FIELD_LABEL_WIDTH, HUE_SLIDER_GAP, HUE_SLIDER_HEIGHT, HUE_SLIDER_RADIUS, HUE_SLIDER_WIDTH, SWATCH_BORDER, MARKER_OUTLINE, MARKER_RADIUS, MARKER_STROKE, PADDING, RADIUS, RECENT_LABEL, RECENT_LABEL_FONT_SIZE, RGBA_FIELDS, RGBA_LABEL_WIDTH, SV_SQUARE_RADIUS, SV_SQUARE_SIZE, SWATCH_RADIUS, EYEDROPPER_ICON, eyedropper_center, hex_field_geom, hex_label_pos, hsv_to_color, hue_handle_center_y, recent_label_rect, rgba_field_geom, rgba_slot_origin, swatch_center};
+use crate::ui::color_popover::{ColorField, ColorPickerPopover, ColorPopoverElement, ColorSquareState, field_font_size, FIELD_HEIGHT, FIELD_LABEL_WIDTH, HUE_SLIDER_GAP, HUE_SLIDER_HEIGHT, HUE_SLIDER_RADIUS, HUE_SLIDER_WIDTH, SWATCH_BORDER, MARKER_OUTLINE, MARKER_RADIUS, MARKER_STROKE, PADDING, RADIUS, RECENT_LABEL, RECENT_LABEL_FONT_SIZE, RGBA_FIELDS, RGBA_LABEL_WIDTH, SV_SQUARE_RADIUS, SV_SQUARE_SIZE, SWATCH_RADIUS, EYEDROPPER_ICON, eyedropper_center, hex_field_geom, hex_label_pos, hsv_to_color, hue_handle_center_y, recent_label_rect, rgba_field_geom, rgba_slot_origin, swatch_center};
 use crate::theme::color;
 use crate::ui::panel::UiPanel;
 use cosmic_text::{FontSystem, SwashCache, Weight};
@@ -118,7 +118,7 @@ fn draw_color_popover_content(
     };
 
     let mut paint = Paint::default();
-    paint.set_color(color::PANEL.color());
+    paint.set_color(color::panel().color());
     paint.anti_alias = true;
     canvas.fill_path(
         &path,
@@ -439,7 +439,7 @@ fn draw_eyedropper(
     if let Some(circle) = pb.finish() {
         let mut paint = Paint::default();
         paint.set_color(if is_picking {
-            color::ACCENT.color()
+            color::accent().color()
         } else {
             color::FIELD_BG.color()
         });
@@ -510,7 +510,7 @@ fn draw_color_fields(
         font_system,
         swash_cache,
         hex_label_rect,
-        FIELD_FONT_SIZE,
+        field_font_size(),
         label_color,
         HAlign::Left,
         (0.0, 0.0),
@@ -537,7 +537,7 @@ fn draw_color_fields(
             font_system,
             swash_cache,
             label_rect,
-            FIELD_FONT_SIZE,
+            field_font_size(),
             label_color,
             HAlign::Left,
             (0.0, 0.0),
@@ -606,7 +606,7 @@ fn draw_color_input_field(
         editing,
         font_system,
         swash_cache,
-        FIELD_FONT_SIZE,
+        field_font_size(),
         text_color,
         cosmic_text::Weight::BOLD,
     );

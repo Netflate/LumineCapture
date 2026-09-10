@@ -37,7 +37,7 @@ pub fn draw_toasts(
 
         if let Some(path) = rounded_rect_path(&rect, RADIUS, true, true, true, true) {
             let mut paint = Paint::default();
-            paint.set_color(color::PANEL.fade(opacity));
+            paint.set_color(color::panel().fade(opacity));
             paint.anti_alias = true;
             canvas.fill_path(
                 &path,
@@ -64,7 +64,7 @@ pub fn draw_toasts(
             font_system,
             swash_cache,
             rect,
-            font::LABEL,
+            font::label(),
             color::ON_PANEL.fade(opacity),
             HAlign::Center,
             (0.0, 0.0),

@@ -145,9 +145,10 @@ impl AnimatedPanel for Toolbar {
     fn animate_step(&mut self, dt: f32) -> bool {
         let mut changed = false;
 
+        let speed = crate::config::get().general.animation_speed;
         let target_opacity = if self.interferes { 0.0 } else { 1.0 };
         if (self.opacity - target_opacity).abs() > anim::OPACITY_EPSILON {
-            let delta = FADE_RATE * dt;
+            let delta = FADE_RATE * speed * dt;
             self.opacity += (target_opacity - self.opacity).signum() * delta;
             self.opacity = self.opacity.clamp(0.0, 1.0);
             changed = true;
@@ -157,7 +158,7 @@ impl AnimatedPanel for Toolbar {
         let dx = target.0 - self.render_pos.0;
         let dy = target.1 - self.render_pos.1;
         if dx.abs() > POSITION_EPSILON || dy.abs() > POSITION_EPSILON {
-            let t = (SLIDE_RATE * dt).min(1.0);
+            let t = (SLIDE_RATE * speed * dt).min(1.0);
             self.render_pos.0 += dx * t;
             self.render_pos.1 += dy * t;
             changed = true;

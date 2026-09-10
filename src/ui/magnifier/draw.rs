@@ -141,11 +141,11 @@ fn draw_color_label(
     let Some(plate) = Rect::from_xywh(x, y, width, LABEL_HEIGHT) else {
         return;
     };
-    fill(canvas, plate, radius::PANEL, color::PANEL.color());
+    fill(canvas, plate, radius::PANEL, color::panel().color());
     stroke_outline(canvas, plate, radius::PANEL);
 
     let text = crate::ui::settings_panel::ValueField::Hex.text(color);
-    let text_width = crate::renderer::measure_line_width(&text, font::LABEL, font_system);
+    let text_width = crate::renderer::measure_line_width(&text, font::label(), font_system);
     let group = SWATCH + SWATCH_GAP + text_width;
     let swatch_x = x + ((width - group) / 2.0).max(SWATCH_GAP);
 
@@ -166,7 +166,7 @@ fn draw_color_label(
             font_system,
             swash_cache,
             text_rect,
-            font::LABEL,
+            font::label(),
             color::ON_PANEL.color(),
             HAlign::Left,
             (0.0, 0.0),

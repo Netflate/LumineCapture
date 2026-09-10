@@ -178,7 +178,7 @@ impl Toasts {
 
     fn push(&mut self, kind: ToastKind, text: Cow<'static, str>, font_system: &mut FontSystem) {
         let text_width =
-            crate::renderer::measure_line_width(&text, crate::theme::font::LABEL, font_system);
+            crate::renderer::measure_line_width(&text, crate::theme::font::label(), font_system);
         if let Some(toast) = self.items.iter_mut().find(|t| t.kind == kind) {
             toast.closing = false;
             toast.shown_at = Instant::now();

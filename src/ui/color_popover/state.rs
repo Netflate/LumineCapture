@@ -47,7 +47,9 @@ pub const FIELD_ROW_GAP: f32 = 10.0;
 pub const FIELD_LABEL_WIDTH: f32 = 28.0;
 pub const RGBA_LABEL_WIDTH: f32 = 14.0;
 pub const FIELD_HEIGHT: f32 = 24.0;
-pub const FIELD_FONT_SIZE: f32 = font::SMALL;
+pub fn field_font_size() -> f32 {
+    font::small()
+}
 pub const FIELD_GAP: f32 = 6.0;
 
 const RECENT_ROW_OFFSET: f32 =
@@ -728,7 +730,7 @@ impl AnimatedPanel for ColorPickerPopover {
     fn animate_step(&mut self, dt: f32) -> bool {
         let target = if self.open { 1.0 } else { 0.0 };
         if (self.opacity - target).abs() > anim::OPACITY_EPSILON {
-            let delta = anim::POPOVER_FADE * dt;
+            let delta = anim::POPOVER_FADE * crate::config::get().general.animation_speed * dt;
             self.opacity += (target - self.opacity).signum() * delta;
             self.opacity = self.opacity.clamp(0.0, 1.0);
             true

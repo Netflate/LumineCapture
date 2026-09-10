@@ -68,18 +68,26 @@ pub mod color {
     use super::Rgba;
 
     /// background color of all panels, popovers and toasts
-    pub const PANEL: Rgba = Rgba(17, 17, 27, 250);
+    pub fn panel() -> Rgba {
+        crate::config::get().theme.panel_background
+    }
     /// hovering color
-    pub const ACCENT: Rgba = Rgba(159, 48, 215, 255);
+    pub fn accent() -> Rgba {
+        crate::config::get().theme.accent
+    }
     /// selected color
-    pub const ACCENT_BRIGHT: Rgba = Rgba(215, 132, 255, 255);
+    pub fn accent_bright() -> Rgba {
+        crate::config::get().theme.accent_bright
+    }
     /// main color of elements on the panel, like text, seperators and etc
     pub const ON_PANEL: Rgba = Rgba(255, 255, 255, 255);
     /// secondary small labels
     pub const MUTED: Rgba = Rgba(200, 200, 205, 160);
 
     /// blue color of text selection
-    pub const SELECT: Rgba = Rgba(100, 150, 255, 110);
+    pub fn select() -> Rgba {
+        crate::config::get().theme.selection
+    }
     /// input field
     pub const FIELD_BG: Rgba = Rgba(255, 255, 255, 18);
     /// empty part of downloading bar
@@ -131,8 +139,12 @@ pub mod stroke {
 // ==========================================
 
 pub mod font {
-    pub const LABEL: f32 = 14.0;
-    pub const SMALL: f32 = 12.0;
+    pub fn label() -> f32 {
+        crate::config::get().theme.font_size
+    }
+    pub fn small() -> f32 {
+        label() - 2.0
+    }
     /// Line height as a factor of the font size.
     pub const LINE_HEIGHT: f32 = 1.2;
 }

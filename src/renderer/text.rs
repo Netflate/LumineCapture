@@ -207,7 +207,7 @@ pub fn draw_text_selection(canvas: &mut Pixmap, rect: Rect, start_x: f32, end_x:
     };
 
     let mut paint = Paint::default();
-    paint.set_color(color::SELECT.color());
+    paint.set_color(color::select().color());
     paint.anti_alias = true;
     canvas.fill_rect(sel_rect, &paint, Transform::identity(), None);
 }

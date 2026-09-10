@@ -17,7 +17,9 @@ pub const ROW_HEIGHT: f32 = 44.0;
 pub const ROW_PAD_X: f32 = 10.0;
 pub const BUTTON_SIZE: f32 = 26.0;
 pub const ICON_SIZE: f32 = 14.0;
-pub const NOTE_FONT_SIZE: f32 = font::SMALL;
+pub fn note_font_size() -> f32 {
+    font::small()
+}
 pub const STATUS_WIDTH: f32 = 62.0;
 
 pub const HEIGHT: f32 = PADDING * 2.0 + TITLE_HEIGHT + ROW_HEIGHT * MODELS.len() as f32;
@@ -229,7 +231,7 @@ impl AnimatedPanel for ModelPopover {
     fn animate_step(&mut self, dt: f32) -> bool {
         let target = if self.open { 1.0 } else { 0.0 };
         if (self.opacity - target).abs() > anim::OPACITY_EPSILON {
-            let delta = anim::POPOVER_FADE * dt;
+            let delta = anim::POPOVER_FADE * crate::config::get().general.animation_speed * dt;
             self.opacity += (target - self.opacity).signum() * delta;
             self.opacity = self.opacity.clamp(0.0, 1.0);
             true

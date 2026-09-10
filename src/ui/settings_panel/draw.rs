@@ -94,7 +94,7 @@ fn draw_settings_content(
 
     if let Some(path) = rounded_rect_path(&rect, radius::PANEL, true, true, true, true) {
         let mut paint = Paint::default();
-        paint.set_color(color::PANEL.color());
+        paint.set_color(color::panel().color());
         paint.anti_alias = true;
         canvas.fill_path(
             &path,
@@ -140,7 +140,7 @@ fn draw_settings_content(
                     is_hovered,
                     is_selected,
                 );
-                let tint = if is_hovered { color::ACCENT.usvg() } else { color::ON_PANEL.usvg() };
+                let tint = if is_hovered { color::accent().usvg() } else { color::ON_PANEL.usvg() };
                 draw_svg_icon(
                     canvas,
                     icons_cache,
@@ -194,7 +194,7 @@ fn draw_settings_content(
                         font_system,
                         swash_cache,
                         label_rect,
-                        font::LABEL,
+                        font::label(),
                         icon_color,
                         HAlign::Center,
                         (0.0, 0.0),
@@ -297,7 +297,7 @@ fn draw_value_field(
         font_system,
         swash_cache,
         rect,
-        font::LABEL,
+        font::label(),
         text_color,
         HAlign::Center,
         (0.0, 0.0),
@@ -324,7 +324,7 @@ fn draw_download(
             font_system,
             swash_cache,
             label,
-            font::LABEL,
+            font::label(),
             text_color,
             HAlign::Left,
             (0.0, 0.0),
@@ -349,7 +349,7 @@ fn draw_download(
             font_system,
             swash_cache,
             label,
-            font::LABEL,
+            font::label(),
             text_color,
             HAlign::Center,
             (0.0, 0.0),
@@ -456,7 +456,7 @@ fn draw_stepper(
         editing,
         font_system,
         swash_cache,
-        font::LABEL,
+        font::label(),
         icon_color,
         cosmic_text::Weight::BOLD,
     );
@@ -484,12 +484,12 @@ fn draw_stepper_arrows(
     let down_cy = mid_y + STEPPER_ARROW_GAP / 2.0 + STEPPER_ARROW_HEIGHT / 2.0;
 
     let up_color = if hovered == Some(StepperArrow::Up) {
-        color::ACCENT.color()
+        color::accent().color()
     } else {
         icon_color
     };
     let down_color = if hovered == Some(StepperArrow::Down) {
-        color::ACCENT.color()
+        color::accent().color()
     } else {
         icon_color
     };
@@ -614,9 +614,9 @@ fn draw_toggle(
                 is_on,
             );
             let tint = if is_on {
-                color::ACCENT_BRIGHT.usvg()
+                color::accent_bright().usvg()
             } else if is_hovered {
-                color::ACCENT.usvg()
+                color::accent().usvg()
             } else {
                 color::ON_PANEL.usvg()
             };
@@ -642,7 +642,7 @@ fn draw_toggle(
                     font_system,
                     swash_cache,
                     label_rect,
-                    font::LABEL,
+                    font::label(),
                     icon_color,
                     HAlign::Left,
                     (0.0, 0.0),

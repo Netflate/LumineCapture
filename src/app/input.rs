@@ -334,7 +334,7 @@ pub fn handle_pointer_button(
                                 let idx = char_index_for_x(
                                     &current_value,
                                     click_x,
-                                    font::LABEL,
+                                    font::label(),
                                     &mut editor_state.text.font_system,
                                 );
                                 CursorInit::At(idx)
