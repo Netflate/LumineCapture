@@ -281,8 +281,6 @@ pub fn render_frame(req: &mut RenderRequest) {
 // selection border, so the border doesn't have a hard-edged hole.
 // rounded corners are only visual, the screenshot result won't have such corners
 //
-/// Black transparent background over everything outside the selection.
-const DIM_ALPHA: f32 = 140.0;
 /// Corner radius of the selection border, measured on its outer edge.
 const SELECTION_RADIUS: f32 = 8.0;
 const SELECTION_STROKE: f32 = 2.0;
@@ -291,7 +289,7 @@ const HOLE_RADIUS: f32 = SELECTION_RADIUS - SELECTION_STROKE / 2.0;
 
 /// `base_channel -> dimmed_channel`.
 fn dim_lut() -> [u8; 256] {
-    let keep = 255.0 - DIM_ALPHA;
+    let keep = 255.0 - crate::config::get().general.dim_alpha as f32;
     let mut lut = [0u8; 256];
     for (value, slot) in lut.iter_mut().enumerate() {
         *slot = (value as f32 * keep / 255.0 + 0.5) as u8;
@@ -369,7 +367,7 @@ fn dim_hole_corners(canvas: &mut Pixmap, sel: &Rect, edges: Option<&SelectionEdg
     }
 
     let mut paint = Paint::default();
-    paint.set_color(Color::from_rgba8(0, 0, 0, DIM_ALPHA as u8));
+    paint.set_color(Color::from_rgba8(0, 0, 0, crate::config::get().general.dim_alpha));
     paint.anti_alias = true;
 
     // corner point, then the direction the rectangle's interior lies in

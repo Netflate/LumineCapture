@@ -59,23 +59,19 @@ pub fn encode_png(pixmap: &Pixmap) -> Vec<u8> {
     png_bytes
 }
 
-/// Screenshots land in <pictures>/<DEFAULT_SAVE_DIR>/<month>/<stamp>.png
-const DEFAULT_SAVE_DIR: &str = "screenshots"; // hardcoded TOFIX
-const DEFAULT_MONTH_FORMAT: &str = "%Y-%m";
-const DEFAULT_STEM_FORMAT: &str = "%Y-%m-%d_%H-%M"; // hardcoded TOFIX
-
 pub fn save_to_file(png_data: &[u8]) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let now = chrono::Local::now();
+    let save = &crate::config::get().save;
 
     let dir = dirs::picture_dir()
         .or_else(|| dirs::home_dir().map(|home| home.join("Pictures")))
         .ok_or("can't find a pictures or home directory")?
-        .join(DEFAULT_SAVE_DIR)
-        .join(now.format(DEFAULT_MONTH_FORMAT).to_string());
+        .join(&save.directory)
+        .join(now.format(&save.month_format).to_string());
 
     std::fs::create_dir_all(&dir)?;
 
-    let stem = now.format(DEFAULT_STEM_FORMAT).to_string();
+    let stem = now.format(&save.filename_format).to_string();
     Ok(write_unique(&dir, &stem, png_data)?)
 }
 

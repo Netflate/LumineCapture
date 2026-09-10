@@ -61,6 +61,9 @@ impl Notifier for StderrNotifier {
 }
 
 pub async fn send(notice: Notice) {
+    if !crate::config::get().notifications.enabled {
+        return;
+    }
     let n = notice.spec();
     let sent = tokio::time::timeout(TIMEOUT, initialize_notifier().notify(&n)).await;
     let reason = match sent {
@@ -76,6 +79,9 @@ pub async fn send(notice: Notice) {
 /// Panics if invoked inside an active Tokio context. Avoids `zbus::block_on` to prevent
 /// spawning per-core threads.
 pub fn send_blocking(notice: Notice) {
+    if !crate::config::get().notifications.enabled {
+        return;
+    }
     match tokio::runtime::Builder::new_current_thread().enable_all().build() {
         Ok(rt) => rt.block_on(send(notice)),
         Err(_) => {

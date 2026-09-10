@@ -26,9 +26,6 @@ use tiny_skia::Rect;
 /// then manually after each 50ms
 const DOWNLOAD_POLL: Duration = Duration::from_millis(50);
 
-/// later in config
-const DEFAULT_SAVE_ALWAYS: bool = true;
-
 // ************************* //
 //      ENTRY POINT          //
 // ************************* //
@@ -471,7 +468,7 @@ async fn finish_capture(editor_state: &mut EditorState) -> Result<(), Box<dyn st
     {
         notify::send(Notice::PinFailed(e.to_string())).await;
     }
-    let saved = if finish == Finish::Save || DEFAULT_SAVE_ALWAYS {
+    let saved = if finish == Finish::Save || crate::config::get().general.save_always {
         match save_to_file(&png) {
             Ok(path) => Some(path),
             Err(e) => {
