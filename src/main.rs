@@ -14,10 +14,48 @@ pub mod ui;
 pub mod utils;
 
 use backend::wayland::{clipboard, pin};
+use std::path::PathBuf;
+
+fn print_help() {
+    println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+    println!("{}", env!("CARGO_PKG_DESCRIPTION"));
+    println!();
+    println!("Usage: LumineCapture [OPTIONS]");
+    println!("       LumineCapture --pin [--at X,Y] [FILE]");
+    println!("       LumineCapture --clipboard-daemon [text]");
+    println!("       LumineCapture --ocr-daemon [serve|status|stop|calibrate]");
+    println!();
+    println!("Options:");
+    println!("  -h, --help              Print this help and exit");
+    println!("  -V, --version           Print the version and exit");
+    println!("      --config <PATH>     Use this config file instead of the default location");
+    println!("      --print-default-config");
+    println!("                          Print the default config.toml and exit");
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    config::init(None);
-    let mut args = std::env::args().skip(1);
+    let mut pargs = pico_args::Arguments::from_env();
+
+    if pargs.contains(["-h", "--help"]) {
+        print_help();
+        return Ok(());
+    }
+    if pargs.contains(["-V", "--version"]) {
+        println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+    if pargs.contains("--print-default-config") {
+        print!("{}", config::TEMPLATE);
+        return Ok(());
+    }
+    let config_path: Option<PathBuf> = pargs
+        .opt_value_from_os_str("--config", |s| Ok::<_, String>(PathBuf::from(s)))?;
+    config::init(config_path);
+
+    let mut args = pargs
+        .finish()
+        .into_iter()
+        .map(|s| s.into_string().unwrap_or_default());
     // supplementary processes start before initializing Tokio to avoid inheriting the runtime or its worker threads
     match args.next().as_deref() {
         // wayland clipboard requires the source process to stay alive to serve data.
