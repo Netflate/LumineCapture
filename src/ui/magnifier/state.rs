@@ -2,10 +2,18 @@ use tiny_skia::{Color, Pixmap};
 
 // honestly my magnifier implementation sucks a bit
 // im not sure how to properly change these constants without making it look crooked
-pub const ZOOM: f32 = 10.0;
-pub const CELLS: u32 = 21; // must be uneven
-pub const SIZE: u32 = (CELLS as f32 * ZOOM) as u32;
-pub const OFFSET: f32 = 24.0;
+pub fn zoom() -> f32 {
+    crate::config::get().magnifier.zoom
+}
+pub fn cells() -> u32 {
+    crate::config::get().magnifier.cells
+}
+pub fn size() -> u32 {
+    crate::config::get().magnifier.size()
+}
+pub fn offset() -> f32 {
+    crate::config::get().magnifier.offset
+}
 
 pub const LABEL_HEIGHT: f32 = 26.0;
 pub const LABEL_GAP: f32 = 6.0;

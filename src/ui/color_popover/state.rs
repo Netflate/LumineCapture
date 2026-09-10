@@ -3,7 +3,7 @@ use crate::interaction::ScrollAccumulator;
 use crate::theme::{anim, font, radius, size};
 use crate::ui::panel::{AnimatedPanel, HoverablePanel, PanelItem, UiPanel};
 use crate::ui::text_field::TextFieldGroup;
-use crate::types::tool_settings::DEFAULT_COLOR;
+use crate::types::tool_settings::default_color;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 use tiny_skia::{Color, Mask, Pixmap, Rect};
@@ -37,7 +37,9 @@ pub const RECENT_ROW_GAP: f32 = 6.0;
 pub const SWATCH_DIAMETER: f32 = 22.0;
 pub const SWATCH_RADIUS: f32 = SWATCH_DIAMETER / 2.0;
 pub const SWATCH_GAP: f32 = 8.0;
-pub const MAX_RECENT_COLORS: usize = 6;
+pub fn max_recent_colors() -> usize {
+    crate::config::get().tools.max_recent_colors
+}
 
 pub const EYEDROPPER_ICON: f32 = 13.0;
 // ── hex / rgba input fields ──────────────────────────────
@@ -255,8 +257,8 @@ impl Default for ColorSquareState {
 
 impl ColorSquareState {
     pub fn new() -> Self {
-        let (h, s, v) = color_to_hsv(DEFAULT_COLOR.color());
-        let alpha = DEFAULT_COLOR.alpha();
+        let (h, s, v) = color_to_hsv(default_color().color());
+        let alpha = default_color().alpha();
         Self {
             hue: h,
             sv: (s, v),
@@ -451,7 +453,11 @@ impl ColorPickerPopover {
             sv_clip_mask: None,
             hue_clip_mask: None,
             picking: false,
-            recent_colors: default_palette().to_vec(),
+            recent_colors: {
+                let mut recent = default_palette().to_vec();
+                recent.truncate(max_recent_colors());
+                recent
+            },
             fields: TextFieldGroup::new(),
             scroll: ScrollAccumulator::new(),
             pre_edit_snapshot: None,
@@ -527,7 +533,7 @@ impl ColorPickerPopover {
         let bytes = color_bytes(color);
         self.recent_colors.retain(|c| color_bytes(*c) != bytes);
         self.recent_colors.insert(0, color);
-        self.recent_colors.truncate(MAX_RECENT_COLORS);
+        self.recent_colors.truncate(max_recent_colors());
     }
 
     pub fn select_color(&mut self, color: Color) {

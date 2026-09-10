@@ -9,7 +9,7 @@ use crate::renderer;
 use crate::ui::toolbar::{ToolbarButton, ToolbarItem};
 use crate::types::{MonitorFrame, Output, Placement};
 use crate::ui::icons;
-use crate::types::tool_settings::DEFAULT_COLOR;
+use crate::types::tool_settings::default_color;
 use std::collections::HashMap;
 use tiny_skia::{Pixmap, PixmapPaint, Transform};
 use usvg::Tree;
@@ -210,7 +210,7 @@ pub fn initial_paint(
                     annotations: &[],
                     text: None,
                     active_text_id: None,
-                    current_color: DEFAULT_COLOR.color(),
+                    current_color: default_color().color(),
                     ocr_view: None,
                     ocr_scan: None,
                     monitor_idx: i,

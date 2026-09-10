@@ -219,7 +219,7 @@ fn config_path() -> Option<PathBuf> {
 }
 
 fn validate(config: &mut Config) {
-    if config.magnifier.cells % 2 == 0 {
+    if config.magnifier.cells.is_multiple_of(2) {
         warn!("config: magnifier.cells must be odd, using the default");
         config.magnifier.cells = Magnifier::default().cells;
     }

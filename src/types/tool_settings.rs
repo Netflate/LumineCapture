@@ -2,11 +2,9 @@ use tiny_skia::Color;
 
 use crate::theme::Rgba;
 
-pub const DEFAULT_COLOR: Rgba = Rgba(255, 255, 255, 255);
-const DEFAULT_STROKE_WIDTH: f32 = 12.0;
-const DEFAULT_FONT_SIZE: f32 = 24.0;
-const DEFAULT_BOLD: bool = true;
-const DEFAULT_ITALIC: bool = false;
+pub fn default_color() -> Rgba {
+    crate::config::get().tools.default_color
+}
 
 #[derive(Debug, Clone)]
 pub struct ToolSettings {
@@ -19,12 +17,13 @@ pub struct ToolSettings {
 
 impl Default for ToolSettings {
     fn default() -> Self {
+        let tools = &crate::config::get().tools;
         Self {
-            stroke_width: DEFAULT_STROKE_WIDTH,
-            font_size: DEFAULT_FONT_SIZE,
-            bold: DEFAULT_BOLD,
-            italic: DEFAULT_ITALIC,
-            color: DEFAULT_COLOR.color(),
+            stroke_width: tools.default_stroke_width,
+            font_size: tools.default_font_size,
+            bold: tools.default_bold,
+            italic: tools.default_italic,
+            color: tools.default_color.color(),
         }
     }
 }

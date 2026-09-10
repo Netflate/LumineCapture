@@ -3,7 +3,7 @@ use cosmic_text::{FontSystem, Style, SwashCache, Weight};
 use crate::renderer::paths::rounded_rect_path;
 use crate::renderer::text::{HAlign, draw_aligned_text};
 use crate::theme::{Rgba, color, font, radius};
-use crate::ui::magnifier::{CELLS, LABEL_GAP, LABEL_HEIGHT, OFFSET, SIZE, ZOOM, sample_pixel};
+use crate::ui::magnifier::{LABEL_GAP, LABEL_HEIGHT, cells, offset, sample_pixel, size, zoom};
 use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform};
 
 // outline of magnifier, and color label if its in color picker mode
@@ -26,14 +26,14 @@ pub fn magnifier_rect(
 ) -> Rect {
     let height = box_height(with_label);
     let (mag_x, mag_y) = magnifier_position(cursor, (0.0, 0.0, monitor_w, monitor_h), height);
-    Rect::from_xywh(mag_x, mag_y, SIZE as f32, height).unwrap()
+    Rect::from_xywh(mag_x, mag_y, size() as f32, height).unwrap()
 }
 
 fn box_height(with_label: bool) -> f32 {
     if with_label {
-        SIZE as f32 + LABEL_GAP + LABEL_HEIGHT
+        size() as f32 + LABEL_GAP + LABEL_HEIGHT
     } else {
-        SIZE as f32
+        size() as f32
     }
 }
 
@@ -47,9 +47,9 @@ pub fn draw_magnifier(
     let screen_w = source.width() as f32;
     let screen_h = source.height() as f32;
 
-    let sample_size = CELLS as i32;
+    let sample_size = cells() as i32;
 
-    let half = (CELLS / 2) as i32;
+    let half = (cells() / 2) as i32;
     let src_x = (cursor.0 as i32 - half)
         .max(0)
         .min(screen_w as i32 - sample_size) as u32;
@@ -69,12 +69,12 @@ pub fn draw_magnifier(
 
     let (mag_x, mag_y) =
         magnifier_position(cursor, (0.0, 0.0, screen_w, screen_h), box_height(label.is_some()));
-    let radius = SIZE as f32 / 2.0;
+    let radius = size() as f32 / 2.0;
     let cx = mag_x + radius;
     let cy = mag_y + radius;
 
-    let mut zoomed = Pixmap::new(SIZE, SIZE).unwrap();
-    let magnifier_transform = Transform::from_row(ZOOM, 0.0, 0.0, ZOOM, 0.0, 0.0);
+    let mut zoomed = Pixmap::new(size(), size()).unwrap();
+    let magnifier_transform = Transform::from_row(zoom(), 0.0, 0.0, zoom(), 0.0, 0.0);
     zoomed.draw_pixmap(
         0,
         0,
@@ -86,7 +86,7 @@ pub fn draw_magnifier(
 
     overlay_crosshair(&mut zoomed);
 
-    let mut mask = tiny_skia::Mask::new(SIZE, SIZE).unwrap();
+    let mut mask = tiny_skia::Mask::new(size(), size()).unwrap();
     if let Some(circle_path) = PathBuilder::from_circle(radius, radius, radius) {
         mask.fill_path(
             &circle_path,
@@ -121,7 +121,7 @@ pub fn draw_magnifier(
         draw_color_label(
             canvas,
             mag_x,
-            mag_y + SIZE as f32 + LABEL_GAP,
+            mag_y + size() as f32 + LABEL_GAP,
             color,
             font_system,
             swash_cache,
@@ -137,7 +137,7 @@ fn draw_color_label(
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
 ) {
-    let width = SIZE as f32;
+    let width = size() as f32;
     let Some(plate) = Rect::from_xywh(x, y, width, LABEL_HEIGHT) else {
         return;
     };
@@ -215,34 +215,34 @@ fn magnifier_position(
     monitor: (f32, f32, f32, f32),
     height: f32,
 ) -> (f32, f32) {
-    let mag = SIZE as f32;
+    let mag = size() as f32;
     let (cx, cy) = cursor;
     let (mx, my, mw, mh) = monitor;
 
-    let x = if cx + mag + OFFSET < mx + mw {
-        cx + OFFSET
+    let x = if cx + mag + offset() < mx + mw {
+        cx + offset()
     } else {
-        cx - mag - OFFSET
+        cx - mag - offset()
     };
 
-    let y = if cy + height + OFFSET < my + mh {
-        cy + OFFSET
+    let y = if cy + height + offset() < my + mh {
+        cy + offset()
     } else {
-        cy - height - OFFSET
+        cy - height - offset()
     };
 
     (x, y)
 }
 
 fn overlay_crosshair(zoomed: &mut Pixmap) {
-    let cell = ZOOM;
+    let cell = zoom();
     let w = zoomed.width() as f32;
     let h = zoomed.height() as f32;
     let mut paint = Paint::default();
     paint.anti_alias = false;
 
     paint.set_color(GRID.color());
-    for i in 0..CELLS as i32 + 1 {
+    for i in 0..cells() as i32 + 1 {
         let x = i as f32 * cell;
         if let Some(r) = Rect::from_xywh(x, 0.0, 1.0, h) {
             zoomed.fill_path(
@@ -267,7 +267,7 @@ fn overlay_crosshair(zoomed: &mut Pixmap) {
 
     paint.set_color(GRID_SOFT.color());
     paint.blend_mode = tiny_skia::BlendMode::SourceOver;
-    let center_idx = (CELLS / 2) as f32;
+    let center_idx = (cells() / 2) as f32;
     let col_x = center_idx * cell;
     let row_y = center_idx * cell;
     if let Some(r) = Rect::from_xywh(col_x, 0.0, cell, h) {
