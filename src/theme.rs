@@ -142,6 +142,7 @@ pub mod font {
     pub fn label() -> f32 {
         crate::config::get().theme.font_size
     }
+    /// Two points below the label size
     pub fn small() -> f32 {
         label() - 2.0
     }

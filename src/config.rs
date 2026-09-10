@@ -1,3 +1,8 @@
+// One file at ~/.config/LumineCapture/config.toml, loaded once at startup.
+// Every field has a default, so a missing file or a missing key never stops
+// the program; a value that fails to parse falls back to the defaults for
+// the whole file.
+
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
@@ -208,6 +213,7 @@ selection = \"#6496FF6E\"
 font_size = 14.0
 
 [log]
+# off | error | warn | info | debug | trace; unset keeps each process's own default
 # level = \"info\"
 max_file_size_mb = 1
 ";
@@ -239,6 +245,7 @@ fn write_template(path: &PathBuf) {
     }
 }
 
+/// Config overide path set via `--config`. Only the first call takes effect
 pub fn init(override_path: Option<PathBuf>) {
     let path = override_path.or_else(config_path);
     let config = match &path {
