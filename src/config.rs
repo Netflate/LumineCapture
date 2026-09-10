@@ -152,13 +152,13 @@ impl Default for Theme {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(default)]
 pub struct Log {
-    pub level: String,
+    pub level: Option<String>,
     pub max_file_size_mb: u64,
 }
 
 impl Default for Log {
     fn default() -> Self {
-        Self { level: "info".into(), max_file_size_mb: 1 }
+        Self { level: None, max_file_size_mb: 1 }
     }
 }
 
@@ -208,7 +208,7 @@ selection = \"#6496FF6E\"
 font_size = 14.0
 
 [log]
-level = \"info\"
+# level = \"info\"
 max_file_size_mb = 1
 ";
 

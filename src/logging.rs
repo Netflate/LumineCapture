@@ -13,8 +13,6 @@ use std::sync::Mutex;
 
 use log::{Level, LevelFilter, Log, Metadata, Record};
 
-const FILE_LIMIT: u64 = 1024 * 1024;
-
 /// Levels used when `LUMINE_LOG` says nothing; the daemon logs to the file
 /// through its stderr, so it starts one step lower.
 const DEFAULT_STDERR_LEVEL: LevelFilter = LevelFilter::Warn;
@@ -58,7 +56,14 @@ struct Logger {
 pub fn init(process: Process) {
     let asked = std::env::var("LUMINE_LOG")
         .ok()
-        .and_then(|v| v.trim().parse::<LevelFilter>().ok());
+        .and_then(|v| v.trim().parse::<LevelFilter>().ok())
+        .or_else(|| {
+            crate::config::get()
+                .log
+                .level
+                .as_deref()
+                .and_then(|v| v.trim().parse::<LevelFilter>().ok())
+        });
 
     // the daemon's stderr is already redirected into the log file (which also catches panics and
     // native ONNX Runtime output), so it logs everything there through stderr and keeps no sink
@@ -106,7 +111,8 @@ pub fn open_log_file() -> Option<File> {
         fs::create_dir_all(dir).ok()?;
     }
 
-    if fs::metadata(&path).is_ok_and(|meta| meta.len() > FILE_LIMIT) {
+    let limit = crate::config::get().log.max_file_size_mb * 1024 * 1024;
+    if fs::metadata(&path).is_ok_and(|meta| meta.len() > limit) {
         let _ = fs::rename(&path, path.with_extension("log.1"));
     }
 
