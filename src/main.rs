@@ -1,5 +1,6 @@
 mod app;
 pub mod backend;
+pub mod config;
 pub mod logging;
 pub mod editor;
 pub mod interaction;
@@ -15,6 +16,7 @@ pub mod utils;
 use backend::wayland::{clipboard, pin};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    config::init(None);
     let mut args = std::env::args().skip(1);
     // supplementary processes start before initializing Tokio to avoid inheriting the runtime or its worker threads
     match args.next().as_deref() {

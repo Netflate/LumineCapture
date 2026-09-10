@@ -45,6 +45,17 @@ impl Rgba {
     pub fn with_alpha(self, alpha: u8) -> Self {
         Self(self.0, self.1, self.2, alpha)
     }
+
+    /// Parses "#RRGGBB" or "#RRGGBBAA" (case-insensitive, alpha defaults to 255).
+    pub fn parse_hex(s: &str) -> Option<Self> {
+        let s = s.strip_prefix('#').unwrap_or(s);
+        let byte = |i: usize| u8::from_str_radix(s.get(i..i + 2)?, 16).ok();
+        match s.len() {
+            6 => Some(Self(byte(0)?, byte(2)?, byte(4)?, 255)),
+            8 => Some(Self(byte(0)?, byte(2)?, byte(4)?, byte(6)?)),
+            _ => None,
+        }
+    }
 }
 
 impl From<Rgba> for Color {
