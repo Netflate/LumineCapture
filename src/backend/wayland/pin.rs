@@ -109,6 +109,8 @@ pub fn run(image: &[u8], at: Option<(i32, i32)>) -> Result<(), Box<dyn std::erro
         buffer: None,
         png: image.to_vec(),
         margin: (0, 0),
+        pending_margin: None,
+        frame_cb_pending: false,
         drag: None,
         cursor: None,
         _relative_pointer: None,
@@ -189,6 +191,8 @@ struct Pin {
     png: Vec<u8>,
 
     margin: (i32, i32),
+    pending_margin: Option<(i32, i32)>,
+    frame_cb_pending: bool,
     drag: Option<Drag>,
     cursor: Option<WpCursorShapeDeviceV1>,
     _relative_pointer: Option<ZwpRelativePointerV1>,
@@ -263,12 +267,42 @@ impl Pin {
         self.margin = margin;
         self.mapped = false;
         self.drag = None;
+        self.pending_margin = None;
+        self.frame_cb_pending = false;
     }
 
     fn set_cursor(&self, shape: Shape) {
         if let Some(device) = &self.cursor {
             device.set_shape(self.enter_serial, shape);
         }
+    }
+
+    fn output_at(&self, global: (i32, i32)) -> Option<(wl_output::WlOutput, (i32, i32))> {
+        self.outputs.outputs().find_map(|output| {
+            let info = self.outputs.info(&output)?;
+            let pos = info.logical_position?;
+            let size = info.logical_size?;
+            (global.0 >= pos.0
+                && global.0 < pos.0 + size.0
+                && global.1 >= pos.1
+                && global.1 < pos.1 + size.1)
+                .then_some((output, pos))
+        })
+    }
+
+    fn commit_pending_margin(&mut self, qh: &QueueHandle<Self>) {
+        let Some(margin) = self.pending_margin.take() else {
+            return;
+        };
+        self.margin = margin;
+        let Some(layer) = &self.layer else {
+            return;
+        };
+        layer.set_margin(margin.1, 0, 0, margin.0);
+        let surface = layer.wl_surface();
+        surface.frame(qh, surface.clone());
+        surface.commit();
+        self.frame_cb_pending = true;
     }
 }
 
@@ -357,7 +391,7 @@ impl RelativePointerHandler for Pin {
     fn relative_pointer_motion(
         &mut self,
         _: &Connection,
-        _: &QueueHandle<Self>,
+        qh: &QueueHandle<Self>,
         _: &ZwpRelativePointerV1,
         _: &wl_pointer::WlPointer,
         event: RelativeMotionEvent,
@@ -374,10 +408,9 @@ impl RelativePointerHandler for Pin {
         if margin == self.margin {
             return;
         }
-        self.margin = margin;
-        if let Some(layer) = &self.layer {
-            layer.set_margin(margin.1, 0, 0, margin.0);
-            layer.wl_surface().commit();
+        self.pending_margin = Some(margin);
+        if !self.frame_cb_pending {
+            self.commit_pending_margin(qh);
         }
     }
 }
@@ -524,14 +557,41 @@ impl CompositorHandler for Pin {
         _: wl_output::Transform,
     ) {
     }
-    fn frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: u32) {}
+    fn frame(&mut self, _: &Connection, qh: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: u32) {
+        self.frame_cb_pending = false;
+        if self.drag.is_some() {
+            self.commit_pending_margin(qh);
+        }
+    }
     fn surface_enter(
         &mut self,
         _: &Connection,
-        _: &QueueHandle<Self>,
-        _: &wl_surface::WlSurface,
-        _: &wl_output::WlOutput,
+        qh: &QueueHandle<Self>,
+        surface: &wl_surface::WlSurface,
+        output: &wl_output::WlOutput,
     ) {
+        let Some(layer) = &self.layer else {
+            return;
+        };
+        if layer.wl_surface() != surface || self.drag.is_none() {
+            return;
+        }
+        if self.output.as_ref() == Some(output) {
+            return;
+        }
+        let global = (self.origin.0 + self.margin.0, self.origin.1 + self.margin.1);
+        let Some((new_output, new_origin)) = self.output_at(global) else {
+            return;
+        };
+        if Some(&new_output) == self.output.as_ref() {
+            return;
+        }
+        let new_margin = (global.0 - new_origin.0, global.1 - new_origin.1);
+        self.attach_to(qh, new_output, new_origin, new_margin);
+        self.drag = Some(Drag {
+            from: new_margin,
+            moved: (0.0, 0.0),
+        });
     }
     fn surface_leave(
         &mut self,
