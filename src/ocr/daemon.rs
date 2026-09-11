@@ -94,8 +94,8 @@ pub fn resolve_mode(settings: &EngineSettings) -> Mode {
     // daemon and GPU do not exist for them to keep them isolated to avoid bugs
     if settings.mode != Mode::Daemon {
         info!(
-            "ocr: engine mode = {:?} (nothing stays in the background; mode = daemon in \
-             ~/.config/LumineCapture/ocr-engine keeps a faster engine warm instead)",
+            "ocr: engine mode = {:?} (nothing stays in the background; mode = \"daemon\" in \
+             ~/.config/LumineCapture/config.toml's [ocr] section keeps a faster engine warm instead)",
             settings.mode
         );
         if let Some(paths) = paths
@@ -150,7 +150,7 @@ pub fn resolve_mode(settings: &EngineSettings) -> Mode {
         let hint = if cpu_won {
             "--ocr-daemon calibrate measures again"
         } else {
-            "set device = cpu in ~/.config/LumineCapture/ocr-engine to run the daemon on the CPU anyway"
+            "set device = \"cpu\" in ~/.config/LumineCapture/config.toml's [ocr] section to run the daemon on the CPU anyway"
         };
         info!(
             "ocr: engine mode = {mode:?} (config wants {:?}; {why} -- {hint})",
