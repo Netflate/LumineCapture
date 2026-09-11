@@ -28,8 +28,8 @@ pub fn draw_settings_panel(
         return;
     };
 
-    let x = panel_rect.left();
-    let y = panel_rect.top();
+    let x = panel_rect.left().round();
+    let y = panel_rect.top().round();
     let (w, h) = panel.size;
     let pw = w.ceil() as u32;
     let ph = h.ceil() as u32;

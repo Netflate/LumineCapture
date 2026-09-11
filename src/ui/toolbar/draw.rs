@@ -17,8 +17,8 @@ pub fn draw_toolbar(
         return;
     };
 
-    let x = tb_rect.left();
-    let y = tb_rect.top();
+    let x = tb_rect.left().round();
+    let y = tb_rect.top().round();
     let (w, h) = toolbar.size;
     let pw = w.ceil() as u32;
     let ph = h.ceil() as u32;

@@ -24,8 +24,8 @@ pub fn draw_color_popover(
         return;
     };
 
-    let x = cp_rect.left();
-    let y = cp_rect.top();
+    let x = cp_rect.left().round();
+    let y = cp_rect.top().round();
     let (w, h) = color_popover.size;
     let pw = w.ceil() as u32;
     let ph = h.ceil() as u32;

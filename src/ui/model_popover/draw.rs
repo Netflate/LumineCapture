@@ -43,6 +43,9 @@ pub fn draw_model_popover(
         return;
     };
 
+    let x = rect.left().round();
+    let y = rect.top().round();
+
     let (w, h) = popover.size;
     let pw = w.ceil() as u32;
     let ph = h.ceil() as u32;
@@ -65,8 +68,8 @@ pub fn draw_model_popover(
     }
 
     canvas.draw_pixmap(
-        rect.left() as i32,
-        rect.top() as i32,
+        x as i32,
+        y as i32,
         pixmap.as_ref(),
         &PixmapPaint {
             opacity: popover.opacity,
@@ -77,7 +80,7 @@ pub fn draw_model_popover(
         None,
     );
 
-    draw_panel_border(canvas, rect.left(), rect.top(), w, h, RADIUS, popover.opacity);
+    draw_panel_border(canvas, x, y, w, h, RADIUS, popover.opacity);
 
     popover.pixmap = Some(pixmap);
 }
