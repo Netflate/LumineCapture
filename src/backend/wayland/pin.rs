@@ -163,7 +163,6 @@ fn render_pin(image: &[u8]) -> Result<Pixmap, Box<dyn std::error::Error>> {
 type Spot = (wl_output::WlOutput, (i32, i32), (i32, i32));
 
 struct Drag {
-    grab: (i32, i32),
     from: (i32, i32),
     moved: (f64, f64),
 }
@@ -272,35 +271,7 @@ impl Pin {
         }
     }
 
-    fn output_at(&self, global: (i32, i32)) -> Option<(wl_output::WlOutput, (i32, i32))> {
-        self.outputs.outputs().find_map(|output| {
-            let info = self.outputs.info(&output)?;
-            let pos = info.logical_position?;
-            let size = info.logical_size?;
-            (global.0 >= pos.0
-                && global.0 < pos.0 + size.0
-                && global.1 >= pos.1
-                && global.1 < pos.1 + size.1)
-                .then_some((output, pos))
-        })
-    }
-
-    fn move_to(&mut self, qh: &QueueHandle<Self>, global: (i32, i32), grab: (i32, i32)) {
-        let cursor = (global.0 + grab.0, global.1 + grab.1);
-        if let Some((output, origin)) = self.output_at(cursor)
-            && self.output.as_ref() != Some(&output)
-        {
-            let margin = (global.0 - origin.0, global.1 - origin.1);
-            self.attach_to(qh, output, origin, margin);
-            self.drag = Some(Drag {
-                grab,
-                from: global,
-                moved: (0.0, 0.0),
-            });
-            return;
-        }
-
-        let margin = (global.0 - self.origin.0, global.1 - self.origin.1);
+    fn drag_to(&mut self, margin: (i32, i32)) {
         if margin == self.margin {
             return;
         }
@@ -384,11 +355,7 @@ impl PointerHandler for Pin {
                 }
                 PointerEventKind::Press { button: BTN_LEFT, .. } => {
                     self.drag = Some(Drag {
-                        grab: (
-                            event.position.0.round() as i32,
-                            event.position.1.round() as i32,
-                        ),
-                        from: (self.origin.0 + self.margin.0, self.origin.1 + self.margin.1),
+                        from: self.margin,
                         moved: (0.0, 0.0),
                     });
                     self.set_cursor(Shape::Grabbing);
@@ -407,7 +374,7 @@ impl RelativePointerHandler for Pin {
     fn relative_pointer_motion(
         &mut self,
         _: &Connection,
-        qh: &QueueHandle<Self>,
+        _: &QueueHandle<Self>,
         _: &ZwpRelativePointerV1,
         _: &wl_pointer::WlPointer,
         event: RelativeMotionEvent,
@@ -417,12 +384,11 @@ impl RelativePointerHandler for Pin {
         };
         drag.moved.0 += event.delta.0;
         drag.moved.1 += event.delta.1;
-        let global = (
+        let margin = (
             drag.from.0 + drag.moved.0.round() as i32,
             drag.from.1 + drag.moved.1.round() as i32,
         );
-        let grab = drag.grab;
-        self.move_to(qh, global, grab);
+        self.drag_to(margin);
     }
 }
 
