@@ -459,12 +459,12 @@ async fn finish_capture(editor_state: &mut EditorState) -> Result<(), Box<dyn st
     let Some(finish) = editor_state.finish else {
         return Ok(());
     };
-    let Some((png, (x, y))) = render_final(editor_state) else {
+    let Some((png, _)) = render_final(editor_state) else {
         return Ok(());
     };
 
     if finish == Finish::Pin
-        && let Err(e) = crate::backend::wayland::pin::spawn_at(&png, x, y)
+        && let Err(e) = crate::backend::wayland::pin::spawn(&png)
     {
         notify::send(Notice::PinFailed(e.to_string())).await;
     }
