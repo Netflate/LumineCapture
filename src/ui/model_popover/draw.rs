@@ -43,6 +43,7 @@ pub fn draw_model_popover(
         return;
     };
 
+    // rounding is obligatory to avoid desync and visual glitches
     let x = rect.left().round();
     let y = rect.top().round();
 

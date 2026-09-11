@@ -24,6 +24,7 @@ pub fn draw_color_popover(
         return;
     };
 
+    // without rounding it creates desync and annoying visual glitches
     let x = cp_rect.left().round();
     let y = cp_rect.top().round();
     let (w, h) = color_popover.size;

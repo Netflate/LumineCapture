@@ -667,7 +667,6 @@ mod tests {
         big_small.push(tag::STATUS);
         assert!(matches!(read_request(&mut big_small.as_slice()), Err(ProtoError::TooLarge(_))));
 
-        // (?#) HTTP-клиент стучится в сокет
         assert!(read_request(&mut b"GET / HTTP/1.1\r\n\r\n".as_slice()).is_err());
     }
 

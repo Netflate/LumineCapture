@@ -267,6 +267,7 @@ impl Pin {
         self.margin = margin;
         self.mapped = false;
         self.drag = None;
+        // this state belongs to destroyable surface, should nt be transferred to new one
         self.pending_margin = None;
         self.frame_cb_pending = false;
     }
@@ -579,6 +580,8 @@ impl CompositorHandler for Pin {
         if self.output.as_ref() == Some(output) {
             return;
         }
+        // instead of using directly output from event, we do that via geometry check 
+        // to avoid desync between monitors
         let global = (self.origin.0 + self.margin.0, self.origin.1 + self.margin.1);
         let Some((new_output, new_origin)) = self.output_at(global) else {
             return;
@@ -588,6 +591,7 @@ impl CompositorHandler for Pin {
         }
         let new_margin = (global.0 - new_origin.0, global.1 - new_origin.1);
         self.attach_to(qh, new_output, new_origin, new_margin);
+        // when new surface force recalculation
         self.drag = Some(Drag {
             from: new_margin,
             moved: (0.0, 0.0),
