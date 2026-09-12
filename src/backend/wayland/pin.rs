@@ -34,13 +34,15 @@ use wayland_client::protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_s
 use wayland_client::{Connection, QueueHandle};
 
 use crate::backend::notify::{self, Notice};
+use crate::backend::wayland::keysym;
 use crate::backend::{ClipboardProvider, initialize_clipboard};
+use crate::keys::{self, Action, Mods};
 use crate::renderer::paths::{draw_panel_border, rounded_rect_path};
 use crate::theme::radius;
+use crate::types::Finish;
 use crate::utils::copy_swizzled;
 
 const BTN_LEFT: u32 = 0x110;
-const KEY_C: u32 = 46;
 const APP_ID: &str = "lumine-pin";
 
 /// Argv the overlay re-execs itself with to pin a finished capture.
@@ -104,7 +106,7 @@ pub fn run(image: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
         pointer_seat: None,
         cursor: None,
         enter_serial: 0,
-        ctrl: false,
+        mods: Mods::default(),
         exit: false,
     };
 
@@ -160,7 +162,7 @@ struct Pin {
     pointer_seat: Option<wl_seat::WlSeat>,
     cursor: Option<WpCursorShapeDeviceV1>,
     enter_serial: u32,
-    ctrl: bool,
+    mods: Mods,
     exit: bool,
 }
 
@@ -253,15 +255,17 @@ impl KeyboardHandler for Pin {
         _: u32,
         event: KeyEvent,
     ) {
-        let is_c = matches!(event.keysym, Keysym::c | Keysym::C) || event.raw_code == KEY_C;
-        if event.keysym == Keysym::Escape {
-            self.exit = true;
-        } else if self.ctrl && is_c {
-            let notice = match self.clipboard.copy_image_to_clipboard(self.png.clone()) {
-                Ok(()) => Notice::Copied(None),
-                Err(e) => Notice::CopyFailed(e.to_string()),
-            };
-            notify::send_blocking(notice);
+        let chord = keysym::chord(event.keysym, event.raw_code, self.mods);
+        match chord.and_then(|c| keys::map().lookup(c)) {
+            Some(Action::Cancel) => self.exit = true,
+            Some(Action::Finish(Finish::Copy)) => {
+                let notice = match self.clipboard.copy_image_to_clipboard(self.png.clone()) {
+                    Ok(()) => Notice::Copied(None),
+                    Err(e) => Notice::CopyFailed(e.to_string()),
+                };
+                notify::send_blocking(notice);
+            }
+            _ => {}
         }
     }
 
@@ -275,7 +279,7 @@ impl KeyboardHandler for Pin {
         _: RawModifiers,
         _: u32,
     ) {
-        self.ctrl = modifiers.ctrl;
+        self.mods = keysym::mods(&modifiers);
     }
 
     fn repeat_key(
@@ -306,7 +310,7 @@ impl KeyboardHandler for Pin {
         _: &wl_surface::WlSurface,
         _: u32,
     ) {
-        self.ctrl = false;
+        self.mods = Mods::default();
     }
     fn release_key(
         &mut self,
