@@ -79,7 +79,7 @@ pub fn update_toolbar(editor_state: &mut EditorState, dirty_mask: &mut u32) {
 }
 
 fn compute_toolbar_placement(editor_state: &EditorState) -> (usize, (f32, f32), bool) {
-    if editor_state.tool_active {
+    if editor_state.tool_active || editor_state.ui_hidden {
         return (
             editor_state.toolbar.monitor_idx,
             editor_state.toolbar.position,

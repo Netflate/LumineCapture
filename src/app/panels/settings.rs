@@ -100,7 +100,8 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
         }
     }
 
-    let should_be_visible = !new_widgets.is_empty() && !editor_state.tool_active;
+    let should_be_visible =
+        !new_widgets.is_empty() && !editor_state.tool_active && !editor_state.ui_hidden;
 
     if should_be_visible {
         let (pos, monitor_idx) = compute_settings_placement(editor_state);

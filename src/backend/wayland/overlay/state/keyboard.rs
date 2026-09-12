@@ -15,8 +15,10 @@ use smithay_client_toolkit::seat::keyboard::{
 use wayland_client::protocol::{wl_keyboard, wl_surface};
 use wayland_client::{Connection, QueueHandle};
 
+use crate::backend::wayland::keysym;
 use crate::backend::wayland::overlay::state::OverlayState;
-use crate::types::{OverlayEvent, SpecialKey};
+use crate::keys::Key;
+use crate::types::OverlayEvent;
 impl KeyboardHandler for OverlayState {
     fn press_key(
         &mut self,
@@ -49,11 +51,10 @@ impl KeyboardHandler for OverlayState {
         _: smithay_client_toolkit::seat::keyboard::RawModifiers,
         _: u32,
     ) {
-        self.ctrl = modifiers.ctrl;
-        self.shift = modifiers.shift;
+        self.mods = keysym::mods(&modifiers);
         self.events.push_back(OverlayEvent::ModifiersChanged {
-            ctrl: self.ctrl,
-            shift: self.shift,
+            ctrl: self.mods.ctrl,
+            shift: self.mods.shift,
         });
     }
 
@@ -100,102 +101,28 @@ delegate_keyboard!(OverlayState);
 
 impl OverlayState {
     fn process_key(&mut self, event: &KeyEvent) {
-        match event.keysym {
-            Keysym::Escape => {
-                self.events.push_back(OverlayEvent::EscapePressed);
-                return;
-            }
-            Keysym::BackSpace => {
-                self.events
-                    .push_back(OverlayEvent::KeyPress(SpecialKey::Backspace));
-                return;
-            }
-            Keysym::Delete => {
-                self.events
-                    .push_back(OverlayEvent::KeyPress(SpecialKey::Delete));
-                return;
-            }
-            Keysym::Return => {
-                self.events
-                    .push_back(OverlayEvent::KeyPress(SpecialKey::Enter));
-                return;
-            }
-            Keysym::Left => {
-                self.events
-                    .push_back(OverlayEvent::KeyPress(SpecialKey::Left));
-                return;
-            }
-            Keysym::Right => {
-                self.events
-                    .push_back(OverlayEvent::KeyPress(SpecialKey::Right));
-                return;
-            }
-            Keysym::Up => {
-                self.events
-                    .push_back(OverlayEvent::KeyPress(SpecialKey::Up));
-                return;
-            }
-            Keysym::Down => {
-                self.events
-                    .push_back(OverlayEvent::KeyPress(SpecialKey::Down));
-                return;
-            }
-            Keysym::Home => {
-                self.events
-                    .push_back(OverlayEvent::KeyPress(SpecialKey::Home));
-                return;
-            }
-            Keysym::End => {
-                self.events
-                    .push_back(OverlayEvent::KeyPress(SpecialKey::End));
-                return;
-            }
-            _ => {}
-        }
-
-        if self.ctrl {
-            // try matching by Keysym first (for standard layouts/shortcuts)
-            let matched_action = match event.keysym {
-                Keysym::z | Keysym::Z => Some(if self.shift {
-                    OverlayEvent::Redo
-                } else {
-                    OverlayEvent::Undo
-                }),
-                Keysym::y | Keysym::Y => Some(OverlayEvent::Redo),
-                Keysym::s | Keysym::S => Some(OverlayEvent::KeyPress(SpecialKey::KeyS)),
-                Keysym::p | Keysym::P => Some(OverlayEvent::KeyPress(SpecialKey::KeyP)),
-                Keysym::a | Keysym::A => Some(OverlayEvent::KeyPress(SpecialKey::KeyA)),
-                Keysym::c | Keysym::C => Some(OverlayEvent::KeyPress(SpecialKey::KeyC)),
-                Keysym::v | Keysym::V => Some(OverlayEvent::KeyPress(SpecialKey::KeyV)),
-                Keysym::x | Keysym::X => Some(OverlayEvent::KeyPress(SpecialKey::KeyX)),
-                _ => None,
-            };
-            // fallback to raw physical scan codes (to support AZERTY/non-QWERTY layouts)
-            let final_action = matched_action.or(match event.raw_code {
-                44 => Some(if self.shift {
-                    OverlayEvent::Redo
-                } else {
-                    OverlayEvent::Undo
-                }),                                                   // 44 -> Z
-                21 => Some(OverlayEvent::Redo),                       // 21 -> Y
-                31 => Some(OverlayEvent::KeyPress(SpecialKey::KeyS)), // 31 -> S
-                25 => Some(OverlayEvent::KeyPress(SpecialKey::KeyP)), // 25 -> P
-                30 => Some(OverlayEvent::KeyPress(SpecialKey::KeyA)), // 30 -> A
-                46 => Some(OverlayEvent::KeyPress(SpecialKey::KeyC)), // 46 -> C
-                47 => Some(OverlayEvent::KeyPress(SpecialKey::KeyV)), // 47 -> V
-                45 => Some(OverlayEvent::KeyPress(SpecialKey::KeyX)), // 45 -> X
-                _ => None,
-            });
-
-            if let Some(action) = final_action {
-                self.events.push_back(action);
-            }
-        } else {
-            if let Some(txt) = event.utf8.as_deref() {
-                for c in txt.chars() {
-                    self.events.push_back(OverlayEvent::TextInput(c));
-                }
-            }
+        let chord = keysym::chord(event.keysym, event.raw_code, self.mods);
+        let editing_key = chord.is_some_and(|c| {
+            matches!(
+                c.key,
+                Key::Escape
+                    | Key::Enter
+                    | Key::Backspace
+                    | Key::Delete
+                    | Key::Left
+                    | Key::Right
+                    | Key::Up
+                    | Key::Down
+                    | Key::Home
+                    | Key::End
+            )
+        });
+        let text = event
+            .utf8
+            .clone()
+            .filter(|t| !t.is_empty() && !self.mods.ctrl && !editing_key);
+        if chord.is_some() || text.is_some() {
+            self.events.push_back(OverlayEvent::Key { chord, text });
         }
     }
 }

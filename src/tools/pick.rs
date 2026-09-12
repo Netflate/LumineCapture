@@ -2,7 +2,7 @@ use crate::editor::dirty::damage_annotation;
 use crate::editor::{DamageZone, EditorState};
 use crate::tools::ToolBehavior;
 use crate::types::{
-    AnnDragState, CursorIcon, MouseButton, SelectionHandle, SpecialKey,
+    AnnDragState, CursorIcon, MouseButton, SelectionHandle,
     annotations::{
         apply_annotation_drag, begin_drag_for_annotation, commit_drag_if_changed,
         handle_hit_test_for_annotation,
@@ -104,23 +104,6 @@ impl ToolBehavior for PickTool {
         apply_annotation_drag(state, global);
     }
 
-    fn on_key(&self, state: &mut EditorState, key: SpecialKey, dirty_mask: &mut u32) {
-        if matches!(key, SpecialKey::Delete | SpecialKey::Backspace)
-            && let Some(idx) = state.selected_annotation.take()
-                && idx < state.annotations.len() {
-                    state.push_undo();
-                    let ann = state.annotations.remove(idx);
-                    damage_annotation(
-                        &mut state.damage_rects,
-                        &mut state.layer_damage_rects,
-                        &ann,
-                    );
-                    state.ann_drag = None;
-                    state.annotations_dirty = true;
-                    *dirty_mask = u32::MAX;
-                }
-    }
-
     fn on_deactivate(&self, state: &mut EditorState, _dirty_mask: &mut u32) {
         if let Some(idx) = state.selected_annotation {
             state
@@ -143,5 +126,18 @@ impl ToolBehavior for PickTool {
         };
         let handle = handle_hit_test_for_annotation(ann, state.input.pointer.global);
         cursor_for_handle(handle, false).unwrap_or(CursorIcon::Default)
+    }
+}
+
+pub fn delete_selected(state: &mut EditorState, dirty_mask: &mut u32) {
+    if let Some(idx) = state.selected_annotation.take()
+        && idx < state.annotations.len()
+    {
+        state.push_undo();
+        let ann = state.annotations.remove(idx);
+        damage_annotation(&mut state.damage_rects, &mut state.layer_damage_rects, &ann);
+        state.ann_drag = None;
+        state.annotations_dirty = true;
+        *dirty_mask = u32::MAX;
     }
 }

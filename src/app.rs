@@ -1,3 +1,4 @@
+mod actions;
 mod init;
 mod input;
 mod panels;
@@ -145,7 +146,7 @@ fn run_overlay(
             ev => handle_event(editor_state, ev, &mut dirty_mask),
         }
 
-        if editor_state.finish.is_some() {
+        if editor_state.finish.is_some() || editor_state.cancel {
             break;
         }
 
@@ -211,19 +212,8 @@ fn handle_event(editor_state: &mut EditorState, ev: OverlayEvent, dirty_mask: &m
         OverlayEvent::PointerButton { button, pressed } => {
             input::handle_pointer_button(editor_state, button, pressed, dirty_mask);
         }
-        OverlayEvent::Undo => {
-            editor_state.undo(dirty_mask);
-            refresh_panels_after_history(editor_state, dirty_mask);
-        }
-        OverlayEvent::Redo => {
-            editor_state.redo(dirty_mask);
-            refresh_panels_after_history(editor_state, dirty_mask);
-        }
-        OverlayEvent::TextInput(ch) => {
-            input::handle_text_input(editor_state, ch, dirty_mask);
-        }
-        OverlayEvent::KeyPress(key) => {
-            input::handle_key_press(editor_state, key, dirty_mask);
+        OverlayEvent::Key { chord, text } => {
+            input::handle_key(editor_state, chord, text, dirty_mask);
         }
         OverlayEvent::ModifiersChanged { ctrl, shift } => {
             editor_state.input.ctrl = ctrl;

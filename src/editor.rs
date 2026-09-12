@@ -122,6 +122,8 @@ pub struct EditorState {
     /// Set to true when the user is about to pick a color from the palette, since the action is a one-time thing
     pub pick_once: bool,
     pub finish: Option<crate::types::Finish>,
+    pub cancel: bool,
+    pub ui_hidden: bool,
 
     pub ocr: OcrState,
 }
@@ -189,6 +191,8 @@ impl EditorState {
             tool_settings: ToolSettings::default(),
             pick_once: false,
             finish: None,
+            cancel: false,
+            ui_hidden: false,
         }
     }
 

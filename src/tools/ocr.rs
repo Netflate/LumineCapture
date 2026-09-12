@@ -110,10 +110,7 @@ impl ToolBehavior for OcrTool {
             return;
         }
         match key {
-            SpecialKey::KeyA => {
-                let damage = state.ocr.view.select_all();
-                damage_overlay(state, damage);
-            }
+            SpecialKey::KeyA => select_all_text(state),
             SpecialKey::KeyC | SpecialKey::KeyX => copy_selection(state, dirty_mask),
             _ => {}
         }
@@ -255,6 +252,11 @@ fn damage_all(state: &mut EditorState) {
 
 /// Redraw just the area an interaction changed. The overlay redraws itself
 /// clipped to this, so nothing else on screen is touched.
+pub fn select_all_text(state: &mut EditorState) {
+    let damage = state.ocr.view.select_all();
+    damage_overlay(state, damage);
+}
+
 fn damage_overlay(state: &mut EditorState, rect: Option<Rect>) {
     if let Some(rect) = rect {
         state.damage_rects.push(DamageZone::Global(rect));

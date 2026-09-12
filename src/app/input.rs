@@ -18,7 +18,7 @@ use crate::ui::panel::UiPanel;
 use crate::theme::{anim, font};
 use crate::interaction::SCROLL_SENSITIVITY;
 use crate::ui::text_field::CursorInit;
-use crate::types::Finish;
+use crate::keys::{self, Chord, Key};
 use crate::ui::toolbar::{ToolbarButton, ToolbarItem};
 use crate::types::{CursorIcon, MouseButton, PointerState, SpecialKey};
 use crate::ui::magnifier::MagnifierState;
@@ -220,53 +220,15 @@ pub fn handle_pointer_button(
                 if let Some(ToolbarItem::Button(btn)) = editor_state.toolbar.items.get(tb_button) {
                     match btn {
                         ToolbarButton::Tool(tool) => {
-                            crate::tools::eyedropper::end_pick_once(editor_state, dirty_mask);
-                            // ocr falls back to the monitor under the cursor,
-                            // so it doesn't want a forced full-workspace one
-
-                            // TODO:  better handling  of  cross  monitor ocr
-                            // i think there must be a visual indicator, that 
-                            // ocr worked in ONE monitor, but  not  the other
-                            if editor_state.selection.zone.is_none()
-                                && *tool != Tool::Selection
-                                && *tool != Tool::Ocr
-                            {
-                                editor_state.selection.zone =
-                                    get_full_workspace_rect(&editor_state.placements);
-                                mark_all_dirty(dirty_mask, editor_state.placements.len());
-                            } else if *tool == Tool::Selection
-                                && editor_state.selection.zone
-                                    == get_full_workspace_rect(&editor_state.placements)
-                            {
-                                editor_state.selection.zone = None;
-                                mark_all_dirty(dirty_mask, editor_state.placements.len());
-                            }
-                            dispatch_deactivate(
-                                editor_state.selected_tool,
-                                editor_state,
-                                dirty_mask,
-                            );
-                            editor_state.selected_tool = *tool;
-                            editor_state.toolbar.selected = Some(tb_button);
-                            editor_state.toolbar.dirty = true;
-                            dispatch_activate(*tool, editor_state, dirty_mask);
+                            let tool = *tool;
+                            select_tool(editor_state, tool, dirty_mask);
+                            return;
                         }
                         ToolbarButton::Finish(finish) => {
                             editor_state.finish = Some(*finish);
                             return;
                         }
                     }
-                    update_toolbar(editor_state, dirty_mask);
-                    update_settings_panel(editor_state, dirty_mask);
-                    if editor_state.color_popover.open {
-                        update_color_popover(editor_state, dirty_mask);
-                        handle_color_popover_drag(editor_state, dirty_mask);
-                    }
-                    if editor_state.model_popover.is_visible() {
-                        update_model_popover(editor_state, dirty_mask);
-                    }
-
-                    apply_damage_rects(editor_state, dirty_mask);
                 }
                 return; 
             }
@@ -428,6 +390,61 @@ pub fn handle_pointer_button(
     apply_damage_rects(editor_state, dirty_mask);
 }
 
+pub fn select_tool(editor_state: &mut EditorState, tool: Tool, dirty_mask: &mut u32) {
+    let Some(tb_button) = editor_state.toolbar.items.iter().position(|item| {
+        matches!(item, ToolbarItem::Button(ToolbarButton::Tool(t)) if *t == tool)
+    }) else {
+        return;
+    };
+    editor_state.settings_panel.selected = None;
+
+    crate::tools::eyedropper::end_pick_once(editor_state, dirty_mask);
+    // ocr falls back to the monitor under the cursor,
+    // so it doesn't want a forced full-workspace one
+
+    // TODO:  better handling  of  cross  monitor ocr
+    // i think there must be a visual indicator, that 
+    // ocr worked in ONE monitor, but  not  the other
+    if editor_state.selection.zone.is_none()
+        && tool != Tool::Selection
+        && tool != Tool::Ocr
+    {
+        editor_state.selection.zone =
+            get_full_workspace_rect(&editor_state.placements);
+        mark_all_dirty(dirty_mask, editor_state.placements.len());
+    } else if tool == Tool::Selection
+        && editor_state.selection.zone
+            == get_full_workspace_rect(&editor_state.placements)
+    {
+        editor_state.selection.zone = None;
+        mark_all_dirty(dirty_mask, editor_state.placements.len());
+    }
+    dispatch_deactivate(
+        editor_state.selected_tool,
+        editor_state,
+        dirty_mask,
+    );
+    editor_state.selected_tool = tool;
+    editor_state.toolbar.selected = Some(tb_button);
+    editor_state.toolbar.dirty = true;
+    dispatch_activate(tool, editor_state, dirty_mask);
+
+    refresh_panels(editor_state, dirty_mask);
+    apply_damage_rects(editor_state, dirty_mask);
+}
+
+pub fn refresh_panels(editor_state: &mut EditorState, dirty_mask: &mut u32) {
+    update_toolbar(editor_state, dirty_mask);
+    update_settings_panel(editor_state, dirty_mask);
+    if editor_state.color_popover.open {
+        update_color_popover(editor_state, dirty_mask);
+        handle_color_popover_drag(editor_state, dirty_mask);
+    }
+    if editor_state.model_popover.is_visible() {
+        update_model_popover(editor_state, dirty_mask);
+    }
+}
+
 fn update_pointer(
     editor_state: &mut EditorState,
     monitor_idx: usize,
@@ -468,7 +485,7 @@ fn update_magnifier(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     mark_dirty(dirty_mask, monitor_idx);
 }
 
-pub fn handle_text_input(editor_state: &mut EditorState, ch: char, dirty_mask: &mut u32) {
+fn handle_text_input(editor_state: &mut EditorState, ch: char, dirty_mask: &mut u32) {
     if editor_state.color_popover.fields.is_editing() {
         handle_color_field_text_input(editor_state, ch, dirty_mask);
         return;
@@ -481,39 +498,75 @@ pub fn handle_text_input(editor_state: &mut EditorState, ch: char, dirty_mask: &
     apply_damage_rects(editor_state, dirty_mask);
 }
 
-fn finish_for_key(editor_state: &EditorState, key: &SpecialKey) -> Option<Finish> {
-    if !editor_state.input.ctrl {
-        return None;
+fn typing(editor_state: &EditorState) -> bool {
+    editor_state.color_popover.fields.is_editing()
+        || editor_state.settings_panel.is_editing()
+        || (editor_state.selected_tool == Tool::Text && editor_state.text.editing.is_some())
+}
+
+fn special_key(chord: Chord) -> Option<SpecialKey> {
+    Some(match chord.key {
+        Key::Backspace => SpecialKey::Backspace,
+        Key::Enter => SpecialKey::Enter,
+        Key::Left => SpecialKey::Left,
+        Key::Right => SpecialKey::Right,
+        Key::Home => SpecialKey::Home,
+        Key::End => SpecialKey::End,
+        Key::Delete => SpecialKey::Delete,
+        Key::Up => SpecialKey::Up,
+        Key::Down => SpecialKey::Down,
+        Key::Char('a') if chord.mods.ctrl => SpecialKey::KeyA,
+        Key::Char('c') if chord.mods.ctrl => SpecialKey::KeyC,
+        Key::Char('x') if chord.mods.ctrl => SpecialKey::KeyX,
+        Key::Char('v') if chord.mods.ctrl => SpecialKey::KeyV,
+        _ => return None,
+    })
+}
+
+fn hovers_stepper(editor_state: &EditorState) -> bool {
+    let local = editor_state.input.pointer.local;
+    if editor_state.color_popover.open && hit_test_color_scroll_field(editor_state, local).is_some() {
+        return true;
     }
-    match key {
-        SpecialKey::KeyP => Some(Finish::Pin),
-        SpecialKey::KeyS => Some(Finish::Save),
-        SpecialKey::KeyC => {
-            let taken = editor_state.color_popover.fields.is_editing()
-                || editor_state.settings_panel.is_editing()
-                || match editor_state.selected_tool {
-                    Tool::Eyedropper => true,
-                    Tool::Ocr => editor_state.ocr.view.is_active(),
-                    Tool::Text => editor_state.text.editing.is_some(),
-                    _ => false,
-                };
-            (!taken).then_some(Finish::Copy)
+    editor_state.settings_panel.visible
+        && matches!(
+            editor_state.settings_panel.hit_test(local).1
+                .and_then(|idx| editor_state.settings_panel.widgets.get(idx)),
+            Some(SettingsWidget::Stepper { .. })
+        )
+}
+
+pub fn handle_key(
+    editor_state: &mut EditorState,
+    chord: Option<Chord>,
+    text: Option<String>,
+    dirty_mask: &mut u32,
+) {
+    let special = chord.and_then(special_key);
+    let claimed = ((special.is_some() || text.is_some()) && typing(editor_state))
+        || (matches!(special, Some(SpecialKey::Up | SpecialKey::Down)) && hovers_stepper(editor_state));
+    if !claimed
+        && let Some(action) = chord.and_then(|c| keys::map().lookup(c))
+    {
+        super::actions::run(editor_state, action, dirty_mask);
+        return;
+    }
+
+    if let Some(key) = special {
+        handle_key_press(editor_state, key, dirty_mask);
+    } else if let Some(text) = text {
+        for ch in text.chars() {
+            handle_text_input(editor_state, ch, dirty_mask);
         }
-        _ => None,
     }
 }
 
-pub fn handle_key_press(editor_state: &mut EditorState, key: SpecialKey, dirty_mask: &mut u32) {
+fn handle_key_press(editor_state: &mut EditorState, key: SpecialKey, dirty_mask: &mut u32) {
     // to not stack a lot of scroll events
     // any other action cancels the scroll in progress
     // so that user can do anything afterwards, wiithout waiting for the scroll to finish
     editor_state.settings_panel.cancel_scroll();
     editor_state.color_popover.cancel_scroll();
-
-    if let Some(finish) = finish_for_key(editor_state, &key) {
-        editor_state.finish = Some(finish);
-        return;
-    }
 
     if matches!(key, SpecialKey::Up | SpecialKey::Down) {
         let sign: i32 = if matches!(key, SpecialKey::Up) { 1 } else { -1 };

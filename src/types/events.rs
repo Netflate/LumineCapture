@@ -1,3 +1,5 @@
+use crate::keys::Chord;
+
 #[derive(Debug, Clone, Copy)]
 pub enum MouseButton {
     Left,
@@ -28,10 +30,7 @@ pub enum OverlayEvent {
     PointerButton { button: MouseButton, pressed: bool },
     EscapePressed,
     Tick,
-    Redo,
-    Undo,
-    TextInput(char),
-    KeyPress(SpecialKey),
+    Key { chord: Option<Chord>, text: Option<String> },
     ModifiersChanged { ctrl: bool, shift: bool },
     Scroll { delta_x: f32, delta_y: f32 },
 }
@@ -58,6 +57,4 @@ pub enum SpecialKey {
     KeyC,
     KeyX,
     KeyV,
-    KeyS,
-    KeyP,
 }
