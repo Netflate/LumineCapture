@@ -1,4 +1,6 @@
+use crate::editor::dirty::mark_all_dirty;
 use crate::editor::{DamageZone, EditorState};
+use crate::interaction::ClickTarget;
 use crate::tools::ToolBehavior;
 use crate::types::{CursorIcon, MouseButton, Placement, SelectionEdges, SelectionHandle};
 use crate::utils::{apply_handle_drag, cursor_for_handle, hit_test_rect_handle, make_rect};
@@ -43,8 +45,14 @@ impl ToolBehavior for SelectionTool {
         state: &mut EditorState,
         button: MouseButton,
         pressed: bool,
-        _dirty_mask: &mut u32,
+        dirty_mask: &mut u32,
     ) {
+        if matches!(button, MouseButton::Right) && pressed && !state.input.mouse_down {
+            if state.selection.zone.take().is_some() {
+                mark_all_dirty(dirty_mask, state.placements.len());
+            }
+            return;
+        }
         if !matches!(button, MouseButton::Left) {
             return;
         }
@@ -58,6 +66,17 @@ impl ToolBehavior for SelectionTool {
                 .as_ref()
                 .map(|sel| hit_test_rect_handle(sel, state.input.pointer.global))
                 .unwrap_or(SelectionHandle::None);
+
+            let pos = (state.input.pointer.global.0 as f32, state.input.pointer.global.1 as f32);
+            if handle == SelectionHandle::Move
+                && state.input.clicks.register(ClickTarget::Selection, pos)
+                && let Some(finish) = crate::config::get().general.double_click.finish()
+            {
+                state.input.mouse_down = false;
+                state.tool_active = false;
+                state.finish = Some(finish);
+                return;
+            }
 
             if handle != SelectionHandle::None {
                 if let Some(sel) = state.selection.zone {

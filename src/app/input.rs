@@ -382,7 +382,7 @@ pub fn handle_pointer_button(
         dirty_mask,
     );
 
-    if matches!(button, MouseButton::Left) && !pressed {
+    if (matches!(button, MouseButton::Left) && !pressed) || matches!(button, MouseButton::Right) {
         update_toolbar(editor_state, dirty_mask);
         update_settings_panel(editor_state, dirty_mask);
     }
@@ -671,6 +671,18 @@ pub fn handle_scroll(
             apply_damage_rects(editor_state, dirty_mask);
             return;
         }
+
+    if matches!(hit_test_ui(editor_state, local), UiHit::None)
+        && let Some(widget_idx) = editor_state
+            .settings_panel
+            .widgets
+            .iter()
+            .position(|w| matches!(w, SettingsWidget::Stepper { .. }))
+    {
+        handle_stepper_scroll(editor_state, widget_idx, delta_y, dirty_mask);
+        let snapshot = editor_state.settings_panel.pre_edit_snapshot.take();
+        editor_state.commit_snapshot(snapshot);
+    }
 
     let _ = delta_x;
     apply_damage_rects(editor_state, dirty_mask);

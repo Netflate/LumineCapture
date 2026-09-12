@@ -93,6 +93,7 @@ pub enum ClickTarget {
     TextAnnotation(u64),
     ColorField(ColorField),
     OcrLine(usize),
+    Selection,
 }
 
 // ==========================================

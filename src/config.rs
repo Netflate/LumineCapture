@@ -12,6 +12,7 @@ use serde::{Deserialize, Deserializer};
 
 use crate::ocr::settings::{Device, Mode};
 use crate::theme::Rgba;
+use crate::types::Finish;
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Default)]
 #[serde(default)]
@@ -33,11 +34,32 @@ pub struct General {
     pub save_always: bool,
     pub dim_alpha: u8,
     pub animation_speed: f32,
+    pub double_click: DoubleClick,
 }
 
 impl Default for General {
     fn default() -> Self {
-        Self { save_always: true, dim_alpha: 140, animation_speed: 1.0 }
+        Self { save_always: true, dim_alpha: 140, animation_speed: 1.0, double_click: DoubleClick::Copy }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DoubleClick {
+    None,
+    Copy,
+    Save,
+    Pin,
+}
+
+impl DoubleClick {
+    pub fn finish(self) -> Option<Finish> {
+        match self {
+            DoubleClick::None => None,
+            DoubleClick::Copy => Some(Finish::Copy),
+            DoubleClick::Save => Some(Finish::Save),
+            DoubleClick::Pin => Some(Finish::Pin),
+        }
     }
 }
 
@@ -216,6 +238,7 @@ pub const TEMPLATE: &str = "\
 save_always = true
 dim_alpha = 140
 animation_speed = 1.0
+double_click = \"copy\"
 
 [save]
 directory = \"screenshots\"
@@ -392,6 +415,12 @@ mod tests {
     fn unknown_keys_are_ignored() {
         let config = toml::from_str::<Config>("[general]\nfuture_key = 1\n").unwrap();
         assert_eq!(config, Config::default());
+    }
+
+    #[test]
+    fn double_click_can_be_turned_off() {
+        let config = toml::from_str::<Config>("[general]\ndouble_click = \"none\"\n").unwrap();
+        assert_eq!(config.general.double_click.finish(), None);
     }
 
     #[test]
