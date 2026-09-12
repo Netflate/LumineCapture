@@ -3,6 +3,7 @@
 // the program; a value that fails to parse falls back to the defaults for
 // the whole file.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
@@ -23,6 +24,7 @@ pub struct Config {
     pub ocr: Ocr,
     pub theme: Theme,
     pub log: Log,
+    pub keys: Keys,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -167,6 +169,42 @@ impl Default for Log {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(untagged)]
+pub enum Binding {
+    One(String),
+    Many(Vec<String>),
+}
+
+impl Binding {
+    pub fn chords(&self) -> Vec<&str> {
+        let all: Vec<&str> = match self {
+            Binding::One(chord) => vec![chord.as_str()],
+            Binding::Many(chords) => chords.iter().map(String::as_str).collect(),
+        };
+        all.into_iter().filter(|c| !c.trim().is_empty()).collect()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(transparent)]
+pub struct Keys(pub BTreeMap<String, Binding>);
+
+impl Default for Keys {
+    fn default() -> Self {
+        let binding = |chords: &[&str]| match chords {
+            [one] => Binding::One((*one).into()),
+            many => Binding::Many(many.iter().map(|c| (*c).into()).collect()),
+        };
+        Self(
+            crate::keys::ACTIONS
+                .iter()
+                .map(|(name, _, chords)| ((*name).into(), binding(chords)))
+                .collect(),
+        )
+    }
+}
+
 fn deserialize_rgba<'de, D: Deserializer<'de>>(d: D) -> Result<Rgba, D::Error> {
     let s = String::deserialize(d)?;
     Rgba::parse_hex(&s)
@@ -216,6 +254,46 @@ font_size = 14.0
 # off | error | warn | info | debug | trace; unset keeps each process's own default
 # level = \"info\"
 max_file_size_mb = 1
+
+[keys]
+copy = [\"Ctrl+C\", \"Return\"]
+save = \"Ctrl+S\"
+pin = \"Ctrl+P\"
+cancel = \"Escape\"
+undo = \"Ctrl+Z\"
+redo = [\"Ctrl+Shift+Z\", \"Ctrl+Y\"]
+select_all = \"Ctrl+A\"
+delete = [\"Delete\", \"Backspace\"]
+toggle_ui = \"Space\"
+size_up = \"]\"
+size_down = \"[\"
+tool_selection = \"S\"
+tool_pick = \"V\"
+tool_ocr = \"O\"
+tool_eyedropper = \"G\"
+tool_text = \"T\"
+tool_pen = \"P\"
+tool_line = \"D\"
+tool_arrow = \"A\"
+tool_rectangle = \"R\"
+tool_circle = \"C\"
+tool_numerated_arrow = \"N\"
+move_left = \"Left\"
+move_right = \"Right\"
+move_up = \"Up\"
+move_down = \"Down\"
+move_left_fast = \"Shift+Left\"
+move_right_fast = \"Shift+Right\"
+move_up_fast = \"Shift+Up\"
+move_down_fast = \"Shift+Down\"
+resize_left = \"Alt+Left\"
+resize_right = \"Alt+Right\"
+resize_up = \"Alt+Up\"
+resize_down = \"Alt+Down\"
+resize_left_fast = \"Alt+Shift+Left\"
+resize_right_fast = \"Alt+Shift+Right\"
+resize_up_fast = \"Alt+Shift+Up\"
+resize_down_fast = \"Alt+Shift+Down\"
 ";
 
 static CONFIG: OnceLock<Config> = OnceLock::new();
@@ -314,6 +392,16 @@ mod tests {
     fn unknown_keys_are_ignored() {
         let config = toml::from_str::<Config>("[general]\nfuture_key = 1\n").unwrap();
         assert_eq!(config, Config::default());
+    }
+
+    #[test]
+    fn keys_take_a_string_or_a_list() {
+        let config = toml::from_str::<Config>(
+            "[keys]\nsave = \"Ctrl+Shift+S\"\nredo = [\"Ctrl+Y\", \"\"]\n",
+        )
+        .unwrap();
+        assert_eq!(config.keys.0["save"].chords(), ["Ctrl+Shift+S"]);
+        assert_eq!(config.keys.0["redo"].chords(), ["Ctrl+Y"]);
     }
 
     #[test]

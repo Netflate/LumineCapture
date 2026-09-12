@@ -4,6 +4,7 @@ pub mod config;
 pub mod logging;
 pub mod editor;
 pub mod interaction;
+pub mod keys;
 pub mod ocr;
 pub mod profiler;
 pub mod renderer;
