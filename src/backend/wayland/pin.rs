@@ -1,5 +1,10 @@
 // ── pinned screenshot ────────────────────────────────────────────────────────
-// separate process `--pin`, use top level of layer-shell (not overlay)
+// separate process`--pin`, simple xdg-window without decorations (very similar to flameshot pin)
+// initialliy i wanted to avoid xdg-window, to make it spawn exactly where was the capture, and its more than possible in wayland
+// but it needs alot of code for window moving, specially when dragging it to one monitor to another
+// and its still possible, but i couldn't fix desync between cursor and window position, specially between monitors
+// so i kinda realized even after fixing this issue, it will be still unrealiable piece of junk that can break anytime
+// maybe in the future would be implemented as a separate option, but def not the main one
 use smithay_client_toolkit::reexports::protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::{
     Shape, WpCursorShapeDeviceV1,
 };
@@ -227,6 +232,7 @@ impl PointerHandler for Pin {
                     self.enter_serial = serial;
                     self.set_cursor(Shape::Grab);
                 }
+                // now draggong and etc none of our business, fully handled by wayland window manager
                 PointerEventKind::Press { button: BTN_LEFT, serial, .. } => {
                     if let Some(seat) = &self.pointer_seat {
                         self.window.move_(seat, serial);
