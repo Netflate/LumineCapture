@@ -186,6 +186,7 @@ pub struct Keymap {
 }
 
 impl Keymap {
+    // wrong bindings fall back to defaults per-action 
     pub fn build(overrides: &BTreeMap<String, Binding>) -> Self {
         for name in overrides.keys() {
             if !ACTIONS.iter().any(|(n, ..)| n == name) {

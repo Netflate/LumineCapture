@@ -1,3 +1,7 @@
+// kind of a hotkey manager
+// transfers key actions to it respective function, depends of the config
+// handles some special cases
+// and overall is context aware, and does some safety checks 
 use tiny_skia::Rect;
 
 use crate::editor::dirty::{apply_damage_rects, mark_all_dirty};
@@ -20,6 +24,7 @@ pub fn run(editor_state: &mut EditorState, action: Action, dirty_mask: &mut u32)
     editor_state.settings_panel.cancel_scroll();
     editor_state.color_popover.cancel_scroll();
 
+    // when dragging doesn't allow to change tool and etc
     let busy = editor_state.tool_active || editor_state.input.mouse_down;
     match action {
         Action::Finish(Finish::Copy) => copy(editor_state, dirty_mask),

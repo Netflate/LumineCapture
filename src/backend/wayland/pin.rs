@@ -255,6 +255,7 @@ impl KeyboardHandler for Pin {
         _: u32,
         event: KeyEvent,
     ) {
+        // uses the same bind as our usual overlay 
         let chord = keysym::chord(event.keysym, event.raw_code, self.mods);
         match chord.and_then(|c| keys::map().lookup(c)) {
             Some(Action::Cancel) => self.exit = true,

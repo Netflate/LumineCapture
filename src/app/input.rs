@@ -543,6 +543,7 @@ pub fn handle_key(
     dirty_mask: &mut u32,
 ) {
     let special = chord.and_then(special_key);
+    // when typing ignore other actions
     let claimed = ((special.is_some() || text.is_some()) && typing(editor_state))
         || (matches!(special, Some(SpecialKey::Up | SpecialKey::Down)) && hovers_stepper(editor_state));
     if !claimed
@@ -672,6 +673,9 @@ pub fn handle_scroll(
             return;
         }
 
+    // scrolling on emtpy space changes width or font value 
+    // inspired by Flameshot, but doesn't show annotation preview 
+    // maybe will be implemented later
     if matches!(hit_test_ui(editor_state, local), UiHit::None)
         && let Some(widget_idx) = editor_state
             .settings_panel

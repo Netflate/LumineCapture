@@ -68,6 +68,7 @@ impl ToolBehavior for SelectionTool {
                 .unwrap_or(SelectionHandle::None);
 
             let pos = (state.input.pointer.global.0 as f32, state.input.pointer.global.1 as f32);
+            // double click on selection is equal to saving the screenshot
             if handle == SelectionHandle::Move
                 && state.input.clicks.register(ClickTarget::Selection, pos)
                 && let Some(finish) = crate::config::get().general.double_click.finish()

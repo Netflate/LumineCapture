@@ -48,6 +48,7 @@ fn named(keysym: Keysym) -> Option<Key> {
 }
 
 pub fn chord(keysym: Keysym, raw_code: u32, mods: Mods) -> Option<Chord> {
+    // for latin keyboards different from QWERTY
     let key = named(keysym).or_else(|| {
         let latin = char::from_u32(keysym.raw()).filter(char::is_ascii_alphabetic);
         let physical = PHYSICAL.iter().find(|(code, _)| *code == raw_code).map(|(_, c)| *c);

@@ -1,7 +1,5 @@
 // One file at ~/.config/LumineCapture/config.toml, loaded once at startup.
-// Every field has a default, so a missing file or a missing key never stops
-// the program; a value that fails to parse falls back to the defaults for
-// the whole file.
+// Every field must have a default
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -238,6 +236,7 @@ pub const TEMPLATE: &str = "\
 save_always = true
 dim_alpha = 140
 animation_speed = 1.0
+# none | copy | save | pin (double click inside selection finishes the screenshot, the question is what to do with it)
 double_click = \"copy\"
 
 [save]
