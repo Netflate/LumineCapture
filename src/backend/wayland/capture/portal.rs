@@ -125,9 +125,7 @@ impl CaptureMethod for PortalMethod {
             .await?
             .response()?;
 
-        if let Some(new_token) = response.restore_token() {
-            write_token(new_token);
-        }
+        let new_token = response.restore_token().map(str::to_owned);
 
         let streams_data: Vec<StreamInfo> = response
             .streams()
@@ -160,6 +158,10 @@ impl CaptureMethod for PortalMethod {
                 pw_stride: frame.stride,
                 info: stream_info,
             });
+        }
+
+        if let Some(new_token) = new_token {
+            write_token(&new_token);
         }
 
         if let Err(e) = session.close().await {
