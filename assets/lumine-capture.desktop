@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=LumineCapture
+GenericName=Screenshot Tool
+Comment=Screenshot and annotation tool for Wayland with built-in OCR
+Exec=LumineCapture
+Icon=lumine-capture
+Terminal=false
+Categories=Graphics;Utility;
+Keywords=screenshot;capture;annotate;ocr;
+StartupWMClass=lumine-capture
