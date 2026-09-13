@@ -31,7 +31,10 @@ use smithay_client_toolkit::{
 use tiny_skia::{FillRule, IntSize, Mask, Pixmap, Rect, Transform};
 use wayland_client::globals::registry_queue_init;
 use wayland_client::protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface};
-use wayland_client::{Connection, QueueHandle};
+use wayland_client::{Connection, Dispatch, QueueHandle};
+use wayland_protocols::xdg::toplevel_icon::v1::client::{
+    xdg_toplevel_icon_manager_v1, xdg_toplevel_icon_v1,
+};
 
 use crate::backend::notify::{self, Notice};
 use crate::backend::wayland::keysym;
@@ -80,6 +83,9 @@ pub fn run(image: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
     let pool = SlotPool::new((size.0 * size.1 * 4) as usize, &shm)?;
     let compositor = CompositorState::bind(&globals, &qh)?;
     let xdg_shell = XdgShell::bind(&globals, &qh)?;
+    let icon_manager = globals
+        .bind::<xdg_toplevel_icon_manager_v1::XdgToplevelIconManagerV1, _, _>(&qh, 1..=1, ())
+        .ok();
 
     let surface = compositor.create_surface(&qh);
     let window = xdg_shell.create_window(surface, WindowDecorations::RequestClient, &qh);
@@ -88,6 +94,15 @@ pub fn run(image: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
     window.set_min_size(Some(size));
     window.set_max_size(Some(size));
     window.commit();
+
+    // no .desktop entry ties this app_id to an icon, so ask the compositor
+    // directly instead of hoping a taskbar falls back to an icon-theme lookup
+    if let Some(manager) = &icon_manager {
+        let icon = manager.create_icon(&qh, ());
+        icon.set_name(APP_ID.to_string());
+        manager.set_icon(window.xdg_toplevel(), Some(&icon));
+        icon.destroy();
+    }
 
     let mut pin = Pin {
         registry: RegistryState::new(&globals),
@@ -422,6 +437,30 @@ impl OutputHandler for Pin {
 impl ShmHandler for Pin {
     fn shm_state(&mut self) -> &mut Shm {
         &mut self.shm
+    }
+}
+
+impl Dispatch<xdg_toplevel_icon_manager_v1::XdgToplevelIconManagerV1, ()> for Pin {
+    fn event(
+        _: &mut Self,
+        _: &xdg_toplevel_icon_manager_v1::XdgToplevelIconManagerV1,
+        _: xdg_toplevel_icon_manager_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
+}
+
+impl Dispatch<xdg_toplevel_icon_v1::XdgToplevelIconV1, ()> for Pin {
+    fn event(
+        _: &mut Self,
+        _: &xdg_toplevel_icon_v1::XdgToplevelIconV1,
+        _: xdg_toplevel_icon_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
     }
 }
 
