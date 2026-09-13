@@ -61,9 +61,8 @@ impl Notifier for FreedesktopNotifier {
             }
         }
 
-        let icon = if n.error { "dialog-error" } else { "accessories-screenshot-tool" };
         proxy
-            .notify(APP_NAME, 0, icon, n.summary, &body, &[], hints, -1)
+            .notify(APP_NAME, 0, "lumine-capture", n.summary, &body, &[], hints, -1)
             .await?;
         Ok(())
     }
