@@ -70,6 +70,13 @@ async fn start_capture(
     let screenshots = capture.capture_frame(&outputs).await?;
     prof.mark("capture");
 
+    let kept: Vec<usize> = screenshots.frames.iter().map(|f| f.output).collect();
+    if kept.is_empty() {
+        return Err("no monitor was captured".into());
+    }
+    let shrunk = kept.len() < outputs.len();
+    let outputs: Vec<_> = kept.iter().map(|&i| outputs[i].clone()).collect();
+
     let base = init::build_base_pixmap(&screenshots.frames)?;
     let (canvas, dimmed, annotations) = init::build_layers(&base);
     let placements = init::build_placements(&outputs);
@@ -99,10 +106,13 @@ async fn start_capture(
     );
     prof.mark("editor_state built");
 
-    let (overlay, present_res, present_dt) = present_handle
+    let (mut overlay, present_res, present_dt) = present_handle
         .join()
         .map_err(|_| "present thread panicked")?;
     present_res.map_err(|msg| -> Box<dyn std::error::Error> { msg.into() })?;
+    if shrunk {
+        overlay.retain_outputs(&kept)?;
+    }
     prof.mark("present() joined");
     prof.mark_external("  ^ present_dt (thread-internal duration)", present_dt);
 

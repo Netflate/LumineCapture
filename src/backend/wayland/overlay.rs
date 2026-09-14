@@ -214,6 +214,32 @@ impl ScreenOverlay for WaylandOverlay {
         &self.runtime.state.outputs
     }
 
+    fn retain_outputs(&mut self, keep: &[usize]) -> Result<(), Box<dyn std::error::Error>> {
+        let rt = &mut self.runtime;
+        let remap = |idx: usize| keep.iter().position(|&k| k == idx);
+
+        for (idx, sd) in std::mem::take(&mut rt.state.surfaces) {
+            if let Some(new_idx) = remap(idx) {
+                rt.state.surfaces.insert(new_idx, sd);
+            }
+        }
+
+        rt.state.pointer_surface_idx = rt.state.pointer_surface_idx.and_then(remap);
+        rt.state.events.retain_mut(|ev| match ev {
+            OverlayEvent::PointerMove { monitor_idx, .. } => match remap(*monitor_idx) {
+                Some(idx) => {
+                    *monitor_idx = idx;
+                    true
+                }
+                None => false,
+            },
+            _ => true,
+        });
+
+        rt.event_queue.flush()?;
+        Ok(())
+    }
+
     fn set_cursor(&mut self, icon: CursorIcon) {
         self.runtime.state.apply_cursor(icon);
     }
