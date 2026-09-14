@@ -9,8 +9,10 @@ use std::path::PathBuf;
 use crate::backend::CaptureMethod;
 use crate::types::{CaptureResult, MonitorFrame, Output, StreamInfo};
 use ashpd::desktop::{
-    PersistMode,
-    screencast::{CursorMode, Screencast, SelectSourcesOptions, SourceType as AshpdSourceType},
+    PersistMode, Session,
+    screencast::{
+        CursorMode, Screencast, SelectSourcesOptions, SourceType as AshpdSourceType, Streams,
+    },
 };
 use async_trait::async_trait;
 
@@ -44,6 +46,38 @@ fn write_token(token: &str) {
         }
         Err(e) => warn!("Can't save portal token to {}: {}", path.display(), e),
     }
+}
+
+fn forget_token() {
+    for path in [token_path(), legacy_token_path()].into_iter().flatten() {
+        let _ = fs::remove_file(path);
+    }
+}
+
+async fn start_session(
+    proxy: &Screencast,
+    token: Option<&str>,
+) -> Result<(Session<Screencast>, Streams), ashpd::Error> {
+    let session = proxy.create_session(Default::default()).await?;
+
+    proxy
+        .select_sources(
+            &session,
+            SelectSourcesOptions::default()
+                .set_cursor_mode(CursorMode::Metadata)
+                .set_sources(Some(AshpdSourceType::Monitor.into()))
+                .set_multiple(true)
+                .set_restore_token(token)
+                .set_persist_mode(PersistMode::ExplicitlyRevoked),
+        )
+        .await?;
+
+    let response = proxy
+        .start(&session, None, Default::default())
+        .await?
+        .response()?;
+
+    Ok((session, response))
 }
 
 // reconcile portal-reported monitor streams against the wayland output list.
@@ -103,27 +137,18 @@ impl CaptureMethod for PortalMethod {
         outputs: &[Output],
     ) -> Result<CaptureResult, Box<dyn std::error::Error>> {
         let proxy = Screencast::new().await?;
-        let session = proxy.create_session(Default::default()).await?;
 
-        let token_string = read_token();
-        let token = token_string.as_deref();
-
-        proxy
-            .select_sources(
-                &session,
-                SelectSourcesOptions::default()
-                    .set_cursor_mode(CursorMode::Metadata)
-                    .set_sources(Some(AshpdSourceType::Monitor.into()))
-                    .set_multiple(true)
-                    .set_restore_token(token)
-                    .set_persist_mode(PersistMode::ExplicitlyRevoked),
-            )
-            .await?;
-
-        let response = proxy
-            .start(&session, None, Default::default())
-            .await?
-            .response()?;
+        let token = read_token();
+        let (session, response) = match start_session(&proxy, token.as_deref()).await {
+            Err(ashpd::Error::Portal(ashpd::PortalError::InvalidArgument(msg)))
+                if token.is_some() =>
+            {
+                warn!("Portal rejected the saved restore token ({msg}), asking again");
+                forget_token();
+                start_session(&proxy, None).await?
+            }
+            res => res?,
+        };
 
         let new_token = response.restore_token().map(str::to_owned);
 
