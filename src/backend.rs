@@ -4,6 +4,7 @@ pub mod wayland;
 use crate::types::{CaptureResult, CursorIcon, DamageRect, Output, OverlayEvent};
 use std::time::Duration;
 use async_trait::async_trait;
+use log::{info, warn};
 use wayland_client::Connection;
 
 #[async_trait]
@@ -14,10 +15,31 @@ pub trait CaptureMethod {
     ) -> Result<CaptureResult, Box<dyn std::error::Error>>;
 }
 
-pub fn initialize_capture() -> Box<dyn CaptureMethod> {
+pub fn initialize_capture(conn: &Connection) -> Box<dyn CaptureMethod> {
     let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
-    match desktop.as_str() {
-        "KDE" => Box::new(wayland::capture::kde::KdeMethod::new()),
+    let forced = std::env::var("LUMINE_CAPTURE").unwrap_or_default();
+    let method = match forced.as_str() {
+        "kde" | "image-copy" | "portal" => forced.as_str(),
+        other => {
+            if !other.is_empty() {
+                warn!("Unknown LUMINE_CAPTURE={other}, expected kde, image-copy or portal");
+            }
+            if desktop == "KDE" {
+                "kde"
+            } else if wayland::capture::image_copy::supported(conn) {
+                "image-copy"
+            } else {
+                "portal"
+            }
+        }
+    };
+    info!("capture backend: {method}");
+
+    match method {
+        "kde" => Box::new(wayland::capture::kde::KdeMethod::new()),
+        "image-copy" => Box::new(wayland::capture::image_copy::ImageCopyMethod::new(
+            conn.clone(),
+        )),
         _ => Box::new(wayland::capture::portal::PortalMethod),
     }
 }

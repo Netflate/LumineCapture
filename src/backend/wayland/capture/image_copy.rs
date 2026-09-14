@@ -36,6 +36,17 @@ impl ImageCopyMethod {
     }
 }
 
+pub fn supported(conn: &Connection) -> bool {
+    let Ok((globals, _)) = registry_queue_init::<State>(conn) else {
+        return false;
+    };
+    globals.contents().with_list(|list| {
+        let has = |name: &str| list.iter().any(|g| g.interface == name);
+        has("ext_output_image_capture_source_manager_v1")
+            && has("ext_image_copy_capture_manager_v1")
+    })
+}
+
 struct Target {
     wl_output: wl_output::WlOutput,
     size: Option<(i32, i32)>,

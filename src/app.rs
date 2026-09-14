@@ -56,7 +56,7 @@ async fn start_capture(
     let icons_handle = std::thread::spawn(init::load_icons_cache);
     let text_handle = std::thread::spawn(|| (SwashCache::new(), FontSystem::new()));
 
-    let mut overlay = initialize_overlay(conn)?;
+    let mut overlay = initialize_overlay(conn.clone())?;
     prof.mark("overlay init");
 
     let outputs = overlay.discovered_outputs().to_vec();
@@ -66,7 +66,7 @@ async fn start_capture(
         (overlay, res, t.elapsed())
     });
 
-    let capture = initialize_capture();
+    let capture = initialize_capture(&conn);
     let screenshots = capture.capture_frame(&outputs).await?;
     prof.mark("capture");
 
