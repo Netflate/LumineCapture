@@ -207,6 +207,8 @@ fn build_format_pod(buffer: &mut Vec<u8>) -> &Pod {
                     value: Value::Id(Id(SPA_MEDIA_SUBTYPE_raw)),
                 },
                 Property {
+                    // previously it supported only BGRA 
+                    // added some of the others since cosmic didn't return BGRA
                     key: SPA_FORMAT_VIDEO_format,
                     flags: PropertyFlags::empty(),
                     value: Value::Choice(ChoiceValue::Id(Choice(

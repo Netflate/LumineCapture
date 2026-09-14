@@ -24,6 +24,8 @@ pub fn initialize_capture(conn: &Connection) -> Box<dyn CaptureMethod> {
             if !other.is_empty() {
                 warn!("Unknown LUMINE_CAPTURE={other}, expected kde, image-copy or portal");
             }
+            // portal is the one asking for permission and monitor choice
+            // kinda annoying, and kde protocol / image-copy seems to be faster than through portal
             if desktop == "KDE" {
                 "kde"
             } else if wayland::capture::image_copy::supported(conn) {

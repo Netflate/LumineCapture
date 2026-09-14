@@ -1,3 +1,7 @@
+// ── Wayland ext-image-copy-capture backend ─────────────────────────────────
+//
+// Bypasses xdg-desktop-portal entirely, uses standard Wayland which is faster
+// and doesn't ask for monitor choice as Portal does
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -89,6 +93,7 @@ impl CaptureMethod for ImageCopyMethod {
 }
 
 fn capture_all(conn: &Connection, targets: &[Target]) -> Result<Vec<MonitorFrame>, String> {
+    // separate registry queue from overlay backend, but still the same connection
     let (globals, mut queue) =
         registry_queue_init::<State>(conn).map_err(|e| format!("wayland registry: {e}"))?;
     let qh = queue.handle();

@@ -131,6 +131,7 @@ impl CaptureMethod for PortalMethod {
         let proxy = Screencast::new().await?;
 
         let token = read_token();
+        // if portal capture doesn't work, we ask for a new token, since it might be the issue
         let (session, response) = match start_session(&proxy, token.as_deref()).await {
             Err(ashpd::Error::Portal(ashpd::PortalError::InvalidArgument(msg)))
                 if token.is_some() =>
@@ -178,6 +179,7 @@ impl CaptureMethod for PortalMethod {
             });
         }
 
+        // saving only working tokken
         if let Some(new_token) = new_token {
             write_token(&new_token);
         }

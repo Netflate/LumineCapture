@@ -1,6 +1,7 @@
 // ── KDE KWin ScreenShot2 DBus capture backend ──────────────────────────────
 //
-// Bypasses xdg-desktop-portal entirely and talks directly to kwin's private protocol
+// Bypasses xdg-desktop-portal entirely, uses kwin's private protocol which is faster
+// and doesn't ask for monitor choice as Portal does
 
 use log::warn;
 use std::collections::HashMap;
