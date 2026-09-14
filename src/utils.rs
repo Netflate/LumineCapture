@@ -282,6 +282,15 @@ pub fn swizzle_all(pixels: &mut [u8]) {
     }
 }
 
+pub fn to_rgba(pixels: &mut [u8], bgr: bool) {
+    for chunk in pixels.chunks_exact_mut(4) {
+        if bgr {
+            chunk.swap(0, 2);
+        }
+        chunk[3] = 255;
+    }
+}
+
 /// Copies into a shm canvas with R/B already swapped, in a single pass.
 ///
 /// Copying first and swizzling the canvas afterwards leaves the buffer holding

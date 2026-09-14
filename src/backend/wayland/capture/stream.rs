@@ -1,5 +1,7 @@
 use pipewire as pw;
 use pw::{properties::properties, spa};
+use crate::utils::to_rgba;
+use spa::param::video::VideoFormat;
 use spa::pod::Pod;
 use std::os::fd::{BorrowedFd, OwnedFd};
 use std::sync::mpsc::{self, RecvTimeoutError, SyncSender};
@@ -116,31 +118,50 @@ fn run_stream(node_id: u32, fd: OwnedFd, tx: SyncSender<FrameResult>) -> Result<
                         return;
                     }
 
-                    if let Some(bytes) = data.data() {
-                        let width = user_data.format.size().width;
-                        let height = user_data.format.size().height;
-                        if width == 0 || height == 0 {
+                    let Some(bytes) = data.data() else {
+                        let _ = tx_clone.try_send(Err(
+                            "PipeWire sent a buffer that can't be mapped (DMA-BUF?)".to_string(),
+                        ));
+                        mainloop_clone.quit();
+                        return;
+                    };
+                    let width = user_data.format.size().width;
+                    let height = user_data.format.size().height;
+                    if width == 0 || height == 0 {
+                        return;
+                    }
+                    let Some(pixels) = bytes.get(offset..offset + size) else {
+                        return;
+                    };
+                    let bgr = match user_data.format.format() {
+                        VideoFormat::BGRA | VideoFormat::BGRx => true,
+                        VideoFormat::RGBA | VideoFormat::RGBx => false,
+                        other => {
+                            let _ = tx_clone.try_send(Err(format!(
+                                "PipeWire picked unsupported format {other:?}"
+                            )));
+                            mainloop_clone.quit();
                             return;
                         }
-                        let Some(pixels) = bytes.get(offset..offset + size) else {
-                            return;
-                        };
+                    };
 
-                        let default_stride = width.saturating_mul(4);
-                        let stride = match chunk_stride {
-                            s if s > 0 => s as u32,
-                            _ => default_stride,
-                        };
+                    let default_stride = width.saturating_mul(4);
+                    let stride = match chunk_stride {
+                        s if s > 0 => s as u32,
+                        _ => default_stride,
+                    };
 
-                        let frame_data = PipewireFrame {
-                            pixels: pixels.to_vec(),
-                            width,
-                            height,
-                            stride,
-                        };
-                        let _ = tx_clone.try_send(Ok(frame_data));
-                        mainloop_clone.quit();
-                    }
+                    let mut pixels = pixels.to_vec();
+                    to_rgba(&mut pixels, bgr);
+
+                    let frame_data = PipewireFrame {
+                        pixels,
+                        width,
+                        height,
+                        stride,
+                    };
+                    let _ = tx_clone.try_send(Ok(frame_data));
+                    mainloop_clone.quit();
                 }
             }
         })
@@ -165,9 +186,9 @@ fn run_stream(node_id: u32, fd: OwnedFd, tx: SyncSender<FrameResult>) -> Result<
 
 fn build_format_pod(buffer: &mut Vec<u8>) -> &Pod {
     use spa::pod::serialize::PodSerializer;
-    use spa::pod::{Object, Property, PropertyFlags, Value};
+    use spa::pod::{ChoiceValue, Object, Property, PropertyFlags, Value};
     use spa::sys::*;
-    use spa::utils::Id;
+    use spa::utils::{Choice, ChoiceEnum, ChoiceFlags, Id};
 
     PodSerializer::serialize(
         std::io::Cursor::new(&mut *buffer),
@@ -186,10 +207,23 @@ fn build_format_pod(buffer: &mut Vec<u8>) -> &Pod {
                     value: Value::Id(Id(SPA_MEDIA_SUBTYPE_raw)),
                 },
                 Property {
-                    // TODO: I've heard some sources may not be able to give an BGRA frame
-                    key: SPA_FORMAT_VIDEO_format, // so we need to support most of the possible formats I guess?
-                    flags: PropertyFlags::empty(), // at some point will be necessary to make a research about it
-                    value: Value::Id(Id(spa::param::video::VideoFormat::BGRA.as_raw())), // to find out if it's really an issue or not
+                    key: SPA_FORMAT_VIDEO_format,
+                    flags: PropertyFlags::empty(),
+                    value: Value::Choice(ChoiceValue::Id(Choice(
+                        ChoiceFlags::empty(),
+                        ChoiceEnum::Enum {
+                            default: Id(VideoFormat::BGRx.as_raw()),
+                            alternatives: [
+                                VideoFormat::BGRx,
+                                VideoFormat::BGRA,
+                                VideoFormat::RGBx,
+                                VideoFormat::RGBA,
+                            ]
+                            .iter()
+                            .map(|f| Id(f.as_raw()))
+                            .collect(),
+                        },
+                    ))),
                 },
             ],
         }),
