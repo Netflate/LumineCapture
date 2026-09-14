@@ -82,26 +82,20 @@ async fn start_session(
 
 // reconcile portal-reported monitor streams against the wayland output list.
 // the portal is a separate, independent source of truth from wayland, so unlike
-// present() in the overlay (which trusts its own outputs), here a mismatch is a
+// present() in the overlay (which trusts its own outputs), here a subset is a
 // real, expected situation (e.g. the user deselected a monitor in the portal's
-// picker dialog) and must be surfaced as an explicit error rather than silently
-// falling back to a guess
+// picker dialog). A stream that matches no output must be surfaced as an explicit
+// error rather than silently falling back to a guess
 fn reconcile_streams(
     streams: Vec<StreamInfo>,
     outputs: &[Output],
 ) -> Result<Vec<(usize, StreamInfo)>, Box<dyn std::error::Error>> {
-    if streams.len() != outputs.len() {
-        return Err(format!(
-            "portal returned {} monitor stream(s), but wayland reports {} output(s) — \
-             did you deselect a monitor in the portal picker?",
-            streams.len(),
-            outputs.len()
-        )
-        .into());
+    if streams.is_empty() {
+        return Err("portal returned no monitor streams".into());
     }
 
     let mut used = vec![false; outputs.len()];
-    let mut ordered: Vec<Option<StreamInfo>> = (0..outputs.len()).map(|_| None).collect();
+    let mut matched = Vec::with_capacity(streams.len());
 
     for stream in streams {
         let pos = stream.position.unwrap_or((0, 0));
@@ -121,14 +115,11 @@ fn reconcile_streams(
             })?;
 
         used[idx] = true;
-        ordered[idx] = Some(stream);
+        matched.push((idx, stream));
     }
 
-    Ok(ordered
-        .into_iter()
-        .map(|s| s.expect("reconcile: slot left empty despite length check"))
-        .enumerate()
-        .collect())
+    matched.sort_by_key(|(idx, _)| *idx);
+    Ok(matched)
 }
 
 #[async_trait]
