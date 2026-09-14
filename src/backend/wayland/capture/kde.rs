@@ -157,7 +157,9 @@ impl CaptureMethod for KdeMethod {
         let frames = results
             .into_iter()
             .zip(outputs)
-            .map(|((pixels, w, h), o)| MonitorFrame {
+            .enumerate()
+            .map(|(output, ((pixels, w, h), o))| MonitorFrame {
+                output,
                 pixels,
                 pw_width: w,
                 pw_height: h,

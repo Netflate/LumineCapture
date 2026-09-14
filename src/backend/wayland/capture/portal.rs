@@ -89,7 +89,7 @@ async fn start_session(
 fn reconcile_streams(
     streams: Vec<StreamInfo>,
     outputs: &[Output],
-) -> Result<Vec<StreamInfo>, Box<dyn std::error::Error>> {
+) -> Result<Vec<(usize, StreamInfo)>, Box<dyn std::error::Error>> {
     if streams.len() != outputs.len() {
         return Err(format!(
             "portal returned {} monitor stream(s), but wayland reports {} output(s) — \
@@ -127,6 +127,7 @@ fn reconcile_streams(
     Ok(ordered
         .into_iter()
         .map(|s| s.expect("reconcile: slot left empty despite length check"))
+        .enumerate()
         .collect())
 }
 
@@ -172,11 +173,12 @@ impl CaptureMethod for PortalMethod {
 
         let mut frames = Vec::new();
 
-        for stream_info in streams_data {
+        for (output, stream_info) in streams_data {
             let frame = stream::capture_frame(stream_info.node_id, fd.as_fd())
                 .map_err(|e| ashpd::Error::Zbus(ashpd::zbus::Error::Failure(e.to_string())))?;
 
             frames.push(MonitorFrame {
+                output,
                 pixels: frame.pixels,
                 pw_width: frame.width,
                 pw_height: frame.height,
