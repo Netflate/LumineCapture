@@ -7,7 +7,7 @@ use crate::backend::notify::{self, Notice};
 use crate::backend::{initialize_capture, initialize_clipboard, initialize_overlay};
 use crate::backend::ScreenOverlay;
 use crate::editor::{EditorState, Layers, OcrState, TextState};
-use crate::editor::dirty::{is_dirty, mark_all_dirty, mark_dirty};
+use crate::editor::dirty::{apply_damage_rects, is_dirty, mark_all_dirty, mark_dirty};
 use crate::profiler::Profiler;
 use crate::renderer;
 use crate::theme::anim;
@@ -20,12 +20,14 @@ use crate::utils::{encode_png, get_full_workspace_rect, save_to_file};
 
 use cosmic_text::{FontSystem, SwashCache};
 use std::collections::HashMap;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tiny_skia::Rect;
 
 /// download progress updates each tick, but if there is no animation
 /// then manually after each 50ms
 const DOWNLOAD_POLL: Duration = Duration::from_millis(50);
+
+const POINTER_GRACE: Duration = Duration::from_millis(100);
 
 // ************************* //
 //      ENTRY POINT          //
@@ -146,14 +148,30 @@ fn run_overlay(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut dirty_mask: u32 = 0;
     let mut annotations_were_hidden = false;
+    let mut pointer_wait = Some(Instant::now() + POINTER_GRACE);
 
     loop {
-        let timeout = poll_timeout(editor_state);
+        let mut timeout = poll_timeout(editor_state);
+        if let Some(deadline) = pointer_wait {
+            let left = deadline.saturating_duration_since(Instant::now());
+            timeout = Some(timeout.map_or(left, |t| t.min(left)));
+        }
         poll_background_work(editor_state, &mut dirty_mask);
 
         match overlay.next_event(timeout)? {
             OverlayEvent::EscapePressed => break,
-            ev => handle_event(editor_state, ev, &mut dirty_mask),
+            ev => {
+                if matches!(ev, OverlayEvent::PointerMove { .. }) {
+                    pointer_wait = None;
+                }
+                handle_event(editor_state, ev, &mut dirty_mask);
+            }
+        }
+
+        if pointer_wait.is_some_and(|deadline| Instant::now() >= deadline) {
+            pointer_wait = None;
+            panels::toolbar::update_toolbar(editor_state, &mut dirty_mask);
+            apply_damage_rects(editor_state, &mut dirty_mask);
         }
 
         if editor_state.finish.is_some() || editor_state.cancel {
