@@ -102,6 +102,75 @@ pub fn composite_base(
     Some((out, (left, top)))
 }
 
+pub fn composite_native(
+    base: &[Pixmap],
+    native: &[Option<Pixmap>],
+    placements: &[crate::types::Placement],
+    region: Rect,
+) -> Option<(Pixmap, (i32, i32), f32)> {
+    let left = region.left().floor() as i32;
+    let top = region.top().floor() as i32;
+    let width = (region.right().ceil() as i32 - left).max(0) as u32;
+    let height = (region.bottom().ceil() as i32 - top).max(0) as u32;
+    if width == 0 || height == 0 {
+        return None;
+    }
+    let area = Rect::from_xywh(left as f32, top as f32, width as f32, height as f32)?;
+
+    let source = |i: usize| native.get(i).and_then(Option::as_ref).unwrap_or(&base[i]);
+    let scale = placements
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| {
+            Rect::from_xywh(
+                p.position.0 as f32,
+                p.position.1 as f32,
+                p.size.0 as f32,
+                p.size.1 as f32,
+            )
+            .is_some_and(|r| crate::utils::rects_overlap(&r, &area))
+        })
+        .map(|(i, _)| source(i).width() as f32 / base[i].width().max(1) as f32)
+        .fold(1.0_f32, f32::max);
+
+    let out_w = (width as f32 * scale).round() as u32;
+    let out_h = (height as f32 * scale).round() as u32;
+    let mut out = Pixmap::new(out_w, out_h)?;
+
+    for (i, (placement, logical)) in placements.iter().zip(base).enumerate() {
+        let src = source(i);
+        let sx = scale * logical.width() as f32 / src.width() as f32;
+        let sy = scale * logical.height() as f32 / src.height() as f32;
+        let tx = (placement.position.0 - left) as f32 * scale;
+        let ty = (placement.position.1 - top) as f32 * scale;
+
+        if sx == 1.0 && sy == 1.0 && tx.fract() == 0.0 && ty.fract() == 0.0 {
+            out.draw_pixmap(
+                tx as i32,
+                ty as i32,
+                src.as_ref(),
+                &tiny_skia::PixmapPaint::default(),
+                Transform::identity(),
+                None,
+            );
+        } else {
+            out.draw_pixmap(
+                0,
+                0,
+                src.as_ref(),
+                &tiny_skia::PixmapPaint {
+                    quality: tiny_skia::FilterQuality::Bicubic,
+                    ..tiny_skia::PixmapPaint::default()
+                },
+                Transform::from_row(sx, 0.0, 0.0, sy, tx, ty),
+                None,
+            );
+        }
+    }
+
+    Some((out, (left, top), scale))
+}
+
 pub fn render_frame(req: &mut RenderRequest) {
     if req.selection_dirty {
         update_dimming_delta(

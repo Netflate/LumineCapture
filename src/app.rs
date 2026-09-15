@@ -482,7 +482,7 @@ async fn finish_capture(editor_state: &mut EditorState) -> Result<(), Box<dyn st
     let Some(finish) = editor_state.finish else {
         return Ok(());
     };
-    let Some((png, _)) = render_final(editor_state) else {
+    let Some((png, _)) = render_final(editor_state, finish != Finish::Pin) else {
         return Ok(());
     };
 
@@ -492,7 +492,12 @@ async fn finish_capture(editor_state: &mut EditorState) -> Result<(), Box<dyn st
         notify::send(Notice::PinFailed(e.to_string())).await;
     }
     let saved = if finish == Finish::Save || crate::config::get().general.save_always {
-        match save_to_file(&png) {
+        let native = if finish == Finish::Pin {
+            render_final(editor_state, true).map(|(png, _)| png)
+        } else {
+            None
+        };
+        match save_to_file(native.as_deref().unwrap_or(&png)) {
             Ok(path) => Some(path),
             Err(e) => {
                 notify::send(Notice::SaveFailed(e.to_string())).await;
@@ -573,17 +578,38 @@ pub fn selection_render_info(
 
 /// Returns the final PNG and the global position of its top-left corner.
 /// position is required for the pin feature ^^^      
-fn render_final(editor_state: &mut EditorState) -> Option<(Vec<u8>, (i32, i32))> {
+fn render_final(
+    editor_state: &mut EditorState,
+    native: bool,
+) -> Option<(Vec<u8>, (i32, i32))> {
     let sel = match editor_state.selection.zone {
         Some(s) => s,
         None => get_full_workspace_rect(&editor_state.placements)?,
     };
 
-    let (mut out, origin) =
-        renderer::composite_base(&editor_state.base, &editor_state.placements, sel)?;
+    let (mut out, origin, scale) = if native {
+        renderer::composite_native(
+            &editor_state.base,
+            &editor_state.native,
+            &editor_state.placements,
+            sel,
+        )?
+    } else {
+        let (out, origin) =
+            renderer::composite_base(&editor_state.base, &editor_state.placements, sel)?;
+        (out, origin, 1.0)
+    };
 
-    let offset = (origin.0 as f32, origin.1 as f32);
+    let offset = (origin.0 as f32 * scale, origin.1 as f32 * scale);
+    let mut scaled_editors = HashMap::new();
     for ann in &editor_state.annotations {
+        let scaled;
+        let (ann, editors) = if scale == 1.0 {
+            (ann, &mut editor_state.text.editors)
+        } else {
+            scaled = ann.scaled(scale);
+            (&scaled, &mut scaled_editors)
+        };
         renderer::draw_annotation(
             &mut out,
             ann,
@@ -591,7 +617,7 @@ fn render_final(editor_state: &mut EditorState) -> Option<(Vec<u8>, (i32, i32))>
             false,
             &mut editor_state.text.font_system,
             &mut editor_state.text.swash_cache,
-            &mut editor_state.text.editors,
+            editors,
             None,
         );
     }

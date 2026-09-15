@@ -91,6 +91,67 @@ pub struct Annotation {
 }
 
 impl Annotation {
+    pub fn scaled(&self, s: f32) -> Annotation {
+        let p = |(x, y): (f32, f32)| (x * s, y * s);
+        let shape = match &self.shape {
+            AnnotationShape::NumeratedArrow { start, end, number } => {
+                AnnotationShape::NumeratedArrow {
+                    start: p(*start),
+                    end: p(*end),
+                    number: *number,
+                }
+            }
+            AnnotationShape::Arrow { start, end } => AnnotationShape::Arrow {
+                start: p(*start),
+                end: p(*end),
+            },
+            AnnotationShape::Rectangle { start, end } => AnnotationShape::Rectangle {
+                start: p(*start),
+                end: p(*end),
+            },
+            AnnotationShape::Circle { start, end } => AnnotationShape::Circle {
+                start: p(*start),
+                end: p(*end),
+            },
+            AnnotationShape::Line { start, end } => AnnotationShape::Line {
+                start: p(*start),
+                end: p(*end),
+            },
+            AnnotationShape::Pen { points } => AnnotationShape::Pen {
+                points: points.iter().map(|&q| p(q)).collect(),
+            },
+            AnnotationShape::Text {
+                start,
+                content,
+                font_size,
+                bold,
+                italic,
+            } => AnnotationShape::Text {
+                start: p(*start),
+                content: content.clone(),
+                font_size: font_size * s,
+                bold: *bold,
+                italic: *italic,
+            },
+        };
+        let bbox = Rect::from_ltrb(
+            self.bbox.left() * s,
+            self.bbox.top() * s,
+            self.bbox.right() * s,
+            self.bbox.bottom() * s,
+        )
+        .unwrap_or(self.bbox);
+
+        Annotation {
+            id: self.id,
+            shape,
+            color: self.color,
+            shadow_color: self.shadow_color,
+            stroke_width: self.stroke_width * s,
+            bbox,
+        }
+    }
+
     pub fn update_bbox(&mut self) {
         match &self.shape {
             AnnotationShape::Rectangle { start, end }
