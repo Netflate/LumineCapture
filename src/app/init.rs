@@ -11,7 +11,7 @@ use crate::types::{MonitorFrame, Output, Placement};
 use crate::ui::icons;
 use crate::types::tool_settings::default_color;
 use std::collections::HashMap;
-use tiny_skia::{Pixmap, PixmapPaint, Transform};
+use tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
 use usvg::Tree;
 
 use super::selection_render_info;
@@ -73,7 +73,10 @@ pub fn build_base_pixmap(frames: &[MonitorFrame]) -> Result<Vec<Pixmap>, String>
                 0,
                 0,
                 src_pixmap.as_ref(),
-                &PixmapPaint::default(),
+                &PixmapPaint {
+                    quality: FilterQuality::Bilinear,
+                    ..PixmapPaint::default()
+                },
                 Transform::from_row(sx, 0.0, 0.0, sy, 0.0, 0.0),
                 None,
             );
