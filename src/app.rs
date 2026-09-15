@@ -161,8 +161,12 @@ fn run_overlay(
         match overlay.next_event(timeout)? {
             OverlayEvent::EscapePressed => break,
             ev => {
-                if matches!(ev, OverlayEvent::PointerMove { .. }) {
-                    pointer_wait = None;
+                match ev {
+                    OverlayEvent::PointerMove { .. } => pointer_wait = None,
+                    OverlayEvent::Focus { monitor_idx } if pointer_wait.is_some() => {
+                        editor_state.input.pointer.monitor_idx = monitor_idx;
+                    }
+                    _ => {}
                 }
                 handle_event(editor_state, ev, &mut dirty_mask);
             }
@@ -233,7 +237,7 @@ fn poll_background_work(editor_state: &mut EditorState, dirty_mask: &mut u32) {
 
 fn handle_event(editor_state: &mut EditorState, ev: OverlayEvent, dirty_mask: &mut u32) {
     match ev {
-        OverlayEvent::Tick | OverlayEvent::EscapePressed => {}
+        OverlayEvent::Tick | OverlayEvent::EscapePressed | OverlayEvent::Focus { .. } => {}
         OverlayEvent::PointerMove { monitor_idx, x, y } => {
             input::handle_pointer_move(editor_state, monitor_idx, x, y, dirty_mask);
         }

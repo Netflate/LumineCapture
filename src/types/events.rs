@@ -27,6 +27,7 @@ impl PointerState {
 #[derive(Debug, Clone)]
 pub enum OverlayEvent {
     PointerMove { monitor_idx: usize, x: f64, y: f64 },
+    Focus { monitor_idx: usize },
     PointerButton { button: MouseButton, pressed: bool },
     EscapePressed,
     Tick,

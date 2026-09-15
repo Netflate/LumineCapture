@@ -226,7 +226,8 @@ impl ScreenOverlay for WaylandOverlay {
 
         rt.state.pointer_surface_idx = rt.state.pointer_surface_idx.and_then(remap);
         rt.state.events.retain_mut(|ev| match ev {
-            OverlayEvent::PointerMove { monitor_idx, .. } => match remap(*monitor_idx) {
+            OverlayEvent::PointerMove { monitor_idx, .. }
+            | OverlayEvent::Focus { monitor_idx } => match remap(*monitor_idx) {
                 Some(idx) => {
                     *monitor_idx = idx;
                     true

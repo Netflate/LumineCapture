@@ -63,11 +63,19 @@ impl KeyboardHandler for OverlayState {
         _: &Connection,
         _: &QueueHandle<Self>,
         _: &wl_keyboard::WlKeyboard,
-        _: &wl_surface::WlSurface,
+        surface: &wl_surface::WlSurface,
         _: u32,
         _: &[u32],
         _: &[Keysym],
     ) {
+        if let Some(monitor_idx) = self
+            .surfaces
+            .iter()
+            .find(|(_, sd)| &sd.surface == surface)
+            .map(|(id, _)| *id)
+        {
+            self.events.push_back(OverlayEvent::Focus { monitor_idx });
+        }
     }
     fn release_key(
         &mut self,
