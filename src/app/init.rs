@@ -76,7 +76,11 @@ pub fn build_base_pixmap(
                 0,
                 src_pixmap.as_ref(),
                 &PixmapPaint {
-                    quality: FilterQuality::Bilinear,
+                    quality: if sx < 1.0 || sy < 1.0 {
+                        FilterQuality::Bilinear
+                    } else {
+                        FilterQuality::Nearest
+                    },
                     ..PixmapPaint::default()
                 },
                 Transform::from_row(sx, 0.0, 0.0, sy, 0.0, 0.0),
