@@ -73,7 +73,11 @@ async fn capture_one_screen(
     });
 
     let result = proxy
-        .capture_screen(output_name, HashMap::new(), Fd::from(write_fd.as_fd()))
+        .capture_screen(
+            output_name,
+            HashMap::from([("native-resolution", Value::from(true))]),
+            Fd::from(write_fd.as_fd()),
+        )
         .await;
 
     drop(write_fd);
