@@ -79,6 +79,7 @@ pub struct OcrState {
 
 pub struct EditorState {
     pub base: Vec<Pixmap>,
+    pub native: Vec<Option<Pixmap>>,
     pub canvas: Vec<Pixmap>,
     pub dimmed: Vec<Pixmap>,
     pub placements: Vec<Placement>,
@@ -138,6 +139,7 @@ pub enum DamageZone {
 /// What the capture pipeline has to build before the editor can start.
 pub struct Layers {
     pub base: Vec<Pixmap>,
+    pub native: Vec<Option<Pixmap>>,
     pub canvas: Vec<Pixmap>,
     pub dimmed: Vec<Pixmap>,
     pub annotations: Vec<Pixmap>,
@@ -153,6 +155,7 @@ impl EditorState {
     ) -> Self {
         Self {
             base: layers.base,
+            native: layers.native,
             canvas: layers.canvas,
             dimmed: layers.dimmed,
             annotations_layer: layers.annotations,

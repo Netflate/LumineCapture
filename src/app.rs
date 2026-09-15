@@ -79,7 +79,7 @@ async fn start_capture(
     let shrunk = kept.len() < outputs.len();
     let outputs: Vec<_> = kept.iter().map(|&i| outputs[i].clone()).collect();
 
-    let base = init::build_base_pixmap(&screenshots.frames)?;
+    let (base, native) = init::build_base_pixmap(&screenshots.frames)?;
     let (canvas, dimmed, annotations) = init::build_layers(&base);
     let placements = init::build_placements(&outputs);
     prof.mark("base_pixmaps + layers + placements");
@@ -92,6 +92,7 @@ async fn start_capture(
     let editor_state = EditorState::new(
         Layers {
             base,
+            native,
             canvas,
             dimmed,
             annotations,

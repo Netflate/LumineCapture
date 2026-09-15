@@ -16,8 +16,10 @@ use usvg::Tree;
 
 use super::selection_render_info;
 
-pub fn build_base_pixmap(frames: &[MonitorFrame]) -> Result<Vec<Pixmap>, String> {
-    frames
+pub fn build_base_pixmap(
+    frames: &[MonitorFrame],
+) -> Result<(Vec<Pixmap>, Vec<Option<Pixmap>>), String> {
+    let monitors: Vec<(Pixmap, Option<Pixmap>)> = frames
         .iter()
         .enumerate()
         .map(|(monitor_idx, f)| {
@@ -61,7 +63,7 @@ pub fn build_base_pixmap(frames: &[MonitorFrame]) -> Result<Vec<Pixmap>, String>
             let logical_h = logical_h_i32.max(1) as u32;
 
             if logical_w == src_w && logical_h == src_h {
-                return Ok(src_pixmap);
+                return Ok((src_pixmap, None));
             }
 
             let mut logical_pixmap = Pixmap::new(logical_w, logical_h).ok_or_else(|| {
@@ -80,9 +82,11 @@ pub fn build_base_pixmap(frames: &[MonitorFrame]) -> Result<Vec<Pixmap>, String>
                 Transform::from_row(sx, 0.0, 0.0, sy, 0.0, 0.0),
                 None,
             );
-            Ok(logical_pixmap)
+            Ok((logical_pixmap, Some(src_pixmap)))
         })
-        .collect()
+        .collect::<Result<_, _>>()?;
+
+    Ok(monitors.into_iter().unzip())
 }
 
 pub fn build_layers(base_pixmaps: &[Pixmap]) -> (Vec<Pixmap>, Vec<Pixmap>, Vec<Pixmap>) {
