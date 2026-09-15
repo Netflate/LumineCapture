@@ -131,7 +131,8 @@ pub fn composite_native(
             .is_some_and(|r| crate::utils::rects_overlap(&r, &area))
         })
         .map(|(i, _)| source(i).width() as f32 / base[i].width().max(1) as f32)
-        .fold(1.0_f32, f32::max);
+        .fold(0.0_f32, f32::max);
+    let scale = if scale > 0.0 { scale } else { 1.0 };
 
     let out_w = (width as f32 * scale).round() as u32;
     let out_h = (height as f32 * scale).round() as u32;
