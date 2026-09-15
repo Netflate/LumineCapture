@@ -5,7 +5,6 @@
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use log::warn;
 use rustix::event::{PollFd, PollFlags, poll};
 use rustix::time::Timespec;
 use smithay_client_toolkit::delegate_shm;
@@ -164,17 +163,18 @@ fn capture_all(conn: &Connection, targets: &[Target]) -> Result<Vec<MonitorFrame
     for (i, ((buffer, bgr, frame), target)) in pending.into_iter().zip(targets).enumerate() {
         let slot = &state.slots[i];
         let (w, h) = slot.size.unwrap_or_default();
-        if let Some(t) = slot.transform
-            && t != wl_output::Transform::Normal
-        {
-            warn!("output {i} is transformed ({t:?}), capture is not rotated");
-        }
 
         let canvas = buffer
             .canvas(&mut pool)
             .ok_or_else(|| format!("output {i}: shm buffer is busy"))?;
         let mut pixels = canvas[..w as usize * h as usize * 4].to_vec();
         to_rgba(&mut pixels, bgr);
+        let (pixels, w, h) = untransform(
+            pixels,
+            w,
+            h,
+            slot.transform.unwrap_or(wl_output::Transform::Normal),
+        );
 
         frame.destroy();
         frames.push(MonitorFrame {
@@ -200,6 +200,44 @@ fn capture_all(conn: &Connection, targets: &[Target]) -> Result<Vec<MonitorFrame
     let _ = queue.flush();
 
     Ok(frames)
+}
+
+fn untransform(
+    pixels: Vec<u8>,
+    w: u32,
+    h: u32,
+    transform: wl_output::Transform,
+) -> (Vec<u8>, u32, u32) {
+    use wl_output::Transform as T;
+    let (flip, quarters) = match transform {
+        T::_90 => (false, 3),
+        T::_180 => (false, 2),
+        T::_270 => (false, 1),
+        T::Flipped => (true, 0),
+        T::Flipped90 => (true, 1),
+        T::Flipped180 => (true, 2),
+        T::Flipped270 => (true, 3),
+        _ => return (pixels, w, h),
+    };
+
+    let (w, h) = (w as usize, h as usize);
+    let (dw, dh) = if quarters % 2 == 1 { (h, w) } else { (w, h) };
+    let mut out = vec![0u8; pixels.len()];
+    for y in 0..h {
+        for x in 0..w {
+            let fx = if flip { w - 1 - x } else { x };
+            let (dx, dy) = match quarters {
+                1 => (y, w - 1 - fx),
+                2 => (w - 1 - fx, h - 1 - y),
+                3 => (h - 1 - y, fx),
+                _ => (fx, y),
+            };
+            let src = (y * w + x) * 4;
+            let dst = (dy * dw + dx) * 4;
+            out[dst..dst + 4].copy_from_slice(&pixels[src..src + 4]);
+        }
+    }
+    (out, dw as u32, dh as u32)
 }
 
 fn pick_format(formats: &[wl_shm::Format]) -> Option<(wl_shm::Format, bool)> {
