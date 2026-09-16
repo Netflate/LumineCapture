@@ -175,6 +175,7 @@ fn render_pin(image: &[u8], scale: f32) -> Result<Pixmap, Box<dyn std::error::Er
             }
         }
     }
+    let (data, w, h) = pad_to_whole_pixels(data, w, h, scale);
     let size = IntSize::from_wh(w, h).ok_or("empty image")?;
     let mut pin = Pixmap::from_vec(data, size).ok_or("invalid image")?;
 
@@ -189,6 +190,35 @@ fn render_pin(image: &[u8], scale: f32) -> Result<Pixmap, Box<dyn std::error::Er
     pin.apply_mask(&mask);
     draw_panel_border(&mut pin, 0.0, 0.0, fw, fh, radius::PANEL * scale, 1.0);
     Ok(pin)
+}
+
+fn whole_size(n: u32, scale: f32) -> u32 {
+    let scale = scale as f64;
+    (n..n + 256)
+        .find(|&b| {
+            let logical = b as f64 / scale;
+            (logical - logical.round()).abs() < 1e-4
+        })
+        .unwrap_or(n)
+}
+
+fn pad_to_whole_pixels(data: Vec<u8>, w: u32, h: u32, scale: f32) -> (Vec<u8>, u32, u32) {
+    let (pw, ph) = (whole_size(w, scale), whole_size(h, scale));
+    if (pw, ph) == (w, h) || w == 0 || h == 0 {
+        return (data, w, h);
+    }
+
+    let (w, h, pw, ph) = (w as usize, h as usize, pw as usize, ph as usize);
+    let mut out = Vec::with_capacity(pw * ph * 4);
+    for y in 0..ph {
+        let row = &data[y.min(h - 1) * w * 4..][..w * 4];
+        out.extend_from_slice(row);
+        let last = &row[(w - 1) * 4..];
+        for _ in w..pw {
+            out.extend_from_slice(last);
+        }
+    }
+    (out, pw as u32, ph as u32)
 }
 
 struct Pin {
