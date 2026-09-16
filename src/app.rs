@@ -486,22 +486,17 @@ async fn finish_capture(editor_state: &mut EditorState) -> Result<(), Box<dyn st
     let Some(finish) = editor_state.finish else {
         return Ok(());
     };
-    let Some((png, _)) = render_final(editor_state, finish != Finish::Pin) else {
+    let Some((png, _, scale)) = render_final(editor_state) else {
         return Ok(());
     };
 
     if finish == Finish::Pin
-        && let Err(e) = crate::backend::wayland::pin::spawn(&png, 1.0)
+        && let Err(e) = crate::backend::wayland::pin::spawn(&png, scale)
     {
         notify::send(Notice::PinFailed(e.to_string())).await;
     }
     let saved = if finish == Finish::Save || crate::config::get().general.save_always {
-        let native = if finish == Finish::Pin {
-            render_final(editor_state, true).map(|(png, _)| png)
-        } else {
-            None
-        };
-        match save_to_file(native.as_deref().unwrap_or(&png)) {
+        match save_to_file(&png) {
             Ok(path) => Some(path),
             Err(e) => {
                 notify::send(Notice::SaveFailed(e.to_string())).await;
@@ -582,21 +577,14 @@ pub fn selection_render_info(
 
 /// Returns the final PNG and the global position of its top-left corner.
 /// position is required for the pin feature ^^^      
-fn render_final(
-    editor_state: &mut EditorState,
-    native: bool,
-) -> Option<(Vec<u8>, (i32, i32))> {
+fn render_final(editor_state: &mut EditorState) -> Option<(Vec<u8>, (i32, i32), f32)> {
     let sel = match editor_state.selection.zone {
         Some(s) => s,
         None => get_full_workspace_rect(&editor_state.placements)?,
     };
 
-    let (mut out, origin, scale) = renderer::composite(
-        &editor_state.captures,
-        &editor_state.placements,
-        sel,
-        (!native).then_some(1.0),
-    )?;
+    let (mut out, origin, scale) =
+        renderer::composite(&editor_state.captures, &editor_state.placements, sel, None)?;
 
     let offset = (origin.0 as f32 * scale, origin.1 as f32 * scale);
     let mut scaled_editors = HashMap::new();
@@ -620,5 +608,5 @@ fn render_final(
         );
     }
 
-    Some((encode_png(&out), origin))
+    Some((encode_png(&out), origin, scale))
 }
