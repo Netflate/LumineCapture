@@ -202,6 +202,14 @@ fn capture_all(conn: &Connection, targets: &[Target]) -> Result<Vec<MonitorFrame
     Ok(frames)
 }
 
+/// returning pixels to its normal orientation
+/// Wayland returns pixel orientated as in the settings 
+///  
+/// while it seems okay, its a problem, since everything else 
+/// work with the screenshot as if its not orientated
+/// it wasn't a conscious choice, its implemented like that 
+/// because both portal and kde screenshot protocol returns 
+/// pixels without orientating them
 fn untransform(
     pixels: Vec<u8>,
     w: u32,

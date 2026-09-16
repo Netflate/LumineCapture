@@ -75,6 +75,7 @@ async fn capture_one_screen(
     let result = proxy
         .capture_screen(
             output_name,
+            // apparently without this option, scaling picture comes with reducing screenshots quality 
             HashMap::from([("native-resolution", Value::from(true))]),
             Fd::from(write_fd.as_fd()),
         )

@@ -153,6 +153,7 @@ fn run_overlay(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut dirty_mask: u32 = 0;
     let mut annotations_were_hidden = false;
+    // COSMIC шлёт enter указателя только после первого движения мыши, поэтому вечно его не ждём
     let mut pointer_wait = Some(Instant::now() + POINTER_GRACE);
 
     loop {
@@ -168,6 +169,11 @@ fn run_overlay(
             ev => {
                 match ev {
                     OverlayEvent::PointerMove { .. } => pointer_wait = None,
+                    // initiailly toolbar didn't appear as magnifier untill the first pointer event
+                    // once again not a conscious chocie, thought it was enough since on kde it always 
+                    // send pointer event even without moving the pointer if overlay is under it 
+                    // but cosmic doesn't, so toolbar now appears when the keyboard is focused, which makes 
+                    // sense even more than pointer
                     OverlayEvent::Focus { monitor_idx } if pointer_wait.is_some() => {
                         editor_state.input.pointer.monitor_idx = monitor_idx;
                     }

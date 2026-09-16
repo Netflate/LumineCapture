@@ -140,7 +140,7 @@ pub fn build_backend(mode: settings::Mode, files: &ModelFiles) -> Result<Box<dyn
 }
 
 /// Composite the pixels covered by `region` (global coords) out of the
-/// per-monitor `base` layers into one contiguous RGB8 buffer, without annotations.
+/// per-monitor captures into one contiguous RGB8 buffer, without annotations.
 pub fn composite_region(
     captures: &[crate::types::Capture],
     placements: &[Placement],

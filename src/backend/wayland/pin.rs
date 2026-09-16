@@ -100,6 +100,9 @@ pub fn run(image: &[u8], scale: f32) -> Result<(), Box<dyn std::error::Error>> {
     let viewporter = globals
         .bind::<wp_viewporter::WpViewporter, _, _>(&qh, 1..=1, ())
         .ok();
+    // buffer in native resolution, while the window uses logical size. 
+    // otherwise pinned pciture will be low quality when changed scales
+
     let size = match viewporter {
         Some(_) => (
             ((buffer_size.0 as f32 / scale).round() as u32).max(1),
@@ -202,6 +205,9 @@ fn whole_size(n: u32, scale: f32) -> u32 {
         .unwrap_or(n)
 }
 
+/// Pads image dimensions by repeating edge pixels
+/// 
+/// prevents KWin rendering artifacts when dragging on a monitor with scale less than 100%
 fn pad_to_whole_pixels(data: Vec<u8>, w: u32, h: u32, scale: f32) -> (Vec<u8>, u32, u32) {
     let (pw, ph) = (whole_size(w, scale), whole_size(h, scale));
     if (pw, ph) == (w, h) || w == 0 || h == 0 {

@@ -10,6 +10,9 @@ use crate::backend::wayland::utils::shm::ShmBuffer;
 use wayland_client::protocol::{wl_subsurface, wl_surface};
 use wayland_protocols::wp::viewporter::client::wp_viewport;
 
+/// screenshot under overlay is with Native resolution, for it to be Rendered 1:1 while the overlay
+/// only handles background dimming and UI drawing.
+/// otherwise screenshot will be low quality when changed scales
 pub struct Background {
     pub subsurface: wl_subsurface::WlSubsurface,
     pub surface: wl_surface::WlSurface,
