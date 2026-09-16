@@ -32,6 +32,7 @@ use tiny_skia::{FillRule, IntSize, Mask, Pixmap, Rect, Transform};
 use wayland_client::globals::registry_queue_init;
 use wayland_client::protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface};
 use wayland_client::{Connection, Dispatch, QueueHandle};
+use wayland_protocols::wp::viewporter::client::{wp_viewport, wp_viewporter};
 use wayland_protocols::xdg::toplevel_icon::v1::client::{
     xdg_toplevel_icon_manager_v1, xdg_toplevel_icon_v1,
 };
@@ -50,12 +51,27 @@ const APP_ID: &str = "lumine-pin";
 
 /// Argv the overlay re-execs itself with to pin a finished capture.
 pub const PIN_ARG: &str = "--pin";
+pub const SCALE_ARG: &str = "--scale";
 
 /// Handles `--pin [FILE]`. Reads the image from stdin if no file path is provided.
 pub fn cli(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::error::Error>> {
     use std::io::Read;
 
-    let image = match args.next() {
+    let mut scale = 1.0_f32;
+    let mut path = None;
+    while let Some(arg) = args.next() {
+        if arg == SCALE_ARG {
+            scale = args
+                .next()
+                .and_then(|s| s.parse::<f32>().ok())
+                .filter(|s| *s > 0.0)
+                .ok_or("--scale needs a positive number")?;
+        } else {
+            path = Some(arg);
+        }
+    }
+
+    let image = match path {
         Some(path) => std::fs::read(path)?,
         None => {
             let mut buf = Vec::new();
@@ -63,24 +79,34 @@ pub fn cli(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::er
             buf
         }
     };
-    run(&image)
+    run(&image, scale)
 }
 
 /// Re execs this binary to pin a finished capture.
-pub fn spawn(png: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
-    crate::utils::spawn_self(&[PIN_ARG], png)
+pub fn spawn(png: &[u8], scale: f32) -> Result<(), Box<dyn std::error::Error>> {
+    crate::utils::spawn_self(&[PIN_ARG, SCALE_ARG, &scale.to_string()], png)
 }
 
-pub fn run(image: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
-    let frame = render_pin(image)?;
-    let size = (frame.width(), frame.height());
+pub fn run(image: &[u8], scale: f32) -> Result<(), Box<dyn std::error::Error>> {
+    let frame = render_pin(image, scale)?;
+    let buffer_size = (frame.width(), frame.height());
 
     let conn = Connection::connect_to_env()?;
     let (globals, mut queue) = registry_queue_init(&conn)?;
     let qh = queue.handle();
 
     let shm = Shm::bind(&globals, &qh)?;
-    let pool = SlotPool::new((size.0 * size.1 * 4) as usize, &shm)?;
+    let pool = SlotPool::new((buffer_size.0 * buffer_size.1 * 4) as usize, &shm)?;
+    let viewporter = globals
+        .bind::<wp_viewporter::WpViewporter, _, _>(&qh, 1..=1, ())
+        .ok();
+    let size = match viewporter {
+        Some(_) => (
+            ((buffer_size.0 as f32 / scale).round() as u32).max(1),
+            ((buffer_size.1 as f32 / scale).round() as u32).max(1),
+        ),
+        None => buffer_size,
+    };
     let compositor = CompositorState::bind(&globals, &qh)?;
     let xdg_shell = XdgShell::bind(&globals, &qh)?;
     let icon_manager = globals
@@ -93,6 +119,11 @@ pub fn run(image: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
     window.set_app_id(APP_ID);
     window.set_min_size(Some(size));
     window.set_max_size(Some(size));
+    let viewport = viewporter.as_ref().map(|viewporter| {
+        let viewport = viewporter.get_viewport(window.wl_surface(), &qh, ());
+        viewport.set_destination(size.0 as i32, size.1 as i32);
+        viewport
+    });
     window.commit();
 
     // no .desktop entry ties this app_id to an icon, so ask the compositor
@@ -115,7 +146,8 @@ pub fn run(image: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
         window,
         mapped: false,
         frame: Some(frame),
-        size,
+        buffer_size,
+        _viewport: viewport,
         buffer: None,
         png: image.to_vec(),
         pointer_seat: None,
@@ -131,7 +163,7 @@ pub fn run(image: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn render_pin(image: &[u8]) -> Result<Pixmap, Box<dyn std::error::Error>> {
+fn render_pin(image: &[u8], scale: f32) -> Result<Pixmap, Box<dyn std::error::Error>> {
     let rgba = image::load_from_memory(image)?.into_rgba8();
     let (w, h) = rgba.dimensions();
     let mut data = rgba.into_raw();
@@ -150,11 +182,12 @@ fn render_pin(image: &[u8]) -> Result<Pixmap, Box<dyn std::error::Error>> {
     let (fw, fh) = (w as f32, h as f32);
     let rect = Rect::from_xywh(0.0, 0.0, fw, fh).ok_or("empty image")?;
     let shape =
-        rounded_rect_path(&rect, radius::PANEL, true, true, true, true).ok_or("empty image")?;
+        rounded_rect_path(&rect, radius::PANEL * scale, true, true, true, true)
+            .ok_or("empty image")?;
     let mut mask = Mask::new(w, h).ok_or("image is too large")?;
     mask.fill_path(&shape, FillRule::Winding, true, Transform::identity());
     pin.apply_mask(&mask);
-    draw_panel_border(&mut pin, 0.0, 0.0, fw, fh, radius::PANEL, 1.0);
+    draw_panel_border(&mut pin, 0.0, 0.0, fw, fh, radius::PANEL * scale, 1.0);
     Ok(pin)
 }
 
@@ -170,7 +203,8 @@ struct Pin {
     window: Window,
     mapped: bool,
     frame: Option<Pixmap>,
-    size: (u32, u32),
+    buffer_size: (u32, u32),
+    _viewport: Option<wp_viewport::WpViewport>,
     buffer: Option<Buffer>,
     png: Vec<u8>,
 
@@ -226,7 +260,7 @@ impl WindowHandler for Pin {
         window.attach(Some(buffer.wl_buffer()), 0, 0);
         window
             .wl_surface()
-            .damage_buffer(0, 0, self.size.0 as i32, self.size.1 as i32);
+            .damage_buffer(0, 0, self.buffer_size.0 as i32, self.buffer_size.1 as i32);
         window.commit();
         self.mapped = true;
     }
@@ -445,6 +479,30 @@ impl Dispatch<xdg_toplevel_icon_manager_v1::XdgToplevelIconManagerV1, ()> for Pi
         _: &mut Self,
         _: &xdg_toplevel_icon_manager_v1::XdgToplevelIconManagerV1,
         _: xdg_toplevel_icon_manager_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
+}
+
+impl Dispatch<wp_viewporter::WpViewporter, ()> for Pin {
+    fn event(
+        _: &mut Self,
+        _: &wp_viewporter::WpViewporter,
+        _: wp_viewporter::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
+}
+
+impl Dispatch<wp_viewport::WpViewport, ()> for Pin {
+    fn event(
+        _: &mut Self,
+        _: &wp_viewport::WpViewport,
+        _: wp_viewport::Event,
         _: &(),
         _: &Connection,
         _: &QueueHandle<Self>,

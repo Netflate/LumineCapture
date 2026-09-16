@@ -22,7 +22,7 @@ fn print_help() {
     println!("{}", env!("CARGO_PKG_DESCRIPTION"));
     println!();
     println!("Usage: LumineCapture [OPTIONS]");
-    println!("       LumineCapture --pin [--at X,Y] [FILE]");
+    println!("       LumineCapture --pin [--at X,Y] [--scale S] [FILE]");
     println!("       LumineCapture --clipboard-daemon [text]");
     println!("       LumineCapture --ocr-daemon [serve|status|stop|calibrate]");
     println!();
