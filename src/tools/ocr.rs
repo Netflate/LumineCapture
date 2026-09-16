@@ -274,7 +274,7 @@ fn start_ocr(state: &mut EditorState) {
         return;
     }
 
-    let Some(capture) = ocr::composite_region(&state.base, &state.placements, region) else {
+    let Some(capture) = ocr::composite_region(&state.captures, &state.placements, region) else {
         return;
     };
 

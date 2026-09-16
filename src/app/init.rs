@@ -7,30 +7,28 @@ use crate::editor::EditorState;
 use crate::profiler::Profiler;
 use crate::renderer;
 use crate::ui::toolbar::{ToolbarButton, ToolbarItem};
-use crate::types::{MonitorFrame, Output, Placement};
+use crate::types::{Capture, MonitorFrame, Output, Placement};
 use crate::ui::icons;
 use crate::types::tool_settings::default_color;
 use std::collections::HashMap;
-use tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
+use tiny_skia::Pixmap;
 use usvg::Tree;
 
 use super::selection_render_info;
 
-pub fn build_base_pixmap(
-    frames: &[MonitorFrame],
-) -> Result<(Vec<Pixmap>, Vec<Option<Pixmap>>), String> {
-    let monitors: Vec<(Pixmap, Option<Pixmap>)> = frames
+pub fn build_captures(frames: &[MonitorFrame]) -> Result<Vec<Capture>, String> {
+    frames
         .iter()
         .enumerate()
         .map(|(monitor_idx, f)| {
             let (src_w, src_h) = (f.pw_width, f.pw_height);
-            let mut src_pixmap = Pixmap::new(src_w, src_h).ok_or_else(|| {
+            let mut pixmap = Pixmap::new(src_w, src_h).ok_or_else(|| {
                 format!("Invalid frame size for monitor {monitor_idx}: {src_w}x{src_h}")
             })?;
 
             let row_bytes = (src_w as usize) * 4;
             let src_stride = f.pw_stride as usize;
-            let dst = src_pixmap.data_mut();
+            let dst = pixmap.data_mut();
 
             if src_stride < row_bytes {
                 return Err(format!(
@@ -50,58 +48,35 @@ pub fn build_base_pixmap(
                 )
             })?;
 
-            for row in 0..(src_h as usize) {
-                let src_off = row * src_stride;
-                let dst_off = row * row_bytes;
-                dst[dst_off..dst_off + row_bytes]
-                    .copy_from_slice(&src[src_off..src_off + row_bytes]);
+            if src_stride == row_bytes {
+                dst.copy_from_slice(&src[..dst.len()]);
+            } else {
+                for row in 0..(src_h as usize) {
+                    let src_off = row * src_stride;
+                    let dst_off = row * row_bytes;
+                    dst[dst_off..dst_off + row_bytes]
+                        .copy_from_slice(&src[src_off..src_off + row_bytes]);
+                }
             }
 
-            let (logical_w_i32, logical_h_i32) =
-                f.info.size.unwrap_or((src_w as i32, src_h as i32));
-            let logical_w = logical_w_i32.max(1) as u32;
-            let logical_h = logical_h_i32.max(1) as u32;
-
-            if logical_w == src_w && logical_h == src_h {
-                return Ok((src_pixmap, None));
-            }
-
-            let mut logical_pixmap = Pixmap::new(logical_w, logical_h).ok_or_else(|| {
-                format!("Invalid logical size for monitor {monitor_idx}: {logical_w}x{logical_h}")
-            })?;
-            let sx = logical_w as f32 / src_w as f32;
-            let sy = logical_h as f32 / src_h as f32;
-            logical_pixmap.draw_pixmap(
-                0,
-                0,
-                src_pixmap.as_ref(),
-                &PixmapPaint {
-                    quality: if sx < 1.0 || sy < 1.0 {
-                        FilterQuality::Bilinear
-                    } else {
-                        FilterQuality::Nearest
-                    },
-                    ..PixmapPaint::default()
-                },
-                Transform::from_row(sx, 0.0, 0.0, sy, 0.0, 0.0),
-                None,
-            );
-            Ok((logical_pixmap, Some(src_pixmap)))
+            let logical_w = f.info.size.map_or(src_w as i32, |s| s.0).max(1);
+            Ok(Capture {
+                pixmap,
+                scale: src_w as f32 / logical_w as f32,
+            })
         })
-        .collect::<Result<_, _>>()?;
-
-    Ok(monitors.into_iter().unzip())
+        .collect()
 }
 
-pub fn build_layers(base_pixmaps: &[Pixmap]) -> (Vec<Pixmap>, Vec<Pixmap>, Vec<Pixmap>) {
-    let len = base_pixmaps.len();
+pub fn build_layers(placements: &[Placement]) -> (Vec<Pixmap>, Vec<Pixmap>, Vec<Pixmap>) {
+    let len = placements.len();
     let mut canvases = Vec::with_capacity(len);
     let mut dimmed_layers = Vec::with_capacity(len);
     let mut annotation_layers = Vec::with_capacity(len);
 
-    for p in base_pixmaps {
-        let w = p.width();
-        let h = p.height();
+    for p in placements {
+        let w = p.size.0.max(1) as u32;
+        let h = p.size.1.max(1) as u32;
 
         canvases.push(Pixmap::new(w, h).expect("Failed to create canvas"));
         dimmed_layers.push(Pixmap::new(w, h).expect("Failed to create dimmed"));
@@ -155,10 +130,10 @@ pub fn initial_paint(
     overlay: &mut Box<dyn ScreenOverlay>,
     prof: &mut Profiler,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let n = editor_state.base.len();
+    let n = editor_state.captures.len();
 
     let EditorState {
-        base,
+        captures,
         canvas,
         dimmed,
         annotations_layer,
@@ -180,7 +155,7 @@ pub fn initial_paint(
     std::thread::scope(|scope| {
         let mut handles = Vec::with_capacity(n);
 
-        for (i, (((base_i, canvas_i), dimmed_i), ann_i)) in base
+        for (i, (((capture_i, canvas_i), dimmed_i), ann_i)) in captures
             .iter()
             .zip(canvas.iter_mut())
             .zip(dimmed.iter_mut())
@@ -197,7 +172,7 @@ pub fn initial_paint(
 
                 renderer::render_frame(&mut renderer::RenderRequest {
                     canvas: canvas_i,
-                    base: base_i,
+                    capture: capture_i,
                     dimmed: dimmed_i,
                     selection: local_sel.as_ref(),
                     prev_selection: prev_local.as_ref(),

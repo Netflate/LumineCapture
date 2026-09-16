@@ -9,7 +9,7 @@ use tiny_skia::{Color, PathBuilder, Pixmap, Rect};
 use usvg::Tree;
 
 use crate::tools::Tool;
-use crate::types::{AnnDragState, Annotation, Placement, PointerState, SelectionState, TextEditState, ToolSettings};
+use crate::types::{AnnDragState, Annotation, Capture, Placement, PointerState, SelectionState, TextEditState, ToolSettings};
 use crate::interaction::{ClickTarget, DoubleClickTracker};
 use crate::ui::color_popover::ColorPickerPopover;
 use crate::ui::magnifier::MagnifierState;
@@ -78,8 +78,7 @@ pub struct OcrState {
 }
 
 pub struct EditorState {
-    pub base: Vec<Pixmap>,
-    pub native: Vec<Option<Pixmap>>,
+    pub captures: Vec<Capture>,
     pub canvas: Vec<Pixmap>,
     pub dimmed: Vec<Pixmap>,
     pub placements: Vec<Placement>,
@@ -138,8 +137,7 @@ pub enum DamageZone {
 
 /// What the capture pipeline has to build before the editor can start.
 pub struct Layers {
-    pub base: Vec<Pixmap>,
-    pub native: Vec<Option<Pixmap>>,
+    pub captures: Vec<Capture>,
     pub canvas: Vec<Pixmap>,
     pub dimmed: Vec<Pixmap>,
     pub annotations: Vec<Pixmap>,
@@ -154,8 +152,7 @@ impl EditorState {
         ocr: OcrState,
     ) -> Self {
         Self {
-            base: layers.base,
-            native: layers.native,
+            captures: layers.captures,
             canvas: layers.canvas,
             dimmed: layers.dimmed,
             annotations_layer: layers.annotations,

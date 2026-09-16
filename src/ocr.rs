@@ -46,7 +46,7 @@ pub mod settings;
 pub mod testing;
 pub mod view;
 
-use tiny_skia::{Pixmap, Rect};
+use tiny_skia::Rect;
 
 pub use runtime::{OcrRuntime, StartOutcome};
 pub use view::OcrView;
@@ -142,11 +142,11 @@ pub fn build_backend(mode: settings::Mode, files: &ModelFiles) -> Result<Box<dyn
 /// Composite the pixels covered by `region` (global coords) out of the
 /// per-monitor `base` layers into one contiguous RGB8 buffer, without annotations.
 pub fn composite_region(
-    base: &[Pixmap],
+    captures: &[crate::types::Capture],
     placements: &[Placement],
     region: Rect,
 ) -> Option<OcrImage> {
-    let (out, (left, top)) = crate::renderer::composite_base(base, placements, region)?;
+    let (out, (left, top), _) = crate::renderer::composite(captures, placements, region, Some(1.0))?;
     let (width, height) = (out.width(), out.height());
 
     // RGBA -> RGB

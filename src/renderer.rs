@@ -33,7 +33,7 @@ pub struct TextContext<'a> {
 pub struct RenderRequest<'a> {
     // basic layers
     pub canvas: &'a mut Pixmap,
-    pub base: &'a Pixmap,
+    pub capture: &'a crate::types::Capture,
     pub dimmed: &'a mut Pixmap,
     // selection + magnifier + toolbar
     pub selection: Option<&'a Rect>,
@@ -72,41 +72,11 @@ pub struct RenderRequest<'a> {
     pub toasts: &'a crate::ui::toast::Toasts,
 }
 
-/// Copies the part of the screens covered by `region` (global coords) into one
-/// pixmap, together with the global position of its top-left corner.
-pub fn composite_base(
-    base: &[Pixmap],
+pub fn composite(
+    captures: &[crate::types::Capture],
     placements: &[crate::types::Placement],
     region: Rect,
-) -> Option<(Pixmap, (i32, i32))> {
-    let left = region.left().floor() as i32;
-    let top = region.top().floor() as i32;
-    let width = (region.right().ceil() as i32 - left).max(0) as u32;
-    let height = (region.bottom().ceil() as i32 - top).max(0) as u32;
-    if width == 0 || height == 0 {
-        return None;
-    }
-
-    let mut out = Pixmap::new(width, height)?;
-    for (placement, monitor) in placements.iter().zip(base) {
-        out.draw_pixmap(
-            placement.position.0 - left,
-            placement.position.1 - top,
-            monitor.as_ref(),
-            &tiny_skia::PixmapPaint::default(),
-            Transform::identity(),
-            None,
-        );
-    }
-
-    Some((out, (left, top)))
-}
-
-pub fn composite_native(
-    base: &[Pixmap],
-    native: &[Option<Pixmap>],
-    placements: &[crate::types::Placement],
-    region: Rect,
+    scale: Option<f32>,
 ) -> Option<(Pixmap, (i32, i32), f32)> {
     let left = region.left().floor() as i32;
     let top = region.top().floor() as i32;
@@ -117,31 +87,32 @@ pub fn composite_native(
     }
     let area = Rect::from_xywh(left as f32, top as f32, width as f32, height as f32)?;
 
-    let source = |i: usize| native.get(i).and_then(Option::as_ref).unwrap_or(&base[i]);
-    let scale = placements
-        .iter()
-        .enumerate()
-        .filter(|(_, p)| {
-            Rect::from_xywh(
-                p.position.0 as f32,
-                p.position.1 as f32,
-                p.size.0 as f32,
-                p.size.1 as f32,
-            )
-            .is_some_and(|r| crate::utils::rects_overlap(&r, &area))
-        })
-        .map(|(i, _)| source(i).width() as f32 / base[i].width().max(1) as f32)
-        .fold(0.0_f32, f32::max);
-    let scale = if scale > 0.0 { scale } else { 1.0 };
+    let scale = scale.unwrap_or_else(|| {
+        let max = placements
+            .iter()
+            .zip(captures)
+            .filter(|(p, _)| {
+                Rect::from_xywh(
+                    p.position.0 as f32,
+                    p.position.1 as f32,
+                    p.size.0 as f32,
+                    p.size.1 as f32,
+                )
+                .is_some_and(|r| crate::utils::rects_overlap(&r, &area))
+            })
+            .map(|(_, c)| c.scale)
+            .fold(0.0_f32, f32::max);
+        if max > 0.0 { max } else { 1.0 }
+    });
 
     let out_w = (width as f32 * scale).round() as u32;
     let out_h = (height as f32 * scale).round() as u32;
     let mut out = Pixmap::new(out_w, out_h)?;
 
-    for (i, (placement, logical)) in placements.iter().zip(base).enumerate() {
-        let src = source(i);
-        let sx = scale * logical.width() as f32 / src.width() as f32;
-        let sy = scale * logical.height() as f32 / src.height() as f32;
+    for (placement, capture) in placements.iter().zip(captures) {
+        let src = &capture.pixmap;
+        let sx = scale * placement.size.0 as f32 / src.width() as f32;
+        let sy = scale * placement.size.1 as f32 / src.height() as f32;
         let tx = (placement.position.0 - left) as f32 * scale;
         let ty = (placement.position.1 - top) as f32 * scale;
 
@@ -273,7 +244,7 @@ pub fn render_frame(req: &mut RenderRequest) {
             .map(|text| (&mut *text.font_system, &mut *text.swash_cache));
         crate::ui::magnifier::draw_magnifier(
             req.canvas,
-            req.base,
+            req.capture,
             (mag.pos.0 as f32, mag.pos.1 as f32),
             label,
         );

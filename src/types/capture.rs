@@ -40,6 +40,18 @@ pub struct MonitorFrame {
     pub info: StreamInfo,
 }
 
+pub struct Capture {
+    pub pixmap: tiny_skia::Pixmap,
+    pub scale: f32,
+}
+
+impl Capture {
+    pub fn to_native(&self, point: (f64, f64)) -> (f64, f64) {
+        let scale = self.scale as f64;
+        (point.0 * scale, point.1 * scale)
+    }
+}
+
 pub struct CaptureResult {
     pub frames: Vec<MonitorFrame>,
 }

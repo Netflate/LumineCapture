@@ -3,6 +3,7 @@ use cosmic_text::{FontSystem, Style, SwashCache, Weight};
 use crate::renderer::paths::rounded_rect_path;
 use crate::renderer::text::{HAlign, draw_aligned_text};
 use crate::theme::{Rgba, color, font, radius};
+use crate::types::Capture;
 use crate::ui::magnifier::{LABEL_GAP, LABEL_HEIGHT, cells, offset, sample_pixel, size, zoom};
 use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform};
 
@@ -40,22 +41,24 @@ fn box_height(with_label: bool) -> f32 {
 /// `label` is the text machinery the eyedropper needs; without it only the loupe is drawn.
 pub fn draw_magnifier(
     canvas: &mut Pixmap,
-    source: &Pixmap,
+    capture: &Capture,
     cursor: (f32, f32),
     label: Option<(&mut FontSystem, &mut SwashCache)>,
 ) {
-    let screen_w = source.width() as f32;
-    let screen_h = source.height() as f32;
+    let screen_w = canvas.width() as f32;
+    let screen_h = canvas.height() as f32;
+    let source = &capture.pixmap;
+    let native = capture.to_native((cursor.0 as f64, cursor.1 as f64));
 
     let sample_size = cells() as i32;
 
     let half = (cells() / 2) as i32;
-    let src_x = (cursor.0 as i32 - half)
+    let src_x = (native.0 as i32 - half)
         .max(0)
-        .min(screen_w as i32 - sample_size) as u32;
-    let src_y = (cursor.1 as i32 - half)
+        .min(source.width() as i32 - sample_size) as u32;
+    let src_y = (native.1 as i32 - half)
         .max(0)
-        .min(screen_h as i32 - sample_size) as u32;
+        .min(source.height() as i32 - sample_size) as u32;
 
     let mut cropped = Pixmap::new(sample_size as u32, sample_size as u32).unwrap();
     cropped.draw_pixmap(
@@ -116,7 +119,7 @@ pub fn draw_magnifier(
     }
 
     if let Some((font_system, swash_cache)) = label
-        && let Some(color) = sample_pixel(source, (cursor.0 as f64, cursor.1 as f64))
+        && let Some(color) = sample_pixel(source, native)
     {
         draw_color_label(
             canvas,

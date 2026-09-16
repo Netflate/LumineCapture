@@ -79,9 +79,9 @@ async fn start_capture(
     let shrunk = kept.len() < outputs.len();
     let outputs: Vec<_> = kept.iter().map(|&i| outputs[i].clone()).collect();
 
-    let (base, native) = init::build_base_pixmap(&screenshots.frames)?;
-    let (canvas, dimmed, annotations) = init::build_layers(&base);
+    let captures = init::build_captures(&screenshots.frames)?;
     let placements = init::build_placements(&outputs);
+    let (canvas, dimmed, annotations) = init::build_layers(&placements);
     prof.mark("base_pixmaps + layers + placements");
 
     drop(screenshots);
@@ -91,8 +91,7 @@ async fn start_capture(
 
     let editor_state = EditorState::new(
         Layers {
-            base,
-            native,
+            captures,
             canvas,
             dimmed,
             annotations,
@@ -116,14 +115,9 @@ async fn start_capture(
     if shrunk {
         overlay.retain_outputs(&kept)?;
     }
-    for (i, (logical, native)) in editor_state.base.iter().zip(&editor_state.native).enumerate() {
-        let frame = native.as_ref().unwrap_or(logical);
-        if overlay
-            .set_background(i, frame.data(), frame.width(), frame.height())
-            .is_err()
-        {
-            overlay.set_background(i, logical.data(), logical.width(), logical.height())?;
-        }
+    for (i, capture) in editor_state.captures.iter().enumerate() {
+        let pixmap = &capture.pixmap;
+        overlay.set_background(i, pixmap.data(), pixmap.width(), pixmap.height())?;
     }
     prof.mark("backgrounds uploaded");
     prof.mark("present() joined");
@@ -362,7 +356,7 @@ fn render_dirty_monitors(
         annotations_hidden,
     };
 
-    for i in 0..editor_state.base.len() {
+    for i in 0..editor_state.captures.len() {
         if !is_dirty(dirty_mask, i) {
             continue;
         }
@@ -412,8 +406,8 @@ fn render_monitor(editor_state: &mut EditorState, i: usize, frame: &Frame) -> Op
     let damage = dirty_rect.as_ref().and_then(|r| {
         renderer::rect_bounds(
             r,
-            editor_state.base[i].width(),
-            editor_state.base[i].height(),
+            editor_state.canvas[i].width(),
+            editor_state.canvas[i].height(),
         )
     });
 
@@ -427,7 +421,7 @@ fn render_monitor(editor_state: &mut EditorState, i: usize, frame: &Frame) -> Op
 
     renderer::render_frame(&mut renderer::RenderRequest {
         canvas: &mut editor_state.canvas[i],
-        base: &editor_state.base[i],
+        capture: &editor_state.captures[i],
         dimmed: &mut editor_state.dimmed[i],
         selection: local_sel.as_ref(),
         prev_selection: prev_local.as_ref(),
@@ -597,18 +591,12 @@ fn render_final(
         None => get_full_workspace_rect(&editor_state.placements)?,
     };
 
-    let (mut out, origin, scale) = if native {
-        renderer::composite_native(
-            &editor_state.base,
-            &editor_state.native,
-            &editor_state.placements,
-            sel,
-        )?
-    } else {
-        let (out, origin) =
-            renderer::composite_base(&editor_state.base, &editor_state.placements, sel)?;
-        (out, origin, 1.0)
-    };
+    let (mut out, origin, scale) = renderer::composite(
+        &editor_state.captures,
+        &editor_state.placements,
+        sel,
+        (!native).then_some(1.0),
+    )?;
 
     let offset = (origin.0 as f32 * scale, origin.1 as f32 * scale);
     let mut scaled_editors = HashMap::new();
