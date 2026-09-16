@@ -176,7 +176,6 @@ pub fn render_frame(req: &mut RenderRequest) {
     if req.selection_dirty {
         update_dimming_delta(
             req.dimmed,
-            req.base,
             req.prev_selection,
             req.selection,
             req.selection_edges,
@@ -357,36 +356,22 @@ const SELECTION_STROKE: f32 = 2.0;
 /// Radius of the bright area
 const HOLE_RADIUS: f32 = SELECTION_RADIUS - SELECTION_STROKE / 2.0;
 
-/// `base_channel -> dimmed_channel`.
-fn dim_lut() -> [u8; 256] {
-    let keep = 255.0 - crate::config::get().general.dim_alpha as f32;
-    let mut lut = [0u8; 256];
-    for (value, slot) in lut.iter_mut().enumerate() {
-        *slot = (value as f32 * keep / 255.0 + 0.5) as u8;
-    }
-    lut
+fn dim_pixel() -> [u8; 4] {
+    [0, 0, 0, crate::config::get().general.dim_alpha]
 }
 
 pub fn init_dimming(
     dimmed: &mut Pixmap,
-    base: &Pixmap,
     selection: Option<&Rect>,
     edges: Option<&SelectionEdges>,
 ) {
-    let lut = dim_lut();
-    for (s, d) in base
-        .data()
-        .chunks_exact(4)
-        .zip(dimmed.data_mut().chunks_exact_mut(4))
-    {
-        d[0] = lut[s[0] as usize];
-        d[1] = lut[s[1] as usize];
-        d[2] = lut[s[2] as usize];
-        d[3] = s[3];
+    let px = dim_pixel();
+    for d in dimmed.data_mut().chunks_exact_mut(4) {
+        d.copy_from_slice(&px);
     }
 
     if let Some(sel) = selection {
-        blit_rect(base, dimmed, sel);
+        fill_rect(dimmed, sel, [0; 4]);
         dim_hole_corners(dimmed, sel, edges);
     }
 }
@@ -490,46 +475,32 @@ fn dim_hole_corners(canvas: &mut Pixmap, sel: &Rect, edges: Option<&SelectionEdg
 
 fn update_dimming_delta(
     dimmed: &mut Pixmap,
-    base: &Pixmap,
     prev: Option<&Rect>,
     next: Option<&Rect>,
     edges: Option<&SelectionEdges>,
 ) {
     if let Some(old) = prev {
-        dim_rect(dimmed, base, old);
+        fill_rect(dimmed, old, dim_pixel());
     }
     if let Some(cur) = next {
-        blit_rect(base, dimmed, cur);
+        fill_rect(dimmed, cur, [0; 4]);
         dim_hole_corners(dimmed, cur, edges);
     }
 }
 
-/// Reset `rect` to full dimming using the `base` image.
-///
-/// Redraw it instead of painting over it because rounded corners leave
-/// semi-transparent pixels behind. Painting over them again would make
-/// those pixels too dark.
-fn dim_rect(dimmed: &mut Pixmap, base: &Pixmap, rect: &Rect) {
-    let (w, h) = (dimmed.width(), dimmed.height());
+fn fill_rect(pixmap: &mut Pixmap, rect: &Rect, px: [u8; 4]) {
+    let (w, h) = (pixmap.width(), pixmap.height());
     let Some((x, y, rw, rh)) = rect_bounds(rect, w, h) else {
         return;
     };
 
-    let lut = dim_lut();
     let stride = (w * 4) as usize;
     let row_bytes = rw as usize * 4;
-    let src = base.data();
-    let dst = dimmed.data_mut();
-
+    let data = pixmap.data_mut();
     for row in 0..rh {
         let off = (y + row) as usize * stride + x as usize * 4;
-        let src_row = &src[off..off + row_bytes];
-        let dst_row = &mut dst[off..off + row_bytes];
-        for (s, d) in src_row.chunks_exact(4).zip(dst_row.chunks_exact_mut(4)) {
-            d[0] = lut[s[0] as usize];
-            d[1] = lut[s[1] as usize];
-            d[2] = lut[s[2] as usize];
-            d[3] = s[3];
+        for d in data[off..off + row_bytes].chunks_exact_mut(4) {
+            d.copy_from_slice(&px);
         }
     }
 }

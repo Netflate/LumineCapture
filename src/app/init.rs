@@ -193,7 +193,7 @@ pub fn initial_paint(
                 let (local_sel, prev_local, edges) =
                     selection_render_info(sel_zone, prev_zone, placement);
 
-                renderer::init_dimming(dimmed_i, base_i, local_sel.as_ref(), edges.as_ref());
+                renderer::init_dimming(dimmed_i, local_sel.as_ref(), edges.as_ref());
 
                 renderer::render_frame(&mut renderer::RenderRequest {
                     canvas: canvas_i,
