@@ -40,6 +40,7 @@ pub struct OverlayState {
     pub frac: Option<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1>,
     pub frac_scale: Option<wp_fractional_scale_v1::WpFractionalScaleV1>,
     pub viewporter: Option<wp_viewporter::WpViewporter>,
+    pub subcompositor: Option<smithay_client_toolkit::subcompositor::SubcompositorState>,
     // ── pointer ──────────────────────────────────────────────────────────────────
     pub cursor_shape_device: Option<WpCursorShapeDeviceV1>,
     pub pointer_enter_serial: u32,
@@ -106,6 +107,12 @@ impl OverlayRunTime {
             frac,
             viewporter,
         );
+        state.subcompositor = smithay_client_toolkit::subcompositor::SubcompositorState::bind(
+            state.compositor_state.wl_compositor().clone(),
+            &globals,
+            &qh,
+        )
+        .ok();
 
         // two roundtrips: first gets globals
         // second waits for events update
@@ -141,6 +148,7 @@ impl OverlayState {
             pool,
             frac,
             viewporter,
+            subcompositor: None,
 
             cursor_shape_device: None,
             current_cursor_icon: CursorIcon::default(),

@@ -9,7 +9,8 @@ use smithay_client_toolkit::shell::xdg::window::{Window, WindowConfigure, Window
 
 use smithay_client_toolkit::shm::ShmHandler;
 use smithay_client_toolkit::{
-    delegate_compositor, delegate_shm, delegate_xdg_shell, delegate_xdg_window,
+    delegate_compositor, delegate_shm, delegate_subcompositor, delegate_xdg_shell,
+    delegate_xdg_window,
 };
 
 use wayland_client::protocol::{wl_output, wl_surface};
@@ -62,6 +63,7 @@ impl CompositorHandler for OverlayState {
     }
 }
 delegate_compositor!(OverlayState);
+delegate_subcompositor!(OverlayState);
 
 // ── shm ──────────────────────────────────────────────────────────────────────────────────────
 impl ShmHandler for OverlayState {

@@ -67,6 +67,13 @@ pub trait ScreenOverlay: Send {
     ) -> Result<OverlayEvent, Box<dyn std::error::Error>>;
     fn discovered_outputs(&self) -> &[Output];
     fn retain_outputs(&mut self, keep: &[usize]) -> Result<(), Box<dyn std::error::Error>>;
+    fn set_background(
+        &mut self,
+        monitor_idx: usize,
+        pixels: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<(), Box<dyn std::error::Error>>;
     fn set_cursor(&mut self, icon: CursorIcon);
 }
 

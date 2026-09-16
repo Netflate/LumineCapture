@@ -116,6 +116,16 @@ async fn start_capture(
     if shrunk {
         overlay.retain_outputs(&kept)?;
     }
+    for (i, (logical, native)) in editor_state.base.iter().zip(&editor_state.native).enumerate() {
+        let frame = native.as_ref().unwrap_or(logical);
+        if overlay
+            .set_background(i, frame.data(), frame.width(), frame.height())
+            .is_err()
+        {
+            overlay.set_background(i, logical.data(), logical.width(), logical.height())?;
+        }
+    }
+    prof.mark("backgrounds uploaded");
     prof.mark("present() joined");
     prof.mark_external("  ^ present_dt (thread-internal duration)", present_dt);
 

@@ -15,7 +15,9 @@ use wayland_client::backend::WaylandError;
 pub mod state;
 
 use crate::backend::ScreenOverlay;
-use crate::backend::wayland::utils::surface::SurfaceData;
+use crate::backend::wayland::utils::shm::create_shm_buffer;
+use crate::backend::wayland::utils::surface::{Background, SurfaceData};
+use smithay_client_toolkit::compositor::Region;
 use crate::types::{CursorIcon, DamageRect, Output, OverlayEvent};
 
 const CONFIGURE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -79,6 +81,7 @@ impl ScreenOverlay for WaylandOverlay {
             rt.state.surfaces.insert(
                 i,
                 SurfaceData {
+                    background: None,
                     surface,
                     window,
                     shm_buffer: None,
@@ -238,6 +241,55 @@ impl ScreenOverlay for WaylandOverlay {
         });
 
         rt.event_queue.flush()?;
+        Ok(())
+    }
+
+    fn set_background(
+        &mut self,
+        monitor_idx: usize,
+        pixels: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let rt = &mut self.runtime;
+        let qh = rt.event_queue.handle();
+        let state = &mut rt.state;
+
+        let subcompositor = state
+            .subcompositor
+            .as_ref()
+            .ok_or("compositor has no wl_subcompositor")?;
+        let sd = state
+            .surfaces
+            .get_mut(&monitor_idx)
+            .ok_or("surface not found")?;
+        if state.viewporter.is_none() && (width, height) != (sd.width, sd.height) {
+            return Err("can't scale the background without wp_viewporter".into());
+        }
+
+        let (subsurface, surface) = subcompositor.create_subsurface(sd.surface.clone(), &qh);
+        subsurface.place_below(&sd.surface);
+        let viewport = state.viewporter.as_ref().map(|viewporter| {
+            let viewport = viewporter.get_viewport(&surface, &qh, ());
+            viewport.set_destination(sd.width as i32, sd.height as i32);
+            viewport
+        });
+        if let Ok(region) = Region::new(&state.compositor_state) {
+            surface.set_input_region(Some(region.wl_region()));
+        }
+
+        let mut buffer = create_shm_buffer(&mut state.pool, width, height)?;
+        buffer.write_pixels(&mut state.pool, pixels);
+        surface.attach(Some(buffer.wl_buffer()), 0, 0);
+        surface.damage_buffer(0, 0, width as i32, height as i32);
+        surface.commit();
+
+        sd.background = Some(Background {
+            subsurface,
+            surface,
+            viewport,
+            buffer,
+        });
         Ok(())
     }
 

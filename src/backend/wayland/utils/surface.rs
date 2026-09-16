@@ -7,9 +7,28 @@
 // reminder: each output has its own surface
 
 use crate::backend::wayland::utils::shm::ShmBuffer;
-use wayland_client::protocol::wl_surface;
+use wayland_client::protocol::{wl_subsurface, wl_surface};
+use wayland_protocols::wp::viewporter::client::wp_viewport;
+
+pub struct Background {
+    pub subsurface: wl_subsurface::WlSubsurface,
+    pub surface: wl_surface::WlSurface,
+    pub viewport: Option<wp_viewport::WpViewport>,
+    pub buffer: ShmBuffer,
+}
+
+impl Drop for Background {
+    fn drop(&mut self) {
+        if let Some(viewport) = &self.viewport {
+            viewport.destroy();
+        }
+        self.subsurface.destroy();
+        self.surface.destroy();
+    }
+}
 
 pub struct SurfaceData {
+    pub background: Option<Background>,
     pub window: smithay_client_toolkit::shell::xdg::window::Window,
     pub surface: wl_surface::WlSurface,
 
