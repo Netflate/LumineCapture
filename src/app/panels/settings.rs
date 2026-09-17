@@ -82,16 +82,20 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
             }
             SettingsWidget::Toggle { field, .. } => {
                 let value = match selected_ann {
-                    Some(ann) => match &ann.shape {
-                        AnnotationShape::Text { bold, italic, .. } => match field {
-                            ToggleField::Bold => *bold,
-                            ToggleField::Italic => *italic,
-                        },
+                    Some(ann) => match (&ann.shape, field) {
+                        (AnnotationShape::Text { bold, .. }, ToggleField::Bold) => *bold,
+                        (AnnotationShape::Text { italic, .. }, ToggleField::Italic) => *italic,
+                        (
+                            AnnotationShape::Rectangle { filled, .. }
+                            | AnnotationShape::Circle { filled, .. },
+                            ToggleField::Fill,
+                        ) => *filled,
                         _ => false,
                     },
                     None => match field {
                         ToggleField::Bold => editor_state.tool_settings.bold,
                         ToggleField::Italic => editor_state.tool_settings.italic,
+                        ToggleField::Fill => editor_state.tool_settings.fill,
                     },
                 };
                 editor_state.settings_panel.set_toggled(idx, value);
@@ -485,14 +489,16 @@ pub fn apply_toggle_field(
         move |ts| match field {
             ToggleField::Bold => ts.bold = new_value,
             ToggleField::Italic => ts.italic = new_value,
+            ToggleField::Fill => ts.fill = new_value,
         },
-        move |ann| {
-            if let AnnotationShape::Text { bold, italic, .. } = &mut ann.shape {
-                match field {
-                    ToggleField::Bold => *bold = new_value,
-                    ToggleField::Italic => *italic = new_value,
-                }
-            }
+        move |ann| match (&mut ann.shape, field) {
+            (AnnotationShape::Text { bold, .. }, ToggleField::Bold) => *bold = new_value,
+            (AnnotationShape::Text { italic, .. }, ToggleField::Italic) => *italic = new_value,
+            (
+                AnnotationShape::Rectangle { filled, .. } | AnnotationShape::Circle { filled, .. },
+                ToggleField::Fill,
+            ) => *filled = new_value,
+            _ => {}
         },
         dirty_mask,
     );

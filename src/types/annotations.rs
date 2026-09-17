@@ -35,10 +35,12 @@ pub enum AnnotationShape {
     Rectangle {
         start: (f32, f32),
         end: (f32, f32),
+        filled: bool,
     },
     Circle {
         start: (f32, f32),
         end: (f32, f32),
+        filled: bool,
     },
     Line {
         start: (f32, f32),
@@ -105,13 +107,15 @@ impl Annotation {
                 start: p(*start),
                 end: p(*end),
             },
-            AnnotationShape::Rectangle { start, end } => AnnotationShape::Rectangle {
+            AnnotationShape::Rectangle { start, end, filled } => AnnotationShape::Rectangle {
                 start: p(*start),
                 end: p(*end),
+                filled: *filled,
             },
-            AnnotationShape::Circle { start, end } => AnnotationShape::Circle {
+            AnnotationShape::Circle { start, end, filled } => AnnotationShape::Circle {
                 start: p(*start),
                 end: p(*end),
+                filled: *filled,
             },
             AnnotationShape::Line { start, end } => AnnotationShape::Line {
                 start: p(*start),
@@ -154,8 +158,8 @@ impl Annotation {
 
     pub fn update_bbox(&mut self) {
         match &self.shape {
-            AnnotationShape::Rectangle { start, end }
-            | AnnotationShape::Circle { start, end }
+            AnnotationShape::Rectangle { start, end, .. }
+            | AnnotationShape::Circle { start, end, .. }
             | AnnotationShape::Line { start, end } => {
                 let pad = self.stroke_width / 2.0 + shadow::WIDTH_BONUS / 2.0;
                 self.bbox = Rect::from_ltrb(
@@ -265,8 +269,8 @@ impl Annotation {
         match &mut self.shape {
             AnnotationShape::NumeratedArrow { start, end, .. }
             | AnnotationShape::Arrow { start, end }
-            | AnnotationShape::Rectangle { start, end }
-            | AnnotationShape::Circle { start, end }
+            | AnnotationShape::Rectangle { start, end, .. }
+            | AnnotationShape::Circle { start, end, .. }
             | AnnotationShape::Line { start, end } => {
                 start.0 += dx;
                 start.1 += dy;
@@ -334,13 +338,15 @@ impl Annotation {
                 start: remap(*start),
                 end: remap(*end),
             },
-            AnnotationShape::Rectangle { start, end } => AnnotationShape::Rectangle {
+            AnnotationShape::Rectangle { start, end, filled } => AnnotationShape::Rectangle {
                 start: remap(*start),
                 end: remap(*end),
+                filled: *filled,
             },
-            AnnotationShape::Circle { start, end } => AnnotationShape::Circle {
+            AnnotationShape::Circle { start, end, filled } => AnnotationShape::Circle {
                 start: remap(*start),
                 end: remap(*end),
+                filled: *filled,
             },
             AnnotationShape::Line { start, end } => AnnotationShape::Line {
                 start: remap(*start),

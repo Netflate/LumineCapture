@@ -107,14 +107,22 @@ pub fn draw_annotation(
         AnnotationShape::Arrow { start, end } => {
             draw_arrow(canvas, *start, *end, ann.color, ann.stroke_width, offset, ann.shadow_color);
         }
-        AnnotationShape::Rectangle { start, end } => {
+        AnnotationShape::Rectangle { start, end, filled } => {
             if let Some(rect) = normalized_rect(*start, *end) {
-                draw_rect(canvas, &rect, ann.color, ann.stroke_width, offset, ann.shadow_color);
+                if *filled {
+                    fill_rect(canvas, &rect, ann.color, ann.stroke_width, offset, ann.shadow_color);
+                } else {
+                    draw_rect(canvas, &rect, ann.color, ann.stroke_width, offset, ann.shadow_color);
+                }
             }
         }
-        AnnotationShape::Circle { start, end } => {
+        AnnotationShape::Circle { start, end, filled } => {
             if let Some(rect) = normalized_rect(*start, *end) {
-                draw_circle(canvas, &rect, ann.color, ann.stroke_width, offset, ann.shadow_color);
+                if *filled {
+                    fill_circle(canvas, &rect, ann.color, ann.stroke_width, offset, ann.shadow_color);
+                } else {
+                    draw_circle(canvas, &rect, ann.color, ann.stroke_width, offset, ann.shadow_color);
+                }
             }
         }
         AnnotationShape::Line { start, end } => {
@@ -328,6 +336,64 @@ fn draw_circle(
             shadow_color,
         );
     }
+}
+
+fn fill_rect(
+    canvas: &mut Pixmap,
+    rect: &Rect,
+    color: Color,
+    stroke_width: f32,
+    offset: (f32, f32),
+    shadow_color: Color,
+) {
+    let half = stroke_width / 2.0;
+    let Some(outer) = Rect::from_ltrb(
+        rect.left() - half,
+        rect.top() - half,
+        rect.right() + half,
+        rect.bottom() + half,
+    ) else {
+        return;
+    };
+    fill_with_shadow(canvas, &PathBuilder::from_rect(outer), color, offset, shadow_color);
+}
+
+fn fill_circle(
+    canvas: &mut Pixmap,
+    rect: &Rect,
+    color: Color,
+    stroke_width: f32,
+    offset: (f32, f32),
+    shadow_color: Color,
+) {
+    let cx = (rect.left() + rect.right()) / 2.0;
+    let cy = (rect.top() + rect.bottom()) / 2.0;
+    let rx = rect.width() / 2.0 + stroke_width / 2.0;
+    let ry = rect.height() / 2.0 + stroke_width / 2.0;
+
+    if let Some(path) = oval_path(cx, cy, rx, ry) {
+        fill_with_shadow(canvas, &path, color, offset, shadow_color);
+    }
+}
+
+fn fill_with_shadow(
+    canvas: &mut Pixmap,
+    path: &tiny_skia::Path,
+    color: Color,
+    offset: (f32, f32),
+    shadow_color: Color,
+) {
+    let (transform, shadow_transform) = transforms_for(offset);
+
+    let mut shadow_paint = Paint::default();
+    shadow_paint.set_color(shadow_color);
+    shadow_paint.anti_alias = true;
+    canvas.fill_path(path, &shadow_paint, FillRule::Winding, shadow_transform, None);
+
+    let mut paint = Paint::default();
+    paint.set_color(color);
+    paint.anti_alias = true;
+    canvas.fill_path(path, &paint, FillRule::Winding, transform, None);
 }
 
 fn draw_line(

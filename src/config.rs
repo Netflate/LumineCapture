@@ -100,6 +100,7 @@ pub struct Tools {
     pub default_font_size: f32,
     pub default_bold: bool,
     pub default_italic: bool,
+    pub default_fill: bool,
     pub max_recent_colors: usize,
 }
 
@@ -111,6 +112,7 @@ impl Default for Tools {
             default_font_size: 24.0,
             default_bold: true,
             default_italic: false,
+            default_fill: false,
             max_recent_colors: 6,
         }
     }
@@ -253,6 +255,7 @@ default_stroke_width = 12.0
 default_font_size = 24.0
 default_bold = true
 default_italic = false
+default_fill = false
 max_recent_colors = 6
 
 [magnifier]

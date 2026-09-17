@@ -129,6 +129,7 @@ pub enum SettingsSource {
 pub enum ToggleField {
     Bold,
     Italic,
+    Fill,
 }
 
 /// Range of the stroke width and of the font size steppers.
@@ -188,6 +189,11 @@ pub fn widgets_for_tool(tool: Tool) -> &'static [SettingsWidget] {
                 max: STROKE_RANGE.1,
                 step: STEP,
                 unit: "px",
+            },
+            SettingsWidget::Separator,
+            SettingsWidget::Toggle {
+                visual: ToggleVisual::Checkbox { label: "Fill" },
+                field: ToggleField::Fill,
             },
         ],
         Tool::Eyedropper => EYEDROPPER_WIDGETS,

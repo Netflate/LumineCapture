@@ -14,6 +14,7 @@ pub struct ToolSettings {
     pub font_size: f32,
     pub bold: bool,
     pub italic: bool,
+    pub fill: bool,
     pub color: Color,
 }
 
@@ -34,6 +35,7 @@ impl Default for ToolSettings {
                 .clamp(font_min, font_max),
             bold: saved.bold.unwrap_or(tools.default_bold),
             italic: saved.italic.unwrap_or(tools.default_italic),
+            fill: tools.default_fill,
             color: default_color().color(),
         }
     }

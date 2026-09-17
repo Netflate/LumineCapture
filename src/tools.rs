@@ -80,16 +80,18 @@ pub fn dispatch_move(
         Tool::Rectangle | Tool::Arrow | Tool::Circle | Tool::Line => {
             let color = state.tool_settings.color;
             let stroke_width = state.tool_settings.stroke_width;
+            let fill = state.tool_settings.fill;
 
             let tool_impl = SimpleShapeTool {
                 make_shape: match tool {
-                    Tool::Rectangle => |start, end| AnnotationShape::Rectangle { start, end },
-                    Tool::Arrow => |start, end| AnnotationShape::Arrow { start, end },
-                    Tool::Circle => |start, end| AnnotationShape::Circle { start, end },
-                    _ => |start, end| AnnotationShape::Line { start, end },
+                    Tool::Rectangle => |start, end, filled| AnnotationShape::Rectangle { start, end, filled },
+                    Tool::Arrow => |start, end, _| AnnotationShape::Arrow { start, end },
+                    Tool::Circle => |start, end, filled| AnnotationShape::Circle { start, end, filled },
+                    _ => |start, end, _| AnnotationShape::Line { start, end },
                 },
                 color,
                 stroke_width,
+                fill,
             };
 
             tool_impl.on_move(state, global, dirty_mask);
@@ -116,16 +118,18 @@ pub fn dispatch_button(
         Tool::Rectangle | Tool::Arrow | Tool::Circle | Tool::Line => {
             let color = state.tool_settings.color;
             let stroke_width = state.tool_settings.stroke_width;
+            let fill = state.tool_settings.fill;
 
             let tool_impl = SimpleShapeTool {
                 make_shape: match tool {
-                    Tool::Rectangle => |start, end| AnnotationShape::Rectangle { start, end },
-                    Tool::Arrow => |start, end| AnnotationShape::Arrow { start, end },
-                    Tool::Circle => |start, end| AnnotationShape::Circle { start, end },
-                    _ => |start, end| AnnotationShape::Line { start, end },
+                    Tool::Rectangle => |start, end, filled| AnnotationShape::Rectangle { start, end, filled },
+                    Tool::Arrow => |start, end, _| AnnotationShape::Arrow { start, end },
+                    Tool::Circle => |start, end, filled| AnnotationShape::Circle { start, end, filled },
+                    _ => |start, end, _| AnnotationShape::Line { start, end },
                 },
                 color,
                 stroke_width,
+                fill,
             };
 
             tool_impl.on_button(state, button, pressed, dirty_mask);

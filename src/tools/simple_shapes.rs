@@ -6,9 +6,10 @@ use crate::types::annotations::{Annotation, AnnotationShape};
 use tiny_skia::{Color, Rect};
 
 pub struct SimpleShapeTool {
-    pub make_shape: fn((f32, f32), (f32, f32)) -> AnnotationShape,
+    pub make_shape: fn((f32, f32), (f32, f32), bool) -> AnnotationShape,
     pub color: Color,
     pub stroke_width: f32,
+    pub fill: bool,
 }
 
 impl ToolBehavior for SimpleShapeTool {
@@ -24,7 +25,7 @@ impl ToolBehavior for SimpleShapeTool {
             let color = self.color;
             let mut ann = Annotation {
                 id: state.next_id,
-                shape: (self.make_shape)(pos, pos),
+                shape: (self.make_shape)(pos, pos, self.fill),
                 color,
                 shadow_color: shadow_color_for(color),
                 stroke_width: self.stroke_width,
@@ -53,7 +54,7 @@ impl ToolBehavior for SimpleShapeTool {
 
             let pos = (state.input.pointer.global.0 as f32, state.input.pointer.global.1 as f32);
             let start = ann.shape.start_point();
-            ann.shape = (self.make_shape)(start, pos);
+            ann.shape = (self.make_shape)(start, pos, self.fill);
             ann.update_bbox();
 
             state.damage_rects.push(DamageZone::Global(ann.bbox));
