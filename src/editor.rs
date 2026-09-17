@@ -1,6 +1,7 @@
 pub mod dirty;
 pub mod edits;
 pub mod history;
+pub mod saved;
 
 use cosmic_text::{Editor, FontSystem, SwashCache};
 use std::collections::HashMap;

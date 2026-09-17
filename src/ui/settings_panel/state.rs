@@ -132,8 +132,8 @@ pub enum ToggleField {
 }
 
 /// Range of the stroke width and of the font size steppers.
-const STROKE_RANGE: (f32, f32) = (1.0, 40.0);
-const FONT_RANGE: (f32, f32) = (8.0, 72.0);
+pub const STROKE_RANGE: (f32, f32) = (1.0, 40.0);
+pub const FONT_RANGE: (f32, f32) = (8.0, 72.0);
 const STEP: f32 = 1.0;
 /// Size of an icon drawn inside a panel button.
 const ICON_SIZE: f32 = 16.0;
