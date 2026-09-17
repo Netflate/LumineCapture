@@ -241,6 +241,17 @@ fn default_palette() -> &'static [Color] {
     })
 }
 
+fn palette_row(history: &[Color]) -> Vec<Color> {
+    let mut row = history.to_vec();
+    for &color in default_palette() {
+        if !row.iter().any(|c| color_bytes(*c) == color_bytes(color)) {
+            row.push(color);
+        }
+    }
+    row.truncate(max_recent_colors());
+    row
+}
+
 // ─── SV-square state (Content of the pixmap is built by the render) ──────────────
 pub struct ColorSquareState {
     pub hue: f32,
@@ -420,6 +431,8 @@ pub struct ColorPickerPopover {
 
     pub picking: bool,
     pub recent_colors: Vec<Color>,
+    pub history: Vec<Color>,
+    pub initial_history: Vec<Color>,
     pub fields: TextFieldGroup<ColorField>,
     pub pre_edit_snapshot: Option<Vec<Annotation>>,
 
@@ -438,6 +451,12 @@ impl Default for ColorPickerPopover {
 
 impl ColorPickerPopover {
     pub fn new() -> Self {
+        let history: Vec<Color> = crate::editor::saved::get()
+            .recent_colors
+            .iter()
+            .map(|c| c.color())
+            .take(max_recent_colors())
+            .collect();
         Self {
             colorpicker_pixmap: None,
             position: (0.0, 0.0),
@@ -455,11 +474,9 @@ impl ColorPickerPopover {
             sv_clip_mask: None,
             hue_clip_mask: None,
             picking: false,
-            recent_colors: {
-                let mut recent = default_palette().to_vec();
-                recent.truncate(max_recent_colors());
-                recent
-            },
+            recent_colors: palette_row(&history),
+            initial_history: history.clone(),
+            history,
             fields: TextFieldGroup::new(),
             scroll: ScrollAccumulator::new(),
             pre_edit_snapshot: None,
@@ -533,9 +550,10 @@ impl ColorPickerPopover {
 
     pub fn record_used_color(&mut self, color: Color) {
         let bytes = color_bytes(color);
-        self.recent_colors.retain(|c| color_bytes(*c) != bytes);
-        self.recent_colors.insert(0, color);
-        self.recent_colors.truncate(max_recent_colors());
+        self.history.retain(|c| color_bytes(*c) != bytes);
+        self.history.insert(0, color);
+        self.history.truncate(max_recent_colors());
+        self.recent_colors = palette_row(&self.history);
     }
 
     pub fn select_color(&mut self, color: Color) {

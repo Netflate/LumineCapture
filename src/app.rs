@@ -45,7 +45,11 @@ pub async fn make_screenshot(
     prof.dump();
 
     run_overlay(&mut editor_state, overlay)?;
-    crate::editor::saved::save(&editor_state.tool_settings, &[], &[]);
+    crate::editor::saved::save(
+        &editor_state.tool_settings,
+        &editor_state.color_popover.history,
+        &editor_state.color_popover.initial_history,
+    );
 
     editor_state.ocr.models.shutdown();
     finish_capture(&mut editor_state).await
