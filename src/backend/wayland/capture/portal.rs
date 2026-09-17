@@ -83,9 +83,7 @@ async fn start_session(
 // reconcile portal-reported monitor streams against the wayland output list.
 // the portal is a separate, independent source of truth from wayland, so unlike
 // present() in the overlay (which trusts its own outputs), here a subset is a
-// real, expected situation (e.g. the user deselected a monitor in the portal's
-// picker dialog). A stream that matches no output must be surfaced as an explicit
-// error rather than silently falling back to a guess
+// real, expected situation 
 fn reconcile_streams(
     streams: Vec<StreamInfo>,
     outputs: &[Output],
