@@ -17,6 +17,7 @@ struct File {
     font_size: Option<f32>,
     bold: Option<bool>,
     italic: Option<bool>,
+    fill: Option<bool>,
     recent_colors: Vec<String>,
 }
 
@@ -27,6 +28,7 @@ pub struct Saved {
     pub font_size: Option<f32>,
     pub bold: Option<bool>,
     pub italic: Option<bool>,
+    pub fill: Option<bool>,
     pub recent_colors: Vec<Rgba>,
 }
 
@@ -67,6 +69,7 @@ fn load() -> Saved {
         font_size: file.font_size,
         bold: file.bold,
         italic: file.italic,
+        fill: file.fill,
         recent_colors: file.recent_colors.iter().filter_map(|s| parse_color(s)).collect(),
     }
 }
@@ -90,6 +93,7 @@ pub fn save(settings: &ToolSettings, history: &[Color], initial_history: &[Color
         font_size: Some(settings.font_size),
         bold: Some(settings.bold),
         italic: Some(settings.italic),
+        fill: Some(settings.fill),
         recent_colors: history.iter().map(|&c| hex(c)).collect(),
     };
     let text = match toml::to_string(&file) {
