@@ -8,9 +8,11 @@ use smithay_client_toolkit::compositor::CompositorHandler;
 use smithay_client_toolkit::shell::xdg::window::{Window, WindowConfigure, WindowHandler};
 
 use smithay_client_toolkit::shm::ShmHandler;
+use smithay_client_toolkit::shell::WaylandSurface;
+use smithay_client_toolkit::shell::wlr_layer::{LayerShellHandler, LayerSurface, LayerSurfaceConfigure};
 use smithay_client_toolkit::{
-    delegate_compositor, delegate_shm, delegate_subcompositor, delegate_xdg_shell,
-    delegate_xdg_window,
+    delegate_compositor, delegate_layer, delegate_shm, delegate_subcompositor,
+    delegate_xdg_shell, delegate_xdg_window,
 };
 
 use wayland_client::protocol::{wl_output, wl_surface};
@@ -49,9 +51,14 @@ impl CompositorHandler for OverlayState {
         &mut self,
         _: &Connection,
         _: &QueueHandle<Self>,
-        _: &wl_surface::WlSurface,
-        _: &wl_output::WlOutput,
+        surface: &wl_surface::WlSurface,
+        output: &wl_output::WlOutput,
     ) {
+        if let Some(probe) = self.probe.as_mut()
+            && probe.layer.wl_surface() == surface
+        {
+            probe.output = Some(output.clone());
+        }
     }
     fn surface_leave(
         &mut self,
@@ -136,5 +143,34 @@ impl WindowHandler for OverlayState {
     }
 }
 
+impl LayerShellHandler for OverlayState {
+    fn closed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &LayerSurface) {}
+
+    fn configure(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        layer: &LayerSurface,
+        _: LayerSurfaceConfigure,
+        _: u32,
+    ) {
+        let Some(probe) = self.probe.as_mut() else {
+            return;
+        };
+        if &probe.layer != layer || probe.buffer.is_some() {
+            return;
+        }
+        let Ok(mut buffer) = create_shm_buffer(&mut self.pool, 1, 1) else {
+            return;
+        };
+        buffer.write_pixels(&mut self.pool, &[0; 4]);
+        layer.wl_surface().attach(Some(buffer.wl_buffer()), 0, 0);
+        layer.wl_surface().damage_buffer(0, 0, 1, 1);
+        layer.commit();
+        probe.buffer = Some(buffer);
+    }
+}
+
+delegate_layer!(OverlayState);
 delegate_xdg_shell!(OverlayState);
 delegate_xdg_window!(OverlayState);

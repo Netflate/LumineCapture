@@ -18,9 +18,13 @@ use crate::backend::ScreenOverlay;
 use crate::backend::wayland::utils::shm::create_shm_buffer;
 use crate::backend::wayland::utils::surface::{Background, SurfaceData};
 use smithay_client_toolkit::compositor::Region;
+use smithay_client_toolkit::shell::WaylandSurface;
+use smithay_client_toolkit::shell::wlr_layer::{KeyboardInteractivity, Layer};
+use state::Probe;
 use crate::types::{CursorIcon, DamageRect, Output, OverlayEvent};
 
 const CONFIGURE_TIMEOUT: Duration = Duration::from_secs(5);
+const PROBE_TIMEOUT: Duration = Duration::from_millis(300);
 
 pub struct WaylandOverlay {
     runtime: state::OverlayRunTime,
@@ -215,6 +219,46 @@ impl ScreenOverlay for WaylandOverlay {
 
     fn discovered_outputs(&self) -> &[Output] {
         &self.runtime.state.outputs
+    }
+
+    fn active_output(&mut self) -> Option<usize> {
+        let rt = &mut self.runtime;
+        let qh = rt.event_queue.handle();
+        let shell = rt.state.layer_shell.as_ref()?;
+
+        let surface = rt.state.compositor_state.create_surface(&qh);
+        let layer = shell.create_layer_surface(
+            &qh,
+            surface,
+            Layer::Overlay,
+            Some("lumine-probe"),
+            None,
+        );
+        layer.set_size(1, 1);
+        layer.set_keyboard_interactivity(KeyboardInteractivity::None);
+        if let Ok(region) = Region::new(&rt.state.compositor_state) {
+            layer.wl_surface().set_input_region(Some(region.wl_region()));
+        }
+        layer.commit();
+        rt.state.probe = Some(Probe {
+            layer,
+            buffer: None,
+            output: None,
+        });
+
+        let deadline = Instant::now() + PROBE_TIMEOUT;
+        while rt.state.probe.as_ref().is_some_and(|p| p.output.is_none()) && Instant::now() < deadline {
+            if rt.event_queue.roundtrip(&mut rt.state).is_err() {
+                break;
+            }
+            if rt.state.probe.as_ref().is_some_and(|p| p.output.is_none()) {
+                std::thread::sleep(Duration::from_millis(2));
+            }
+        }
+
+        let output = rt.state.probe.take()?.output?;
+        let _ = rt.event_queue.flush();
+        rt.state.outputs.iter().position(|o| o.wl_output == output)
     }
 
     fn retain_outputs(&mut self, keep: &[usize]) -> Result<(), Box<dyn std::error::Error>> {

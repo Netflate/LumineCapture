@@ -41,6 +41,8 @@ pub struct OverlayState {
     pub frac_scale: Option<wp_fractional_scale_v1::WpFractionalScaleV1>,
     pub viewporter: Option<wp_viewporter::WpViewporter>,
     pub subcompositor: Option<smithay_client_toolkit::subcompositor::SubcompositorState>,
+    pub layer_shell: Option<smithay_client_toolkit::shell::wlr_layer::LayerShell>,
+    pub probe: Option<Probe>,
     // ── pointer ──────────────────────────────────────────────────────────────────
     pub cursor_shape_device: Option<WpCursorShapeDeviceV1>,
     pub pointer_enter_serial: u32,
@@ -55,6 +57,12 @@ pub struct OverlayState {
     pub pending_flush: bool,
     pub configure_error: Option<String>,
     pub mods: crate::keys::Mods,
+}
+
+pub struct Probe {
+    pub layer: smithay_client_toolkit::shell::wlr_layer::LayerSurface,
+    pub buffer: Option<crate::backend::wayland::utils::shm::ShmBuffer>,
+    pub output: Option<wayland_client::protocol::wl_output::WlOutput>,
 }
 
 pub struct OverlayRunTime {
@@ -113,6 +121,8 @@ impl OverlayRunTime {
             &qh,
         )
         .ok();
+        state.layer_shell =
+            smithay_client_toolkit::shell::wlr_layer::LayerShell::bind(&globals, &qh).ok();
 
         // two roundtrips: first gets globals
         // second waits for events update
@@ -149,6 +159,8 @@ impl OverlayState {
             frac,
             viewporter,
             subcompositor: None,
+            layer_shell: None,
+            probe: None,
 
             cursor_shape_device: None,
             current_cursor_icon: CursorIcon::default(),
