@@ -88,7 +88,6 @@ impl ScreenOverlay for WaylandOverlay {
                     surface,
                     window,
                     shm_buffer: None,
-                    transparent_buffer: None,
                     width: w,
                     height: h,
                 },

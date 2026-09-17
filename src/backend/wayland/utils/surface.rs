@@ -36,7 +36,6 @@ pub struct SurfaceData {
     pub surface: wl_surface::WlSurface,
 
     pub shm_buffer: Option<ShmBuffer>,
-    pub transparent_buffer: Option<ShmBuffer>,
 
     pub width: u32,
     pub height: u32,
