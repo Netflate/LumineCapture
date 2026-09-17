@@ -100,24 +100,28 @@ fn reconcile_streams(
     for stream in streams {
         let pos = stream.position.unwrap_or((0, 0));
 
-        let idx = outputs
+        let Some(idx) = outputs
             .iter()
             .enumerate()
             .filter(|(i, _)| !used[*i])
             .find(|(_, o)| o.info.logical_position == Some(pos))
             .map(|(i, _)| i)
-            .ok_or_else(|| {
-                format!(
-                    "portal stream at {:?} doesn't match any known wayland output (known positions: {:?})",
-                    pos,
-                    outputs.iter().map(|o| o.info.logical_position).collect::<Vec<_>>()
-                )
-            })?;
+        else {
+            warn!(
+                "Skipping portal stream at {:?}, it matches none of the captured outputs (positions: {:?})",
+                pos,
+                outputs.iter().map(|o| o.info.logical_position).collect::<Vec<_>>()
+            );
+            continue;
+        };
 
         used[idx] = true;
         matched.push((idx, stream));
     }
 
+    if matched.is_empty() {
+        return Err("none of the portal's monitor streams matches the monitors being captured".into());
+    }
     matched.sort_by_key(|(idx, _)| *idx);
     Ok(matched)
 }
