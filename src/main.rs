@@ -29,6 +29,7 @@ fn print_help() {
     println!("Options:");
     println!("  -h, --help              Print this help and exit");
     println!("  -V, --version           Print the version and exit");
+    println!("      --one               Capture only the active monitor");
     println!("      --config <PATH>     Use this config file instead of the default location");
     println!("      --print-default-config");
     println!("                          Print the default config.toml and exit");
@@ -49,6 +50,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         print!("{}", config::TEMPLATE);
         return Ok(());
     }
+    let one = pargs.contains("--one");
     let config_path: Option<PathBuf> = pargs
         .opt_value_from_os_str("--config", |s| Ok::<_, String>(PathBuf::from(s)))?;
     config::init(config_path);
@@ -82,7 +84,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         _ => tokio::runtime::Runtime::new()?.block_on(async {
             logging::init(logging::Process::Overlay);
             let result = match wayland_client::Connection::connect_to_env() {
-                Ok(conn) => app::make_screenshot(conn).await,
+                Ok(conn) => app::make_screenshot(conn, one).await,
                 Err(e) => Err(format!("can't connect to Wayland: {e}").into()),
             };
             if let Err(e) = &result {

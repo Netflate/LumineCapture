@@ -35,10 +35,11 @@ const POINTER_GRACE: Duration = Duration::from_millis(100);
 
 pub async fn make_screenshot(
     conn: wayland_client::Connection,
+    one: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut prof = Profiler::new();
 
-    let (mut editor_state, mut overlay) = start_capture(conn, &mut prof).await?;
+    let (mut editor_state, mut overlay) = start_capture(conn, one, &mut prof).await?;
 
     init::initial_paint(&mut editor_state, &mut overlay, &mut prof)?;
     prof.dump();
@@ -53,6 +54,7 @@ pub async fn make_screenshot(
 /// on its own thread while screens are captured, running both slow setup steps in parallel.
 async fn start_capture(
     conn: wayland_client::Connection,
+    one: bool,
     prof: &mut Profiler,
 ) -> Result<(EditorState, Box<dyn ScreenOverlay>), Box<dyn std::error::Error>> {
     let icons_handle = std::thread::spawn(init::load_icons_cache);
@@ -61,8 +63,19 @@ async fn start_capture(
     let mut overlay = initialize_overlay(conn.clone())?;
     prof.mark("overlay init");
 
-    let outputs = overlay.discovered_outputs().to_vec();
-    let targets: Vec<usize> = (0..outputs.len()).collect();
+    let all = overlay.discovered_outputs().to_vec();
+    let targets: Vec<usize> = match one.then(|| overlay.active_output()) {
+        Some(Some(idx)) => vec![idx],
+        Some(None) => {
+            log::warn!("Can't tell which monitor is active, capturing all of them");
+            (0..all.len()).collect()
+        }
+        None => (0..all.len()).collect(),
+    };
+    let outputs: Vec<_> = targets.iter().map(|&i| all[i].clone()).collect();
+    if one {
+        prof.mark("active output probed");
+    }
     let present_handle = std::thread::spawn(move || {
         let t = std::time::Instant::now();
         let res = overlay.present(&targets).map_err(|e| e.to_string());
