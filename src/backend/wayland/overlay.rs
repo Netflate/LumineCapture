@@ -39,17 +39,16 @@ impl WaylandOverlay {
 }
 
 impl ScreenOverlay for WaylandOverlay {
-    fn present(&mut self) -> Result<&[Output], Box<dyn std::error::Error>> {
+    fn present(&mut self, targets: &[usize]) -> Result<(), Box<dyn std::error::Error>> {
         let rt = &mut self.runtime;
         let qh = rt.event_queue.handle();
 
         if rt.state.outputs.is_empty() {
             return Err("compositor reported no outputs".into());
         }
-        let outputs_snapshot: Vec<_> = rt
-            .state
-            .outputs
+        let outputs_snapshot: Vec<_> = targets
             .iter()
+            .filter_map(|&i| rt.state.outputs.get(i))
             .map(|o| (o.wl_output.clone(), o.info.logical_size.unwrap_or((0, 0))))
             .collect();
 
@@ -109,7 +108,7 @@ impl ScreenOverlay for WaylandOverlay {
             }
         }
 
-        Ok(&rt.state.outputs)
+        Ok(())
     }
 
     fn stage_frame(

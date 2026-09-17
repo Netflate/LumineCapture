@@ -51,7 +51,7 @@ pub trait ClipboardProvider {
 }
 
 pub trait ScreenOverlay: Send {
-    fn present(&mut self) -> Result<&[Output], Box<dyn std::error::Error>>;
+    fn present(&mut self, targets: &[usize]) -> Result<(), Box<dyn std::error::Error>>;
     fn stage_frame(
         &mut self,
         monitor_idx: usize,

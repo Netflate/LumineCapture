@@ -62,9 +62,10 @@ async fn start_capture(
     prof.mark("overlay init");
 
     let outputs = overlay.discovered_outputs().to_vec();
+    let targets: Vec<usize> = (0..outputs.len()).collect();
     let present_handle = std::thread::spawn(move || {
         let t = std::time::Instant::now();
-        let res = overlay.present().map(|_| ()).map_err(|e| e.to_string());
+        let res = overlay.present(&targets).map_err(|e| e.to_string());
         (overlay, res, t.elapsed())
     });
 
