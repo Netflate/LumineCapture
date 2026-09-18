@@ -36,6 +36,8 @@ trait ScreenShot2 {
     ) -> zbus::Result<HashMap<String, OwnedValue>>;
 }
 
+const READ_CHUNK: u64 = 256 * 1024;
+
 pub struct KdeMethod {
     conn: OnceCell<Connection>, // session bus connected lazily once, reused across calls
 }
@@ -68,7 +70,13 @@ async fn capture_one_screen(
             Some((w, h)) => Vec::with_capacity(w.saturating_mul(h).saturating_mul(4)),
             None => Vec::new(),
         };
-        std::fs::File::from(read_fd).read_to_end(&mut buf)?;
+        let file = std::fs::File::from(read_fd);
+        let mut swizzled = 0;
+        while (&file).take(READ_CHUNK).read_to_end(&mut buf)? > 0 {
+            let ready = buf.len() - buf.len() % 4;
+            swizzle_all(&mut buf[swizzled..ready]);
+            swizzled = ready;
+        }
         Ok(buf)
     });
 
@@ -112,7 +120,6 @@ async fn capture_one_screen(
     // if there is no padding, there is no point in allocations and copying
     if stride as usize == row_bytes {
         raw.truncate(row_bytes * height as usize);
-        swizzle_all(&mut raw);
         return Ok((raw, width, height));
     }
 
@@ -123,7 +130,6 @@ async fn capture_one_screen(
         let dst = &mut tight[row * row_bytes..][..row_bytes];
         dst.copy_from_slice(src);
     }
-    swizzle_all(&mut tight);
 
     Ok((tight, width, height))
 }
