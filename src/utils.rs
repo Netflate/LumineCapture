@@ -276,12 +276,6 @@ pub fn get_full_workspace_rect(placements: &[Placement]) -> Option<Rect> {
 
 // pixels swap
 #[inline]
-pub fn swizzle_all(pixels: &mut [u8]) {
-    for chunk in pixels.chunks_exact_mut(4) {
-        chunk.swap(0, 2);
-    }
-}
-
 pub fn to_rgba(pixels: &mut [u8], bgr: bool) {
     for chunk in pixels.chunks_exact_mut(4) {
         if bgr {

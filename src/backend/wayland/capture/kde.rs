@@ -15,7 +15,7 @@ use zbus::{Connection, proxy};
 
 use crate::backend::CaptureMethod;
 use crate::types::{CaptureResult, MonitorFrame, Output, StreamInfo};
-use crate::utils::swizzle_all;
+use crate::utils::to_rgba;
 
 // async_trait requires the whole future graph to be Send; std::error::Error
 // alone isn't Send, so all internal helpers use this bound instead and only
@@ -56,6 +56,14 @@ impl KdeMethod {
     }
 }
 
+fn is_bgr(format: Option<u32>) -> Option<bool> {
+    match format {
+        None | Some(4..=6) => Some(true),
+        Some(16..=18) => Some(false),
+        Some(_) => None,
+    }
+}
+
 // captures a single output by name; returns tight (unpadded) pixels
 async fn capture_one_screen(
     proxy: &ScreenShot2Proxy<'_>,
@@ -63,6 +71,7 @@ async fn capture_one_screen(
     dimensions: Option<(usize, usize)>,
 ) -> Result<(Vec<u8>, u32, u32), BoxErr> {
     let (read_fd, write_fd): (OwnedFd, OwnedFd) = nix::unistd::pipe()?;
+    let (bgr_tx, bgr_rx) = std::sync::mpsc::channel::<bool>();
 
     let read_task = tokio::task::spawn_blocking(move || -> std::io::Result<Vec<u8>> {
         use std::io::Read;
@@ -71,11 +80,18 @@ async fn capture_one_screen(
             None => Vec::new(),
         };
         let file = std::fs::File::from(read_fd);
-        let mut swizzled = 0;
+        let mut order = None;
+        let mut converted = 0;
         while (&file).take(READ_CHUNK).read_to_end(&mut buf)? > 0 {
+            let bgr = match order {
+                Some(bgr) => bgr,
+                None => *order.insert(bgr_rx.recv().map_err(|_| {
+                    std::io::Error::other("KWin didn't report the screenshot format")
+                })?),
+            };
             let ready = buf.len() - buf.len() % 4;
-            swizzle_all(&mut buf[swizzled..ready]);
-            swizzled = ready;
+            to_rgba(&mut buf[converted..ready], bgr);
+            converted = ready;
         }
         Ok(buf)
     });
@@ -92,6 +108,13 @@ async fn capture_one_screen(
     drop(write_fd);
 
     let metadata = result?;
+    let format = metadata
+        .get("format")
+        .and_then(|v| u32::try_from(v.clone()).ok());
+    let bgr = is_bgr(format).ok_or(format!(
+        "KWin sent the screenshot of '{output_name}' in QImage format {format:?}, which isn't supported"
+    ))?;
+    let _ = bgr_tx.send(bgr);
     let mut raw = read_task.await??;
 
     let width = metadata
