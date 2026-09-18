@@ -63,6 +63,13 @@ fn load() -> Saved {
         }
     };
 
+    let mut recent_colors = Vec::new();
+    for color in file.recent_colors.iter().filter_map(|s| parse_color(s)) {
+        if !recent_colors.contains(&color) {
+            recent_colors.push(color);
+        }
+    }
+
     Saved {
         color: file.color.as_deref().and_then(parse_color),
         stroke_width: file.stroke_width.filter(|w| w.is_finite()),
@@ -70,7 +77,7 @@ fn load() -> Saved {
         bold: file.bold,
         italic: file.italic,
         fill: file.fill,
-        recent_colors: file.recent_colors.iter().filter_map(|s| parse_color(s)).collect(),
+        recent_colors,
     }
 }
 
