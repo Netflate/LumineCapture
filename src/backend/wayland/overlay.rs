@@ -46,6 +46,20 @@ impl ScreenOverlay for WaylandOverlay {
         if rt.state.outputs.is_empty() {
             return Err("compositor reported no outputs".into());
         }
+        let prefault: usize = targets
+            .iter()
+            .filter_map(|&i| rt.state.outputs.get(i))
+            .map(|o| {
+                let (w, h) = o.info.logical_size.unwrap_or((0, 0));
+                let (mw, mh) = o
+                    .info
+                    .modes
+                    .iter()
+                    .find(|m| m.current)
+                    .map_or((0, 0), |m| m.dimensions);
+                (w.max(0) as usize * h.max(0) as usize + mw.max(0) as usize * mh.max(0) as usize) * 4
+            })
+            .sum();
         let outputs_snapshot: Vec<_> = targets
             .iter()
             .filter_map(|&i| rt.state.outputs.get(i))
@@ -92,6 +106,11 @@ impl ScreenOverlay for WaylandOverlay {
                     height: h,
                 },
             );
+        }
+
+        rt.event_queue.flush()?;
+        if let Ok(slot) = rt.state.pool.new_slot(prefault) {
+            rt.state.pool.raw_data_mut(&slot).fill(0);
         }
 
         let deadline = Instant::now() + CONFIGURE_TIMEOUT;
