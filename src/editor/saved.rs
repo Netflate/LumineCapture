@@ -65,8 +65,8 @@ fn load() -> Saved {
 
     Saved {
         color: file.color.as_deref().and_then(parse_color),
-        stroke_width: file.stroke_width,
-        font_size: file.font_size,
+        stroke_width: file.stroke_width.filter(|w| w.is_finite()),
+        font_size: file.font_size.filter(|s| s.is_finite()),
         bold: file.bold,
         italic: file.italic,
         fill: file.fill,
