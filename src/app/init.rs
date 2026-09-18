@@ -9,12 +9,10 @@ use crate::renderer;
 use crate::ui::toolbar::{ToolbarButton, ToolbarItem};
 use crate::types::{Capture, MonitorFrame, Output, Placement};
 use crate::ui::icons;
-use crate::types::tool_settings::default_color;
 use std::collections::HashMap;
 use tiny_skia::{IntSize, Pixmap};
 use usvg::Tree;
 
-use super::selection_render_info;
 
 pub fn build_captures(frames: Vec<MonitorFrame>) -> Result<Vec<Capture>, String> {
     frames
@@ -84,8 +82,10 @@ pub fn build_layers(placements: &[Placement]) -> (Vec<Pixmap>, Vec<Pixmap>, Vec<
         let w = p.size.0.max(1) as u32;
         let h = p.size.1.max(1) as u32;
 
-        canvases.push(Pixmap::new(w, h).expect("Failed to create canvas"));
-        dimmed_layers.push(Pixmap::new(w, h).expect("Failed to create dimmed"));
+        let mut dimmed = Pixmap::new(w, h).expect("Failed to create dimmed");
+        renderer::init_dimming(&mut dimmed, None, None);
+        canvases.push(dimmed.clone());
+        dimmed_layers.push(dimmed);
         annotation_layers.push(Pixmap::new(w, h).expect("Failed to create annotations"));
     }
 
@@ -136,90 +136,8 @@ pub fn initial_paint(
     overlay: &mut Box<dyn ScreenOverlay>,
     prof: &mut Profiler,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let n = editor_state.captures.len();
-
-    let EditorState {
-        captures,
-        canvas,
-        dimmed,
-        annotations_layer,
-        placements,
-        icons_cache,
-        magnifier,
-        selection,
-        ..
-    } = editor_state;
-
-    let sel_zone = &selection.zone;
-    let prev_zone = &selection.prev_zone;
-    let icons_cache_ref = &*icons_cache;
-    let magnifier_ref = magnifier.current.as_ref();
-
-    let no_toasts = crate::ui::toast::Toasts::default();
-    let no_toasts = &no_toasts;
-
-    std::thread::scope(|scope| {
-        let mut handles = Vec::with_capacity(n);
-
-        for (i, (((capture_i, canvas_i), dimmed_i), ann_i)) in captures
-            .iter()
-            .zip(canvas.iter_mut())
-            .zip(dimmed.iter_mut())
-            .zip(annotations_layer.iter_mut())
-            .enumerate()
-        {
-            let placement = &placements[i];
-
-            handles.push(scope.spawn(move || {
-                let (local_sel, prev_local, edges) =
-                    selection_render_info(sel_zone, prev_zone, placement);
-
-                renderer::init_dimming(dimmed_i, local_sel.as_ref(), edges.as_ref());
-
-                renderer::render_frame(&mut renderer::RenderRequest {
-                    canvas: canvas_i,
-                    capture: capture_i,
-                    dimmed: dimmed_i,
-                    selection: local_sel.as_ref(),
-                    prev_selection: prev_local.as_ref(),
-                    dirty_rect: None,
-                    selection_edges: edges.as_ref(),
-                    selection_dirty: false,
-                    magnifier: magnifier_ref,
-                    is_mag_monitor: false,
-                    mag_label: false,
-                    toolbar: None,
-                    settings_panel: None,
-                    color_picker: None,
-                    model_popover: None,
-                    icons_cache: icons_cache_ref,
-                    offset: (0.0, 0.0),
-                    annotations_layer: ann_i,
-                    annotations_layer_empty: true,
-                    pending: None,
-                    is_pending_selected: false,
-                    selected_annotation: None,
-                    annotations: &[],
-                    text: None,
-                    active_text_id: None,
-                    current_color: default_color().color(),
-                    ocr_view: None,
-                    ocr_scan: None,
-                    monitor_idx: i,
-                    toasts: no_toasts,
-                });
-            }));
-        }
-
-        for h in handles {
-            h.join().expect("initial_paint render thread panicked");
-        }
-    });
-
-    prof.mark(&format!("dimming+render for {n} monitors (parallel)"));
-
-    for i in 0..n {
-        overlay.stage_frame(i, editor_state.canvas[i].data(), None)?;
+    for (i, canvas) in editor_state.canvas.iter().enumerate() {
+        overlay.stage_frame(i, canvas.data(), None)?;
     }
     overlay.flush()?;
     prof.mark("frames staged + flushed");

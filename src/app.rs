@@ -81,6 +81,10 @@ async fn start_capture(
     if one {
         prof.mark("active output probed");
     }
+    let layers_handle = {
+        let placements = init::build_placements(&outputs);
+        std::thread::spawn(move || init::build_layers(&placements))
+    };
     let present_handle = std::thread::spawn(move || {
         let t = std::time::Instant::now();
         let res = overlay.present(&targets).map_err(|e| e.to_string());
@@ -100,7 +104,12 @@ async fn start_capture(
 
     let captures = init::build_captures(screenshots.frames)?;
     let placements = init::build_placements(&outputs);
-    let (canvas, dimmed, annotations) = init::build_layers(&placements);
+    let layers = layers_handle.join().expect("Failed to join layers thread");
+    let (canvas, dimmed, annotations) = if kept.iter().copied().eq(0..kept.len()) && !shrunk {
+        layers
+    } else {
+        init::build_layers(&placements)
+    };
     prof.mark("base_pixmaps + layers + placements");
 
     let (swash_cache, font_system) = text_handle.join().expect("Failed to join text thread");
