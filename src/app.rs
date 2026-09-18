@@ -98,12 +98,10 @@ async fn start_capture(
     let shrunk = kept.len() < outputs.len();
     let outputs: Vec<_> = kept.iter().map(|&i| outputs[i].clone()).collect();
 
-    let captures = init::build_captures(&screenshots.frames)?;
+    let captures = init::build_captures(screenshots.frames)?;
     let placements = init::build_placements(&outputs);
     let (canvas, dimmed, annotations) = init::build_layers(&placements);
     prof.mark("base_pixmaps + layers + placements");
-
-    drop(screenshots);
 
     let (swash_cache, font_system) = text_handle.join().expect("Failed to join text thread");
     let icons_cache = icons_handle.join().expect("Failed to join icons thread");

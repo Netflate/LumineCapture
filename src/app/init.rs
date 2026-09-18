@@ -11,23 +11,37 @@ use crate::types::{Capture, MonitorFrame, Output, Placement};
 use crate::ui::icons;
 use crate::types::tool_settings::default_color;
 use std::collections::HashMap;
-use tiny_skia::Pixmap;
+use tiny_skia::{IntSize, Pixmap};
 use usvg::Tree;
 
 use super::selection_render_info;
 
-pub fn build_captures(frames: &[MonitorFrame]) -> Result<Vec<Capture>, String> {
+pub fn build_captures(frames: Vec<MonitorFrame>) -> Result<Vec<Capture>, String> {
     frames
-        .iter()
+        .into_iter()
         .enumerate()
-        .map(|(monitor_idx, f)| {
+        .map(|(monitor_idx, mut f)| {
             let (src_w, src_h) = (f.pw_width, f.pw_height);
-            let mut pixmap = Pixmap::new(src_w, src_h).ok_or_else(|| {
+            let size = IntSize::from_wh(src_w, src_h).ok_or_else(|| {
                 format!("Invalid frame size for monitor {monitor_idx}: {src_w}x{src_h}")
             })?;
+            let logical_w = f.info.size.map_or(src_w as i32, |s| s.0).max(1);
+            let scale = src_w as f32 / logical_w as f32;
 
             let row_bytes = (src_w as usize) * 4;
             let src_stride = f.pw_stride as usize;
+            let tight_len = row_bytes * src_h as usize;
+
+            if src_stride == row_bytes && f.pixels.len() >= tight_len {
+                f.pixels.truncate(tight_len);
+                let pixmap = Pixmap::from_vec(f.pixels, size)
+                    .ok_or_else(|| format!("Invalid frame for monitor {monitor_idx}"))?;
+                return Ok(Capture { pixmap, scale });
+            }
+
+            let mut pixmap = Pixmap::new(src_w, src_h).ok_or_else(|| {
+                format!("Invalid frame size for monitor {monitor_idx}: {src_w}x{src_h}")
+            })?;
             let dst = pixmap.data_mut();
 
             if src_stride < row_bytes {
@@ -48,22 +62,14 @@ pub fn build_captures(frames: &[MonitorFrame]) -> Result<Vec<Capture>, String> {
                 )
             })?;
 
-            if src_stride == row_bytes {
-                dst.copy_from_slice(&src[..dst.len()]);
-            } else {
-                for row in 0..(src_h as usize) {
-                    let src_off = row * src_stride;
-                    let dst_off = row * row_bytes;
-                    dst[dst_off..dst_off + row_bytes]
-                        .copy_from_slice(&src[src_off..src_off + row_bytes]);
-                }
+            for row in 0..(src_h as usize) {
+                let src_off = row * src_stride;
+                let dst_off = row * row_bytes;
+                dst[dst_off..dst_off + row_bytes]
+                    .copy_from_slice(&src[src_off..src_off + row_bytes]);
             }
 
-            let logical_w = f.info.size.map_or(src_w as i32, |s| s.0).max(1);
-            Ok(Capture {
-                pixmap,
-                scale: src_w as f32 / logical_w as f32,
-            })
+            Ok(Capture { pixmap, scale })
         })
         .collect()
 }
