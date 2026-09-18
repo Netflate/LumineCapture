@@ -49,16 +49,17 @@ impl ScreenOverlay for WaylandOverlay {
         let prefault: usize = targets
             .iter()
             .filter_map(|&i| rt.state.outputs.get(i))
-            .map(|o| {
-                let (w, h) = o.info.logical_size.unwrap_or((0, 0));
-                let (mw, mh) = o
+            .flat_map(|o| {
+                let top = o.info.logical_size.unwrap_or((0, 0));
+                let background = o
                     .info
                     .modes
                     .iter()
                     .find(|m| m.current)
                     .map_or((0, 0), |m| m.dimensions);
-                (w.max(0) as usize * h.max(0) as usize + mw.max(0) as usize * mh.max(0) as usize) * 4
+                [top, background]
             })
+            .map(|(w, h)| (w.max(0) as usize * h.max(0) as usize * 4).next_multiple_of(64))
             .sum();
         let outputs_snapshot: Vec<_> = targets
             .iter()
