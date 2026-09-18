@@ -111,7 +111,7 @@ pub fn save(settings: &ToolSettings, history: &[Color], initial_history: &[Color
         }
     };
 
-    let tmp = path.with_extension("toml.tmp");
+    let tmp = path.with_extension(format!("toml.{}.tmp", std::process::id()));
     let written = path
         .parent()
         .map_or(Ok(()), std::fs::create_dir_all)
