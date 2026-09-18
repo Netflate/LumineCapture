@@ -210,3 +210,48 @@ impl CaptureMethod for KdeMethod {
         Ok(CaptureResult { frames })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn argb32_formats_are_swapped() {
+        for format in [4, 5, 6] {
+            assert_eq!(is_bgr(Some(format)), Some(true));
+        }
+    }
+
+    #[test]
+    fn rgba8888_formats_keep_their_order() {
+        for format in [16, 17, 18] {
+            assert_eq!(is_bgr(Some(format)), Some(false));
+        }
+    }
+
+    #[test]
+    fn missing_format_means_argb32() {
+        assert_eq!(is_bgr(None), Some(true));
+    }
+
+    #[test]
+    fn other_formats_are_rejected() {
+        for format in [0, 13, 22, 26, 30] {
+            assert_eq!(is_bgr(Some(format)), None);
+        }
+    }
+
+    #[test]
+    fn kwin_6_7_bytes_become_rgba() {
+        let mut px = vec![0x30, 0x20, 0x10, 0xFF];
+        to_rgba(&mut px, is_bgr(Some(6)).unwrap());
+        assert_eq!(px, [0x10, 0x20, 0x30, 0xFF]);
+    }
+
+    #[test]
+    fn rgbx_bytes_become_opaque_rgba() {
+        let mut px = vec![0x10, 0x20, 0x30, 0x00];
+        to_rgba(&mut px, is_bgr(Some(16)).unwrap());
+        assert_eq!(px, [0x10, 0x20, 0x30, 0xFF]);
+    }
+}
