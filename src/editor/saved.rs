@@ -18,6 +18,7 @@ struct File {
     bold: Option<bool>,
     italic: Option<bool>,
     fill: Option<bool>,
+    magnifier: Option<bool>,
     recent_colors: Vec<String>,
 }
 
@@ -29,6 +30,7 @@ pub struct Saved {
     pub bold: Option<bool>,
     pub italic: Option<bool>,
     pub fill: Option<bool>,
+    pub magnifier: Option<bool>,
     pub recent_colors: Vec<Rgba>,
 }
 
@@ -77,6 +79,7 @@ fn load() -> Saved {
         bold: file.bold,
         italic: file.italic,
         fill: file.fill,
+        magnifier: file.magnifier,
         recent_colors,
     }
 }
@@ -86,8 +89,9 @@ pub fn get() -> &'static Saved {
     SAVED.get_or_init(load)
 }
 
-pub fn save(settings: &ToolSettings, history: &[Color], initial_history: &[Color]) {
-    if *settings == ToolSettings::default() && history == initial_history {
+pub fn save(settings: &ToolSettings, history: &[Color], initial_history: &[Color], magnifier: bool) {
+    let magnifier_unchanged = get().magnifier.unwrap_or(true) == magnifier;
+    if *settings == ToolSettings::default() && history == initial_history && magnifier_unchanged {
         return;
     }
     let Some(path) = path() else {
@@ -101,6 +105,7 @@ pub fn save(settings: &ToolSettings, history: &[Color], initial_history: &[Color
         bold: Some(settings.bold),
         italic: Some(settings.italic),
         fill: Some(settings.fill),
+        magnifier: Some(magnifier),
         recent_colors: history.iter().map(|&c| hex(c)).collect(),
     };
     let text = match toml::to_string(&file) {

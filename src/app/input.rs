@@ -467,7 +467,7 @@ fn update_magnifier(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     let local = editor_state.input.pointer.local;
 
     if let Some(mag) = editor_state.magnifier.current.as_ref() {
-        if mag.monitor_idx != monitor_idx {
+        if mag.monitor_idx != monitor_idx && editor_state.magnifier_shown() {
             mark_dirty(dirty_mask, mag.monitor_idx);
         }
         editor_state.magnifier.prev = Some(MagnifierState {
@@ -482,7 +482,9 @@ fn update_magnifier(editor_state: &mut EditorState, dirty_mask: &mut u32) {
         monitor_idx,
         pos: local,
     });
-    mark_dirty(dirty_mask, monitor_idx);
+    if editor_state.magnifier_shown() {
+        mark_dirty(dirty_mask, monitor_idx);
+    }
 }
 
 fn handle_text_input(editor_state: &mut EditorState, ch: char, dirty_mask: &mut u32) {

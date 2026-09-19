@@ -90,6 +90,7 @@ async fn make_screenshot(
         &editor_state.tool_settings,
         &editor_state.color_popover.history,
         &editor_state.color_popover.initial_history,
+        !editor_state.magnifier.hidden,
     );
 
     editor_state.ocr.models.shutdown();
@@ -447,6 +448,7 @@ fn render_monitor(editor_state: &mut EditorState, i: usize, frame: &Frame) -> Op
     // pointer is selecting and hides the line under it.
     let picking = editor_state.picking();
     let is_mag_monitor = editor_state.selected_tool != Tool::Ocr
+        && editor_state.magnifier_shown()
         && editor_state
             .magnifier
             .current

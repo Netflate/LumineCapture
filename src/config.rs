@@ -277,6 +277,7 @@ redo = [\"Ctrl+Shift+Z\", \"Ctrl+Y\"]
 select_all = \"Ctrl+A\"
 delete = [\"Delete\", \"Backspace\"]
 toggle_ui = \"Space\"
+toggle_magnifier = \"M\"
 size_up = \"]\"
 size_down = \"[\"
 tool_selection = \"S\"

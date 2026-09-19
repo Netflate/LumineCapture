@@ -4,11 +4,12 @@
 // and overall is context aware, and does some safety checks 
 use tiny_skia::Rect;
 
-use crate::editor::dirty::{apply_damage_rects, mark_all_dirty};
+use crate::editor::dirty::{apply_damage_rects, mark_all_dirty, mark_dirty};
 use crate::editor::{DamageZone, EditorState};
 use crate::keys::{Action, Dir};
 use crate::tools::Tool;
 use crate::types::Finish;
+use crate::ui::magnifier::magnifier_rect;
 use crate::ui::settings_panel::{SettingsWidget, StepperArrow, ValueField};
 use crate::utils::get_full_workspace_rect;
 
@@ -55,6 +56,7 @@ pub fn run(editor_state: &mut EditorState, action: Action, dirty_mask: &mut u32)
         Action::SelectAll => select_all(editor_state, dirty_mask),
         Action::ToggleUi | Action::Tool(_) if editor_state.region => {}
         Action::ToggleUi => toggle_ui(editor_state, dirty_mask),
+        Action::ToggleMagnifier => toggle_magnifier(editor_state, dirty_mask),
         Action::SizeUp => step_size(editor_state, StepperArrow::Up, dirty_mask),
         Action::SizeDown => step_size(editor_state, StepperArrow::Down, dirty_mask),
         Action::Tool(tool) if !busy => select_tool(editor_state, tool, dirty_mask),
@@ -148,6 +150,27 @@ fn toggle_ui(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     }
     editor_state.toolbar.dirty = true;
     refresh_panels(editor_state, dirty_mask);
+}
+
+fn toggle_magnifier(editor_state: &mut EditorState, dirty_mask: &mut u32) {
+    let was_shown = editor_state.magnifier_shown();
+    editor_state.magnifier.hidden = !editor_state.magnifier.hidden;
+    if editor_state.magnifier_shown() == was_shown {
+        return;
+    }
+    let Some(mag) = editor_state.magnifier.current.as_ref() else {
+        return;
+    };
+    let monitor_idx = mag.monitor_idx;
+    let placement = &editor_state.placements[monitor_idx];
+    let rect = magnifier_rect(
+        (mag.pos.0 as f32, mag.pos.1 as f32),
+        placement.size.0 as f32,
+        placement.size.1 as f32,
+        editor_state.picking(),
+    );
+    editor_state.damage_local(monitor_idx, rect);
+    mark_dirty(dirty_mask, monitor_idx);
 }
 
 fn step_size(editor_state: &mut EditorState, arrow: StepperArrow, dirty_mask: &mut u32) {

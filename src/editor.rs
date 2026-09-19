@@ -47,6 +47,7 @@ pub struct Magnifier {
     pub current: Option<MagnifierState>,
     pub prev: Option<MagnifierState>,
     pub last_update: Option<Instant>,
+    pub hidden: bool,
 }
 
 /// Text shaping and the live editors, one per text annotation.
@@ -170,7 +171,10 @@ impl EditorState {
             tool_active: false,
             selection: SelectionState::default(),
             input: InputState::default(),
-            magnifier: Magnifier::default(),
+            magnifier: Magnifier {
+                hidden: crate::editor::saved::get().magnifier == Some(false),
+                ..Magnifier::default()
+            },
 
             toolbar: Toolbar::new(),
             settings_panel: SettingsPanel::new(),
@@ -206,6 +210,10 @@ impl EditorState {
     /// Returns true if the user is currently picking a color
     pub fn picking(&self) -> bool {
         self.selected_tool == Tool::Eyedropper || self.pick_once
+    }
+
+    pub fn magnifier_shown(&self) -> bool {
+        !self.magnifier.hidden || self.picking()
     }
 
     // to avoid revbuilding the entire annotation layer like it was implemented before

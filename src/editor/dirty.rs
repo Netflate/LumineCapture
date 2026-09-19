@@ -56,6 +56,9 @@ impl EditorState {
 
     fn calc_magnifier_dirty(&self, monitor_idx: usize, placement: &Placement) -> Option<Rect> {
         let mut dirty = None;
+        if !self.magnifier_shown() {
+            return dirty;
+        }
         let (mw, mh) = (placement.size.0 as f32, placement.size.1 as f32);
         // color label, when picking a color
         let with_label = self.picking();
