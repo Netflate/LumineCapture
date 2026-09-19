@@ -393,7 +393,7 @@ fn dim_hole_corners(canvas: &mut Pixmap, sel: &Rect, edges: Option<&SelectionEdg
     }
 
     let mut paint = Paint::default();
-    paint.set_color(Color::from_rgba8(0, 0, 0, crate::config::get().general.dim_alpha));
+    paint.set_color(crate::theme::color::DIM.with_alpha(crate::config::get().general.dim_alpha).color());
     paint.anti_alias = true;
 
     // corner point, then the direction the rectangle's interior lies in

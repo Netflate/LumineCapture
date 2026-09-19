@@ -67,6 +67,7 @@ impl From<Rgba> for Color {
 pub mod color {
     use super::Rgba;
 
+
     /// background color of all panels, popovers and toasts
     pub fn panel() -> Rgba {
         crate::config::get().theme.panel_background
@@ -80,25 +81,28 @@ pub mod color {
         crate::config::get().theme.accent_bright
     }
     /// main color of elements on the panel, like text, seperators and etc
-    pub const ON_PANEL: Rgba = Rgba(255, 255, 255, 255);
+    pub const ON_PANEL: Rgba = Rgba(205, 214, 244, 255); // text
     /// secondary small labels
-    pub const MUTED: Rgba = Rgba(200, 200, 205, 160);
+    pub const MUTED: Rgba = Rgba(166, 173, 200, 255); // subtext0
 
     /// blue color of text selection
     pub fn select() -> Rgba {
         crate::config::get().theme.selection
     }
     /// input field
-    pub const FIELD_BG: Rgba = Rgba(255, 255, 255, 18);
+    pub const FIELD_BG: Rgba = Rgba(49, 50, 68, 255); // surface0
     /// empty part of downloading bar
-    pub const TRACK: Rgba = Rgba(255, 255, 255, 30);
-    pub const CARET: Rgba = Rgba(255, 255, 255, 220);
+    pub const TRACK: Rgba = Rgba(69, 71, 90, 255); // surface1
+    pub const CARET: Rgba = Rgba(245, 224, 220, 255); // rosewater
 
-    pub const SHADOW: Rgba = Rgba(0, 0, 0, 130);
+    pub const SHADOW: Rgba = Rgba(17, 17, 27, 130); // crust
 
     /// panels border
-    pub const BORDER_ON_DARK: Rgba = Rgba(255, 255, 255, 55);
-    pub const BORDER_ON_LIGHT: Rgba = Rgba(0, 0, 0, 55);
+    pub const BORDER_ON_DARK: Rgba = Rgba(69, 71, 90, 255); // surface1
+    pub const BORDER_ON_LIGHT: Rgba = Rgba(17, 17, 27, 55); // crust
+
+    /// dimming outside the selection, alpha comes from `general.dim_alpha`
+    pub const DIM: Rgba = Rgba(17, 17, 27, 255); // crust
 }
 
 // ==========================================

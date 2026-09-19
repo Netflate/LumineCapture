@@ -231,10 +231,10 @@ fn default_palette() -> &'static [Color] {
         vec![
             Color::from_rgba8(0, 0, 0, 255),
             Color::from_rgba8(255, 255, 255, 255),
-            Color::from_rgba8(255, 59, 48, 255),
-            Color::from_rgba8(255, 149, 0, 255),
-            Color::from_rgba8(255, 214, 10, 255),
-            Color::from_rgba8(52, 199, 89, 255),
+            Color::from_rgba8(243, 139, 168, 255), // red
+            Color::from_rgba8(250, 179, 135, 255), // peach
+            Color::from_rgba8(249, 226, 175, 255), // yellow
+            Color::from_rgba8(166, 227, 161, 255), // green
             //Color::from_rgba8(0, 122, 255, 255),
             //Color::from_rgba8(175, 82, 222, 255),
         ]

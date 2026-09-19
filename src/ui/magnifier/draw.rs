@@ -10,8 +10,8 @@ use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, 
 // outline of magnifier, and color label if its in color picker mode
 pub const OUTLINE: f32 = 2.0;
 
-pub const GRID: Rgba = Rgba(255, 255, 255, 40);
-pub const GRID_SOFT: Rgba = Rgba(180, 180, 180, 80);
+pub const GRID: Rgba = Rgba(205, 214, 244, 40); // text
+pub const GRID_SOFT: Rgba = Rgba(147, 153, 178, 80); // overlay2
 
 /// if its in color picker mode
 const SWATCH: f32 = 14.0;

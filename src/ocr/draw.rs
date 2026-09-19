@@ -27,10 +27,10 @@ use crate::ui::icons;
 /// shade pushes the screenshot back and the plate lifts the text roughly back to
 /// where it started, so the lines read as the foreground without the region ever
 /// getting as dark as the overlay dim outside it.
-const REGION_SHADE: Rgba = Rgba(10, 8, 20, 96);
+const REGION_SHADE: Rgba = Rgba(17, 17, 27, 96); // crust
 
 /// Plate behind a block of text.
-const PLATE: Rgba = Rgba(255, 255, 255, 48);
+const PLATE: Rgba = Rgba(205, 214, 244, 48); // text
 
 /// Grown around a block's own bounds so the plate reads as a box around the
 /// text rather than a tight box on it.

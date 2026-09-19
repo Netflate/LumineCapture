@@ -150,10 +150,10 @@ pub struct Theme {
 impl Default for Theme {
     fn default() -> Self {
         Self {
-            accent: Rgba(159, 48, 215, 255),
-            accent_bright: Rgba(215, 132, 255, 255),
-            panel_background: Rgba(17, 17, 27, 250),
-            selection: Rgba(100, 150, 255, 110),
+            accent: Rgba(180, 190, 254, 255),
+            accent_bright: Rgba(203, 166, 247, 255),
+            panel_background: Rgba(30, 30, 46, 250),
+            selection: Rgba(137, 180, 250, 110),
             font_size: 14.0,
         }
     }
@@ -255,10 +255,11 @@ device = \"auto\"
 daemon_idle_secs = 900
 
 [theme]
-accent = \"#9F30D7\"
-accent_bright = \"#D784FF\"
-panel_background = \"#11111BFA\"
-selection = \"#6496FF6E\"
+# Catppuccin Mocha: lavender, mauve, base, blue
+accent = \"#B4BEFE\"
+accent_bright = \"#CBA6F7\"
+panel_background = \"#1E1E2EFA\"
+selection = \"#89B4FA6E\"
 font_size = 14.0
 
 [log]
