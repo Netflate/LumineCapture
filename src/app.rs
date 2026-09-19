@@ -86,6 +86,7 @@ async fn make_screenshot(
     prof.dump();
 
     run_overlay(&mut editor_state, overlay)?;
+    // (saving what user chose)
     crate::editor::saved::save(
         &editor_state.tool_settings,
         &editor_state.color_popover.history,

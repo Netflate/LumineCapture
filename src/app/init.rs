@@ -30,6 +30,7 @@ pub fn build_captures(frames: Vec<MonitorFrame>) -> Result<Vec<Capture>, String>
             let src_stride = f.pw_stride as usize;
             let tight_len = row_bytes * src_h as usize;
 
+            // for small performance gain giving directly the frame to pixmap without any copying
             if src_stride == row_bytes && f.pixels.len() >= tight_len {
                 f.pixels.truncate(tight_len);
                 let pixmap = Pixmap::from_vec(f.pixels, size)

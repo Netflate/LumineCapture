@@ -1,3 +1,6 @@
+// saved responsible for saving and reading user's options
+// such as font width, stroke width, color choice, and etc 
+
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
@@ -116,6 +119,9 @@ pub fn save(settings: &ToolSettings, history: &[Color], initial_history: &[Color
         }
     };
 
+    // using temp file
+    // small edge case bug fix: adding pid to name, so executing capture two times, wouldn't
+    // write into the same file
     let tmp = path.with_extension(format!("toml.{}.tmp", std::process::id()));
     let written = path
         .parent()

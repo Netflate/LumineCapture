@@ -59,6 +59,8 @@ impl ScreenOverlay for WaylandOverlay {
                     .map_or((0, 0), |m| m.dimensions);
                 [top, background]
             })
+            // every buffer get rounded to 64 byte, since when working with uneven resolution
+            // it would cause to use realloc which cause bugs and overall not effecient
             .map(|(w, h)| (w.max(0) as usize * h.max(0) as usize * 4).next_multiple_of(64))
             .sum();
         let outputs_snapshot: Vec<_> = targets
@@ -109,6 +111,14 @@ impl ScreenOverlay for WaylandOverlay {
             );
         }
 
+        // IMPORTANT PART : 15 ms gain 
+        // when requesting memory, linux doesn't actually allocate physical ram, it just gives us an address space
+        // physical allocation happens only on first write via page faults, which takes 15 ms on my machine
+        // so instead of triggering page faults after receiving the screenshot, we do it 
+        // now while waiting for wayland configure anyways
+        
+        // we fill this memory with zeros to force physical page allocation before getting the screenshot
+        // so when it arrives, pages are already mapped, giving us some speed gain
         rt.event_queue.flush()?;
         if let Ok(slot) = rt.state.pool.new_slot(prefault) {
             rt.state.pool.raw_data_mut(&slot).fill(0);
