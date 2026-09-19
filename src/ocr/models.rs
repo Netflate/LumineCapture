@@ -1,7 +1,7 @@
 // Manages OCR models: downloadable assets, local disk cache, and active selection.
 //
 // Model files are stored in `~/.local/share/LumineCapture/models`, and active choice 
-// in `~/.config/LumineCapture/ocr-model`.
+// in `~/.local/state/LumineCapture/ocr-model`.
 //
 // Uses a shared text detector across all languages, while each language has its own 
 // recognizer and dictionary file.
@@ -392,7 +392,7 @@ fn models_dir() -> Option<PathBuf> {
 }
 
 fn choice_path() -> Option<PathBuf> {
-    Some(dirs::config_dir()?.join("LumineCapture").join("ocr-model"))
+    Some(dirs::state_dir()?.join("LumineCapture").join("ocr-model"))
 }
 
 fn read_choice() -> Option<String> {
