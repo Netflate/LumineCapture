@@ -98,6 +98,9 @@ pub fn init(process: Process) {
         log::set_max_level(max);
         log_panics();
     }
+    if process == Process::Overlay {
+        crate::config::log_warnings();
+    }
 }
 
 pub fn log_file_path() -> Option<PathBuf> {
