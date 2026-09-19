@@ -27,8 +27,17 @@ pub fn run(editor_state: &mut EditorState, action: Action, dirty_mask: &mut u32)
     // when dragging doesn't allow to change tool and etc
     let busy = editor_state.tool_active || editor_state.input.mouse_down;
     match action {
-        Action::Finish(Finish::Copy) => copy(editor_state, dirty_mask),
-        Action::Finish(finish) => editor_state.finish = Some(finish),
+        Action::Accept => {
+            if !tool_copy(editor_state, dirty_mask) && !editor_state.accept.is_empty() {
+                editor_state.finish = Some(editor_state.accept);
+            }
+        }
+        Action::Finish(Finish::Copy) => {
+            if !tool_copy(editor_state, dirty_mask) {
+                editor_state.finish = Some(Finish::Copy.into());
+            }
+        }
+        Action::Finish(finish) => editor_state.finish = Some(finish.into()),
         Action::Cancel => editor_state.cancel = true,
         Action::Undo => {
             editor_state.undo(dirty_mask);
@@ -44,6 +53,7 @@ pub fn run(editor_state: &mut EditorState, action: Action, dirty_mask: &mut u32)
             }
         }
         Action::SelectAll => select_all(editor_state, dirty_mask),
+        Action::ToggleUi | Action::Tool(_) if editor_state.region => {}
         Action::ToggleUi => toggle_ui(editor_state, dirty_mask),
         Action::SizeUp => step_size(editor_state, StepperArrow::Up, dirty_mask),
         Action::SizeDown => step_size(editor_state, StepperArrow::Down, dirty_mask),
@@ -55,16 +65,18 @@ pub fn run(editor_state: &mut EditorState, action: Action, dirty_mask: &mut u32)
     apply_damage_rects(editor_state, dirty_mask);
 }
 
-fn copy(editor_state: &mut EditorState, dirty_mask: &mut u32) {
+fn tool_copy(editor_state: &mut EditorState, dirty_mask: &mut u32) -> bool {
     match editor_state.selected_tool {
         Tool::Eyedropper => {
             let color = editor_state.tool_settings.color;
             crate::tools::eyedropper::copy_value(editor_state, ValueField::Hex, color);
+            true
         }
         Tool::Ocr if editor_state.ocr.view.is_active() => {
             crate::tools::ocr::copy_selection(editor_state, dirty_mask);
+            true
         }
-        _ => editor_state.finish = Some(Finish::Copy),
+        _ => false,
     }
 }
 

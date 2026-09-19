@@ -225,7 +225,7 @@ pub fn handle_pointer_button(
                             return;
                         }
                         ToolbarButton::Finish(finish) => {
-                            editor_state.finish = Some(*finish);
+                            editor_state.finish = Some((*finish).into());
                             return;
                         }
                     }

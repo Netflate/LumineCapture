@@ -1,6 +1,7 @@
 mod actions;
 mod init;
 mod input;
+mod instant;
 mod panels;
 
 use crate::backend::notify::{self, Notice};
@@ -14,7 +15,7 @@ use crate::theme::anim;
 use crate::tools::Tool;
 use crate::tools::selection::{global_selection_to_local, selection_edges_for_monitor};
 use crate::ui::panel::{AnimatedPanel, panel_to_draw, tick_panel_animation};
-use crate::types::{DamageRect, Finish, OverlayEvent, Placement, SelectionEdges};
+use crate::types::{DamageRect, OverlayEvent, Outputs, Placement, SelectionEdges};
 use crate::ui::panel::UiPanel;
 use crate::utils::{encode_png, get_full_workspace_rect, save_to_file};
 
@@ -33,13 +34,53 @@ const POINTER_GRACE: Duration = Duration::from_millis(100);
 //      ENTRY POINT          //
 // ************************* //
 
-pub async fn make_screenshot(
-    conn: wayland_client::Connection,
-    one: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let mut prof = Profiler::new();
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Mode {
+    #[default]
+    Editor,
+    Full,
+    Window,
+    Region,
+}
 
-    let (mut editor_state, mut overlay) = start_capture(conn, one, &mut prof).await?;
+/// How this run was asked to start, from the command line.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Launch {
+    pub mode: Mode,
+    pub one_monitor: bool,
+    pub to: Option<Outputs>,
+    pub speed: bool,
+}
+
+impl Launch {
+    fn outputs(&self) -> Outputs {
+        self.to.unwrap_or(crate::config::get().general.accept)
+    }
+}
+
+pub async fn run(conn: wayland_client::Connection, launch: Launch) -> Result<(), Box<dyn std::error::Error>> {
+    if launch.mode != Mode::Editor && launch.outputs().is_empty() {
+        return Err("nothing to do with the shot: pass --to or set general.accept".into());
+    }
+    match launch.mode {
+        Mode::Editor | Mode::Region => make_screenshot(conn, launch).await,
+        Mode::Full => instant::full(conn, launch).await,
+        Mode::Window => instant::window(conn, launch).await,
+    }
+}
+
+async fn make_screenshot(
+    conn: wayland_client::Connection,
+    launch: Launch,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut prof = Profiler::new(launch.speed);
+
+    let (mut editor_state, mut overlay) = start_capture(conn, launch.one_monitor, &mut prof).await?;
+    editor_state.accept = launch.outputs();
+    if launch.mode == Mode::Region {
+        editor_state.region = true;
+        editor_state.ui_hidden = true;
+    }
 
     init::initial_paint(&mut editor_state, &mut overlay, &mut prof)?;
     prof.dump();
@@ -513,21 +554,25 @@ fn clear_frame_state(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     *dirty_mask = 0;
 }
 
-/// Saves, copies or pins the finished capture and tells the user about it.
 async fn finish_capture(editor_state: &mut EditorState) -> Result<(), Box<dyn std::error::Error>> {
-    let Some(finish) = editor_state.finish else {
+    let Some(outputs) = editor_state.finish else {
         return Ok(());
     };
     let Some((png, _, scale)) = render_final(editor_state) else {
         return Ok(());
     };
+    deliver(png, scale, outputs).await;
+    Ok(())
+}
 
-    if finish == Finish::Pin
+/// Pins, saves and copies the finished shot, then tells the user about it.
+async fn deliver(png: Vec<u8>, scale: f32, outputs: Outputs) {
+    if outputs.pin
         && let Err(e) = crate::backend::wayland::pin::spawn(&png, scale)
     {
         notify::send(Notice::PinFailed(e.to_string())).await;
     }
-    let saved = if finish == Finish::Save || crate::config::get().general.save_always {
+    let saved = if outputs.save || crate::config::get().general.save_always {
         match save_to_file(&png) {
             Ok(path) => Some(path),
             Err(e) => {
@@ -538,20 +583,16 @@ async fn finish_capture(editor_state: &mut EditorState) -> Result<(), Box<dyn st
     } else {
         None
     };
-    match finish {
-        Finish::Save => {
-            if let Some(path) = saved {
-                notify::send(Notice::Saved(path)).await;
-            }
-        }
-        Finish::Copy => match initialize_clipboard().copy_image_to_clipboard(png) {
+    if outputs.copy {
+        match initialize_clipboard().copy_image_to_clipboard(png) {
             Ok(()) => notify::send(Notice::Copied(saved)).await,
             Err(e) => notify::send(Notice::CopyFailed(e.to_string())).await,
-        },
-        Finish::Pin => {}
+        }
+    } else if outputs.save
+        && let Some(path) = saved
+    {
+        notify::send(Notice::Saved(path)).await;
     }
-
-    Ok(())
 }
 
 // ************************* //

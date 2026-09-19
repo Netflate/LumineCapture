@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-/// LUMINE_PROFILE=1 cargo run --release
+/// Startup timings, printed to stderr with `--speed`.
 pub struct Profiler {
     t0: Instant,
     last: Instant,
@@ -8,15 +8,8 @@ pub struct Profiler {
     lines: Vec<String>,
 }
 
-impl Default for Profiler {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Profiler {
-    pub fn new() -> Self {
-        let enabled = std::env::var_os("LUMINE_PROFILE").is_some();
+    pub fn new(enabled: bool) -> Self {
         let now = Instant::now();
         Self {
             t0: now,

@@ -122,9 +122,13 @@ pub struct EditorState {
 
     /// Set to true when the user is about to pick a color from the palette, since the action is a one-time thing
     pub pick_once: bool,
-    pub finish: Option<crate::types::Finish>,
+    pub finish: Option<crate::types::Outputs>,
+    /// What Enter and a double click on the selection finish with (`general.accept` or `--to`).
+    pub accept: crate::types::Outputs,
     pub cancel: bool,
     pub ui_hidden: bool,
+    /// `--region`: no toolbar, releasing a freshly dragged selection finishes the shot.
+    pub region: bool,
 
     pub ocr: OcrState,
 }
@@ -192,8 +196,10 @@ impl EditorState {
             tool_settings: ToolSettings::default(),
             pick_once: false,
             finish: None,
+            accept: crate::config::get().general.accept,
             cancel: false,
             ui_hidden: false,
+            region: false,
         }
     }
 

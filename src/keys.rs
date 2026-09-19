@@ -52,6 +52,7 @@ pub enum Dir {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
+    Accept,
     Finish(Finish),
     Cancel,
     Undo,
@@ -67,7 +68,8 @@ pub enum Action {
 }
 
 pub const ACTIONS: &[(&str, Action, &[&str])] = &[
-    ("copy", Action::Finish(Finish::Copy), &["Ctrl+C", "Return"]),
+    ("accept", Action::Accept, &["Return"]),
+    ("copy", Action::Finish(Finish::Copy), &["Ctrl+C"]),
     ("save", Action::Finish(Finish::Save), &["Ctrl+S"]),
     ("pin", Action::Finish(Finish::Pin), &["Ctrl+P"]),
     ("cancel", Action::Cancel, &["Escape"]),

@@ -1,18 +1,22 @@
 pub mod notify;
 pub mod wayland;
 
-use crate::types::{CaptureResult, CursorIcon, DamageRect, Output, OverlayEvent};
+use crate::types::{Capture, CaptureResult, CursorIcon, DamageRect, Output, OverlayEvent};
 use std::time::Duration;
 use async_trait::async_trait;
 use log::{info, warn};
 use wayland_client::Connection;
 
 #[async_trait]
-pub trait CaptureMethod {
+pub trait CaptureMethod: Send + Sync {
     async fn capture_frame(
         &self,
         outputs: &[Output],
     ) -> Result<CaptureResult, Box<dyn std::error::Error>>;
+
+    async fn capture_active_window(&self) -> Result<Capture, Box<dyn std::error::Error>> {
+        Err("capturing the active window is only supported on KDE Plasma".into())
+    }
 }
 
 pub fn initialize_capture(conn: &Connection) -> Box<dyn CaptureMethod> {

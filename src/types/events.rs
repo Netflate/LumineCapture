@@ -43,6 +43,72 @@ pub enum Finish {
     Save,
 }
 
+/// What to do with the finished shot: any mix of copy, pin and save.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Outputs {
+    pub copy: bool,
+    pub pin: bool,
+    pub save: bool,
+}
+
+impl Outputs {
+    /// Letters c, p, s in any order; repeats are fine, an empty string means nothing.
+    pub fn parse(letters: &str) -> Result<Self, String> {
+        let mut outputs = Self::default();
+        for letter in letters.trim().chars() {
+            match letter.to_ascii_lowercase() {
+                'c' => outputs.copy = true,
+                'p' => outputs.pin = true,
+                's' => outputs.save = true,
+                other => {
+                    return Err(format!(
+                        "unknown letter {other:?} in {letters:?}, expected c (copy), p (pin) or s (save)"
+                    ));
+                }
+            }
+        }
+        Ok(outputs)
+    }
+
+    pub fn is_empty(self) -> bool {
+        self == Self::default()
+    }
+}
+
+impl From<Finish> for Outputs {
+    fn from(finish: Finish) -> Self {
+        Self {
+            copy: finish == Finish::Copy,
+            pin: finish == Finish::Pin,
+            save: finish == Finish::Save,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn outputs_ignore_order_and_repeats() {
+        let all = Outputs { copy: true, pin: true, save: true };
+        assert_eq!(Outputs::parse("cps"), Ok(all));
+        assert_eq!(Outputs::parse("spc"), Ok(all));
+        assert_eq!(Outputs::parse("PsSp c".replace(' ', "").as_str()), Ok(all));
+        assert_eq!(Outputs::parse("p"), Ok(Outputs::from(Finish::Pin)));
+    }
+
+    #[test]
+    fn empty_outputs_do_nothing() {
+        assert!(Outputs::parse("").unwrap().is_empty());
+    }
+
+    #[test]
+    fn unknown_letter_is_rejected() {
+        assert!(Outputs::parse("cx").is_err());
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum SpecialKey {
     Backspace,

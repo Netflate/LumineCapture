@@ -10,7 +10,7 @@ use serde::{Deserialize, Deserializer};
 
 use crate::ocr::settings::{Device, Mode};
 use crate::theme::Rgba;
-use crate::types::Finish;
+use crate::types::Outputs;
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Default)]
 #[serde(default)]
@@ -32,32 +32,13 @@ pub struct General {
     pub save_always: bool,
     pub dim_alpha: u8,
     pub animation_speed: f32,
-    pub double_click: DoubleClick,
+    #[serde(deserialize_with = "deserialize_outputs")]
+    pub accept: Outputs,
 }
 
 impl Default for General {
     fn default() -> Self {
-        Self { save_always: true, dim_alpha: 140, animation_speed: 1.0, double_click: DoubleClick::Copy }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum DoubleClick {
-    None,
-    Copy,
-    Save,
-    Pin,
-}
-
-impl DoubleClick {
-    pub fn finish(self) -> Option<Finish> {
-        match self {
-            DoubleClick::None => None,
-            DoubleClick::Copy => Some(Finish::Copy),
-            DoubleClick::Save => Some(Finish::Save),
-            DoubleClick::Pin => Some(Finish::Pin),
-        }
+        Self { save_always: true, dim_alpha: 140, animation_speed: 1.0, accept: Outputs { copy: true, ..Outputs::default() } }
     }
 }
 
@@ -227,6 +208,10 @@ impl Default for Keys {
     }
 }
 
+fn deserialize_outputs<'de, D: Deserializer<'de>>(d: D) -> Result<Outputs, D::Error> {
+    Outputs::parse(&String::deserialize(d)?).map_err(serde::de::Error::custom)
+}
+
 fn deserialize_rgba<'de, D: Deserializer<'de>>(d: D) -> Result<Rgba, D::Error> {
     let s = String::deserialize(d)?;
     Rgba::parse_hex(&s)
@@ -238,8 +223,9 @@ pub const TEMPLATE: &str = "\
 save_always = true
 dim_alpha = 140
 animation_speed = 1.0
-# none | copy | save | pin (double click inside selection finishes the screenshot, the question is what to do with it)
-double_click = \"copy\"
+# what Enter, a double click on the selection and the instant modes do with the shot:
+# any of c (copy), p (pin), s (save) in any order, \"\" does nothing. --to overrides it for one run
+accept = \"c\"
 
 [save]
 directory = \"screenshots\"
@@ -281,7 +267,8 @@ font_size = 14.0
 max_file_size_mb = 1
 
 [keys]
-copy = [\"Ctrl+C\", \"Return\"]
+accept = \"Return\"
+copy = \"Ctrl+C\"
 save = \"Ctrl+S\"
 pin = \"Ctrl+P\"
 cancel = \"Escape\"
@@ -420,9 +407,12 @@ mod tests {
     }
 
     #[test]
-    fn double_click_can_be_turned_off() {
-        let config = toml::from_str::<Config>("[general]\ndouble_click = \"none\"\n").unwrap();
-        assert_eq!(config.general.double_click.finish(), None);
+    fn accept_takes_letters_and_can_be_turned_off() {
+        let config = toml::from_str::<Config>("[general]\naccept = \"ps\"\n").unwrap();
+        assert_eq!(config.general.accept, Outputs { pin: true, save: true, copy: false });
+        let config = toml::from_str::<Config>("[general]\naccept = \"\"\n").unwrap();
+        assert!(config.general.accept.is_empty());
+        assert!(toml::from_str::<Config>("[general]\naccept = \"x\"\n").is_err());
     }
 
     #[test]

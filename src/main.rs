@@ -17,22 +17,58 @@ pub mod utils;
 use backend::wayland::{clipboard, pin};
 use std::path::PathBuf;
 
+const HELP: &str = "\
+Usage: {name} [MODE] [OPTIONS]
+       {name} --ocr-daemon [serve|status|stop|calibrate]
+
+Modes (without one, the editor opens):
+  -f, --full           Capture the screen right away, no editor
+  -w, --window         Capture the active window right away (KDE Plasma only)
+  -r, --region         Drag a region, releasing the mouse takes the shot
+
+Options:
+  -m, --monitor        Only the monitor under the pointer
+  -t, --to <LETTERS>   What to do with the shot: c copy, p pin, s save, in any order
+                       and mix, e.g. -t pc. Defaults to general.accept in the config.
+                       In the editor, this is what Enter and a double click do
+  -s, --speed          Print how long each startup step took to stderr
+      --config <PATH>  Use this config file instead of the default location
+      --print-default-config
+                       Print the default config.toml and exit
+  -h, --help           Print this help and exit
+  -V, --version        Print the version and exit
+";
+
 fn print_help() {
     println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
     println!("{}", env!("CARGO_PKG_DESCRIPTION"));
     println!();
-    println!("Usage: LumineCapture [OPTIONS]");
-    println!("       LumineCapture --pin [--at X,Y] [--scale S] [FILE]");
-    println!("       LumineCapture --clipboard-daemon [text]");
-    println!("       LumineCapture --ocr-daemon [serve|status|stop|calibrate]");
-    println!();
-    println!("Options:");
-    println!("  -h, --help              Print this help and exit");
-    println!("  -V, --version           Print the version and exit");
-    println!("      --one               Capture only the active monitor");
-    println!("      --config <PATH>     Use this config file instead of the default location");
-    println!("      --print-default-config");
-    println!("                          Print the default config.toml and exit");
+    print!("{}", HELP.replace("{name}", env!("CARGO_PKG_NAME")));
+}
+
+fn usage_error(e: impl std::fmt::Display) -> ! {
+    eprintln!("{}: {e}", env!("CARGO_PKG_NAME"));
+    eprintln!("See --help");
+    std::process::exit(2);
+}
+
+fn parse_launch(pargs: &mut pico_args::Arguments) -> Result<app::Launch, Box<dyn std::error::Error>> {
+    let modes = [
+        (pargs.contains(["-f", "--full"]), app::Mode::Full),
+        (pargs.contains(["-w", "--window"]), app::Mode::Window),
+        (pargs.contains(["-r", "--region"]), app::Mode::Region),
+    ];
+    let mut picked = modes.iter().filter(|(on, _)| *on).map(|(_, mode)| *mode);
+    let mode = picked.next().unwrap_or_default();
+    if picked.next().is_some() {
+        return Err("pick one mode: --full, --window or --region".into());
+    }
+    Ok(app::Launch {
+        mode,
+        one_monitor: pargs.contains(["-m", "--monitor"]),
+        to: pargs.opt_value_from_fn(["-t", "--to"], types::Outputs::parse)?,
+        speed: pargs.contains(["-s", "--speed"]),
+    })
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -50,7 +86,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         print!("{}", config::TEMPLATE);
         return Ok(());
     }
-    let one = pargs.contains("--one");
+    let launch = match parse_launch(&mut pargs) {
+        Ok(launch) => launch,
+        Err(e) => usage_error(e),
+    };
     let config_path: Option<PathBuf> = pargs
         .opt_value_from_os_str("--config", |s| Ok::<_, String>(PathBuf::from(s)))?;
     config::init(config_path);
@@ -81,10 +120,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             logging::init(logging::Process::OcrDaemon);
             ocr::daemon::cli(args)
         }
-        _ => tokio::runtime::Runtime::new()?.block_on(async {
+        Some(other) => usage_error(format!("unknown argument {other:?}")),
+        None => tokio::runtime::Runtime::new()?.block_on(async {
             logging::init(logging::Process::Overlay);
             let result = match wayland_client::Connection::connect_to_env() {
-                Ok(conn) => app::make_screenshot(conn, one).await,
+                Ok(conn) => app::run(conn, launch).await,
                 Err(e) => Err(format!("can't connect to Wayland: {e}").into()),
             };
             if let Err(e) = &result {

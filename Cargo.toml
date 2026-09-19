@@ -48,7 +48,7 @@ ureq = { version = "3.4", default-features = false, features = ["native-tls"] }
 chrono = { version = "0.4", features = ["clock"] }
 log = "0.4"
 strum = { version = "0.28", features = ["derive"] }
-pico-args = "0.5"
+pico-args = { version = "0.5", features = ["combined-flags"] }
 
 # config file
 serde = { version = "1", features = ["derive"] }

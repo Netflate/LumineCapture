@@ -71,11 +71,11 @@ impl ToolBehavior for SelectionTool {
             // double click on selection is equal to saving the screenshot
             if handle == SelectionHandle::Move
                 && state.input.clicks.register(ClickTarget::Selection, pos)
-                && let Some(finish) = crate::config::get().general.double_click.finish()
+                && !state.accept.is_empty()
             {
                 state.input.mouse_down = false;
                 state.tool_active = false;
-                state.finish = Some(finish);
+                state.finish = Some(state.accept);
                 return;
             }
 
@@ -93,8 +93,12 @@ impl ToolBehavior for SelectionTool {
         } else {
             state.tool_active = false;
 
+            let fresh = state.input.drag_start.is_some();
             state.input.drag_start = None;
             state.selection.set_drag(SelectionHandle::None, None, None);
+            if state.region && fresh && state.selection.zone.is_some() {
+                state.finish = Some(state.accept);
+            }
         }
     }
 
