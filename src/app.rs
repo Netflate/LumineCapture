@@ -296,7 +296,7 @@ fn poll_timeout(editor_state: &EditorState) -> Option<Duration> {
     let ocr_working = editor_state.ocr.runtime.needs_poll();
 
     if is_animating || stepper_holding || ocr_working {
-        Some(anim::FRAME)
+        Some(anim::frame())
     } else if editor_state.ocr.models.is_downloading() {
         Some(DOWNLOAD_POLL)
     } else {

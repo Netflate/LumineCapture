@@ -16,7 +16,6 @@ use crate::interaction::ClickTarget;
 use crate::ui::color_popover::ColorField;
 use crate::ui::panel::UiPanel;
 use crate::theme::{anim, font};
-use crate::interaction::SCROLL_SENSITIVITY;
 use crate::ui::text_field::CursorInit;
 use crate::keys::{self, Chord, Key};
 use crate::ui::toolbar::{ToolbarButton, ToolbarItem};
@@ -457,7 +456,7 @@ fn update_pointer(
 fn update_magnifier(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     let now = Instant::now();
     if let Some(last) = editor_state.magnifier.last_update
-        && now.duration_since(last) < anim::FRAME
+        && now.duration_since(last) < anim::frame()
     {
         return;
     }
@@ -654,7 +653,7 @@ pub fn handle_scroll(
     dirty_mask: &mut u32,
 ) {
     let local = editor_state.input.pointer.local;
-    let delta_y = delta_y * SCROLL_SENSITIVITY;
+    let delta_y = delta_y * crate::config::get().input.scroll_sensitivity;
 
     if editor_state.color_popover.open
         && let Some(field) = hit_test_color_scroll_field(editor_state, local) {

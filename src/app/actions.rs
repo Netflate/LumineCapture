@@ -18,9 +18,6 @@ use super::panels::color::close_color_popover;
 use super::panels::model::close_model_popover;
 use super::panels::settings::{apply_stepper_arrow_step, sync_stepper_edit_text, update_settings_panel};
 
-const NUDGE: f32 = 1.0;
-const NUDGE_FAST: f32 = 10.0;
-
 pub fn run(editor_state: &mut EditorState, action: Action, dirty_mask: &mut u32) {
     editor_state.settings_panel.cancel_scroll();
     editor_state.color_popover.cancel_scroll();
@@ -114,7 +111,8 @@ fn nudge_selection(
         return;
     };
 
-    let step = if fast { NUDGE_FAST } else { NUDGE };
+    let selection = &crate::config::get().selection;
+    let step = if fast { selection.nudge_fast } else { selection.nudge };
     let (dx, dy) = match dir {
         Dir::Left => (-step, 0.0),
         Dir::Right => (step, 0.0),

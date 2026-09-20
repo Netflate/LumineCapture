@@ -186,12 +186,12 @@ fn render_pin(image: &[u8], scale: f32) -> Result<Pixmap, Box<dyn std::error::Er
     let (fw, fh) = (w as f32, h as f32);
     let rect = Rect::from_xywh(0.0, 0.0, fw, fh).ok_or("empty image")?;
     let shape =
-        rounded_rect_path(&rect, radius::PANEL * scale, true, true, true, true)
+        rounded_rect_path(&rect, radius::panel() * scale, true, true, true, true)
             .ok_or("empty image")?;
     let mut mask = Mask::new(w, h).ok_or("image is too large")?;
     mask.fill_path(&shape, FillRule::Winding, true, Transform::identity());
     pin.apply_mask(&mask);
-    draw_panel_border(&mut pin, 0.0, 0.0, fw, fh, radius::PANEL * scale, 1.0);
+    draw_panel_border(&mut pin, 0.0, 0.0, fw, fh, radius::panel() * scale, 1.0);
     Ok(pin)
 }
 
