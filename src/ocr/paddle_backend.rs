@@ -21,15 +21,14 @@ use oar_ocr::processors::{LimitType, Point};
 use oar_ocr::utils::get_rotate_crop_image;
 use tiny_skia::Rect;
 
+use crate::config::OcrFilter;
+
 use super::layout;
 use super::models::ModelFiles;
 use super::{OcrBackend, OcrError, OcrImage, OcrLine, OcrText};
 
 type Recognizer = TaskPredictorCore<TextRecognitionTask>;
 
-/// Longest image side the detector sees; larger inputs are downscaled first.
-/// The stock default of 960 halves a 1080p grab and loses small UI text.
-const DETECT_LIMIT_SIDE_LEN: u32 = 1920;
 /// not so sure how its going to work on low res or high res monitors
 /// (TODO)
 pub struct PaddleBackend {
@@ -72,13 +71,15 @@ impl PaddleBackend {
         }
 
         let stage = Instant::now();
+        let detect = &crate::config::get().ocr.detect;
         let detector = TextDetectionPredictor::builder()
             .with_config(TextDetectionConfig {
-                score_threshold: 0.3,
-                box_threshold: 0.6,
-                unclip_ratio: 1.5,
-                max_candidates: 1000,
-                limit_side_len: Some(DETECT_LIMIT_SIDE_LEN),
+                score_threshold: detect.score_threshold,
+                box_threshold: detect.box_threshold,
+                unclip_ratio: detect.unclip_ratio,
+                max_candidates: detect.max_candidates,
+                // longest side the detector sees; the stock 960 halves a 1080p grab and loses small UI text
+                limit_side_len: Some(detect.max_side),
                 limit_type: Some(LimitType::Max),
                 max_side_len: Some(4096),
             })
@@ -326,52 +327,46 @@ fn to_crop_space(mut positions: Vec<f32>, steps: usize, w: u32, h: u32) -> Vec<f
     positions
 }
 
-/// Minimum confidence for a one-character read to be believed.
-const SPECK_CONFIDENCE: f32 = 0.6;
-
-/// Minimum confidence for any read to be believed.
-const MIN_CONFIDENCE: f32 = 0.55;
-
-/// A detection this much taller than the body text, and no wider than it is
-/// tall, is an icon or a logo rather than a line of text.
-const GLYPH_HEIGHT: f32 = 1.8;
-const GLYPH_ASPECT: f32 = 1.2;
+fn filter() -> &'static OcrFilter {
+    &crate::config::get().ocr.filter
+}
 
 /// A detection far smaller than the body text in both directions, which is
 /// what visual noise looks like. The recognizer cannot answer "not text" and
 /// would return its best single-character guess for it.
 fn is_speck(bounds: &Rect, body_height: f32) -> bool {
-    if bounds.height() < 0.5 * body_height && bounds.width() < 0.5 * body_height {
+    let f = filter();
+    if bounds.height() < f.speck_size * body_height && bounds.width() < f.speck_size * body_height {
         return true;
     }
-    bounds.height() > GLYPH_HEIGHT * body_height
-        && bounds.width() < GLYPH_ASPECT * bounds.height()
+    // A detection this much taller than the body text, and no wider than it is
+    // tall, is an icon or a logo rather than a line of text.
+    bounds.height() > f.glyph_height * body_height
+        && bounds.width() < f.glyph_aspect * bounds.height()
 }
 
 /// Whether a read should be dropped instead of becoming a line.
 fn is_noise(bounds: &Rect, read: &Read, body_height: f32) -> bool {
-    if read.text.trim().is_empty() || read.confidence < MIN_CONFIDENCE {
+    let f = filter();
+    if read.text.trim().is_empty() || read.confidence < f.min_confidence {
         return true;
     }
     read.text.chars().count() <= 1
-        && (bounds.height() < 0.6 * body_height || read.confidence < SPECK_CONFIDENCE)
+        && (bounds.height() < f.single_char_height * body_height
+            || read.confidence < f.single_char_confidence)
 }
-
-/// Minimum brightness difference required to distinguish a line pixel from the background.
-const RULE_CONTRAST: i32 = 32;
-
-/// Minimum fraction of a line segment that must overlap with pixels meeting `RULE_CONTRAST`.
-const RULE_COVERAGE: f32 = 0.9;
-
-/// Vertical search extension above and below a text line (as a fraction of line height).
-/// Cell borders usually extend beyond text boundaries, unlike pipe characters (`|`).
-const RULE_REACH: f32 = 0.5;
 
 // Checks for a vertical ruling line in the gap between two boxes on the same line.
 // Separated boxes are split into distinct crops for OCR processing.
+//
+// rule_contrast: minimum brightness difference between a line pixel and the background.
+// rule_coverage: minimum fraction of a segment that must be such pixels.
+// rule_reach: vertical search past a text line, as a fraction of its height.
+// Cell borders usually extend beyond text boundaries, unlike pipe characters (`|`).
 fn has_rule(img: &image::RgbImage, a: &Rect, b: &Rect) -> bool {
+    let f = filter();
     let (top, bottom) = (a.top().min(b.top()), a.bottom().max(b.bottom()));
-    let reach = (bottom - top) * RULE_REACH;
+    let reach = (bottom - top) * f.rule_reach;
     let clamp_y = |y: f32| (y.max(0.0) as u32).min(img.height());
     let x0 = a.right().ceil().max(0.0) as u32;
     let x1 = (b.left().floor().max(0.0) as u32).min(img.width());
@@ -397,10 +392,10 @@ fn has_rule(img: &image::RgbImage, a: &Rect, b: &Rect) -> bool {
     let background = *values.select_nth_unstable(mid).1;
 
     let covered = |x: u32, from: u32, to: u32| {
-        let needed = ((to - from) as f32 * RULE_COVERAGE).ceil() as usize;
+        let needed = ((to - from) as f32 * f.rule_coverage).ceil() as usize;
         to > from
             && (from..to)
-                .filter(|&y| (luma(x, y) - background).abs() > RULE_CONTRAST)
+                .filter(|&y| (luma(x, y) - background).abs() > f.rule_contrast)
                 .count()
                 >= needed
     };

@@ -8,12 +8,13 @@
 
 use tiny_skia::Rect;
 
+use crate::config::OcrLayout;
+
 use super::OcrLine;
 
-const BLOCK_GAP: f32 = 0.4;
-const BLOCK_GAP_MAX: f32 = 0.7;
-const BLOCK_OVERLAP: f32 = 0.5;
-const BLOCK_ALIGN: f32 = 0.35;
+fn cfg() -> &'static OcrLayout {
+    &crate::config::get().ocr.layout
+}
 
 /// A ensemble of lines that belong together: a paragraph, a column, a menu. Lines
 /// inside a block are in reading order, and so are the blocks.
@@ -41,6 +42,7 @@ pub(super) fn row_groups(
     if n == 0 {
         return Vec::new();
     }
+    let cfg = cfg();
     let unit = median_of(rects.iter().map(|r| r.height()));
     let centre_y = |r: &Rect| r.top() + r.height() / 2.0;
 
@@ -53,7 +55,7 @@ pub(super) fn row_groups(
     for &i in &by_y {
         let cy = centre_y(&rects[i]);
         if let Some(&c) = row_centre.last()
-            && (cy - c).abs() < 0.6 * unit
+            && (cy - c).abs() < cfg.row_tolerance * unit
         {
             rows.last_mut().unwrap().push(i);
         } else {
@@ -69,7 +71,7 @@ pub(super) fn row_groups(
         let mut reach_box = 0;
         for i in row {
             if !current.is_empty()
-                && (rects[i].left() - rects[reach_box].right() >= 4.0 * unit
+                && (rects[i].left() - rects[reach_box].right() >= cfg.row_split_gap * unit
                     || divided(&rects[reach_box], &rects[i]))
             {
                 groups.push(std::mem::take(&mut current));
@@ -93,6 +95,7 @@ pub(super) fn group_blocks(lines: &[OcrLine]) -> Vec<Block> {
     if n == 0 {
         return Vec::new();
     }
+    let cfg = cfg();
     let unit = median_height(lines);
 
     // Top-to-bottom so the merge scan below can stop early.
@@ -105,16 +108,16 @@ pub(super) fn group_blocks(lines: &[OcrLine]) -> Vec<Block> {
         for &j in &sorted[si + 1..] {
             let b = &lines[j].bounds;
             let vgap = b.top() - a.bottom();
-            if vgap > BLOCK_GAP_MAX * unit {
+            if vgap > cfg.block_gap_max * unit {
                 break; // sorted by top, so everything later is further still
             }
-            if vgap > BLOCK_GAP * unit {
+            if vgap > cfg.block_gap * unit {
                 continue;
             }
             let overlap = a.right().min(b.right()) - a.left().max(b.left());
             let min_w = a.width().min(b.width()).max(1.0);
-            let left_aligned = (a.left() - b.left()).abs() < BLOCK_ALIGN * unit;
-            if overlap > 0.0 && (overlap / min_w > BLOCK_OVERLAP || left_aligned) {
+            let left_aligned = (a.left() - b.left()).abs() < cfg.block_align * unit;
+            if overlap > 0.0 && (overlap / min_w > cfg.block_overlap || left_aligned) {
                 uf.union(i, j);
             }
         }
@@ -207,7 +210,7 @@ fn order_blocks(blocks: Vec<Block>, unit: f32) -> Vec<Block> {
     let mut by_left: Vec<usize> = (0..n).collect();
     by_left.sort_by(|&a, &b| blocks[a].bounds.left().total_cmp(&blocks[b].bounds.left()));
 
-    let gutter = 6.0 * unit;
+    let gutter = cfg().column_gutter * unit;
     let mut column = vec![0usize; n];
     for w in 1..n {
         let prev = &blocks[by_left[w - 1]].bounds;

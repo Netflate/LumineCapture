@@ -8,8 +8,6 @@
 
 use tiny_skia::Rect;
 
-use crate::interaction::{OCR_HIT_SLACK, OCR_VERTICAL_SLACK};
-
 use super::OcrLine;
 use super::bidi;
 use super::layout::{self, Block};
@@ -107,7 +105,7 @@ impl OcrView {
     pub fn line_at(&self, p: (f64, f64)) -> Option<usize> {
         let (x, y) = (p.0 as f32, p.1 as f32);
         let (line, distance) = self.best_line(x, y, false, false)?;
-        (distance <= OCR_HIT_SLACK).then_some(line)
+        (distance <= crate::config::get().ocr.hit_slack).then_some(line)
     }
 
     /// Nearest line, then nearest character boundary within it.
@@ -129,13 +127,14 @@ impl OcrView {
     // If `confine` is set, lines in other blocks are ignored while the pointer stays 
     // vertically level with the anchor block. Ties go to the line closer in reading order.
     fn best_line(&self, x: f32, y: f32, by_row: bool, confine: bool) -> Option<(usize, f32)> {
+        let slack = crate::config::get().ocr.vertical_slack;
         let anchored = confine && self.anchor_block.is_some();
         let level_with_block = anchored
             && self
                 .anchor_block
                 .and_then(|bi| self.blocks.get(bi))
                 .is_some_and(|b| {
-                    y >= b.bounds.top() - OCR_VERTICAL_SLACK && y <= b.bounds.bottom() + OCR_VERTICAL_SLACK
+                    y >= b.bounds.top() - slack && y <= b.bounds.bottom() + slack
                 });
 
         let anchor_rank = self.sel.map(|(a, _)| self.rank[a.line]).unwrap_or(0);
@@ -147,7 +146,7 @@ impl OcrView {
                 let over_block = !level_with_block
                     && self.blocks.get(block).is_some_and(|b| {
                         let (bx, by) = gaps(x, y, &b.bounds);
-                        bx <= OCR_VERTICAL_SLACK && by <= OCR_VERTICAL_SLACK
+                        bx <= slack && by <= slack
                     });
                 if !over_block {
                     continue;

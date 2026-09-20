@@ -18,34 +18,15 @@ use std::collections::HashMap;
 use tiny_skia::{FillRule, Paint, Pixmap, Rect, Transform};
 use usvg::Tree;
 
+use crate::config::OcrLook;
 use crate::renderer::paths::{draw_panel_border, draw_svg_icon, rect_bounds, rounded_rect_path};
 use crate::ocr::OcrView;
 use crate::theme::{Rgba, color};
 use crate::ui::icons;
 
-/// Wash over the whole scanned area. Deliberately paired with `PLATE` below: the
-/// shade pushes the screenshot back and the plate lifts the text roughly back to
-/// where it started, so the lines read as the foreground without the region ever
-/// getting as dark as the overlay dim outside it.
-const REGION_SHADE: Rgba = Rgba(17, 17, 27, 96); // crust
-
-/// Plate behind a block of text.
-const PLATE: Rgba = Rgba(205, 214, 244, 48); // text
-
-/// Grown around a block's own bounds so the plate reads as a box around the
-/// text rather than a tight box on it.
-const PLATE_PAD_X: f32 = 4.0;
-const PLATE_PAD_Y: f32 = 2.0;
-const PLATE_RADIUS: f32 = 5.0;
-
-// ── progress badge ──────────────────────────────────────────────────────────
-
-const BADGE_SIZE: f32 = 62.0;
-const BADGE_RADIUS: f32 = 17.0;
-const BADGE_ICON_SIZE: f32 = 30.0;
-/// Sweeps per second, counting there and back as two.
-const SCAN_RATE: f32 = 1.15;
-const SCAN_WIDTH: f32 = 2.5;
+fn look() -> &'static OcrLook {
+    &crate::config::get().ocr.look
+}
 
 pub fn draw_ocr_overlay(
     canvas: &mut Pixmap,
@@ -56,27 +37,34 @@ pub fn draw_ocr_overlay(
     let Some(mut painter) = Painter::new(canvas, offset, clip) else {
         return;
     };
+    let look = look();
 
+    // Wash over the whole scanned area. Deliberately paired with the plate below: the
+    // shade pushes the screenshot back and the plate lifts the text roughly back to
+    // where it started, so the lines read as the foreground without the region ever
+    // getting as dark as the overlay dim outside it.
     if let Some(region) = view.region() {
-        painter.fill(region, 0.0, REGION_SHADE);
+        painter.fill(region, 0.0, look.region_shade);
     }
 
+    // Plate behind a block of text, grown around the block's own bounds so it
+    // reads as a box around the text rather than a tight box on it.
     let plates = view
         .block_bounds()
-        .filter_map(|bounds| pad(bounds, PLATE_PAD_X, PLATE_PAD_Y));
-    painter.fill_union(plates, PLATE_RADIUS, PLATE);
+        .filter_map(|bounds| pad(bounds, look.plate_pad_x, look.plate_pad_y));
+    painter.fill_union(plates, look.plate_radius, look.plate);
 
     // At least a hairline wide, so an empty span still reads as a caret.
     let spans = (0..view.lines.len()).filter_map(|i| {
         let sel = view.line_selection(i)?;
         Rect::from_ltrb(
             sel.x.0,
-            sel.y.0 - PLATE_PAD_Y,
+            sel.y.0 - look.plate_pad_y,
             sel.x.1.max(sel.x.0 + 1.0),
-            sel.y.1 + PLATE_PAD_Y,
+            sel.y.1 + look.plate_pad_y,
         )
     });
-    painter.fill_union(spans, 2.0, color::select());
+    painter.fill_union(spans, look.selection_radius, color::text_selection());
 
     painter.finish(canvas);
 }
@@ -96,38 +84,41 @@ pub fn draw_ocr_scan(
     let Some(mut painter) = Painter::new(canvas, offset, clip) else {
         return;
     };
-    painter.fill(region, 0.0, REGION_SHADE);
+    let look = look();
+    let (size, icon) = (look.badge_size, look.badge_icon_size);
+    painter.fill(region, 0.0, look.region_shade);
 
     let badge = scan_badge_rect(region);
-    painter.fill(badge, BADGE_RADIUS, color::panel());
+    painter.fill(badge, look.badge_radius, look.badge_background.get());
 
     let left = badge.left() - offset.0;
     let top = badge.top() - offset.1;
     let (bx, by) = painter.to_buf((left, top));
-    draw_panel_border(&mut painter.buf, bx, by, BADGE_SIZE, BADGE_SIZE, BADGE_RADIUS, 1.0);
+    draw_panel_border(&mut painter.buf, bx, by, size, size, look.badge_radius, 1.0);
     draw_svg_icon(
         &mut painter.buf,
         icons_cache,
         icons::OCR,
-        BADGE_ICON_SIZE,
-        bx + (BADGE_SIZE - BADGE_ICON_SIZE) / 2.0,
-        by + (BADGE_SIZE - BADGE_ICON_SIZE) / 2.0,
-        color::ON_PANEL.usvg(),
+        icon,
+        bx + (size - icon) / 2.0,
+        by + (size - icon) / 2.0,
+        look.badge_icon.get().usvg(),
     );
 
     // Ping-pong, eased at both ends so the bar decelerates into each turn
-    // instead of snapping back.
-    let swing = (phase * SCAN_RATE).rem_euclid(2.0);
+    // instead of snapping back. `scan_rate` is sweeps per second, counting
+    // there and back as two.
+    let swing = (phase * look.scan_rate).rem_euclid(2.0);
     let t = if swing > 1.0 { 2.0 - swing } else { swing };
     let t = t * t * (3.0 - 2.0 * t);
 
-    let track = BADGE_ICON_SIZE + 6.0;
-    let x = left + (BADGE_SIZE - track) / 2.0 + t * track;
-    let bar_top = top + (BADGE_SIZE - track) / 2.0;
+    let track = (icon + 6.0).min(size - look.scan_width).max(0.0);
+    let x = left + (size - track) / 2.0 + t * track;
+    let bar_top = top + (size - track) / 2.0;
 
-    let half = SCAN_WIDTH / 2.0;
+    let half = look.scan_width / 2.0;
     if let Some(bar) = Rect::from_ltrb(x - half, bar_top, x + half, bar_top + track) {
-        painter.fill_local(bar, half, color::accent_bright());
+        painter.fill_local(bar, half, look.scan.get());
     }
 
     painter.finish(canvas);
@@ -138,11 +129,12 @@ pub fn draw_ocr_scan(
 pub fn scan_badge_rect(region: Rect) -> Rect {
     let cx = region.left() + region.width() / 2.0;
     let cy = region.top() + region.height() / 2.0;
+    let size = look().badge_size;
     Rect::from_xywh(
-        cx - BADGE_SIZE / 2.0,
-        cy - BADGE_SIZE / 2.0,
-        BADGE_SIZE,
-        BADGE_SIZE,
+        cx - size / 2.0,
+        cy - size / 2.0,
+        size,
+        size,
     )
     .unwrap_or(region)
 }
