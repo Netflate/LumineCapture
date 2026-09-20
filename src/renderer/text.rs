@@ -75,7 +75,7 @@ pub fn shape_single_line(
     weight: cosmic_text::Weight,
     style: cosmic_text::Style,
 ) -> (Buffer, f32, f32) {
-    let line_height = font_size * font::LINE_HEIGHT;
+    let line_height = font_size * font::line_height();
     let mut buffer = Buffer::new(font_system, Metrics::new(font_size, line_height));
 
     buffer.set_size(None, None);
@@ -151,7 +151,7 @@ pub fn draw_input_box(canvas: &mut Pixmap, rect: Rect, radius: f32) {
     };
 
     let mut fill_paint = Paint::default();
-    fill_paint.set_color(color::FIELD_BG.color());
+    fill_paint.set_color(color::field().color());
     fill_paint.anti_alias = true;
     canvas.fill_path(
         &path,
@@ -172,7 +172,7 @@ pub fn measure_text_prefix_width(
         return 0.0;
     }
 
-    let metrics = Metrics::new(font_size, font_size * font::LINE_HEIGHT);
+    let metrics = Metrics::new(font_size, font_size * font::line_height());
     let mut buffer = Buffer::new_empty(metrics);
     buffer.set_size(None, None);
     buffer.set_text(
@@ -195,7 +195,7 @@ pub fn measure_text_prefix_width(
 }
 
 pub fn draw_text_selection(canvas: &mut Pixmap, rect: Rect, start_x: f32, end_x: f32) {
-    let sel_h = rect.height() * 0.75;
+    let sel_h = rect.height() * crate::config::get().theme.field_text_height;
     let sel_y = rect.top() + (rect.height() - sel_h) / 2.0;
     let Some(sel_rect) = Rect::from_xywh(
         rect.left() + start_x,
@@ -207,21 +207,23 @@ pub fn draw_text_selection(canvas: &mut Pixmap, rect: Rect, start_x: f32, end_x:
     };
 
     let mut paint = Paint::default();
-    paint.set_color(color::select().color());
+    paint.set_color(color::text_selection().color());
     paint.anti_alias = true;
     canvas.fill_rect(sel_rect, &paint, Transform::identity(), None);
 }
 
 pub fn draw_text_caret(canvas: &mut Pixmap, rect: Rect, cursor_x: f32) {
-    let cur_h = rect.height() * 0.75;
+    let theme = &crate::config::get().theme;
+    let cur_h = rect.height() * theme.field_text_height;
     let cur_y = rect.top() + (rect.height() - cur_h) / 2.0;
-    let Some(cur_rect) = Rect::from_xywh((rect.left() + cursor_x).round(), cur_y, 1.5, cur_h)
+    let Some(cur_rect) =
+        Rect::from_xywh((rect.left() + cursor_x).round(), cur_y, theme.caret_width, cur_h)
     else {
         return;
     };
 
     let mut paint = Paint::default();
-    paint.set_color(color::CARET.color());
+    paint.set_color(color::caret().color());
     paint.anti_alias = false;
     canvas.fill_rect(cur_rect, &paint, Transform::identity(), None);
 }

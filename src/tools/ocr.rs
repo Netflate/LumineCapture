@@ -6,7 +6,7 @@ use crate::ocr::draw::scan_badge_rect;
 use crate::ocr::models::MODELS;
 use crate::tools::{Tool, ToolBehavior};
 use crate::tools::selection::SelectionTool;
-use crate::interaction::{ClickTarget, OCR_MIN_REGION};
+use crate::interaction::ClickTarget;
 use crate::ui::toast::ToastKind;
 use crate::types::{CursorIcon, MouseButton, SelectionHandle, SpecialKey};
 use std::time::Instant;
@@ -174,10 +174,11 @@ fn ask_for_model(state: &mut EditorState) {
 
 
 fn boxed_out(state: &EditorState) -> bool {
+    let min_region = crate::config::get().ocr.min_region;
     state.selection.zone.is_some_and(|zone| {
         Some(zone) != state.ocr.redrag_from
-            && zone.width() >= OCR_MIN_REGION
-            && zone.height() >= OCR_MIN_REGION
+            && zone.width() >= min_region
+            && zone.height() >= min_region
     })
 }
 

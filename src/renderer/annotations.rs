@@ -1,9 +1,7 @@
 use super::paths::{luminance, normalized_rect, oval_path};
 use super::text::{draw_text_buffer, shape_single_line};
 use crate::tools::text::render_text_annotation;
-use crate::interaction::HANDLE_PAD;
 use crate::renderer::paths::KAPPA;
-use crate::theme::{color, shadow};
 use crate::types::annotations::{Annotation, AnnotationShape, arrow_head};
 
 use cosmic_text::{Editor, FontSystem, SwashCache};
@@ -20,42 +18,46 @@ use tiny_skia::{
 /// so a half-transparent stroke doesn't end up with a full-opacity shadow
 /// sitting underneath it.
 fn shadow_alpha_for(color: Color) -> u8 {
-    (color::SHADOW.alpha() as f32 * color.alpha()) as u8
+    (crate::config::get().annotations.shadow.color.alpha() as f32 * color.alpha()) as u8
 }
 
 pub fn shadow_color_for(color: Color) -> Color {
-    color::SHADOW.with_alpha(shadow_alpha_for(color)).color()
+    let shadow = crate::config::get().annotations.shadow.color;
+    shadow.with_alpha(shadow_alpha_for(color)).color()
 }
 
 /// Builds the "real" transform plus the same transform shifted by
-/// `shadow::OFFSET`, from a single viewport `offset`. Keeps every shape's
+/// `annotations.shadow.offset`, from a single viewport `offset`. Keeps every shape's
 /// shadow offset in sync without repeating the translate math.
 fn transforms_for(offset: (f32, f32)) -> (Transform, Transform) {
+    let [dx, dy] = crate::config::get().annotations.shadow.offset;
     let transform = Transform::from_translate(-offset.0, -offset.1);
-    let shadow_transform =
-        Transform::from_translate(-offset.0 + shadow::OFFSET.0, -offset.1 + shadow::OFFSET.1);
+    let shadow_transform = Transform::from_translate(-offset.0 + dx, -offset.1 + dy);
     (transform, shadow_transform)
 }
 
 
 // Only matters for the offset-shadow path (stroke_with_shadow), not halo
-// (draw_text_box / draw_annotation_handles, which don't use shadow::OFFSET
+// (draw_text_box / draw_annotation_handles, which don't use shadow.offset
 // at all — their layers spread evenly on every side by design).
 //
-// Keep (shadow::LAYERS * shadow::SPREAD_PER_LAYER) / 2.0 <= shadow::OFFSET.1 if you
+// Keep (shadow.layers * shadow.spread) / 2.0 <= shadow.offset[1] if you
 // tune these: that's what keeps the widest, faintest layer's natural top
 // overhang from poking above the shape. Currently 4 * 1.5 / 2 = 3.0,
-// exactly matching shadow::OFFSET.1 = 3.0 — zero headroom, so don't shrink
+// exactly matching shadow.offset[1] = 3.0 — zero headroom, so don't shrink
 // the offset or grow the spread without adjusting the other side too.
 
 pub fn visual_pad(stroke_width: f32) -> f32 {
-    let max_stroke_extent = (stroke_width + shadow::LAYERS as f32 * shadow::SPREAD_PER_LAYER) / 2.0;
-    max_stroke_extent + shadow::OFFSET.1.abs() + 2.0
+    let shadow = &crate::config::get().annotations.shadow;
+    let spread = (shadow.layers as f32 * shadow.spread).max(shadow.pen_halo);
+    let max_stroke_extent = (stroke_width + spread) / 2.0;
+    max_stroke_extent + shadow.offset[0].abs().max(shadow.offset[1].abs()) + 2.0
 }
 pub fn selection_chrome_pad() -> f32 {
-    const CHROME_STROKE: f32 = 3.0;
-    let max_stroke_extent = (CHROME_STROKE + shadow::LAYERS as f32 * shadow::SPREAD_PER_LAYER) / 2.0;
-    (HANDLE_PAD / 2.0) as f32 + max_stroke_extent + 2.0
+    let cfg = crate::config::get();
+    let shadow = &cfg.annotations.shadow;
+    let max_stroke_extent = (cfg.annotations.handles.width + shadow.layers as f32 * shadow.spread) / 2.0;
+    cfg.input.handle_hit_width / 2.0 + max_stroke_extent + 2.0
 }
 
 fn stroke_segment_with_shadow(
@@ -67,13 +69,14 @@ fn stroke_segment_with_shadow(
     transform: Transform,
     shadow_transform: Transform,
 ) {
-    for i in (1..=shadow::LAYERS).rev() {
+    let shadow = &crate::config::get().annotations.shadow;
+    for i in (1..=shadow.layers).rev() {
         let mut layer_stroke = stroke.clone();
 
-        let extra_width = i as f32 * shadow::SPREAD_PER_LAYER;
+        let extra_width = i as f32 * shadow.spread;
         layer_stroke.width = stroke.width + extra_width;
 
-        let alpha_factor = 1.0 / (1.0 + (i as f32 * 1.2));
+        let alpha_factor = 1.0 / (1.0 + (i as f32 * shadow.falloff));
         let current_alpha = (base_shadow_color.alpha() * alpha_factor).clamp(0.0, 1.0);
 
         if let Some(layer_color) = Color::from_rgba(
@@ -174,21 +177,23 @@ pub fn draw_annotation_handles_only(canvas: &mut Pixmap, ann: &Annotation, offse
 }
 
 fn draw_text_box(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32)) {
+    let cfg = crate::config::get();
+    let handles = &cfg.annotations.handles;
     let mut paint = Paint::default();
-    paint.set_color(color::ON_PANEL.color());
+    paint.set_color(handles.color.get().color());
     paint.anti_alias = true;
     let mut stroke = Stroke::default();
-    stroke.width = 3.0;
+    stroke.width = handles.width;
     stroke.line_cap = tiny_skia::LineCap::Round;
     stroke.line_join = tiny_skia::LineJoin::Round;
 
-    let base_shadow_color = color::SHADOW.color();
+    let base_shadow_color = cfg.annotations.shadow.color.color();
 
     // Selection chrome, not the annotation itself — halo (no offset) reads
     // better than a drop shadow on a rounded-rect outline.
     let transform = Transform::from_translate(-offset.0, -offset.1);
     let shadow_transform = transform;
-    let pad = (HANDLE_PAD / 2.0) as f32;
+    let pad = cfg.input.handle_hit_width / 2.0;
     let (l, t, ri, b) = (
         bbox.left() - pad,
         bbox.top() - pad,
@@ -197,9 +202,9 @@ fn draw_text_box(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32)) {
     );
 
     let (w, h) = (ri - l, b - t);
-    let corner_w = (w * 0.20).clamp(8.0_f32.min(w * 0.5), w * 0.5);
-    let corner_h = (h * 0.20).clamp(8.0_f32.min(h * 0.5), h * 0.5);
-    let r = 4.0_f32.min(corner_w * 0.5).min(corner_h * 0.5);
+    let corner_w = (w * handles.corner_length).clamp(handles.min_length.min(w * 0.5), w * 0.5);
+    let corner_h = (h * handles.corner_length).clamp(handles.min_length.min(h * 0.5), h * 0.5);
+    let r = handles.radius.min(corner_w * 0.5).min(corner_h * 0.5);
 
     let mut pb = PathBuilder::new();
 
@@ -441,7 +446,7 @@ fn draw_pen(
     halo_paint.set_color(shadow_color);
     halo_paint.anti_alias = true;
     let mut halo_stroke = Stroke::default();
-    halo_stroke.width = stroke_width + 3.0; 
+    halo_stroke.width = stroke_width + crate::config::get().annotations.shadow.pen_halo;
     halo_stroke.line_cap = LineCap::Round;
     halo_stroke.line_join = LineJoin::Round;
 
@@ -563,22 +568,24 @@ pub fn draw_pen_active_tail(
 }
 
 fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32)) {
+    let cfg = crate::config::get();
+    let handles = &cfg.annotations.handles;
     let mut paint = Paint::default();
-    paint.set_color(color::ON_PANEL.color());
+    paint.set_color(handles.color.get().color());
     paint.anti_alias = true;
 
     let mut stroke = Stroke::default();
-    stroke.width = 3.0;
+    stroke.width = handles.width;
     stroke.line_cap = tiny_skia::LineCap::Round;
     stroke.line_join = tiny_skia::LineJoin::Round;
 
-    let base_shadow_color = color::SHADOW.color();
+    let base_shadow_color = cfg.annotations.shadow.color.color();
 
     // Eight small, disjoint segments — halo (no offset) instead of a drop shadow.
     let transform = Transform::from_translate(-offset.0, -offset.1);
     let shadow_transform = transform;
 
-    let out_pad = (HANDLE_PAD / 2.0) as f32;
+    let out_pad = cfg.input.handle_hit_width / 2.0;
 
     let l = bbox.left() - out_pad;
     let t = bbox.top() - out_pad;
@@ -591,14 +598,14 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
     let mid_y = (t + b) / 2.0;
 
     // Mid handles
-    let mid_hw = (w * 0.32).clamp(8.0_f32.min(w * 0.5), w * 0.5);
-    let mid_hh = (h * 0.32).clamp(8.0_f32.min(h * 0.5), h * 0.5);
+    let mid_hw = (w * handles.middle_length).clamp(handles.min_length.min(w * 0.5), w * 0.5);
+    let mid_hh = (h * handles.middle_length).clamp(handles.min_length.min(h * 0.5), h * 0.5);
 
     // Edges
-    let corner_w = (w * 0.20).clamp(8.0_f32.min(w * 0.5), w * 0.5);
-    let corner_h = (h * 0.20).clamp(8.0_f32.min(h * 0.5), h * 0.5);
+    let corner_w = (w * handles.corner_length).clamp(handles.min_length.min(w * 0.5), w * 0.5);
+    let corner_h = (h * handles.corner_length).clamp(handles.min_length.min(h * 0.5), h * 0.5);
 
-    let r = 4.0_f32.min(corner_w * 0.5).min(corner_h * 0.5);
+    let r = handles.radius.min(corner_w * 0.5).min(corner_h * 0.5);
 
     let mut pb = PathBuilder::new();
 
@@ -689,14 +696,12 @@ fn stroke_with_shadow(
     );
 }
 
-/// Above this the circle is bright enough to carry black digits.
-const LABEL_FLIP: f32 = 0.55;
-
 fn contrasting_text_color(circle_color: Color) -> Color {
-    if luminance(circle_color) > LABEL_FLIP {
-        Color::BLACK
+    let numbered = &crate::config::get().annotations.numbered;
+    if luminance(circle_color) > numbered.digits_flip {
+        numbered.dark_digits.color()
     } else {
-        Color::WHITE
+        numbered.light_digits.color()
     }
 }
 
@@ -712,11 +717,10 @@ fn draw_numerated_arrow(
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
 ) {
-    const CIRCLE_RADIUS_RATIO: f32 = 3.0;
-
+    let numbered = &crate::config::get().annotations.numbered;
     let (transform, shadow_transform) = transforms_for(offset);
 
-    let circle_radius = stroke_width * CIRCLE_RADIUS_RATIO;
+    let circle_radius = stroke_width * numbered.circle;
 
     let dx = end.0 - start.0;
     let dy = end.1 - start.1;
@@ -737,7 +741,7 @@ fn draw_numerated_arrow(
         let px = -uy;
         let py = ux;
 
-        let base_half_width = circle_radius * 0.48;
+        let base_half_width = circle_radius * numbered.tail_width;
 
         let base_left = (
             start.0 + px * base_half_width,
@@ -779,18 +783,18 @@ fn draw_numerated_arrow(
 
     let digits = number.to_string().len();
 
-    let font_size = match digits {
-        1 => circle_radius * 1.1,
-        2 => circle_radius * 0.85,
-        3 => circle_radius * 0.65,
-        _ => circle_radius * 0.5,
+    let font_size = circle_radius * numbered.digit_sizes[digits.clamp(1, 4) - 1];
+    let weight = if numbered.bold {
+        cosmic_text::Weight::BOLD
+    } else {
+        cosmic_text::Weight::NORMAL
     };
 
     let (buffer, text_width, text_height) = shape_single_line(
         font_system,
         &number.to_string(),
         font_size,
-        cosmic_text::Weight::BOLD,
+        weight,
         cosmic_text::Style::Normal,
     );
 

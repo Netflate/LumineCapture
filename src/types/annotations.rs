@@ -2,7 +2,6 @@ use crate::editor::{DamageZone, EditorState};
 use crate::tools::text::update_text_bbox_inline;
 use crate::types::{SelectionHandle, SignedRect};
 use crate::utils::{apply_handle_drag, hit_test_rect_handle};
-use crate::interaction::HANDLE_PAD;
 use crate::theme::shadow;
 use tiny_skia::{Color, Rect};
 
@@ -10,16 +9,12 @@ use tiny_skia::{Color, Rect};
 /// Arrow head size for a stroke over a shaft of `len`. The renderer and the
 /// bbox must agree on it, otherwise the damage rect clips the drawn head.
 pub fn arrow_head(stroke_width: f32, len: f32) -> (f32, f32) {
-    let head_len = (stroke_width * HEAD_PER_STROKE)
-        .max(HEAD_MIN)
-        .min(len * HEAD_MAX_OF_SHAFT);
-    (head_len, head_len * HEAD_WIDTH_RATIO)
+    let arrow = &crate::config::get().annotations.arrow;
+    let head_len = (stroke_width * arrow.head_length)
+        .max(arrow.head_min)
+        .min(len * arrow.head_max);
+    (head_len, head_len * arrow.head_width)
 }
-
-const HEAD_PER_STROKE: f32 = 4.0;
-const HEAD_MIN: f32 = 12.0;
-const HEAD_MAX_OF_SHAFT: f32 = 0.6;
-const HEAD_WIDTH_RATIO: f32 = 0.55;
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum AnnotationShape {
@@ -161,7 +156,7 @@ impl Annotation {
             AnnotationShape::Rectangle { start, end, .. }
             | AnnotationShape::Circle { start, end, .. }
             | AnnotationShape::Line { start, end } => {
-                let pad = self.stroke_width / 2.0 + shadow::WIDTH_BONUS / 2.0;
+                let pad = self.stroke_width / 2.0 + shadow::width_bonus() / 2.0;
                 self.bbox = Rect::from_ltrb(
                     start.0.min(end.0) - pad,
                     start.1.min(end.1) - pad,
@@ -171,7 +166,7 @@ impl Annotation {
                 .unwrap();
             }
             AnnotationShape::Arrow { start, end } => {
-                let pad = self.stroke_width / 2.0 + shadow::WIDTH_BONUS / 2.0;
+                let pad = self.stroke_width / 2.0 + shadow::width_bonus() / 2.0;
                 let dx = end.0 - start.0;
                 let dy = end.1 - start.1;
                 let len = (dx * dx + dy * dy).sqrt().max(1.0);
@@ -199,7 +194,7 @@ impl Annotation {
             }
 
             AnnotationShape::NumeratedArrow { start, end, .. } => {
-                let circle_radius = self.stroke_width * 3.0;
+                let circle_radius = self.stroke_width * crate::config::get().annotations.numbered.circle;
                 let xs = [start.0 - circle_radius, start.0 + circle_radius, end.0];
                 let ys = [start.1 - circle_radius, start.1 + circle_radius, end.1];
 
@@ -367,10 +362,11 @@ impl Annotation {
                 // font_size scales by the axis with larger relative change
                 // not the best possible implementation, but meh
                 let scale = sx.abs().max(sy.abs());
+                let text = &crate::config::get().annotations.text;
                 AnnotationShape::Text {
                     start: remap(*start),
                     content: content.clone(),
-                    font_size: (*font_size * scale).clamp(6.0, 200.0),
+                    font_size: (*font_size * scale).clamp(text.resize_min, text.resize_max),
                     bold: *bold,
                     italic: *italic,
                 }
@@ -388,7 +384,7 @@ impl Annotation {
     pub fn initial_hit_test(&self, coordinates: (f64, f64)) -> bool {
         // TODO: separate for pen
         let (x, y) = (coordinates.0 as f32, coordinates.1 as f32);
-        let pad = HANDLE_PAD as f32;
+        let pad = crate::config::get().input.handle_hit_width;
 
         x >= self.bbox.left() - pad
             && x <= self.bbox.right() + pad
@@ -418,7 +414,7 @@ impl Annotation {
 // utils.rs or editor/drag.rs
 
 pub fn handle_hit_test_for_annotation(ann: &Annotation, pos: (f64, f64)) -> SelectionHandle {
-    let out_pad = (HANDLE_PAD / 2.0) as f32;
+    let out_pad = crate::config::get().input.handle_hit_width / 2.0;
     let bbox = ann.bbox;
 
     let visual_bbox = Rect::from_ltrb(
@@ -586,7 +582,7 @@ fn apply_shape_resize_from_orig(
     total_dx: f32,
     total_dy: f32,
 ) {
-    let out_pad = (HANDLE_PAD / 2.0) as f32;
+    let out_pad = crate::config::get().input.handle_hit_width / 2.0;
 
     let visual_bbox = Rect::from_ltrb(
         orig.bbox.left() - out_pad,
@@ -648,7 +644,8 @@ fn apply_text_resize_incremental(
         new_dist / prev_dist
     };
 
-    let new_font_size = (*font_size * scale).clamp(6.0, 300.0);
+    let text = &crate::config::get().annotations.text;
+    let new_font_size = (*font_size * scale).clamp(text.resize_min, text.resize_max);
     let applied_scale = new_font_size / *font_size;
 
     start.0 = anchor_x + (start.0 - anchor_x) * applied_scale;

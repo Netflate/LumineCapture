@@ -2,7 +2,6 @@ use crate::editor::{DamageZone, EditorState};
 use crate::tools::selection::global_selection_to_local;
 use crate::types::annotations::Annotation;
 use crate::types::Placement;
-use crate::interaction::HANDLE_RADIUS;
 use crate::ui::magnifier::MagnifierState;
 use crate::utils::get_overlapping_monitors;
 
@@ -25,7 +24,8 @@ impl EditorState {
             return None;
         }
         let mut dirty = None;
-        let selection_pad = (HANDLE_RADIUS as f32).max(4.0);
+        let border_width = crate::config::get().selection.border_width;
+        let selection_pad = (border_width * 2.0 + 4.0).max(8.0);
 
         let local_sel = self
             .selection
@@ -63,7 +63,7 @@ impl EditorState {
         // color label, when picking a color
         let with_label = self.picking();
         if mw > 0.0 && mh > 0.0 {
-            let mag_pad = 2.0;
+            let mag_pad = crate::config::get().magnifier.outline_width / 2.0 + 1.0;
 
             let mut add_mag_dirty = |mag_state: &Option<MagnifierState>| {
                 if let Some(mag) = mag_state.as_ref().filter(|m| m.monitor_idx == monitor_idx) {

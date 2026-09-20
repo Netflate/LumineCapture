@@ -17,7 +17,6 @@ use crate::types::{SelectionEdges};
 use crate::ui::magnifier::MagnifierState;
 use crate::ui::color_popover::ColorPickerPopover;
 use crate::ui::settings_panel::SettingsPanel;
-use crate::theme::color;
 use crate::ui::toolbar::Toolbar;
 use cosmic_text::{Editor, FontSystem, SwashCache};
 use std::collections::HashMap;
@@ -321,14 +320,16 @@ pub fn render_frame(req: &mut RenderRequest) {
 // selection border, so the border doesn't have a hard-edged hole.
 // rounded corners are only visual, the screenshot result won't have such corners
 //
-/// Corner radius of the selection border, measured on its outer edge.
-const SELECTION_RADIUS: f32 = 8.0;
-const SELECTION_STROKE: f32 = 2.0;
 /// Radius of the bright area
-const HOLE_RADIUS: f32 = SELECTION_RADIUS - SELECTION_STROKE / 2.0;
+fn hole_radius() -> f32 {
+    let sel = &crate::config::get().selection;
+    sel.border_radius - sel.border_width / 2.0
+}
 
 fn dim_pixel() -> [u8; 4] {
-    [0, 0, 0, crate::config::get().general.dim_alpha]
+    let crate::theme::Rgba(r, g, b, a) = crate::config::get().selection.dim;
+    let px = tiny_skia::ColorU8::from_rgba(r, g, b, a).premultiply();
+    [px.red(), px.green(), px.blue(), px.alpha()]
 }
 
 pub fn init_dimming(
@@ -348,11 +349,12 @@ pub fn init_dimming(
 }
 
 fn draw_selection_border(canvas: &mut Pixmap, sel: &Rect, edges: Option<&SelectionEdges>) {
+    let cfg = &crate::config::get().selection;
     let mut paint = Paint::default();
-    paint.set_color(color::ON_PANEL.color());
+    paint.set_color(cfg.border.get().color());
     paint.anti_alias = true;
     let stroke = Stroke {
-        width: SELECTION_STROKE,
+        width: cfg.border_width,
         ..Stroke::default()
     };
 
@@ -368,7 +370,7 @@ fn draw_selection_border(canvas: &mut Pixmap, sel: &Rect, edges: Option<&Selecti
 
         if let Some(path) = rounded_rect_path(
             &outer,
-            SELECTION_RADIUS,
+            cfg.border_radius,
             edges.top && edges.left,
             edges.top && edges.right,
             edges.bottom && edges.right,
@@ -380,20 +382,20 @@ fn draw_selection_border(canvas: &mut Pixmap, sel: &Rect, edges: Option<&Selecti
 }
 
 /// Darken the four corners between the sharp rectangle and the rounded border.
-/// Each corner is very small (at most `HOLE_RADIUS` square), so this is fast
+/// Each corner is very small (at most `hole_radius()` square), so this is fast
 /// and uses almost no performance.
 ///
 /// A corner is only rounded if both sides are visible screen edges. If the
 /// selection goes off the edge of the monitor, that corner stays flat.
 fn dim_hole_corners(canvas: &mut Pixmap, sel: &Rect, edges: Option<&SelectionEdges>) {
     let Some(edges) = edges else { return };
-    let radius = HOLE_RADIUS.min(sel.width() / 2.0).min(sel.height() / 2.0);
+    let radius = hole_radius().min(sel.width() / 2.0).min(sel.height() / 2.0);
     if radius <= 0.0 {
         return;
     }
 
     let mut paint = Paint::default();
-    paint.set_color(crate::theme::color::DIM.with_alpha(crate::config::get().general.dim_alpha).color());
+    paint.set_color(crate::config::get().selection.dim.color());
     paint.anti_alias = true;
 
     // corner point, then the direction the rectangle's interior lies in

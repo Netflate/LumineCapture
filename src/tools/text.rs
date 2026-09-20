@@ -11,7 +11,7 @@ use crate::types::{
     Annotation, AnnotationShape, CursorIcon, MouseButton, SpecialKey, TextEditState,
 };
 use crate::interaction::ClickTarget;
-use crate::theme::{color, font};
+use crate::theme::color;
 use crate::utils::cursor_for_handle;
 use cosmic_text::{
     Action, Attrs, Buffer, Edit, Editor, Family, Metrics, Motion, Selection, Shaping, SwashCache,
@@ -312,7 +312,7 @@ impl ToolBehavior for TextTool {
         let font_size = state.tool_settings.font_size;
         let bold = state.tool_settings.bold;
         let italic = state.tool_settings.italic;
-        let metrics = Metrics::new(font_size, font_size * font::LINE_HEIGHT);
+        let metrics = Metrics::new(font_size, font_size * text_line_height());
 
         let weight = if bold {
             cosmic_text::Weight::BOLD
@@ -352,7 +352,7 @@ impl ToolBehavior for TextTool {
             color: state.tool_settings.color,
             shadow_color: shadow_color_for(state.tool_settings.color),
             stroke_width: 0.0,
-            bbox: Rect::from_xywh(pos.0, pos.1, 10.0, metrics.line_height).unwrap(),
+            bbox: Rect::from_xywh(pos.0, pos.1, min_width(), metrics.line_height).unwrap(),
         };
 
         update_text_bbox_inline(
@@ -552,7 +552,7 @@ fn sync_content_from_editor(
     *content = new_content;
 
     let (x, y) = *start;
-    let fallback_h = *font_size * font::LINE_HEIGHT;
+    let fallback_h = *font_size * text_line_height();
 
     let (w, h) = editor.with_buffer(|buf| {
         let lh = buf.metrics().line_height;
@@ -564,11 +564,11 @@ fn sync_content_from_editor(
             }
             total_h = run.line_y + lh;
         }
-        (max_w.max(10.0), if total_h > 0.0 { total_h } else { lh })
+        (max_w.max(min_width()), if total_h > 0.0 { total_h } else { lh })
     });
 
     ann.bbox = Rect::from_xywh(x, y, w, h)
-        .unwrap_or_else(|| Rect::from_xywh(x, y, 10.0, fallback_h).unwrap());
+        .unwrap_or_else(|| Rect::from_xywh(x, y, min_width(), fallback_h).unwrap());
 }
 
 // ── pub helpers ─────────────────────────────────────────────────────────
@@ -609,7 +609,7 @@ pub fn ensure_text_editor<'a>(
     } else {
         cosmic_text::Style::Normal
     };
-    let metrics = Metrics::new(*font_size, *font_size * font::LINE_HEIGHT);
+    let metrics = Metrics::new(*font_size, *font_size * text_line_height());
 
     let editor = text_editors.entry(ann.id).or_insert_with(|| {
         let mut buffer = Buffer::new_empty(metrics);
@@ -686,9 +686,9 @@ pub fn update_text_bbox_inline(
     };
     let (x, y) = *start;
     let current_font_size = *font_size;
-    let fallback_h = current_font_size * font::LINE_HEIGHT;
+    let fallback_h = current_font_size * text_line_height();
 
-    let new_metrics = Metrics::new(current_font_size, current_font_size * font::LINE_HEIGHT);
+    let new_metrics = Metrics::new(current_font_size, current_font_size * text_line_height());
     let weight = if *bold {
         cosmic_text::Weight::BOLD
     } else {
@@ -726,11 +726,11 @@ pub fn update_text_bbox_inline(
             }
             total_h = run.line_y + lh;
         }
-        (max_w.max(10.0), if total_h > 0.0 { total_h } else { lh })
+        (max_w.max(min_width()), if total_h > 0.0 { total_h } else { lh })
     });
 
     ann.bbox = Rect::from_xywh(x, y, w, h)
-        .unwrap_or_else(|| Rect::from_xywh(x, y, 10.0, fallback_h).unwrap());
+        .unwrap_or_else(|| Rect::from_xywh(x, y, min_width(), fallback_h).unwrap());
 }
 
 /// Since renders requires editor and stuff
@@ -752,9 +752,9 @@ pub fn render_text_annotation(
     let ann_y = start.1 - offset.1;
 
     let text_color = tiny_skia_to_cosmic(ann.color);
-    let cursor_color = color::CARET.cosmic();
-    let sel_color = color::select().cosmic();
-    let sel_text_color = color::ON_PANEL.cosmic();
+    let cursor_color = color::caret().cosmic();
+    let sel_color = color::text_selection().cosmic();
+    let sel_text_color = crate::config::get().annotations.text.selected_text.get().cosmic();
     let transparent = cosmic_text::Color::rgba(0, 0, 0, 0);
 
     let (cur_col, sel_col) = if is_editing {
@@ -782,7 +782,7 @@ pub fn render_text_annotation(
             let mut draw_w = w as f32;
 
             if color == sel_col && draw_w <= 1.0 {
-                draw_w = (ann.bbox.width() - x as f32).max(10.0);
+                draw_w = (ann.bbox.width() - x as f32).max(min_width());
             }
 
             let start_x = (ann_x + x as f32).round() as i32;
@@ -866,6 +866,14 @@ fn extract_selected_text(editor: &Editor<'static>) -> Option<String> {
     } else {
         Some(result)
     }
+}
+
+fn text_line_height() -> f32 {
+    crate::config::get().annotations.text.line_height
+}
+
+fn min_width() -> f32 {
+    crate::config::get().annotations.text.min_width.max(0.0)
 }
 
 // small helper

@@ -1,4 +1,3 @@
-use crate::interaction::{PEN_MIN_DIST_SQ, PEN_SMOOTHING};
 use crate::editor::{DamageZone, EditorState};
 use crate::renderer::shadow_color_for;
 use crate::tools::ToolBehavior;
@@ -65,11 +64,12 @@ impl ToolBehavior for PenTool {
             return;
         };
 
+        let pen = &crate::config::get().tools.pen;
         let last = points.last().copied();
         let smoothed = if let Some(last) = last {
             (
-                last.0 + (raw_pos.0 - last.0) * (1.0 - PEN_SMOOTHING),
-                last.1 + (raw_pos.1 - last.1) * (1.0 - PEN_SMOOTHING),
+                last.0 + (raw_pos.0 - last.0) * (1.0 - pen.smoothing),
+                last.1 + (raw_pos.1 - last.1) * (1.0 - pen.smoothing),
             )
         } else {
             raw_pos
@@ -78,7 +78,7 @@ impl ToolBehavior for PenTool {
         if let Some(last) = last {
             let dx = smoothed.0 - last.0;
             let dy = smoothed.1 - last.1;
-            if dx * dx + dy * dy < PEN_MIN_DIST_SQ {
+            if dx * dx + dy * dy < pen.min_distance * pen.min_distance {
                 return;
             }
 

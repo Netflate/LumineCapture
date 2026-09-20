@@ -1,5 +1,4 @@
 use crate::types::{CursorIcon, Placement, SelectionHandle, SignedRect};
-use crate::interaction::HANDLE_PAD;
 use std::path::PathBuf;
 use tiny_skia::Pixmap;
 use tiny_skia::Rect;
@@ -131,10 +130,12 @@ pub fn hit_test_rect_handle(sel: &Rect, pos: (f64, f64)) -> SelectionHandle {
     let w = sel.width() as f64;
     let h = sel.height() as f64;
 
-    let corner_w = (w * 0.30).clamp(8.0, 40.0).min(w * 0.5);
-    let corner_h = (h * 0.30).clamp(8.0, 40.0).min(h * 0.5);
+    let input = &crate::config::get().input;
+    let (ratio, min, max) = (input.corner_ratio as f64, input.corner_min as f64, input.corner_max as f64);
+    let corner_w = (w * ratio).clamp(min, max).min(w * 0.5);
+    let corner_h = (h * ratio).clamp(min, max).min(h * 0.5);
 
-    let half_pad = HANDLE_PAD / 2.0;
+    let half_pad = input.handle_hit_width as f64 / 2.0;
 
     // Top-Left
     let in_tl_horizontal = (y - t).abs() <= half_pad && x >= l - half_pad && x <= l + corner_w;

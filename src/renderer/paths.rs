@@ -1,15 +1,14 @@
-use crate::theme::color;
+use crate::theme::{Rgba, color, stroke};
 
 /// 4/3*(sqrt(2)-1).
 pub const KAPPA: f32 = 0.552_284_8;
-use crate::theme::stroke::BORDER as BORDER_WIDTH;
 
 use std::collections::HashMap;
 use tiny_skia::{Color, Paint, PathBuilder, Pixmap, Rect, Stroke, Transform};
 use usvg::Tree;
 
 pub fn draw_progress_bar(canvas: &mut Pixmap, x: f32, y: f32, w: f32, percent: u8) {
-    let h = crate::theme::stroke::PROGRESS;
+    let h = stroke::progress();
     let filled = match percent {
         0 => 0.0,
         _ => (w * f32::from(percent.min(100)) / 100.0).max(h),
@@ -18,7 +17,7 @@ pub fn draw_progress_bar(canvas: &mut Pixmap, x: f32, y: f32, w: f32, percent: u
         anti_alias: true,
         ..Paint::default()
     };
-    for (width, fill) in [(w, color::TRACK), (filled, color::accent_bright())] {
+    for (width, fill) in [(w, color::track()), (filled, color::active())] {
         if width <= 0.0 {
             continue;
         }
@@ -119,15 +118,16 @@ pub fn rect_bounds(rect: &Rect, width: u32, height: u32) -> Option<(u32, u32, u3
     Some((x0 as u32, y0 as u32, (x1 - x0) as u32, (y1 - y0) as u32))
 }
 
-pub fn tint_pixmap(pixmap: &mut tiny_skia::Pixmap, color: usvg::Color) {
+pub fn tint_pixmap(pixmap: &mut tiny_skia::Pixmap, color: Rgba) {
+    let Rgba(red, green, blue, alpha) = color;
     for pixel in pixmap.pixels_mut() {
-        let a = pixel.alpha();
-        if a == 0 {
+        if pixel.alpha() == 0 {
             continue;
         }
-        let r = (color.red as u16 * a as u16 / 255) as u8;
-        let g = (color.green as u16 * a as u16 / 255) as u8;
-        let b = (color.blue as u16 * a as u16 / 255) as u8;
+        let a = (pixel.alpha() as u16 * alpha as u16 / 255) as u8;
+        let r = (red as u16 * a as u16 / 255) as u8;
+        let g = (green as u16 * a as u16 / 255) as u8;
+        let b = (blue as u16 * a as u16 / 255) as u8;
         *pixel = tiny_skia::PremultipliedColorU8::from_rgba(r, g, b, a).unwrap();
     }
 }
@@ -142,9 +142,9 @@ const BORDER_FLIP: f32 = 0.5;
 
 pub fn panel_border_color(bg: Color) -> Color {
     if luminance(bg) > BORDER_FLIP {
-        color::BORDER_ON_LIGHT.color()
+        color::border_on_light().color()
     } else {
-        color::BORDER_ON_DARK.color()
+        color::border().color()
     }
 }
 
@@ -179,9 +179,9 @@ pub fn draw_item_border(
 
     let mut paint = Paint::default();
     paint.set_color(if is_selected {
-        color::accent_bright().color()
+        color::active().color()
     } else if is_hovered {
-        color::accent().color()
+        color::hover().color()
     } else {
         panel_border_color(color::panel().color())
     });
@@ -203,12 +203,12 @@ pub fn draw_panel_border(
     radius: f32,
     opacity: f32,
 ) {
-
-    let inset = BORDER_WIDTH / 2.0;
+    let border_width = stroke::border();
+    let inset = border_width / 2.0;
     let bx = x + inset;
     let by = y + inset;
-    let bw = (w - BORDER_WIDTH).max(0.0);
-    let bh = (h - BORDER_WIDTH).max(0.0);
+    let bw = (w - border_width).max(0.0);
+    let bh = (h - border_width).max(0.0);
     let r = (radius - inset).max(0.0).min(bw / 2.0).min(bh / 2.0);
     let kr = r * KAPPA;
 
@@ -244,11 +244,17 @@ pub fn draw_panel_border(
     paint.anti_alias = true;
 
     let stroke = Stroke {
-        width: BORDER_WIDTH,
+        width: border_width,
         ..Default::default()
     };
 
     canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+}
+
+impl From<usvg::Color> for Rgba {
+    fn from(c: usvg::Color) -> Self {
+        Rgba(c.red, c.green, c.blue, 255)
+    }
 }
 
 pub fn draw_svg_icon(
@@ -258,7 +264,7 @@ pub fn draw_svg_icon(
     icon_size: f32,
     x: f32,
     y: f32,
-    tint: usvg::Color,
+    tint: impl Into<Rgba>,
 ) {
     let Some(rtree) = icons_cache.get(svg_str) else {
         return;
@@ -277,7 +283,7 @@ pub fn draw_svg_icon(
         Transform::from_scale(scale_x, scale_y),
         &mut icon_pixmap.as_mut(),
     );
-    tint_pixmap(&mut icon_pixmap, tint);
+    tint_pixmap(&mut icon_pixmap, tint.into());
 
     canvas.draw_pixmap(
         x.round() as i32,
