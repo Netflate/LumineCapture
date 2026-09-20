@@ -1,11 +1,7 @@
 // ── Logging ───────────────────────────────────────────────────────────────────
 //
 // Every process this binary spawns (overlay, pin, clipboard helper, OCR daemon)
-// appends to one file, so a scan that starts in the overlay and ends in the
-// daemon reads as a single story. The daemon writes there through its stderr
-// redirect instead of a sink of its own, which also catches panics and the
-// output of the native ONNX Runtime code.
-
+// writes to this one file
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
@@ -13,13 +9,11 @@ use std::sync::Mutex;
 
 use log::{Level, LevelFilter, Log, Metadata, Record};
 
-/// Levels used when `LUMINE_LOG` says nothing; the daemon logs to the file
-/// through its stderr, so it starts one step lower.
+/// default logging level, console doesn't need anythung besides warnings
 const DEFAULT_STDERR_LEVEL: LevelFilter = LevelFilter::Warn;
 const DEFAULT_DAEMON_STDERR_LEVEL: LevelFilter = LevelFilter::Info;
 const DEFAULT_FILE_LEVEL: LevelFilter = LevelFilter::Info;
 
-/// Which process a line came from.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Process {
     Overlay,
@@ -50,9 +44,6 @@ struct Logger {
 }
 
 /// Starts logging for this process. `LUMINE_LOG` (error|warn|info|debug|trace)
-/// raises both sinks; without it stderr stays at warnings and the file at info.
-/// `LUMINE_LOG_DEPS` adds the lines coming from dependencies.
-/// Every process appends to the same file, see the note on top.
 pub fn init(process: Process) {
     let asked = std::env::var("LUMINE_LOG")
         .ok()
@@ -65,8 +56,8 @@ pub fn init(process: Process) {
                 .and_then(|v| v.trim().parse::<LevelFilter>().ok())
         });
 
-    // the daemon's stderr is already redirected into the log file (which also catches panics and
-    // native ONNX Runtime output), so it logs everything there through stderr and keeps no sink
+    // the daemon's stderr is already redirected into the log file
+    // so it logs everything there through stderr and keeps no sink
     let daemon = process == Process::OcrDaemon;
     let stderr_level = asked.unwrap_or(if daemon {
         DEFAULT_DAEMON_STDERR_LEVEL
@@ -107,7 +98,7 @@ pub fn log_file_path() -> Option<PathBuf> {
     Some(dirs::state_dir()?.join("LumineCapture").join("lumine.log"))
 }
 
-/// Opens the shared log for appending, keeping one older file around.
+/// Opens the log for appending, keeping one older file around.
 pub fn open_log_file() -> Option<File> {
     let path = log_file_path()?;
     if let Some(dir) = path.parent() {
@@ -154,7 +145,6 @@ impl Log for Logger {
             && let Some(file) = &self.file
             && let Ok(mut file) = file.lock()
         {
-            // one write per record: appends from several processes interleave by line, not mid-line
             let _ = file.write_all(line.as_bytes());
         }
     }

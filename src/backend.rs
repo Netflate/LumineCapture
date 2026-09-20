@@ -14,6 +14,8 @@ pub trait CaptureMethod: Send + Sync {
         outputs: &[Output],
     ) -> Result<CaptureResult, Box<dyn std::error::Error>>;
 
+    // im not super sure how it works on cosmic
+    // maybe i'll implement it later
     async fn capture_active_window(&self) -> Result<Capture, Box<dyn std::error::Error>> {
         Err("capturing the active window is only supported on KDE Plasma".into())
     }

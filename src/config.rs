@@ -1,5 +1,4 @@
-// One file at ~/.config/LumineCapture/config.toml, loaded once at startup.
-// Every field must have a default
+// ~/.config/LumineCapture/config.toml, loaded once at startup
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -12,7 +11,7 @@ use crate::ocr::settings::{Device, Mode};
 use crate::theme::Rgba;
 use crate::types::Outputs;
 
-/// Declares a config section: every field sits next to its default.
+/// config section: every field sits next to its default
 macro_rules! section {
     ($name:ident { $($field:ident : $ty:ty = $default:expr),* $(,)? }) => {
         #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -97,7 +96,7 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Fills every color left unset with the theme role it follows.
+    /// Fills everything unset with its respective role
     fn resolve(&mut self) {
         let t = &self.theme;
         let toolbar = &mut self.toolbar;
@@ -148,13 +147,13 @@ impl Config {
 // Value types
 // ==========================================
 
-/// A color that follows a theme role unless the config sets it; `""` also means "follow".
+/// color that defaults to a theme role unless explicitly set in config (`""` also keeps the default).
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct ThemeColor(Option<Rgba>);
 
 impl ThemeColor {
     pub fn get(self) -> Rgba {
-        // resolve() runs on every Config, so an unset color here is a bug; make it loud
+        // resolve() is called for every Config, unset color is a bug
         self.0.unwrap_or(Rgba(255, 0, 255, 255))
     }
 
@@ -648,19 +647,28 @@ impl Default for Keys {
     }
 }
 
-pub const TEMPLATE: &str = r##"# LumineCapture config. Delete a line (or the whole file) to get its default back.
+pub const TEMPLATE: &str = r##"# LumineCapture config. 
+
+# Commented or empty color follows the [theme] role written next to it
+# Uncomment to deliberately set a specific color separate from theme
+
+# Deleting a line or the whole file will rollback to default.
 # A line with a mistake is skipped with a warning in ~/.local/state/LumineCapture/lumine.log,
 # the rest of the file still applies.
-#
-# Colors are "#RRGGBB" or "#RRGGBBAA". A commented color follows the [theme] role written
-# next to it: uncomment it to give that one element its own color ("" also means "follow").
-# Sizes are in logical pixels unless the comment says "ratio" (a share of something else).
+
+# The config file may be excessive, yet I decided to make the absolute majority of constants in the 
+# project configurable. Some of the customized options aren't guaranteed to even apply correctly. F
+
+# First come  traditionally customizable sections that will work perfectly, and then stuff you can 
+# tinker with if you want but it's not really recommended and can result in breaking the application.
+# Useful, important options will be moved to the GUI later on.
 
 [general]
+# by default both pin and copy still saves screenshot in the folder
 save_always = true
-# what Enter, a double click on the selection, the --region release and the instant modes
-# do with the shot: any of c (copy), p (pin), s (save) in any order, "" does nothing.
-# --to overrides it for one run
+# what to do with screenshot after finishing capture without an explicit bind
+# like pressing enter or double click on the selection zone
+# c (copy), p (pin), s(save), in any order
 accept = "c"
 
 [save]
@@ -670,22 +678,6 @@ filename_format = "%Y-%m-%d_%H-%M"
 
 [notifications]
 enabled = true
-
-[animation]
-# multiplies every animation below; 0.1 at least
-speed = 1.0
-# one animation tick
-frame_ms = 10
-# opacity per second
-popover_fade = 8.0
-toolbar_fade = 5.0
-# share of the remaining distance per second
-toolbar_slide = 12.0
-# the toolbar never slides in from further than this
-toolbar_slide_distance = 340.0
-# seconds
-toast_fade_in = 0.18
-toast_fade_out = 0.14
 
 # Shared by every panel, popover, toast and the magnifier label.
 [theme]
@@ -724,6 +716,48 @@ progress_height = 4.0
 caret_width = 1.5
 # height of the caret and the text selection in input fields, ratio of the field height
 field_text_height = 0.75
+
+[keys]
+accept = "Return"
+copy = "Ctrl+C"
+save = "Ctrl+S"
+pin = "Ctrl+P"
+cancel = "Escape"
+undo = "Ctrl+Z"
+redo = ["Ctrl+Shift+Z", "Ctrl+Y"]
+select_all = "Ctrl+A"
+delete = ["Delete", "Backspace"]
+toggle_ui = "Space"
+toggle_magnifier = "M"
+size_up = "]"
+size_down = "["
+tool_selection = "S"
+tool_pick = "V"
+tool_ocr = "O"
+tool_eyedropper = "G"
+tool_text = "T"
+tool_pen = "P"
+tool_line = "D"
+tool_arrow = "A"
+tool_rectangle = "R"
+tool_circle = "C"
+tool_numerated_arrow = "N"
+move_left = "Left"
+move_right = "Right"
+move_up = "Up"
+move_down = "Down"
+move_left_fast = "Shift+Left"
+move_right_fast = "Shift+Right"
+move_up_fast = "Shift+Up"
+move_down_fast = "Shift+Down"
+resize_left = "Alt+Left"
+resize_right = "Alt+Right"
+resize_up = "Alt+Up"
+resize_down = "Alt+Down"
+resize_left_fast = "Alt+Shift+Left"
+resize_right_fast = "Alt+Shift+Right"
+resize_up_fast = "Alt+Shift+Up"
+resize_down_fast = "Alt+Shift+Down"
 
 [toolbar]
 button_size = 35.0
@@ -869,7 +903,7 @@ crosshair = "#9399B250"
 # The captured region on the screen.
 [selection]
 # over everything outside the selection
-dim = "#11111B8C"
+dim = "#0000008c"
 border_width = 2.0
 border_radius = 8.0
 # arrow keys move and resize it by this much, Shift by the fast one
@@ -928,7 +962,7 @@ resize_max = 300.0
 # selected_text = "#CDD6F4"     # theme.foreground
 
 # What a new annotation starts with. The last used values are remembered in
-# ~/.local/state/LumineCapture/tools.toml and win over these.
+# ~/.local/state/LumineCapture/tools.toml and overrides these.
 [tools]
 color = "#FFFFFF"
 fill = false
@@ -979,6 +1013,22 @@ hold_delay_ms = 400
 hold_repeat_ms = 120
 hold_fast_after = 8
 hold_fast_repeat_ms = 40
+
+[animation]
+# multiplies every animation below; 0.1 at least
+speed = 1.0
+# one animation tick (100fps) 
+frame_ms = 10
+# opacity per second
+popover_fade = 8.0
+toolbar_fade = 5.0
+# share of the remaining distance per second
+toolbar_slide = 12.0
+# the toolbar never slides in from further than this
+toolbar_slide_distance = 340.0
+# seconds
+toast_fade_in = 0.18
+toast_fade_out = 0.14
 
 [ocr]
 # on-demand  build the engine when OCR is used, inside this process
@@ -1049,52 +1099,12 @@ rule_reach = 0.5
 # off | error | warn | info | debug | trace; unset keeps each process's own default
 # level = "info"
 max_file_size_mb = 1
-
-[keys]
-accept = "Return"
-copy = "Ctrl+C"
-save = "Ctrl+S"
-pin = "Ctrl+P"
-cancel = "Escape"
-undo = "Ctrl+Z"
-redo = ["Ctrl+Shift+Z", "Ctrl+Y"]
-select_all = "Ctrl+A"
-delete = ["Delete", "Backspace"]
-toggle_ui = "Space"
-toggle_magnifier = "M"
-size_up = "]"
-size_down = "["
-tool_selection = "S"
-tool_pick = "V"
-tool_ocr = "O"
-tool_eyedropper = "G"
-tool_text = "T"
-tool_pen = "P"
-tool_line = "D"
-tool_arrow = "A"
-tool_rectangle = "R"
-tool_circle = "C"
-tool_numerated_arrow = "N"
-move_left = "Left"
-move_right = "Right"
-move_up = "Up"
-move_down = "Down"
-move_left_fast = "Shift+Left"
-move_right_fast = "Shift+Right"
-move_up_fast = "Shift+Up"
-move_down_fast = "Shift+Down"
-resize_left = "Alt+Left"
-resize_right = "Alt+Right"
-resize_up = "Alt+Up"
-resize_down = "Alt+Down"
-resize_left_fast = "Alt+Shift+Left"
-resize_right_fast = "Alt+Shift+Right"
-resize_up_fast = "Alt+Shift+Up"
-resize_down_fast = "Alt+Shift+Down"
 "##;
 
 static CONFIG: OnceLock<Config> = OnceLock::new();
 
+// complaints are filled before logger starts to work 
+// so we need to remember em 
 static WARNINGS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 fn complain(message: String) {
@@ -1115,10 +1125,8 @@ fn config_path() -> Option<PathBuf> {
     Some(dirs::config_dir()?.join("LumineCapture").join("config.toml"))
 }
 
-/// A broken file never gets further than this many skipped lines.
 const MAX_BAD_LINES: usize = 64;
 
-/// Reads a config, skipping every line that doesn't parse instead of dropping the whole file.
 fn parse(text: &str, origin: &str) -> Config {
     let mut text = text.to_owned();
     for _ in 0..MAX_BAD_LINES {
@@ -1147,7 +1155,7 @@ fn parse(text: &str, origin: &str) -> Config {
     Config::default()
 }
 
-/// Options without a default value, so the serialized defaults don't list them.
+/// Options without a default value
 const UNSET_BY_DEFAULT: &[&str] = &["log.level"];
 
 fn warn_unknown_keys(text: &str, origin: &str) {

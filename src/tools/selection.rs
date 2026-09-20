@@ -93,6 +93,7 @@ impl ToolBehavior for SelectionTool {
         } else {
             state.tool_active = false;
 
+            // в --region снимаем сразу, как только отпустили только что протянутую область
             let fresh = state.input.drag_start.is_some();
             state.input.drag_start = None;
             state.selection.set_drag(SelectionHandle::None, None, None);

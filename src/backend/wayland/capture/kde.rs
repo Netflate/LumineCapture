@@ -134,6 +134,8 @@ async fn capture_one(
     let result = match target {
         Target::Screen(name) => proxy.capture_screen(name, options, Fd::from(write_fd.as_fd())).await,
         Target::ActiveWindow => {
+            // honestly copied from spectacle, with decorations and without shadow
+            // you can disable it in spectacle launch options, but i find it kinda useless
             options.insert("include-decoration", Value::from(true));
             options.insert("include-shadow", Value::from(false));
             proxy.capture_active_window(options, Fd::from(write_fd.as_fd())).await

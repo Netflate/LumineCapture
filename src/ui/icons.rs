@@ -24,7 +24,7 @@ pub const CHECK: &str = include_str!("../../assets/icons/check.svg");
 pub const PIN: &str = include_str!("../../assets/icons/pin.svg");
 pub const SAVE: &str = include_str!("../../assets/icons/save.svg");
 
-/// Icons tied to a drawing Tool (used in the toolbar).
+/// used in the toolbar
 pub fn get_svg_for_tool(tool: Tool) -> (&'static str, f32) {
     let size = &crate::config::get().toolbar.icons;
     match tool {
@@ -51,8 +51,7 @@ pub fn get_svg_for_finish(finish: Finish) -> (&'static str, f32) {
     }
 }
 
-/// Icons not tied to any Tool (e.g. SettingsWidget::Toggle icons).
-/// Add every new ToggleVisual::Icon svg here so load_icons_cache() preloads it.
+/// icons besides tools
 pub const EXTRA_ICONS: &[&str] = &[
     ITALIC, BOLD, RETRY, COPY, GLOBE, DOWNLOAD, CLOSE, TRASH, CHECK, PIN, SAVE,
 ];

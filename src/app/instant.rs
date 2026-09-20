@@ -12,6 +12,8 @@ type Result = std::result::Result<(), Box<dyn std::error::Error>>;
 pub async fn full(conn: wayland_client::Connection, launch: Launch) -> Result {
     let mut prof = Profiler::new(launch.speed);
 
+    // 'overlay' may be misleading, we use get monitor list and probe of the active
+    // witout actually showing the overlay
     let mut overlay = initialize_overlay(conn.clone())?;
     prof.mark("outputs discovered");
     let all = overlay.discovered_outputs().to_vec();

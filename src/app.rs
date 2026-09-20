@@ -43,7 +43,7 @@ pub enum Mode {
     Region,
 }
 
-/// How this run was asked to start, from the command line.
+/// Launch options from the command line.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Launch {
     pub mode: Mode,
@@ -59,6 +59,7 @@ impl Launch {
 }
 
 pub async fn run(conn: wayland_client::Connection, launch: Launch) -> Result<(), Box<dyn std::error::Error>> {
+    // без выбора действий эти режимы просто выбросили бы снимок
     if launch.mode != Mode::Editor && launch.outputs().is_empty() {
         return Err("nothing to do with the shot: pass --to or set general.accept".into());
     }
