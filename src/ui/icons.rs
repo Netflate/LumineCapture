@@ -1,6 +1,5 @@
 use crate::tools::Tool;
 use crate::types::Finish;
-use crate::ui::toolbar;
 
 pub const SELECTION: &str = include_str!("../../assets/icons/selection.svg");
 pub const ARROW: &str = include_str!("../../assets/icons/arrow.svg");
@@ -24,31 +23,31 @@ pub const TRASH: &str = include_str!("../../assets/icons/trash.svg");
 pub const CHECK: &str = include_str!("../../assets/icons/check.svg");
 pub const PIN: &str = include_str!("../../assets/icons/pin.svg");
 pub const SAVE: &str = include_str!("../../assets/icons/save.svg");
-// svg icon sizes
-const DEFAULT_ICON_SIZE: f32 = toolbar::BUTTON_CELL - 4.0;
 
 /// Icons tied to a drawing Tool (used in the toolbar).
 pub fn get_svg_for_tool(tool: Tool) -> (&'static str, f32) {
+    let size = &crate::config::get().toolbar.icons;
     match tool {
-        Tool::Selection => (SELECTION, DEFAULT_ICON_SIZE),
-        Tool::Pick => (PICK, DEFAULT_ICON_SIZE - 5.0),
-        Tool::Eyedropper => (EYEDROPPER, DEFAULT_ICON_SIZE - 3.0),
-        Tool::Text => (TEXT, DEFAULT_ICON_SIZE - 9.0),
-        Tool::Pen => (PEN, DEFAULT_ICON_SIZE - 11.0),
-        Tool::Line => (LINE, DEFAULT_ICON_SIZE - 3.0),
-        Tool::Arrow => (ARROW, DEFAULT_ICON_SIZE - 7.0),
-        Tool::Rectangle => (RECTANGLE, DEFAULT_ICON_SIZE),
-        Tool::Circle => (CIRCLE, DEFAULT_ICON_SIZE - 6.0),
-        Tool::NumeratedArrow => (NUMERATED_ARROW, DEFAULT_ICON_SIZE - 6.0),
-        Tool::Ocr => (OCR, DEFAULT_ICON_SIZE - 1.5),
+        Tool::Selection => (SELECTION, size.selection),
+        Tool::Pick => (PICK, size.pick),
+        Tool::Eyedropper => (EYEDROPPER, size.eyedropper),
+        Tool::Text => (TEXT, size.text),
+        Tool::Pen => (PEN, size.pen),
+        Tool::Line => (LINE, size.line),
+        Tool::Arrow => (ARROW, size.arrow),
+        Tool::Rectangle => (RECTANGLE, size.rectangle),
+        Tool::Circle => (CIRCLE, size.circle),
+        Tool::NumeratedArrow => (NUMERATED_ARROW, size.numerated_arrow),
+        Tool::Ocr => (OCR, size.ocr),
     }
 }
 
 pub fn get_svg_for_finish(finish: Finish) -> (&'static str, f32) {
+    let size = &crate::config::get().toolbar.icons;
     match finish {
-        Finish::Pin => (PIN, DEFAULT_ICON_SIZE - 10.0),
-        Finish::Copy => (COPY, DEFAULT_ICON_SIZE - 11.0),
-        Finish::Save => (SAVE, DEFAULT_ICON_SIZE - 11.0),
+        Finish::Pin => (PIN, size.pin),
+        Finish::Copy => (COPY, size.copy),
+        Finish::Save => (SAVE, size.save),
     }
 }
 

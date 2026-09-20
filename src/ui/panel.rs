@@ -150,10 +150,10 @@ pub trait AnimatedPanel: UiPanel {
     fn set_last_tick(&mut self, at: Instant);
 
     fn anim_interval(&self) -> Duration {
-        anim::FRAME
+        anim::frame()
     }
     fn anim_dt(&self) -> f32 {
-        anim::DT
+        anim::dt()
     }
 
     /// Advance the animation by exactly one fixed step of 'dt' seconds.

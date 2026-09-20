@@ -4,14 +4,19 @@ use usvg::Tree;
 
 use crate::renderer::paths::{draw_item_border, draw_panel_border, draw_svg_icon, rounded_rect_path};
 use crate::renderer::text::{HAlign, draw_aligned_text, draw_input_box, draw_line_edit};
-use crate::ui::color_popover::{ColorField, ColorPickerPopover, ColorPopoverElement, ColorSquareState, field_font_size, FIELD_HEIGHT, FIELD_LABEL_WIDTH, HUE_SLIDER_GAP, HUE_SLIDER_HEIGHT, HUE_SLIDER_RADIUS, HUE_SLIDER_WIDTH, SWATCH_BORDER, MARKER_OUTLINE, MARKER_RADIUS, MARKER_STROKE, PADDING, RADIUS, RECENT_LABEL, RECENT_LABEL_FONT_SIZE, RGBA_FIELDS, RGBA_LABEL_WIDTH, SV_SQUARE_RADIUS, SV_SQUARE_SIZE, SWATCH_RADIUS, EYEDROPPER_ICON, eyedropper_center, hex_field_geom, hex_label_pos, hsv_to_color, hue_handle_center_y, recent_label_rect, rgba_field_geom, rgba_slot_origin, swatch_center};
-use crate::theme::color;
+use crate::config::ColorPicker;
+use crate::ui::color_popover::{ColorField, ColorPickerPopover, ColorPopoverElement, ColorSquareState, field_font_size, RECENT_LABEL, RGBA_FIELDS, eyedropper_center, hex_field_geom, hex_label_pos, hsv_to_color, hue_handle_center_y, hue_track_origin, recent_label_rect, rgba_field_geom, rgba_slot_origin, sv_square_origin, swatch_center, swatch_radius};
+use crate::theme::{color, radius};
 use crate::ui::panel::UiPanel;
 use cosmic_text::{FontSystem, SwashCache, Weight};
 use tiny_skia::{
     BlendMode, Color, FillRule, FilterQuality, GradientStop, LinearGradient, Mask, Paint,
     PathBuilder, Pixmap, PixmapPaint, Point, Rect, SpreadMode, Stroke, Transform,
 };
+
+fn cfg() -> &'static ColorPicker {
+    &crate::config::get().color_picker
+}
 
 pub fn draw_color_popover(
     canvas: &mut Pixmap,
@@ -74,7 +79,7 @@ pub fn draw_color_popover(
         y,
         w,
         h,
-        RADIUS,
+        radius::panel(),
         color_popover.opacity,
     );
 
@@ -114,12 +119,13 @@ fn draw_color_popover_content(
         return;
     };
 
-    let Some(path) = rounded_rect_path(&rect, RADIUS, true, true, true, true) else {
+    let Some(path) = rounded_rect_path(&rect, radius::panel(), true, true, true, true) else {
         return;
     };
 
+    let cfg = cfg();
     let mut paint = Paint::default();
-    paint.set_color(color::panel().color());
+    paint.set_color(cfg.background.get().color());
     paint.anti_alias = true;
     canvas.fill_path(
         &path,
@@ -130,7 +136,7 @@ fn draw_color_popover_content(
     );
 
     // ── sv square ────────────────────────────────────────
-    let square_origin = (PADDING, PADDING);
+    let square_origin = sv_square_origin((0.0, 0.0));
 
     let mut sv_clip = color_popover.sv_clip_mask.take();
     if sv_clip.is_none() {
@@ -139,9 +145,9 @@ fn draw_color_popover_content(
             h,
             square_origin.0,
             square_origin.1,
-            SV_SQUARE_SIZE,
-            SV_SQUARE_SIZE,
-            SV_SQUARE_RADIUS,
+            cfg.sv_size,
+            cfg.sv_size,
+            cfg.sv_radius,
         );
     }
 
@@ -154,17 +160,17 @@ fn draw_color_popover_content(
         canvas,
         square_origin.0,
         square_origin.1,
-        SV_SQUARE_SIZE,
-        SV_SQUARE_SIZE,
-        SV_SQUARE_RADIUS,
-        SWATCH_BORDER,
+        cfg.sv_size,
+        cfg.sv_size,
+        cfg.sv_radius,
+        cfg.border_width,
         sv_hovered,
         color_popover.sv_square.dragging,
     );
 
     let sv = color_popover.sv_square.sv;
-    let sv_marker_cx = square_origin.0 + sv.0 * SV_SQUARE_SIZE;
-    let sv_marker_cy = square_origin.1 + (1.0 - sv.1) * SV_SQUARE_SIZE;
+    let sv_marker_cx = square_origin.0 + sv.0 * cfg.sv_size;
+    let sv_marker_cy = square_origin.1 + (1.0 - sv.1) * cfg.sv_size;
     draw_selection_marker(
         canvas,
         sv_marker_cx,
@@ -173,10 +179,7 @@ fn draw_color_popover_content(
     );
 
     // ── hue slider ───────────────────────────────────────
-    let track_origin = (
-        PADDING + SV_SQUARE_SIZE + HUE_SLIDER_GAP,
-        PADDING,
-    );
+    let track_origin = hue_track_origin((0.0, 0.0));
     let hue = color_popover.sv_square.hue;
 
     let mut hue_clip = color_popover.hue_clip_mask.take();
@@ -186,9 +189,9 @@ fn draw_color_popover_content(
             h,
             track_origin.0,
             track_origin.1,
-            HUE_SLIDER_WIDTH,
-            HUE_SLIDER_HEIGHT,
-            HUE_SLIDER_RADIUS,
+            cfg.hue_width,
+            cfg.sv_size,
+            cfg.hue_radius,
         );
     }
 
@@ -201,15 +204,15 @@ fn draw_color_popover_content(
         canvas,
         track_origin.0,
         track_origin.1,
-        HUE_SLIDER_WIDTH,
-        HUE_SLIDER_HEIGHT,
-        HUE_SLIDER_RADIUS,
-        SWATCH_BORDER,
+        cfg.hue_width,
+        cfg.sv_size,
+        cfg.hue_radius,
+        cfg.border_width,
         hue_hovered,
         color_popover.hue_dragging,
     );
 
-    let hue_marker_cx = track_origin.0 + HUE_SLIDER_WIDTH / 2.0;
+    let hue_marker_cx = track_origin.0 + cfg.hue_width / 2.0;
     let hue_marker_cy = hue_handle_center_y(track_origin.1, hue);
     draw_selection_marker(
         canvas,
@@ -224,7 +227,7 @@ fn draw_color_popover_content(
 
 fn ensure_sv_pixmap(square: &mut ColorSquareState) -> &Pixmap {
     if square.sv_dirty || square.sv_pixmap.is_none() {
-        let side = SV_SQUARE_SIZE as u32;
+        let side = cfg().sv_size as u32;
         square.sv_pixmap = Some(build_sv_pixmap(square.hue, side, side));
         square.sv_dirty = false;
     }
@@ -275,8 +278,8 @@ fn build_sv_pixmap(hue: f32, w: u32, h: u32) -> Pixmap {
 
 fn ensure_hue_track(color_popover: &mut ColorPickerPopover) -> &Pixmap {
     if color_popover.hue_track_pixmap.is_none() {
-        let w = HUE_SLIDER_WIDTH.ceil() as u32;
-        let h = HUE_SLIDER_HEIGHT.ceil() as u32;
+        let w = cfg().hue_width.ceil() as u32;
+        let h = cfg().sv_size.ceil() as u32;
         color_popover.hue_track_pixmap = Some(build_hue_track_pixmap(w, h));
     }
     color_popover.hue_track_pixmap.as_ref().unwrap()
@@ -310,8 +313,9 @@ fn build_hue_track_pixmap(w: u32, h: u32) -> Pixmap {
 }
 
 fn draw_selection_marker(pm: &mut Pixmap, cx: f32, cy: f32, fill: Color) {
+    let cfg = cfg();
     let mut pb = PathBuilder::new();
-    pb.push_circle(cx, cy, MARKER_RADIUS);
+    pb.push_circle(cx, cy, cfg.marker_radius);
     let Some(disc) = pb.finish() else { return };
 
     let mut fill_paint = Paint::default();
@@ -326,10 +330,10 @@ fn draw_selection_marker(pm: &mut Pixmap, cx: f32, cy: f32, fill: Color) {
     );
 
     let mut ring_paint = Paint::default();
-    ring_paint.set_color(color::ON_PANEL.color());
+    ring_paint.set_color(cfg.marker.get().color());
     ring_paint.anti_alias = true;
     let ring_stroke = Stroke {
-        width: MARKER_STROKE,
+        width: cfg.marker_stroke,
         ..Default::default()
     };
     pm.stroke_path(
@@ -341,13 +345,13 @@ fn draw_selection_marker(pm: &mut Pixmap, cx: f32, cy: f32, fill: Color) {
     );
 
     let mut pb2 = PathBuilder::new();
-    pb2.push_circle(cx, cy, MARKER_RADIUS + MARKER_STROKE);
+    pb2.push_circle(cx, cy, cfg.marker_radius + cfg.marker_stroke);
     let Some(outline) = pb2.finish() else { return };
     let mut outline_paint = Paint::default();
-    outline_paint.set_color(Color::from_rgba8(0, 0, 0, 160));
+    outline_paint.set_color(cfg.marker_outline_color.color());
     outline_paint.anti_alias = true;
     let outline_stroke = Stroke {
-        width: MARKER_OUTLINE,
+        width: cfg.marker_outline,
         ..Default::default()
     };
     pm.stroke_path(
@@ -399,7 +403,7 @@ fn draw_recent_colors(
     swash_cache: &mut SwashCache,
 ) {
     let origin = (0.0, 0.0);
-    let label_color = color::MUTED.color();
+    let label_color = cfg().label.get().color();
 
     draw_aligned_text(
         canvas,
@@ -407,7 +411,7 @@ fn draw_recent_colors(
         font_system,
         swash_cache,
         recent_label_rect(origin),
-        RECENT_LABEL_FONT_SIZE,
+        cfg().label_font_size,
         label_color,
         HAlign::Left,
         (0.0, 0.0),
@@ -436,13 +440,13 @@ fn draw_eyedropper(
     is_picking: bool,
 ) {
     let mut pb = PathBuilder::new();
-    pb.push_circle(cx, cy, SWATCH_RADIUS);
+    pb.push_circle(cx, cy, swatch_radius());
     if let Some(circle) = pb.finish() {
         let mut paint = Paint::default();
         paint.set_color(if is_picking {
-            color::accent().color()
+            color::hover().color()
         } else {
-            color::FIELD_BG.color()
+            color::field().color()
         });
         paint.anti_alias = true;
         pm.fill_path(
@@ -455,26 +459,27 @@ fn draw_eyedropper(
     }
 
     let tint = if is_picking || is_hovered {
-        color::ON_PANEL
+        color::foreground()
     } else {
-        color::MUTED
+        color::muted()
     };
+    let icon = cfg().eyedropper_icon_size;
     draw_svg_icon(
         pm,
         icons_cache,
         crate::ui::icons::EYEDROPPER,
-        EYEDROPPER_ICON,
-        cx - EYEDROPPER_ICON / 2.0,
-        cy - EYEDROPPER_ICON / 2.0,
+        icon,
+        cx - icon / 2.0,
+        cy - icon / 2.0,
         tint.usvg(),
     );
 }
 
 fn draw_swatch(pm: &mut Pixmap, cx: f32, cy: f32, color: Color, is_hovered: bool) {
     let radius = if is_hovered {
-        SWATCH_RADIUS + 3.0
+        swatch_radius() + cfg().swatch_hover_grow
     } else {
-        SWATCH_RADIUS
+        swatch_radius()
     };
 
     let mut pb = PathBuilder::new();
@@ -499,12 +504,13 @@ fn draw_color_fields(
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
 ) {
+    let cfg = cfg();
     let origin = (0.0, 0.0);
-    let label_color = color::MUTED.color();
+    let label_color = cfg.label.get().color();
 
     let (label_x, label_y) = hex_label_pos(origin);
     let hex_label_rect =
-        Rect::from_xywh(label_x, label_y, FIELD_LABEL_WIDTH, FIELD_HEIGHT).unwrap();
+        Rect::from_xywh(label_x, label_y, cfg.hex_label_width, cfg.field_height).unwrap();
     draw_aligned_text(
         canvas,
         "Hex",
@@ -531,7 +537,7 @@ fn draw_color_fields(
 
     for (idx, field) in RGBA_FIELDS.into_iter().enumerate() {
         let (lx, ly) = rgba_slot_origin(origin, idx);
-        let label_rect = Rect::from_xywh(lx, ly, RGBA_LABEL_WIDTH, FIELD_HEIGHT).unwrap();
+        let label_rect = Rect::from_xywh(lx, ly, cfg.rgba_label_width, cfg.field_height).unwrap();
         draw_aligned_text(
             canvas,
             field_label(field),
@@ -566,7 +572,8 @@ fn draw_color_input_field(
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
 ) {
-    draw_input_box(canvas, box_rect, 4.0);
+    let cfg = cfg();
+    draw_input_box(canvas, box_rect, cfg.field_radius);
 
     let is_hovered =
         matches!(color_popover.hovered, Some(ColorPopoverElement::Field(f)) if f == field);
@@ -577,16 +584,16 @@ fn draw_color_input_field(
         box_rect.top(),
         box_rect.width(),
         box_rect.height(),
-        4.0,
-        SWATCH_BORDER,
+        cfg.field_radius,
+        cfg.border_width,
         is_hovered,
         is_editing,
     );
 
     let inset_rect = Rect::from_xywh(
-        box_rect.left() + 6.0,
+        box_rect.left() + cfg.field_text_inset,
         box_rect.top(),
-        (box_rect.width() - 8.0).max(1.0),
+        (box_rect.width() - cfg.field_text_inset - 2.0).max(1.0),
         box_rect.height(),
     )
     .unwrap_or(box_rect);
@@ -598,7 +605,7 @@ fn draw_color_input_field(
         .filter(|e| e.key == field)
         .map(|e| &e.field);
 
-    let text_color = color::ON_PANEL.color();
+    let text_color = cfg.text.get().color();
 
     draw_line_edit(
         canvas,

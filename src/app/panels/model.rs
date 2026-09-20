@@ -3,7 +3,7 @@
 use crate::editor::EditorState;
 use crate::editor::dirty::apply_damage_rects;
 use crate::ocr::models::{MODELS, ModelEvent, ModelStatus};
-use crate::ui::model_popover::{self, ModelPopoverElement, ModelRow};
+use crate::ui::model_popover::{ModelPopoverElement, ModelRow};
 use crate::ui::panel::{UiPanel, emit_panel_damage, sync_panel_hover, sync_panel_rect};
 use crate::ui::toast::ToastKind;
 use crate::ui::settings_panel::{SettingsAction, SettingsWidget};
@@ -17,7 +17,7 @@ pub fn update_model_popover(editor_state: &mut EditorState, dirty_mask: &mut u32
     if editor_state.model_popover.is_visible() {
         let size = editor_state.model_popover.size;
         let (pos, monitor_idx) =
-            compute_popover_placement(editor_state, size, model_popover::OFFSET);
+            compute_popover_placement(editor_state, size, crate::theme::size::margin());
         editor_state.model_popover.position = pos;
         editor_state.model_popover.render_pos = pos;
         editor_state.model_popover.monitor_idx = monitor_idx;

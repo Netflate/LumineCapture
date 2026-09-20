@@ -1,63 +1,48 @@
+use crate::config::ColorPicker;
 use crate::types::Annotation;
 use crate::interaction::ScrollAccumulator;
-use crate::theme::{anim, font, radius, size};
+use crate::theme::{anim, font};
 use crate::ui::panel::{AnimatedPanel, HoverablePanel, PanelItem, UiPanel};
 use crate::ui::text_field::TextFieldGroup;
 use crate::types::tool_settings::default_color;
-use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 use tiny_skia::{Color, Mask, Pixmap, Rect};
 
-pub const WIDTH: f32 = 230.0;
-pub const OFFSET: f32 = size::OFFSET;
-pub const PADDING: f32 = 15.0;
-pub const RADIUS: f32 = radius::PANEL;
-
-
-pub const SV_SQUARE_SIZE: f32 = 170.0;
-pub const SV_SQUARE_RADIUS: f32 = 10.0;
-pub const MARKER_RADIUS: f32 = 10.0;
-pub const MARKER_STROKE: f32 = 2.0;
-pub const MARKER_OUTLINE: f32 = 0.1;
-
-pub const SWATCH_BORDER: f32 = 2.0;
-// ^ USED only for sv-square, hue-slider, swatches, not for hex/rgba fields
-// input and etc use usual item border constant from types/panel.rs
-pub const HUE_SLIDER_GAP: f32 = 12.0;
-pub const HUE_SLIDER_WIDTH: f32 = 17.0;
-pub const HUE_SLIDER_RADIUS: f32 = SV_SQUARE_RADIUS - 5.0;
-pub const HUE_SLIDER_HEIGHT: f32 = SV_SQUARE_SIZE;
-
-// ── recent colors ──────────────────────────────────────
-pub const RECENT_LABEL: &str = "── Palette & Values ───────────";
-pub const RECENT_LABEL_GAP: f32 = 10.0;
-pub const RECENT_LABEL_HEIGHT: f32 = 14.0;
-pub const RECENT_LABEL_FONT_SIZE: f32 = 13.0;
-pub const RECENT_ROW_GAP: f32 = 6.0;
-pub const SWATCH_DIAMETER: f32 = 22.0;
-pub const SWATCH_RADIUS: f32 = SWATCH_DIAMETER / 2.0;
-pub const SWATCH_GAP: f32 = 8.0;
-pub fn max_recent_colors() -> usize {
-    crate::config::get().tools.max_recent_colors
+fn cfg() -> &'static ColorPicker {
+    &crate::config::get().color_picker
 }
 
-pub const EYEDROPPER_ICON: f32 = 13.0;
-// ── hex / rgba input fields ──────────────────────────────
-pub const FIELD_ROW_GAP: f32 = 10.0;
-pub const FIELD_LABEL_WIDTH: f32 = 28.0;
-pub const RGBA_LABEL_WIDTH: f32 = 14.0;
-pub const FIELD_HEIGHT: f32 = 24.0;
+pub const RECENT_LABEL: &str = "── Palette & Values ───────────";
+
 pub fn field_font_size() -> f32 {
     font::small()
 }
-pub const FIELD_GAP: f32 = 6.0;
 
-const RECENT_ROW_OFFSET: f32 =
-    PADDING + SV_SQUARE_SIZE + RECENT_LABEL_GAP + RECENT_LABEL_HEIGHT + RECENT_ROW_GAP;
-const HEX_ROW_OFFSET: f32 = RECENT_ROW_OFFSET + SWATCH_DIAMETER + FIELD_ROW_GAP;
-const RGBA_ROW_OFFSET: f32 = HEX_ROW_OFFSET + FIELD_HEIGHT + FIELD_ROW_GAP;
+pub fn width() -> f32 {
+    let c = cfg();
+    c.padding * 2.0 + c.sv_size + c.hue_gap + c.hue_width
+}
 
-pub const HEIGHT: f32 = RGBA_ROW_OFFSET + FIELD_HEIGHT + PADDING;
+pub fn height() -> f32 {
+    rgba_row_offset() + cfg().field_height + cfg().padding
+}
+
+pub fn swatch_radius() -> f32 {
+    cfg().swatch_size / 2.0
+}
+
+fn recent_row_offset() -> f32 {
+    let c = cfg();
+    c.padding + c.sv_size + c.label_gap + c.label_height + c.swatch_row_gap
+}
+
+fn hex_row_offset() -> f32 {
+    recent_row_offset() + cfg().swatch_size + cfg().row_gap
+}
+
+fn rgba_row_offset() -> f32 {
+    hex_row_offset() + cfg().field_height + cfg().row_gap
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum ColorPickerItem {}
@@ -224,31 +209,15 @@ pub fn step_hex_text(text: &str, steps: i32) -> String {
     format!("{:0width$X}", new_value, width = width)
 }
 
-/// default palette when there isn't selection history
-fn default_palette() -> &'static [Color] {
-    static PALETTE: OnceLock<Vec<Color>> = OnceLock::new();
-    PALETTE.get_or_init(|| {
-        vec![
-            Color::from_rgba8(0, 0, 0, 255),
-            Color::from_rgba8(255, 255, 255, 255),
-            Color::from_rgba8(243, 139, 168, 255), // red
-            Color::from_rgba8(250, 179, 135, 255), // peach
-            Color::from_rgba8(249, 226, 175, 255), // yellow
-            Color::from_rgba8(166, 227, 161, 255), // green
-            //Color::from_rgba8(0, 122, 255, 255),
-            //Color::from_rgba8(175, 82, 222, 255),
-        ]
-    })
-}
-
 fn palette_row(history: &[Color]) -> Vec<Color> {
     let mut row = history.to_vec();
-    for &color in default_palette() {
+    // default palette when there isn't selection history
+    for color in cfg().palette.iter().map(|c| c.color()) {
         if !row.iter().any(|c| color_bytes(*c) == color_bytes(color)) {
             row.push(color);
         }
     }
-    row.truncate(max_recent_colors());
+    row.truncate(cfg().max_recent);
     row
 }
 
@@ -298,91 +267,109 @@ impl ColorSquareState {
 
 // ── hue slider geometry ─────────────────────────────────────────
 fn marker_visual_radius() -> f32 {
-    MARKER_RADIUS + MARKER_STROKE + MARKER_OUTLINE
+    let c = cfg();
+    c.marker_radius + c.marker_stroke + c.marker_outline
 }
 
 pub fn hue_handle_center_y(track_top: f32, hue: f32) -> f32 {
     let inset = marker_visual_radius();
-    let usable = (HUE_SLIDER_HEIGHT - 2.0 * inset).max(1.0);
+    let usable = (cfg().sv_size - 2.0 * inset).max(1.0);
     let t = hue.rem_euclid(360.0) / 360.0;
     track_top + inset + t * usable
 }
 
 pub fn hue_from_pointer_y(track_top: f32, y: f32) -> f32 {
     let inset = marker_visual_radius();
-    let usable = (HUE_SLIDER_HEIGHT - 2.0 * inset).max(1.0);
+    let usable = (cfg().sv_size - 2.0 * inset).max(1.0);
     let t = ((y - track_top - inset) / usable).clamp(0.0, 1.0);
     (t * 360.0).min(359.999)
+}
+
+pub fn sv_square_origin(content_origin: (f32, f32)) -> (f32, f32) {
+    let pad = cfg().padding;
+    (content_origin.0 + pad, content_origin.1 + pad)
+}
+
+pub fn hue_track_origin(content_origin: (f32, f32)) -> (f32, f32) {
+    let c = cfg();
+    (
+        content_origin.0 + c.padding + c.sv_size + c.hue_gap,
+        content_origin.1 + c.padding,
+    )
 }
 
 // ── recent colors geometry ──────────────────────────────
 
 pub fn recent_label_origin(content_origin: (f32, f32)) -> (f32, f32) {
+    let c = cfg();
     (
-        content_origin.0 + PADDING,
-        content_origin.1 + PADDING + SV_SQUARE_SIZE + RECENT_LABEL_GAP,
+        content_origin.0 + c.padding,
+        content_origin.1 + c.padding + c.sv_size + c.label_gap,
     )
 }
 
 pub fn recent_label_rect(content_origin: (f32, f32)) -> Rect {
     let (x, y) = recent_label_origin(content_origin);
-    let width = WIDTH - PADDING * 2.0;
-    Rect::from_xywh(x, y, width, RECENT_LABEL_HEIGHT).expect("recent label rect")
+    let width = (width() - cfg().padding * 2.0).max(1.0);
+    Rect::from_xywh(x, y, width, cfg().label_height.max(1.0)).expect("recent label rect")
 }
 
 pub fn swatch_row_top(content_origin_y: f32) -> f32 {
-    content_origin_y + RECENT_ROW_OFFSET
+    content_origin_y + recent_row_offset()
 }
 
 pub fn swatch_center(content_origin: (f32, f32), idx: usize) -> (f32, f32) {
     let row_top = swatch_row_top(content_origin.1);
+    let c = cfg();
     let cx = content_origin.0
-        + PADDING
-        + SWATCH_RADIUS
-        + idx as f32 * (SWATCH_DIAMETER + SWATCH_GAP);
-    let cy = row_top + SWATCH_RADIUS;
+        + c.padding
+        + swatch_radius()
+        + idx as f32 * (c.swatch_size + c.swatch_gap);
+    let cy = row_top + swatch_radius();
     (cx, cy)
 }
 
 pub fn eyedropper_center(content_origin: (f32, f32)) -> (f32, f32) {
     let row_top = swatch_row_top(content_origin.1);
     (
-        content_origin.0 + WIDTH - PADDING - SWATCH_RADIUS,
-        row_top + SWATCH_RADIUS,
+        content_origin.0 + width() - cfg().padding - swatch_radius(),
+        row_top + swatch_radius(),
     )
 }
 
 // ── hex / rgba fields geometry ───────────────────────────
 
 pub fn hex_row_top(content_origin_y: f32) -> f32 {
-    content_origin_y + HEX_ROW_OFFSET
+    content_origin_y + hex_row_offset()
 }
 
 pub fn rgba_row_top(content_origin_y: f32) -> f32 {
-    content_origin_y + RGBA_ROW_OFFSET
+    content_origin_y + rgba_row_offset()
 }
 
 pub fn hex_label_pos(content_origin: (f32, f32)) -> (f32, f32) {
     (
-        content_origin.0 + PADDING,
+        content_origin.0 + cfg().padding,
         hex_row_top(content_origin.1),
     )
 }
 
 pub fn hex_field_geom(content_origin: (f32, f32)) -> Rect {
-    let x = content_origin.0 + PADDING + FIELD_LABEL_WIDTH;
+    let c = cfg();
+    let x = content_origin.0 + c.padding + c.hex_label_width;
     let y = hex_row_top(content_origin.1);
-    let width = WIDTH - PADDING * 2.0 - FIELD_LABEL_WIDTH;
-    Rect::from_xywh(x, y, width, FIELD_HEIGHT).expect("hex field rect")
+    let width = (width() - c.padding * 2.0 - c.hex_label_width).max(1.0);
+    Rect::from_xywh(x, y, width, c.field_height.max(1.0)).expect("hex field rect")
 }
 
 fn rgba_field_total_width() -> f32 {
-    (WIDTH - PADDING * 2.0 - 3.0 * FIELD_GAP) / 4.0
+    let c = cfg();
+    (width() - c.padding * 2.0 - 3.0 * c.field_gap) / 4.0
 }
 
 pub fn rgba_slot_origin(content_origin: (f32, f32), idx: usize) -> (f32, f32) {
     let total_w = rgba_field_total_width();
-    let x = content_origin.0 + PADDING + idx as f32 * (total_w + FIELD_GAP);
+    let x = content_origin.0 + cfg().padding + idx as f32 * (total_w + cfg().field_gap);
     let y = rgba_row_top(content_origin.1);
     (x, y)
 }
@@ -390,11 +377,12 @@ pub fn rgba_slot_origin(content_origin: (f32, f32), idx: usize) -> (f32, f32) {
 pub fn rgba_field_geom(content_origin: (f32, f32), idx: usize) -> Rect {
     let (slot_x, slot_y) = rgba_slot_origin(content_origin, idx);
     let total_w = rgba_field_total_width();
+    let c = cfg();
     Rect::from_xywh(
-        slot_x + RGBA_LABEL_WIDTH,
+        slot_x + c.rgba_label_width,
         slot_y,
-        (total_w - RGBA_LABEL_WIDTH).max(1.0),
-        FIELD_HEIGHT,
+        (total_w - c.rgba_label_width).max(1.0),
+        c.field_height.max(1.0),
     )
     .expect("rgba field rect")
 }
@@ -455,12 +443,12 @@ impl ColorPickerPopover {
             .recent_colors
             .iter()
             .map(|c| c.color())
-            .take(max_recent_colors())
+            .take(cfg().max_recent)
             .collect();
         Self {
             colorpicker_pixmap: None,
             position: (0.0, 0.0),
-            size: (WIDTH, HEIGHT),
+            size: (width(), height()),
             opacity: 0.0,
             monitor_idx: 0,
             open: false,
@@ -492,12 +480,9 @@ impl ColorPickerPopover {
 
     pub fn sv_square_rect(&self) -> Option<Rect> {
         let rect = self.rect()?;
-        Rect::from_xywh(
-            rect.left() + PADDING,
-            rect.top() + PADDING,
-            SV_SQUARE_SIZE,
-            SV_SQUARE_SIZE,
-        )
+        let (x, y) = sv_square_origin((rect.left(), rect.top()));
+        let side = cfg().sv_size;
+        Rect::from_xywh(x, y, side, side)
     }
 
     pub fn sv_square_hit(&self, local: (f64, f64)) -> bool {
@@ -518,9 +503,8 @@ impl ColorPickerPopover {
 
     pub fn hue_slider_rect(&self) -> Option<Rect> {
         let rect = self.rect()?;
-        let x = rect.left() + PADDING + SV_SQUARE_SIZE + HUE_SLIDER_GAP;
-        let y = rect.top() + PADDING;
-        Rect::from_xywh(x, y, HUE_SLIDER_WIDTH, HUE_SLIDER_HEIGHT)
+        let (x, y) = hue_track_origin((rect.left(), rect.top()));
+        Rect::from_xywh(x, y, cfg().hue_width, cfg().sv_size)
     }
 
     pub fn hue_slider_hit(&self, local: (f64, f64)) -> bool {
@@ -529,7 +513,7 @@ impl ColorPickerPopover {
         };
         let px = local.0 as f32;
         let py = local.1 as f32;
-        let bleed = (marker_visual_radius() - HUE_SLIDER_WIDTH / 2.0).max(0.0);
+        let bleed = (marker_visual_radius() - cfg().hue_width / 2.0).max(0.0);
         px >= rect.left() - bleed
             && px <= rect.right() + bleed
             && py >= rect.top()
@@ -552,7 +536,7 @@ impl ColorPickerPopover {
         let bytes = color_bytes(color);
         self.history.retain(|c| color_bytes(*c) != bytes);
         self.history.insert(0, color);
-        self.history.truncate(max_recent_colors());
+        self.history.truncate(cfg().max_recent);
         self.recent_colors = palette_row(&self.history);
     }
 
@@ -571,7 +555,7 @@ impl ColorPickerPopover {
             let (cx, cy) = swatch_center(origin, idx);
             let dx = local.0 as f32 - cx;
             let dy = local.1 as f32 - cy;
-            if dx * dx + dy * dy <= SWATCH_RADIUS * SWATCH_RADIUS {
+            if dx * dx + dy * dy <= swatch_radius() * swatch_radius() {
                 return Some(idx);
             }
         }
@@ -584,7 +568,7 @@ impl ColorPickerPopover {
         };
         let (cx, cy) = eyedropper_center((rect.left(), rect.top()));
         let (dx, dy) = (local.0 as f32 - cx, local.1 as f32 - cy);
-        dx * dx + dy * dy <= SWATCH_RADIUS * SWATCH_RADIUS
+        dx * dx + dy * dy <= swatch_radius() * swatch_radius()
     }
 
     // ── hex / rgba fields ────────────────────────────────
@@ -690,7 +674,7 @@ impl UiPanel for ColorPickerPopover {
         &[]
     }
     fn padding(&self) -> f32 {
-        PADDING
+        cfg().padding
     }
     fn monitor_idx(&self) -> usize {
         self.monitor_idx
@@ -734,10 +718,10 @@ impl AnimatedPanel for ColorPickerPopover {
     }
 
     fn anim_interval(&self) -> Duration {
-        anim::FRAME
+        anim::frame()
     }
     fn anim_dt(&self) -> f32 {
-        anim::DT
+        anim::dt()
     }
 
     fn is_animating(&self) -> bool {
@@ -748,7 +732,7 @@ impl AnimatedPanel for ColorPickerPopover {
     fn animate_step(&mut self, dt: f32) -> bool {
         let target = if self.open { 1.0 } else { 0.0 };
         if (self.opacity - target).abs() > anim::OPACITY_EPSILON {
-            let delta = anim::POPOVER_FADE * crate::config::get().general.animation_speed * dt;
+            let delta = anim::popover_fade() * crate::config::get().animation.speed * dt;
             self.opacity += (target - self.opacity).signum() * delta;
             self.opacity = self.opacity.clamp(0.0, 1.0);
             true

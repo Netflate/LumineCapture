@@ -1,9 +1,9 @@
 use crate::renderer::paths::{draw_panel_border, draw_svg_icon, rounded_rect_path};
-use crate::theme::{color, radius};
+use crate::theme::{radius, size};
 use crate::ui::panel::UiPanel;
 use crate::ui::icons::{get_svg_for_finish, get_svg_for_tool};
 use crate::ui::panel::PanelItem;
-use crate::ui::toolbar::{PADDING, Toolbar, ToolbarButton, ToolbarItem};
+use crate::ui::toolbar::{Toolbar, ToolbarButton, ToolbarItem};
 use std::collections::HashMap;
 use tiny_skia::{BlendMode, FilterQuality, Paint, Pixmap, PixmapPaint, Rect, Transform};
 use usvg::Tree;
@@ -55,7 +55,7 @@ pub fn draw_toolbar(
         None,
     );
 
-    draw_panel_border(canvas, x, y, w, h, radius::PANEL, toolbar.opacity);
+    draw_panel_border(canvas, x, y, w, h, radius::panel(), toolbar.opacity);
 
     toolbar.toolbar_pixmap = Some(toolbar_pixmap);
 }
@@ -65,18 +65,20 @@ fn draw_toolbar_content(
     toolbar: &Toolbar,
     icons_cache: &HashMap<&'static str, Tree>,
 ) {
+    let cfg = &crate::config::get().toolbar;
+    let theme = &crate::config::get().theme;
     let (w, h) = toolbar.size;
     let Some(rect) = Rect::from_xywh(0.0, 0.0, w, h) else {
         return;
     };
 
     let (top_left, top_right, bot_left, bot_right) = (true, true, true, true);
-    let Some(path) = rounded_rect_path(&rect, radius::PANEL, top_left, top_right, bot_left, bot_right) else {
+    let Some(path) = rounded_rect_path(&rect, radius::panel(), top_left, top_right, bot_left, bot_right) else {
         return;
     };
 
     let mut paint = Paint::default();
-    paint.set_color(color::panel().color());
+    paint.set_color(cfg.background.get().color());
     paint.anti_alias = true;
     canvas.fill_path(
         &path,
@@ -86,10 +88,10 @@ fn draw_toolbar_content(
         None,
     );
 
-    let bg_h = h * 0.80;
+    let bg_h = h * cfg.highlight_height;
     let bg_y = rect.top() + (h - bg_h) / 2.0;
 
-    let mut current_x = rect.left() + PADDING;
+    let mut current_x = rect.left() + size::padding();
     for (index, item) in toolbar.items.iter().enumerate() {
         let cell_size = item.size();
         match item {
@@ -97,13 +99,13 @@ fn draw_toolbar_content(
                 if (toolbar.selected == Some(index) || toolbar.hovered == Some(index))
                     && let Some(cell_rect) = Rect::from_xywh(current_x, bg_y, cell_size, bg_h)
                         && let Some(cell_path) =
-                            rounded_rect_path(&cell_rect, radius::ITEM, true, true, true, true)
+                            rounded_rect_path(&cell_rect, radius::item(), true, true, true, true)
                         {
                             let mut cell_paint = Paint::default();
                             let color = if toolbar.selected == Some(index) {
-                                color::accent_bright().color()
+                                cfg.button_selected.get().color()
                             } else {
-                                color::accent().color()
+                                cfg.button_hovered.get().color()
                             };
                             cell_paint.set_color(color);
                             cell_paint.anti_alias = true;
@@ -123,6 +125,13 @@ fn draw_toolbar_content(
 
                 let icon_x = current_x + (cell_size - icon_size) / 2.0;
                 let icon_y = rect.top() + (h - icon_size) / 2.0;
+                let tint = if toolbar.selected == Some(index) {
+                    cfg.icon_selected.get()
+                } else if toolbar.hovered == Some(index) {
+                    cfg.icon_hovered.get()
+                } else {
+                    cfg.icon.get()
+                };
 
                 draw_svg_icon(
                     canvas,
@@ -131,21 +140,21 @@ fn draw_toolbar_content(
                     icon_size,
                     icon_x,
                     icon_y,
-                    color::ON_PANEL.usvg(),
+                    tint,
                 );
             }
             ToolbarItem::Seperator => {
-                let sep_w = 2.0;
-                let sep_h = h * 0.5;
+                let sep_w = theme.separator_width;
+                let sep_h = h * theme.separator_length;
                 let sep_x = current_x + (cell_size - sep_w) / 2.0;
                 let sep_y = rect.top() + (h - sep_h) / 2.0;
 
                 if let Some(sep_rect) = Rect::from_xywh(sep_x, sep_y, sep_w, sep_h)
                     && let Some(sep_path) =
-                        rounded_rect_path(&sep_rect, radius::SEPARATOR, true, true, true, true)
+                        rounded_rect_path(&sep_rect, radius::separator(), true, true, true, true)
                     {
                         let mut sep_paint = Paint::default();
-                        sep_paint.set_color(color::ON_PANEL.color());
+                        sep_paint.set_color(cfg.separator.get().color());
                         sep_paint.anti_alias = true;
                         canvas.fill_path(
                             &sep_path,

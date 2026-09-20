@@ -1,9 +1,8 @@
 use crate::renderer::paths::{draw_item_border, draw_panel_border, draw_progress_bar, draw_svg_icon, rounded_rect_path};
 use crate::renderer::text::{HAlign, draw_aligned_text, draw_line_edit};
-use crate::theme::{color, font, radius};
-use crate::theme::stroke::BORDER as ITEM_BORDER;
+use crate::theme::{color, font, radius, size, stroke};
 use crate::ui::panel::{PanelItem, UiPanel};
-use crate::ui::settings_panel::{CHECKBOX_BOX_SIZE, CHECKBOX_LABEL_GAP, DOWNLOAD_LABEL_WIDTH, DOWNLOAD_PERCENT_WIDTH, PADDING, STEPPER_ARROW_GAP, STEPPER_ARROW_HEIGHT, STEPPER_ARROW_STROKE, STEPPER_ARROW_WIDTH, STEPPER_ARROW_ZONE, SettingsPanel, SettingsWidget, StepperArrow, ToggleVisual};
+use crate::ui::settings_panel::{SettingsPanel, SettingsWidget, StepperArrow, ToggleVisual};
 use cosmic_text::{FontSystem, SwashCache};
 use std::collections::HashMap;
 use tiny_skia::{
@@ -74,7 +73,7 @@ pub fn draw_settings_panel(
         None,
     );
 
-    draw_panel_border(canvas, x, y, w, h, radius::PANEL, panel.opacity);
+    draw_panel_border(canvas, x, y, w, h, radius::panel(), panel.opacity);
 
     panel.panel_pixmap = Some(panel_pixmap);
 }
@@ -87,14 +86,16 @@ fn draw_settings_content(
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
 ) {
+    let cfg = &crate::config::get().settings_panel;
+    let theme = &crate::config::get().theme;
     let (w, h) = panel.size;
     let Some(rect) = Rect::from_xywh(0.0, 0.0, w, h) else {
         return;
     };
 
-    if let Some(path) = rounded_rect_path(&rect, radius::PANEL, true, true, true, true) {
+    if let Some(path) = rounded_rect_path(&rect, radius::panel(), true, true, true, true) {
         let mut paint = Paint::default();
-        paint.set_color(color::panel().color());
+        paint.set_color(cfg.background.get().color());
         paint.anti_alias = true;
         canvas.fill_path(
             &path,
@@ -105,10 +106,10 @@ fn draw_settings_content(
         );
     }
 
-    let item_h = h * 0.70;
+    let item_h = panel.item_height();
     let item_y = rect.top() + (h - item_h) / 2.0;
-    let mut current_x = rect.left() + PADDING;
-    let icon_color = color::ON_PANEL.color();
+    let mut current_x = rect.left() + size::padding();
+    let text_color = cfg.text.get().color();
 
     for (index, item) in panel.widgets.iter().enumerate() {
         let item_w = item.size();
@@ -128,24 +129,25 @@ fn draw_settings_content(
                     current_color,
                 );
             }
-            SettingsWidget::Action { svg, icon_size, .. } => {
+            SettingsWidget::Action { action, svg } => {
                 draw_item_border(
                     canvas,
                     current_x,
                     item_y,
                     item_w,
                     item_h,
-                    radius::ITEM,
-                    ITEM_BORDER,
+                    radius::item(),
+                    stroke::border(),
                     is_hovered,
                     is_selected,
                 );
-                let tint = if is_hovered { color::accent().usvg() } else { color::ON_PANEL.usvg() };
+                let tint = if is_hovered { cfg.icon_hovered.get() } else { cfg.icon.get() };
+                let icon_size = action.icon_size();
                 draw_svg_icon(
                     canvas,
                     icons_cache,
                     svg,
-                    *icon_size,
+                    icon_size,
                     current_x + (item_w - icon_size) / 2.0,
                     item_y + (item_h - icon_size) / 2.0,
                     tint,
@@ -164,7 +166,7 @@ fn draw_settings_content(
                     &display_text,
                     is_hovered,
                     is_selected,
-                    icon_color,
+                    text_color,
                     font_system,
                     swash_cache,
                 );
@@ -181,7 +183,7 @@ fn draw_settings_content(
                     is_on,
                     is_hovered,
                     icons_cache,
-                    icon_color,
+                    text_color,
                     font_system,
                     swash_cache,
                 );
@@ -195,7 +197,7 @@ fn draw_settings_content(
                         swash_cache,
                         label_rect,
                         font::label(),
-                        icon_color,
+                        text_color,
                         HAlign::Center,
                         (0.0, 0.0),
                         cosmic_text::Weight::NORMAL,
@@ -210,7 +212,7 @@ fn draw_settings_content(
                         rect,
                         &field.text(current_color),
                         is_hovered,
-                        icon_color,
+                        text_color,
                         font_system,
                         swash_cache,
                     );
@@ -224,23 +226,23 @@ fn draw_settings_content(
                     item_w,
                     item_h,
                     panel.download.unwrap_or(0),
-                    icon_color,
+                    text_color,
                     font_system,
                     swash_cache,
                 );
             }
             SettingsWidget::Separator => {
-                let sep_w = 2.0;
-                let sep_h = h * 0.5;
+                let sep_w = theme.separator_width;
+                let sep_h = h * theme.separator_length;
                 let sep_x = current_x + (item_w - sep_w) / 2.0;
                 let sep_y = rect.top() + (h - sep_h) / 2.0;
 
                 if let Some(sep_rect) = Rect::from_xywh(sep_x, sep_y, sep_w, sep_h)
                     && let Some(sep_path) =
-                        rounded_rect_path(&sep_rect, radius::SEPARATOR, true, true, true, true)
+                        rounded_rect_path(&sep_rect, radius::separator(), true, true, true, true)
                     {
                         let mut sep_paint = Paint::default();
-                        sep_paint.set_color(color::ON_PANEL.color());
+                        sep_paint.set_color(cfg.separator.get().color());
                         sep_paint.anti_alias = true;
                         canvas.fill_path(
                             &sep_path,
@@ -267,9 +269,9 @@ fn draw_value_field(
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
 ) {
-    if let Some(path) = rounded_rect_path(&rect, radius::ITEM, true, true, true, true) {
+    if let Some(path) = rounded_rect_path(&rect, radius::item(), true, true, true, true) {
         let mut paint = Paint::default();
-        paint.set_color(color::FIELD_BG.color());
+        paint.set_color(color::field().color());
         paint.anti_alias = true;
         canvas.fill_path(
             &path,
@@ -285,8 +287,8 @@ fn draw_value_field(
         rect.top(),
         rect.width(),
         rect.height(),
-        radius::ITEM,
-        ITEM_BORDER,
+        radius::item(),
+        stroke::border(),
         is_hovered,
         false,
     );
@@ -317,7 +319,9 @@ fn draw_download(
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
 ) {
-    if let Some(label) = Rect::from_xywh(x, y, DOWNLOAD_LABEL_WIDTH, h) {
+    let cfg = &crate::config::get().settings_panel;
+    let (label_w, percent_w) = (cfg.download_label_width, cfg.download_percent_width);
+    if let Some(label) = Rect::from_xywh(x, y, label_w, h) {
         draw_aligned_text(
             canvas,
             "Downloading",
@@ -333,16 +337,16 @@ fn draw_download(
         );
     }
 
-    let bar_w = (w - DOWNLOAD_LABEL_WIDTH - DOWNLOAD_PERCENT_WIDTH).max(0.0);
+    let bar_w = (w - label_w - percent_w).max(0.0);
     draw_progress_bar(
         canvas,
-        x + DOWNLOAD_LABEL_WIDTH,
-        y + (h - crate::theme::stroke::PROGRESS) / 2.0,
+        x + label_w,
+        y + (h - stroke::progress()) / 2.0,
         bar_w,
         percent,
     );
 
-    if let Some(label) = Rect::from_xywh(x + w - DOWNLOAD_PERCENT_WIDTH, y, DOWNLOAD_PERCENT_WIDTH, h) {
+    if let Some(label) = Rect::from_xywh(x + w - percent_w, y, percent_w, h) {
         draw_aligned_text(
             canvas,
             &format!("{percent}%"),
@@ -375,13 +379,13 @@ fn draw_color_swatch(
         y,
         w,
         h,
-        radius::ITEM,
-        ITEM_BORDER,
+        radius::item(),
+        stroke::border(),
         is_hovered,
         is_selected,
     );
 
-    let circle_r = (h.min(w) * 0.35).max(4.0);
+    let circle_r = (h.min(w) * crate::config::get().settings_panel.swatch_dot).max(4.0);
     let cx = x + w / 2.0;
     let cy = y + h / 2.0;
 
@@ -412,33 +416,34 @@ fn draw_stepper(
     text: &str,
     is_hovered: bool,
     is_selected: bool,
-    icon_color: Color,
+    text_color: Color,
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
 ) {
+    let cfg = &crate::config::get().settings_panel;
     draw_item_border(
         canvas,
         x,
         y,
         w,
         h,
-        radius::ITEM,
-        ITEM_BORDER,
+        radius::item(),
+        stroke::border(),
         is_hovered,
         is_selected,
     );
 
     let Some(label_rect) = Rect::from_xywh(
-        x + PADDING,
+        x + size::padding(),
         y,
-        (w - STEPPER_ARROW_ZONE - PADDING).max(0.0),
+        (w - cfg.stepper_arrow_zone - size::padding()).max(0.0),
         h,
     ) else {
         let hovered_arrow = panel
             .hovered_arrow
             .filter(|(idx, _)| *idx == index)
             .map(|(_, arrow)| arrow);
-        draw_stepper_arrows(canvas, x, y, w, h, icon_color, hovered_arrow);
+        draw_stepper_arrows(canvas, x, y, w, h, hovered_arrow);
         return;
     };
 
@@ -457,15 +462,15 @@ fn draw_stepper(
         font_system,
         swash_cache,
         font::label(),
-        icon_color,
-        cosmic_text::Weight::BOLD,
+        text_color,
+        if cfg.stepper_bold { cosmic_text::Weight::BOLD } else { cosmic_text::Weight::NORMAL },
     );
 
     let hovered_arrow = panel
         .hovered_arrow
         .filter(|(idx, _)| *idx == index)
         .map(|(_, arrow)| arrow);
-    draw_stepper_arrows(canvas, x, y, w, h, icon_color, hovered_arrow);
+    draw_stepper_arrows(canvas, x, y, w, h, hovered_arrow);
 }
 
 fn draw_stepper_arrows(
@@ -474,44 +479,44 @@ fn draw_stepper_arrows(
     y: f32,
     w: f32,
     h: f32,
-    icon_color: Color,
     hovered: Option<StepperArrow>,
 ) {
-    let cx = x + w - STEPPER_ARROW_ZONE / 2.0;
+    let cfg = &crate::config::get().settings_panel;
+    let (arrow_w, arrow_h) = (cfg.stepper_arrow_width, cfg.stepper_arrow_height);
+    let cx = x + w - cfg.stepper_arrow_zone / 2.0;
     let mid_y = y + h / 2.0;
 
-    let up_cy = mid_y - STEPPER_ARROW_GAP / 2.0 - STEPPER_ARROW_HEIGHT / 2.0;
-    let down_cy = mid_y + STEPPER_ARROW_GAP / 2.0 + STEPPER_ARROW_HEIGHT / 2.0;
+    let up_cy = mid_y - cfg.stepper_arrow_gap / 2.0 - arrow_h / 2.0;
+    let down_cy = mid_y + cfg.stepper_arrow_gap / 2.0 + arrow_h / 2.0;
 
-    let up_color = if hovered == Some(StepperArrow::Up) {
-        color::accent().color()
-    } else {
-        icon_color
+    let arrow_color = |arrow| {
+        if hovered == Some(arrow) {
+            cfg.icon_hovered.get().color()
+        } else {
+            cfg.icon.get().color()
+        }
     };
-    let down_color = if hovered == Some(StepperArrow::Down) {
-        color::accent().color()
-    } else {
-        icon_color
-    };
+    let up_color = arrow_color(StepperArrow::Up);
+    let down_color = arrow_color(StepperArrow::Down);
 
     let mut paint = Paint::default();
     paint.anti_alias = true;
 
     let mut stroke = Stroke::default();
-    stroke.width = STEPPER_ARROW_STROKE;
+    stroke.width = cfg.stepper_arrow_stroke;
     stroke.line_cap = tiny_skia::LineCap::Round;
     stroke.line_join = tiny_skia::LineJoin::Round;
 
     paint.set_color(up_color);
     let mut pb = PathBuilder::new();
     pb.move_to(
-        cx - STEPPER_ARROW_WIDTH / 2.0,
-        up_cy + STEPPER_ARROW_HEIGHT / 2.0,
+        cx - arrow_w / 2.0,
+        up_cy + arrow_h / 2.0,
     );
-    pb.line_to(cx, up_cy - STEPPER_ARROW_HEIGHT / 2.0);
+    pb.line_to(cx, up_cy - arrow_h / 2.0);
     pb.line_to(
-        cx + STEPPER_ARROW_WIDTH / 2.0,
-        up_cy + STEPPER_ARROW_HEIGHT / 2.0,
+        cx + arrow_w / 2.0,
+        up_cy + arrow_h / 2.0,
     );
     if let Some(path) = pb.finish() {
         canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
@@ -520,13 +525,13 @@ fn draw_stepper_arrows(
     paint.set_color(down_color);
     let mut pb = PathBuilder::new();
     pb.move_to(
-        cx - STEPPER_ARROW_WIDTH / 2.0,
-        down_cy - STEPPER_ARROW_HEIGHT / 2.0,
+        cx - arrow_w / 2.0,
+        down_cy - arrow_h / 2.0,
     );
-    pb.line_to(cx, down_cy + STEPPER_ARROW_HEIGHT / 2.0);
+    pb.line_to(cx, down_cy + arrow_h / 2.0);
     pb.line_to(
-        cx + STEPPER_ARROW_WIDTH / 2.0,
-        down_cy - STEPPER_ARROW_HEIGHT / 2.0,
+        cx + arrow_w / 2.0,
+        down_cy - arrow_h / 2.0,
     );
     if let Some(path) = pb.finish() {
         canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
@@ -557,7 +562,7 @@ pub fn char_index_for_x(
         return 0;
     }
 
-    let metrics = cosmic_text::Metrics::new(font_size, font_size * font::LINE_HEIGHT);
+    let metrics = cosmic_text::Metrics::new(font_size, font_size * font::line_height());
     let mut buffer = cosmic_text::Buffer::new_empty(metrics);
     buffer.set_size(None, None);
     buffer.set_text(
@@ -596,44 +601,46 @@ fn draw_toggle(
     is_on: bool,
     is_hovered: bool,
     icons_cache: &HashMap<&'static str, Tree>,
-    icon_color: Color,
+    text_color: Color,
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
 ) {
+    let cfg = &crate::config::get().settings_panel;
     match visual {
-        ToggleVisual::Icon { svg, icon_size } => {
+        ToggleVisual::Icon { svg } => {
             draw_item_border(
                 canvas,
                 x,
                 y,
                 w,
                 h,
-                radius::ITEM,
-                ITEM_BORDER,
+                radius::item(),
+                stroke::border(),
                 is_hovered,
                 is_on,
             );
             let tint = if is_on {
-                color::accent_bright().usvg()
+                cfg.icon_active.get()
             } else if is_hovered {
-                color::accent().usvg()
+                cfg.icon_hovered.get()
             } else {
-                color::ON_PANEL.usvg()
+                cfg.icon.get()
             };
 
+            let icon_size = cfg.icon_size;
             let icon_x = x + (w - icon_size) / 2.0;
             let icon_y = y + (h - icon_size) / 2.0;
-            draw_svg_icon(canvas, icons_cache, svg, *icon_size, icon_x, icon_y, tint);
+            draw_svg_icon(canvas, icons_cache, svg, icon_size, icon_x, icon_y, tint);
         }
         ToggleVisual::Checkbox { label } => {
-            let box_size = CHECKBOX_BOX_SIZE;
+            let box_size = cfg.checkbox_size;
             let box_x = x + w - box_size;
             let box_y = y + (h - box_size) / 2.0;
 
             if let Some(label_rect) = Rect::from_xywh(
                 x,
                 y,
-                (w - box_size - CHECKBOX_LABEL_GAP).max(0.0),
+                (w - box_size - cfg.checkbox_gap).max(0.0),
                 h,
             ) {
                 draw_aligned_text(
@@ -643,7 +650,7 @@ fn draw_toggle(
                     swash_cache,
                     label_rect,
                     font::label(),
-                    icon_color,
+                    text_color,
                     HAlign::Left,
                     (0.0, 0.0),
                     cosmic_text::Weight::NORMAL,
@@ -657,14 +664,14 @@ fn draw_toggle(
                 box_y,
                 box_size,
                 box_size,
-                3.0,
-                ITEM_BORDER,
+                cfg.checkbox_radius,
+                stroke::border(),
                 is_hovered,
                 is_on,
             );
 
             if is_on {
-                draw_checkmark(canvas, box_x, box_y, box_size, icon_color);
+                draw_checkmark(canvas, box_x, box_y, box_size, text_color);
             }
         }
     }
@@ -682,7 +689,7 @@ fn draw_checkmark(canvas: &mut Pixmap, x: f32, y: f32, size: f32, color: Color) 
     paint.anti_alias = true;
 
     let stroke = Stroke {
-        width: 2.0,
+        width: crate::config::get().settings_panel.checkmark_width,
         line_cap: tiny_skia::LineCap::Round,
         line_join: tiny_skia::LineJoin::Round,
         ..Default::default()

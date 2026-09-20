@@ -8,20 +8,8 @@ use tiny_skia::{Pixmap, Rect};
 // ==========================================
 // 1. UI Layout Constants
 // ==========================================
-pub const TRANSITION_OFFSET: f32 = 340.0; // max cap on the transition entrance distance
-/// Opacity per second while the toolbar fades out of the way.
-const FADE_RATE: f32 = 5.0;
-/// Fraction of the remaining distance covered per second while it slides.
-const SLIDE_RATE: f32 = 12.0;
 /// Closer than this to the target position counts as arrived.
 const POSITION_EPSILON: f32 = 0.5;
-
-pub const HEIGHT: f32 = size::PANEL_HEIGHT;
-pub const OFFSET: f32 = size::OFFSET;
-pub const PADDING: f32 = size::PADDING;
-
-pub const BUTTON_CELL: f32 = 35.0;
-const SEPARATOR_CELL: f32 = 20.0;
 
 // Toolbar tools list
 pub const ITEMS: &[ToolbarItem] = &[
@@ -85,7 +73,7 @@ impl UiPanel for Toolbar {
         self.items
     }
     fn padding(&self) -> f32 {
-        PADDING
+        size::padding()
     }
     fn monitor_idx(&self) -> usize {
         self.monitor_idx
@@ -129,10 +117,10 @@ impl AnimatedPanel for Toolbar {
     }
 
     fn anim_interval(&self) -> Duration {
-        anim::FRAME
+        anim::frame()
     }
     fn anim_dt(&self) -> f32 {
-        anim::DT
+        anim::dt()
     }
 
     fn is_animating(&self) -> bool {
@@ -145,10 +133,11 @@ impl AnimatedPanel for Toolbar {
     fn animate_step(&mut self, dt: f32) -> bool {
         let mut changed = false;
 
-        let speed = crate::config::get().general.animation_speed;
+        let animation = &crate::config::get().animation;
+        let speed = animation.speed;
         let target_opacity = if self.interferes { 0.0 } else { 1.0 };
         if (self.opacity - target_opacity).abs() > anim::OPACITY_EPSILON {
-            let delta = FADE_RATE * speed * dt;
+            let delta = animation.toolbar_fade * speed * dt;
             self.opacity += (target_opacity - self.opacity).signum() * delta;
             self.opacity = self.opacity.clamp(0.0, 1.0);
             changed = true;
@@ -158,7 +147,7 @@ impl AnimatedPanel for Toolbar {
         let dx = target.0 - self.render_pos.0;
         let dy = target.1 - self.render_pos.1;
         if dx.abs() > POSITION_EPSILON || dy.abs() > POSITION_EPSILON {
-            let t = (SLIDE_RATE * speed * dt).min(1.0);
+            let t = (animation.toolbar_slide * speed * dt).min(1.0);
             self.render_pos.0 += dx * t;
             self.render_pos.1 += dy * t;
             changed = true;
@@ -176,7 +165,7 @@ impl Toolbar {
         let mut toolbar = Self {
             toolbar_pixmap: None,
             items: ITEMS,
-            size: (0.0, HEIGHT),
+            size: (0.0, size::panel_height()),
             opacity: 1.0,
             monitor_idx: 0,
             position: (0.0, 0.0),
@@ -192,7 +181,7 @@ impl Toolbar {
         };
 
         toolbar.size.0 = toolbar.width();
-        toolbar.size.1 = HEIGHT;
+        toolbar.size.1 = size::panel_height();
 
         toolbar
     }
@@ -211,7 +200,7 @@ impl Toolbar {
             return (false, None);
         }
 
-        let mut current_x = rect.left() + PADDING;
+        let mut current_x = rect.left() + size::padding();
         for (idx, item) in self.items.iter().enumerate() {
             let item_w = item.size();
             let item_right = current_x + item_w;
@@ -290,15 +279,16 @@ pub enum ToolbarItem {
 
 impl PanelItem for ToolbarItem {
     fn size(&self) -> f32 {
+        let cfg = &crate::config::get().toolbar;
         match self {
-            ToolbarItem::Button(_) => BUTTON_CELL,
-            ToolbarItem::Seperator => SEPARATOR_CELL,
+            ToolbarItem::Button(_) => cfg.button_size,
+            ToolbarItem::Seperator => cfg.separator_slot,
         }
     }
 
     fn trailing_padding(&self) -> f32 {
         match self {
-            ToolbarItem::Button(_) => 4.0,
+            ToolbarItem::Button(_) => crate::config::get().toolbar.button_gap,
             ToolbarItem::Seperator => 0.0,
         }
     }

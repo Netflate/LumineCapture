@@ -14,23 +14,14 @@ use crate::renderer::text::{HAlign, draw_aligned_text, measure_line_width};
 use crate::theme::{Rgba, color, font, radius, stroke};
 use crate::ui::icons;
 use crate::ui::model_popover::{
-    BUTTON_SIZE, ICON_SIZE, ModelPopover, ModelPopoverElement, ModelRow, note_font_size, PADDING,
-    RADIUS, ROW_HEIGHT, ROW_PAD_X, STATUS_WIDTH, TITLE_HEIGHT, WIDTH, button_geom, row_geom,
+    ModelPopover, ModelPopoverElement, ModelRow, button_geom, cfg, note_font_size, row_geom,
 };
 use crate::ui::panel::UiPanel;
 
 const TITLE: &str = "Languages ·";
 const TITLE_ENGLISH: &str = "each includes English";
-/// gap between the title's dot and its highlighted part
-const TITLE_GAP: f32 = 4.0;
 const TITLE_NO_MODEL: &str = "Choose a model to use OCR";
 const RECOMMENDED: &str = "Recommended for your system";
-
-const NAME_TOP: f32 = 5.0;
-const NAME_HEIGHT: f32 = 20.0;
-const NOTE_TOP: f32 = 24.0;
-const NOTE_HEIGHT: f32 = 15.0;
-const BAR_TOP: f32 = 30.0;
 
 pub fn draw_model_popover(
     canvas: &mut Pixmap,
@@ -81,7 +72,7 @@ pub fn draw_model_popover(
         None,
     );
 
-    draw_panel_border(canvas, x, y, w, h, RADIUS, popover.opacity);
+    draw_panel_border(canvas, x, y, w, h, radius::panel(), popover.opacity);
 
     popover.pixmap = Some(pixmap);
 }
@@ -93,25 +84,26 @@ fn draw_content(
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
 ) {
+    let cfg = cfg();
     let (w, h) = popover.size;
     if let Some(bg) = Rect::from_xywh(0.0, 0.0, w, h) {
-        fill(canvas, bg, RADIUS, color::panel().color());
+        fill(canvas, bg, radius::panel(), cfg.background.get().color());
     }
 
-    let title_x = PADDING + ROW_PAD_X;
-    let title_w = WIDTH - title_x * 2.0;
+    let title_x = cfg.padding + cfg.row_padding;
+    let title_w = cfg.width - title_x * 2.0;
     let no_model = popover.rows.iter().all(|row| row.status != ModelStatus::Installed);
     let parts: &[(&str, Rgba, f32)] = if no_model {
-        &[(TITLE_NO_MODEL, color::accent_bright(), font::label())]
+        &[(TITLE_NO_MODEL, color::active(), font::label())]
     } else {
         &[
-            (TITLE, color::MUTED, note_font_size()),
-            (TITLE_ENGLISH, color::accent_bright(), note_font_size()),
+            (TITLE, color::muted(), note_font_size()),
+            (TITLE_ENGLISH, color::active(), note_font_size()),
         ]
     };
     let mut x = title_x;
     for &(text, text_color, size) in parts {
-        if let Some(rect) = Rect::from_xywh(x, PADDING, (title_x + title_w - x).max(1.0), TITLE_HEIGHT) {
+        if let Some(rect) = Rect::from_xywh(x, cfg.padding, (title_x + title_w - x).max(1.0), cfg.title_height) {
             draw_aligned_text(
                 canvas,
                 text,
@@ -126,7 +118,8 @@ fn draw_content(
                 Style::Normal,
             );
         }
-        x += measure_line_width(text, size, font_system) + TITLE_GAP;
+        // title_gap: between the title's dot and its highlighted part
+        x += measure_line_width(text, size, font_system) + cfg.title_gap;
     }
 
     for (idx, row) in popover.rows.iter().enumerate() {
@@ -156,6 +149,7 @@ fn draw_row(
     else {
         return;
     };
+    let cfg = cfg();
     let row_hovered = hovered == Some(ModelPopoverElement::Row(idx));
     let button_hovered = hovered == Some(ModelPopoverElement::Button(idx));
 
@@ -167,22 +161,22 @@ fn draw_row(
             rect.top(),
             rect.width(),
             rect.height(),
-            radius::ITEM,
-            stroke::BORDER,
+            radius::item(),
+            stroke::border(),
             row_hovered,
             row_selected,
         );
     }
 
-    let left = rect.left() + ROW_PAD_X;
-    let text_w = (button.left() - STATUS_WIDTH - left).max(0.0);
+    let left = rect.left() + cfg.row_padding;
+    let text_w = (button.left() - cfg.status_width - left).max(0.0);
 
     let name_color = if row.active {
-        color::accent_bright()
+        color::active()
     } else {
-        color::ON_PANEL
+        color::foreground()
     };
-    if let Some(name_rect) = Rect::from_xywh(left, rect.top() + NAME_TOP, text_w, NAME_HEIGHT) {
+    if let Some(name_rect) = Rect::from_xywh(left, rect.top() + cfg.name_top, text_w, cfg.name_height) {
         draw_aligned_text(
             canvas,
             model.name,
@@ -199,18 +193,18 @@ fn draw_row(
     }
 
     match row.status {
-        ModelStatus::Queued => draw_progress_bar(canvas, left, rect.top() + BAR_TOP, text_w, 0),
+        ModelStatus::Queued => draw_progress_bar(canvas, left, rect.top() + cfg.bar_top, text_w, 0),
         ModelStatus::Downloading(percent) => {
-            draw_progress_bar(canvas, left, rect.top() + BAR_TOP, text_w, percent)
+            draw_progress_bar(canvas, left, rect.top() + cfg.bar_top, text_w, percent)
         }
         _ => {
             if let Some(note_rect) =
-                Rect::from_xywh(left, rect.top() + NOTE_TOP, text_w, NOTE_HEIGHT)
+                Rect::from_xywh(left, rect.top() + cfg.note_top, text_w, cfg.note_height)
             {
                 let (note, note_color) = if row.recommended {
-                    (RECOMMENDED, color::accent_bright())
+                    (RECOMMENDED, color::active())
                 } else {
-                    (model.note, color::MUTED)
+                    (model.note, color::muted())
                 };
                 draw_aligned_text(
                     canvas,
@@ -237,7 +231,7 @@ fn draw_row(
         ModelStatus::Installed => String::new(),
     };
     if let Some(status_rect) =
-        Rect::from_xywh(button.left() - STATUS_WIDTH, rect.top(), STATUS_WIDTH, ROW_HEIGHT)
+        Rect::from_xywh(button.left() - cfg.status_width, rect.top(), cfg.status_width, cfg.row_height)
     {
         draw_aligned_text(
             canvas,
@@ -246,7 +240,7 @@ fn draw_row(
             swash_cache,
             status_rect,
             note_font_size(),
-            color::MUTED.color(),
+            color::muted().color(),
             HAlign::Center,
             (0.0, 0.0),
             Weight::NORMAL,
@@ -269,28 +263,28 @@ fn draw_row(
             canvas,
             button.left(),
             button.top(),
-            BUTTON_SIZE,
-            BUTTON_SIZE,
-            radius::ITEM,
-            stroke::BORDER,
+            cfg.button_size,
+            cfg.button_size,
+            radius::item(),
+            stroke::border(),
             true,
             false,
         );
     }
     let tint = if checked {
-        color::accent_bright()
+        color::active()
     } else if button_hovered {
-        color::accent()
+        color::hover()
     } else {
-        color::ON_PANEL
+        color::foreground()
     };
     draw_svg_icon(
         canvas,
         icons_cache,
         icon,
-        ICON_SIZE,
-        button.left() + (BUTTON_SIZE - ICON_SIZE) / 2.0,
-        button.top() + (BUTTON_SIZE - ICON_SIZE) / 2.0,
+        cfg.icon_size,
+        button.left() + (cfg.button_size - cfg.icon_size) / 2.0,
+        button.top() + (cfg.button_size - cfg.icon_size) / 2.0,
         tint.usvg(),
     );
 }

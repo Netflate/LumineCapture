@@ -15,9 +15,6 @@ pub fn offset() -> f32 {
     crate::config::get().magnifier.offset
 }
 
-pub const LABEL_HEIGHT: f32 = 26.0;
-pub const LABEL_GAP: f32 = 6.0;
-
 #[derive(Debug)]
 pub struct MagnifierState {
     pub monitor_idx: usize,

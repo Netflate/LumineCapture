@@ -8,14 +8,8 @@ use cosmic_text::FontSystem;
 use tiny_skia::Rect;
 
 use crate::editor::DamageZone;
-use crate::theme::{anim, radius};
+use crate::theme::anim;
 use crate::ui::panel::emit_panel_damage;
-
-pub const HEIGHT: f32 = 38.0;
-pub const PAD_X: f32 = 18.0;
-pub const RADIUS: f32 = radius::PANEL;
-pub const MARGIN: f32 = 8.0;
-
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ToastKind {
@@ -52,63 +46,69 @@ pub struct ToastSpec {
 }
 
 impl ToastKind {
-    pub const fn spec(self) -> ToastSpec {
+    pub fn spec(self) -> ToastSpec {
+        let cfg = &crate::config::get().toasts;
+        let animation = &crate::config::get().animation;
+        let (fade_in, fade_out) = (animation.toast_fade_in, animation.toast_fade_out);
+        let timed = |secs: f32| {
+            ToastLife::Timed(Duration::try_from_secs_f32(secs.max(0.0)).unwrap_or(Duration::MAX))
+        };
         match self {
             ToastKind::OcrPickRegion => ToastSpec {
                 text: "Drag a box over the area you want to read",
                 anchor: ToastAnchor::CursorMonitorCenter,
                 life: ToastLife::Manual,
-                fade_in: 0.18,
-                fade_out: 0.14,
+                fade_in,
+                fade_out,
             },
             ToastKind::OcrNoModel => ToastSpec {
                 text: "Choose a language model to use OCR",
                 anchor: ToastAnchor::SelectionCenter,
-                life: ToastLife::Timed(Duration::from_secs(4)),
-                fade_in: 0.18,
-                fade_out: 0.14,
+                life: timed(cfg.lifetime),
+                fade_in,
+                fade_out,
             },
             ToastKind::PickColor => ToastSpec {
                 text: "Click anywhere to pick a color",
                 anchor: ToastAnchor::SelectionCenter,
                 life: ToastLife::Manual,
-                fade_in: 0.18,
-                fade_out: 0.12,
+                fade_in,
+                fade_out,
             },
             ToastKind::ColorCopied => ToastSpec {
                 text: "Copied",
                 anchor: ToastAnchor::SelectionCenter,
-                life: ToastLife::Timed(Duration::from_millis(1400)),
-                fade_in: 0.12,
-                fade_out: 0.12,
+                life: timed(cfg.copied_lifetime),
+                fade_in,
+                fade_out,
             },
             ToastKind::OcrDownloadFailed => ToastSpec {
                 text: "Couldn't download the language, check the connection",
                 anchor: ToastAnchor::SelectionCenter,
-                life: ToastLife::Timed(Duration::from_secs(4)),
-                fade_in: 0.18,
-                fade_out: 0.14,
+                life: timed(cfg.lifetime),
+                fade_in,
+                fade_out,
             },
             ToastKind::OcrFailed => ToastSpec {
                 text: "Couldn't read this area",
                 anchor: ToastAnchor::SelectionCenter,
-                life: ToastLife::Timed(Duration::from_secs(4)),
-                fade_in: 0.18,
-                fade_out: 0.14,
+                life: timed(cfg.lifetime),
+                fade_in,
+                fade_out,
             },
             ToastKind::OcrNoText => ToastSpec {
                 text: "No text found here",
                 anchor: ToastAnchor::SelectionCenter,
-                life: ToastLife::Timed(Duration::from_secs(3)),
-                fade_in: 0.18,
-                fade_out: 0.14,
+                life: timed(cfg.short_lifetime),
+                fade_in,
+                fade_out,
             },
             ToastKind::CopyFailed => ToastSpec {
                 text: "Couldn't copy to the clipboard",
                 anchor: ToastAnchor::SelectionCenter,
-                life: ToastLife::Timed(Duration::from_secs(4)),
-                fade_in: 0.18,
-                fade_out: 0.14,
+                life: timed(cfg.lifetime),
+                fade_in,
+                fade_out,
             },
         }
     }
@@ -134,7 +134,9 @@ impl Toast {
 
     fn layout(&mut self, place: &ToastPlace) {
         self.monitor_idx = place.monitor_idx;
-        let w = self.text_width + PAD_X * 2.0;
+        let cfg = &crate::config::get().toasts;
+        let (height, margin) = (cfg.height, cfg.margin);
+        let w = self.text_width + cfg.padding * 2.0;
         let (cx, cy) = match (self.spec.anchor, place.focus) {
             (ToastAnchor::SelectionCenter, Some(focus)) => (
                 focus.left() + focus.width() / 2.0,
@@ -142,9 +144,9 @@ impl Toast {
             ),
             _ => (place.size.0 / 2.0, place.size.1 / 2.0),
         };
-        let x = (cx - w / 2.0).clamp(MARGIN, (place.size.0 - w - MARGIN).max(MARGIN));
-        let y = (cy - HEIGHT / 2.0).clamp(MARGIN, (place.size.1 - HEIGHT - MARGIN).max(MARGIN));
-        self.rect = Rect::from_xywh(x.round(), y.round(), w, HEIGHT);
+        let x = (cx - w / 2.0).max(margin).min((place.size.0 - w - margin).max(margin));
+        let y = (cy - height / 2.0).max(margin).min((place.size.1 - height - margin).max(margin));
+        self.rect = Rect::from_xywh(x.round(), y.round(), w, height);
     }
 }
 
@@ -227,12 +229,13 @@ impl Toasts {
         let elapsed = self
             .last_tick
             .map(|t| now.duration_since(t))
-            .unwrap_or(anim::FRAME);
-        if elapsed < anim::FRAME {
+            .unwrap_or(anim::frame());
+        if elapsed < anim::frame() {
             return;
         }
         self.last_tick = Some(now);
         let dt = elapsed.as_secs_f32().min(MAX_STEP);
+        let speed = crate::config::get().animation.speed;
 
         self.items.retain_mut(|toast| {
             let was = (toast.monitor_idx, toast.rect);
@@ -249,7 +252,7 @@ impl Toasts {
             } else {
                 1.0 / toast.spec.fade_in
             };
-            let next = (toast.progress + rate * dt).clamp(0.0, 1.0);
+            let next = (toast.progress + rate * speed * dt).clamp(0.0, 1.0);
             let faded = next != toast.progress;
             toast.progress = next;
 

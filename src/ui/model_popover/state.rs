@@ -3,26 +3,23 @@
 use std::time::{Duration, Instant};
 use tiny_skia::{Pixmap, Rect};
 
+use crate::config::ModelPicker;
 use crate::ocr::models::{MODELS, ModelStatus};
-use crate::theme::{anim, font, radius, size};
+use crate::theme::{anim, font};
 use crate::ui::panel::{AnimatedPanel, HoverablePanel, PanelItem, UiPanel};
 
-pub const WIDTH: f32 = 320.0;
-pub const OFFSET: f32 = size::OFFSET;
-pub const PADDING: f32 = size::PADDING;
-pub const RADIUS: f32 = radius::PANEL;
+pub fn cfg() -> &'static ModelPicker {
+    &crate::config::get().model_picker
+}
 
-pub const TITLE_HEIGHT: f32 = 30.0;
-pub const ROW_HEIGHT: f32 = 44.0;
-pub const ROW_PAD_X: f32 = 10.0;
-pub const BUTTON_SIZE: f32 = 26.0;
-pub const ICON_SIZE: f32 = 14.0;
 pub fn note_font_size() -> f32 {
     font::small()
 }
-pub const STATUS_WIDTH: f32 = 62.0;
 
-pub const HEIGHT: f32 = PADDING * 2.0 + TITLE_HEIGHT + ROW_HEIGHT * MODELS.len() as f32;
+pub fn height() -> f32 {
+    let c = cfg();
+    c.padding * 2.0 + c.title_height + c.row_height * MODELS.len() as f32
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum ModelPopoverItem {}
@@ -54,21 +51,23 @@ pub struct ModelRow {
 }
 
 pub fn row_geom(origin: (f32, f32), idx: usize) -> Option<Rect> {
+    let c = cfg();
     Rect::from_xywh(
-        origin.0 + PADDING,
-        origin.1 + PADDING + TITLE_HEIGHT + idx as f32 * ROW_HEIGHT,
-        WIDTH - PADDING * 2.0,
-        ROW_HEIGHT,
+        origin.0 + c.padding,
+        origin.1 + c.padding + c.title_height + idx as f32 * c.row_height,
+        c.width - c.padding * 2.0,
+        c.row_height,
     )
 }
 
 pub fn button_geom(origin: (f32, f32), idx: usize) -> Option<Rect> {
+    let c = cfg();
     let row = row_geom(origin, idx)?;
     Rect::from_xywh(
-        row.right() - ROW_PAD_X / 2.0 - BUTTON_SIZE,
-        row.top() + (ROW_HEIGHT - BUTTON_SIZE) / 2.0,
-        BUTTON_SIZE,
-        BUTTON_SIZE,
+        row.right() - c.row_padding / 2.0 - c.button_size,
+        row.top() + (c.row_height - c.button_size) / 2.0,
+        c.button_size,
+        c.button_size,
     )
 }
 
@@ -108,7 +107,7 @@ impl ModelPopover {
             pixmap: None,
             position: (0.0, 0.0),
             render_pos: (0.0, 0.0),
-            size: (WIDTH, HEIGHT),
+            size: (cfg().width, height()),
             opacity: 0.0,
             monitor_idx: 0,
             open: false,
@@ -173,7 +172,7 @@ impl UiPanel for ModelPopover {
         &[]
     }
     fn padding(&self) -> f32 {
-        PADDING
+        cfg().padding
     }
     fn monitor_idx(&self) -> usize {
         self.monitor_idx
@@ -217,10 +216,10 @@ impl AnimatedPanel for ModelPopover {
     }
 
     fn anim_interval(&self) -> Duration {
-        anim::FRAME
+        anim::frame()
     }
     fn anim_dt(&self) -> f32 {
-        anim::DT
+        anim::dt()
     }
 
     fn is_animating(&self) -> bool {
@@ -231,7 +230,7 @@ impl AnimatedPanel for ModelPopover {
     fn animate_step(&mut self, dt: f32) -> bool {
         let target = if self.open { 1.0 } else { 0.0 };
         if (self.opacity - target).abs() > anim::OPACITY_EPSILON {
-            let delta = anim::POPOVER_FADE * crate::config::get().general.animation_speed * dt;
+            let delta = anim::popover_fade() * crate::config::get().animation.speed * dt;
             self.opacity += (target - self.opacity).signum() * delta;
             self.opacity = self.opacity.clamp(0.0, 1.0);
             true

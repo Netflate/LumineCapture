@@ -2,9 +2,9 @@ use cosmic_text::{FontSystem, SwashCache};
 use tiny_skia::{Paint, Pixmap, Rect, Transform};
 
 use crate::renderer::paths::{draw_panel_border, rounded_rect_path};
-use crate::theme::{color, font};
+use crate::theme::{font, radius};
 use crate::renderer::text::{HAlign, draw_aligned_text};
-use crate::ui::toast::{RADIUS, Toasts};
+use crate::ui::toast::Toasts;
 /// clip is area of the screen cleared for current frame
 /// draw somewhat transparent toast only if it intersects with clip, otherwise 
 /// the background will be drawn oveer the old frame a second time and darken it 
@@ -16,6 +16,7 @@ pub fn draw_toasts(
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
 ) {
+    let cfg = &crate::config::get().toasts;
     for toast in &toasts.items {
         if toast.monitor_idx != monitor_idx {
             continue;
@@ -35,9 +36,9 @@ pub fn draw_toasts(
             continue;
         }
 
-        if let Some(path) = rounded_rect_path(&rect, RADIUS, true, true, true, true) {
+        if let Some(path) = rounded_rect_path(&rect, radius::panel(), true, true, true, true) {
             let mut paint = Paint::default();
-            paint.set_color(color::panel().fade(opacity));
+            paint.set_color(cfg.background.get().fade(opacity));
             paint.anti_alias = true;
             canvas.fill_path(
                 &path,
@@ -54,7 +55,7 @@ pub fn draw_toasts(
             rect.top(),
             rect.width(),
             rect.height(),
-            RADIUS,
+            radius::panel(),
             opacity,
         );
 
@@ -65,7 +66,7 @@ pub fn draw_toasts(
             swash_cache,
             rect,
             font::label(),
-            color::ON_PANEL.fade(opacity),
+            cfg.text.get().fade(opacity),
             HAlign::Center,
             (0.0, 0.0),
             cosmic_text::Weight::NORMAL,

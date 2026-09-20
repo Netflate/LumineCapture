@@ -7,33 +7,10 @@ use crate::interaction::ScrollAccumulator;
 use crate::theme::size;
 use crate::ui::panel::{HoverablePanel, PanelItem, UiPanel};
 use crate::ui::text_field::{TextFieldGroup, is_stepper_char};
-use crate::ui::toolbar;
 use tiny_skia::{Pixmap, Rect};
 
 use std::collections::HashMap;
 use std::time::Instant;
-
-pub const HEIGHT: f32 = size::PANEL_HEIGHT;
-pub const PADDING: f32 = size::PADDING;
-pub const ITEM_GAP: f32 = 8.0;
-pub const SWATCH_SIZE: f32 = 28.0;
-pub const SEPARATOR_SIZE: f32 = 16.0;
-pub const STEPPER_WIDTH: f32 = 84.0;
-pub const DOWNLOAD_WIDTH: f32 = 196.0;
-pub const VALUE_HEX_WIDTH: f32 = 84.0;
-pub const VALUE_RGB_WIDTH: f32 = 120.0;
-pub const DOWNLOAD_LABEL_WIDTH: f32 = 96.0;
-pub const DOWNLOAD_PERCENT_WIDTH: f32 = 38.0;
-
-pub const ICON_BUTTON_SIZE: f32 = SWATCH_SIZE;
-pub const CHECKBOX_BOX_SIZE: f32 = 18.0;
-pub const CHECKBOX_LABEL_GAP: f32 = 6.0;
-
-pub const STEPPER_ARROW_ZONE: f32 = 30.0;
-pub const STEPPER_ARROW_WIDTH: f32 = 15.0;
-pub const STEPPER_ARROW_HEIGHT: f32 = 6.0;
-pub const STEPPER_ARROW_GAP: f32 = 9.0;
-pub const STEPPER_ARROW_STROKE: f32 = 1.6;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValueField {
@@ -51,16 +28,17 @@ impl ValueField {
     }
 
     fn width(self) -> f32 {
+        let cfg = &crate::config::get().settings_panel;
         match self {
-            ValueField::Hex => VALUE_HEX_WIDTH,
-            ValueField::Rgb => VALUE_RGB_WIDTH,
+            ValueField::Hex => cfg.hex_width,
+            ValueField::Rgb => cfg.rgb_width,
         }
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum ToggleVisual {
-    Icon { svg: &'static str, icon_size: f32 },
+    Icon { svg: &'static str },
     Checkbox { label: &'static str },
 }
 
@@ -73,19 +51,43 @@ pub enum SettingsAction {
     OcrLanguages,
 }
 
+impl SettingsAction {
+    pub fn icon_size(self) -> f32 {
+        let cfg = &crate::config::get().settings_panel;
+        match self {
+            // The copy glyph reads bigger than the rest at the same size.
+            SettingsAction::OcrCopyAll => cfg.copy_icon_size,
+            _ => cfg.icon_size,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StepperRange {
+    Stroke,
+    Font,
+}
+
+impl StepperRange {
+    pub fn get(self) -> (f32, f32, f32) {
+        let tools = &crate::config::get().tools;
+        match self {
+            StepperRange::Stroke => (tools.stroke.min, tools.stroke.max, tools.stroke.step),
+            StepperRange::Font => (tools.font.min, tools.font.max, tools.font.step),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum SettingsWidget {
     ColorSwatch,
     Action {
         action: SettingsAction,
         svg: &'static str,
-        icon_size: f32,
     },
     Stepper {
         label: &'static str,
-        min: f32,
-        max: f32,
-        step: f32,
+        range: StepperRange,
         unit: &'static str,
     },
     Toggle {
@@ -132,15 +134,6 @@ pub enum ToggleField {
     Fill,
 }
 
-/// Range of the stroke width and of the font size steppers.
-pub const STROKE_RANGE: (f32, f32) = (1.0, 40.0);
-pub const FONT_RANGE: (f32, f32) = (8.0, 72.0);
-const STEP: f32 = 1.0;
-/// Size of an icon drawn inside a panel button.
-const ICON_SIZE: f32 = 16.0;
-/// The copy glyph reads bigger than the rest at the same size.
-const COPY_ICON_SIZE: f32 = 15.0;
-
 pub fn widgets_for_tool(tool: Tool) -> &'static [SettingsWidget] {
     match tool {
         Tool::Pen | Tool::Line | Tool::Arrow | Tool::NumeratedArrow => &[
@@ -148,9 +141,7 @@ pub fn widgets_for_tool(tool: Tool) -> &'static [SettingsWidget] {
             SettingsWidget::Separator,
             SettingsWidget::Stepper {
                 label: "",
-                min: STROKE_RANGE.0,
-                max: STROKE_RANGE.1,
-                step: STEP,
+                range: StepperRange::Stroke,
                 unit: "px",
             },
         ],
@@ -159,24 +150,16 @@ pub fn widgets_for_tool(tool: Tool) -> &'static [SettingsWidget] {
             SettingsWidget::Separator,
             SettingsWidget::Stepper {
                 label: "",
-                min: FONT_RANGE.0,
-                max: FONT_RANGE.1,
-                step: STEP,
+                range: StepperRange::Font,
                 unit: "px",
             },
             SettingsWidget::Separator,
             SettingsWidget::Toggle {
-                visual: ToggleVisual::Icon {
-                    svg: crate::ui::icons::BOLD,
-                    icon_size: ICON_SIZE,
-                },
+                visual: ToggleVisual::Icon { svg: crate::ui::icons::BOLD },
                 field: ToggleField::Bold,
             },
             SettingsWidget::Toggle {
-                visual: ToggleVisual::Icon {
-                    svg: crate::ui::icons::ITALIC,
-                    icon_size: ICON_SIZE,
-                },
+                visual: ToggleVisual::Icon { svg: crate::ui::icons::ITALIC },
                 field: ToggleField::Italic,
             },
         ],
@@ -185,9 +168,7 @@ pub fn widgets_for_tool(tool: Tool) -> &'static [SettingsWidget] {
             SettingsWidget::Separator,
             SettingsWidget::Stepper {
                 label: "",
-                min: STROKE_RANGE.0,
-                max: STROKE_RANGE.1,
-                step: STEP,
+                range: StepperRange::Stroke,
                 unit: "px",
             },
             SettingsWidget::Separator,
@@ -253,19 +234,16 @@ pub const OCR_DOWNLOADING_WIDGETS: &[SettingsWidget] = &[
 const OCR_LANGUAGES: SettingsWidget = SettingsWidget::Action {
     action: SettingsAction::OcrLanguages,
     svg: crate::ui::icons::GLOBE,
-    icon_size: ICON_SIZE,
 };
 
 const OCR_RESCAN: SettingsWidget = SettingsWidget::Action {
     action: SettingsAction::OcrRescan,
     svg: crate::ui::icons::RETRY,
-    icon_size: ICON_SIZE,
 };
 
 const OCR_COPY_ALL: SettingsWidget = SettingsWidget::Action {
     action: SettingsAction::OcrCopyAll,
     svg: crate::ui::icons::COPY,
-    icon_size: COPY_ICON_SIZE,
 };
 
 pub fn widgets_for_annotation(ann: &Annotation) -> &'static [SettingsWidget] {
@@ -283,29 +261,32 @@ pub fn widgets_for_annotation(ann: &Annotation) -> &'static [SettingsWidget] {
 
 impl PanelItem for SettingsWidget {
     fn size(&self) -> f32 {
+        let cfg = &crate::config::get().settings_panel;
         match self {
-            SettingsWidget::ColorSwatch => SWATCH_SIZE,
-            SettingsWidget::Action { .. } => ICON_BUTTON_SIZE,
-            SettingsWidget::Stepper { .. } => STEPPER_WIDTH,
+            SettingsWidget::ColorSwatch => cfg.swatch_size,
+            SettingsWidget::Action { .. } => cfg.icon_button_size,
+            SettingsWidget::Stepper { .. } => cfg.stepper_width,
             SettingsWidget::Toggle { visual, .. } => match visual {
-                ToggleVisual::Icon { .. } => ICON_BUTTON_SIZE,
+                ToggleVisual::Icon { .. } => cfg.icon_button_size,
                 ToggleVisual::Checkbox { label } => {
-                    CHECKBOX_BOX_SIZE
-                        + CHECKBOX_LABEL_GAP
-                        + label.len() as f32 * 7.0
+                    cfg.checkbox_size
+                        + cfg.checkbox_gap
+                        + label.len() as f32 * cfg.char_width
                 }
             },
-            SettingsWidget::Label(text) => text.chars().count() as f32 * 7.0 + 8.0,
+            SettingsWidget::Label(text) => {
+                text.chars().count() as f32 * cfg.char_width + cfg.label_padding
+            }
             SettingsWidget::Value { field } => field.width(),
-            SettingsWidget::Download => DOWNLOAD_WIDTH,
-            SettingsWidget::Separator => SEPARATOR_SIZE,
+            SettingsWidget::Download => cfg.download_width,
+            SettingsWidget::Separator => cfg.separator_slot,
         }
     }
 
     fn trailing_padding(&self) -> f32 {
         match self {
             SettingsWidget::Separator => 0.0,
-            _ => ITEM_GAP,
+            _ => crate::config::get().settings_panel.item_gap,
         }
     }
 
@@ -362,7 +343,7 @@ impl SettingsPanel {
             active_source: None,
             position: (0.0, 0.0),
             render_pos: (0.0, 0.0),
-            size: (0.0, HEIGHT),
+            size: (0.0, size::panel_height()),
             monitor_idx: 0,
             visible: false,
             dirty: true,
@@ -391,7 +372,7 @@ impl SettingsPanel {
             return (false, None);
         }
 
-        let mut current_x = rect.left() + PADDING;
+        let mut current_x = rect.left() + size::padding();
         for (idx, widget) in self.widgets.iter().enumerate() {
             let w = widget.size();
             let right = current_x + w;
@@ -403,13 +384,17 @@ impl SettingsPanel {
         (true, None)
     }
 
+    pub fn item_height(&self) -> f32 {
+        self.size.1 * crate::config::get().settings_panel.item_height
+    }
+
     fn widget_local_rect(&self, widget_idx: usize) -> Option<(f32, f32, f32, f32)> {
         let rect = self.rect()?;
         let h = self.size.1;
-        let item_h = h * 0.70;
+        let item_h = self.item_height();
         let item_y = rect.top() + (h - item_h) / 2.0;
 
-        let mut current_x = rect.left() + PADDING;
+        let mut current_x = rect.left() + size::padding();
         for (idx, widget) in self.widgets.iter().enumerate() {
             let w = widget.size();
             if idx == widget_idx {
@@ -432,7 +417,7 @@ impl SettingsPanel {
         let px = local.0 as f32;
         let py = local.1 as f32;
 
-        let zone_left = item_x + item_w - STEPPER_ARROW_ZONE;
+        let zone_left = item_x + item_w - crate::config::get().settings_panel.stepper_arrow_zone;
         if px < zone_left || px > item_x + item_w || py < item_y || py > item_y + item_h {
             return None;
         }
@@ -486,10 +471,10 @@ impl SettingsPanel {
 
     pub fn widget_text_x(&self, widget_idx: usize) -> Option<f32> {
         let rect = self.rect()?;
-        let mut current_x = rect.left() + PADDING;
+        let mut current_x = rect.left() + size::padding();
         for (idx, widget) in self.widgets.iter().enumerate() {
             if idx == widget_idx {
-                return Some(current_x + PADDING);
+                return Some(current_x + size::padding());
             }
             current_x += widget.size() + widget.trailing_padding();
         }
@@ -540,7 +525,7 @@ impl UiPanel for SettingsPanel {
         self.widgets
     }
     fn padding(&self) -> f32 {
-        PADDING
+        size::padding()
     }
     fn monitor_idx(&self) -> usize {
         self.monitor_idx
@@ -585,14 +570,15 @@ pub fn compute_settings_placement(editor_state: &EditorState) -> ((f32, f32), us
     let tb_h = tb.size.1;
 
     let target_y = tb.position.1;
-    let is_above = (target_y - panel_h - toolbar::OFFSET) >= 0.0;
+    let margin = size::margin();
+    let is_above = (target_y - panel_h - margin) >= 0.0;
 
     let (render_x, render_y) = tb.render_pos;
 
     let y = if is_above {
-        render_y - panel_h - toolbar::OFFSET
+        render_y - panel_h - margin
     } else {
-        render_y + tb_h + toolbar::OFFSET
+        render_y + tb_h + margin
     };
 
     ((render_x, y), tb.monitor_idx)

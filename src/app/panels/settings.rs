@@ -5,10 +5,9 @@ use crate::editor::EditorState;
 use crate::tools::Tool;
 use crate::ui::panel::{emit_panel_damage, sync_panel_hover, sync_panel_rect};
 use crate::types::{AnnotationShape, SpecialKey};
-use crate::interaction::{HOLD_ACCEL_AFTER, HOLD_FAST_INTERVAL, HOLD_INITIAL_DELAY, HOLD_REPEAT_INTERVAL};
 use crate::ui::panel::UiPanel;
 use crate::ui::settings_panel::{OCR_AWAITING_WIDGETS, OCR_DOWNLOADING_WIDGETS, OCR_NO_MODEL_WIDGETS, OCR_SCANNING_WIDGETS, OCR_WIDGETS, OCR_WIDGETS_DOWNLOADING, SettingsAction, SettingsSource, SettingsWidget, StepperArrow, ToggleField, compute_settings_placement, widgets_for_annotation, widgets_for_tool};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 
 
@@ -265,16 +264,17 @@ pub fn tick_stepper_arrow_hold(editor_state: &mut EditorState, dirty_mask: &mut 
         return;
     };
     let now = Instant::now();
+    let input = &crate::config::get().input;
 
     let next_due = if hold.repeat_count == 0 {
-        hold.started_at + HOLD_INITIAL_DELAY
+        hold.started_at + Duration::from_millis(input.hold_delay_ms)
     } else {
-        let interval = if hold.repeat_count >= HOLD_ACCEL_AFTER {
-            HOLD_FAST_INTERVAL
+        let interval = if hold.repeat_count >= input.hold_fast_after {
+            input.hold_fast_repeat_ms
         } else {
-            HOLD_REPEAT_INTERVAL
+            input.hold_repeat_ms
         };
-        hold.last_step_at + interval
+        hold.last_step_at + Duration::from_millis(interval)
     };
 
     if now < next_due {
@@ -390,12 +390,12 @@ fn try_apply_stepper_text(
     record_undo: bool,
     dirty_mask: &mut u32,
 ) -> bool {
-    let Some(SettingsWidget::Stepper { min, max, .. }) =
+    let Some(SettingsWidget::Stepper { range, .. }) =
         editor_state.settings_panel.widgets.get(widget_idx)
     else {
         return false;
     };
-    let (min, max) = (*min, *max);
+    let (min, max, _) = range.get();
 
     let Ok(parsed) = text.parse::<f32>() else {
         return false;
@@ -514,12 +514,12 @@ pub fn apply_stepper_arrow_step(
         editor_state.settings_panel.pre_edit_snapshot = Some(editor_state.annotations.clone());
     }
 
-    let Some(SettingsWidget::Stepper { min, max, step, .. }) =
+    let Some(SettingsWidget::Stepper { range, .. }) =
         editor_state.settings_panel.widgets.get(widget_idx)
     else {
         return;
     };
-    let (min, max, step) = (*min, *max, *step);
+    let (min, max, step) = range.get();
 
     let ann_idx = active_annotation_idx(editor_state);
     let current = match ann_idx.and_then(|i| editor_state.annotations.get(i)) {
@@ -587,7 +587,7 @@ pub fn handle_stepper_scroll(
 
     let steps = editor_state
         .settings_panel
-        .scroll_step(widget_idx, delta_y / crate::interaction::SCROLL_PIXELS_PER_STEP);
+        .scroll_step(widget_idx, delta_y / crate::config::get().input.scroll_step_pixels);
 
     if steps == 0 {
         return;

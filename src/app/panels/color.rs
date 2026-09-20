@@ -21,8 +21,8 @@ pub fn update_color_popover(editor_state: &mut EditorState, dirty_mask: &mut u32
     if editor_state.color_popover.is_visible() {
         let (pos, monitor_idx) = compute_popover_placement(
             editor_state,
-            (color_popover::WIDTH, color_popover::HEIGHT),
-            color_popover::OFFSET,
+            (color_popover::width(), color_popover::height()),
+            crate::theme::size::margin(),
         );
         editor_state.color_popover.position = pos;
         editor_state.color_popover.render_pos = pos;
@@ -299,7 +299,7 @@ pub fn handle_color_field_scroll(
 ) {
     let steps = editor_state
         .color_popover
-        .scroll_step(field, delta_y / crate::interaction::SCROLL_PIXELS_PER_STEP);
+        .scroll_step(field, delta_y / crate::config::get().input.scroll_step_pixels);
 
     step_color_field(editor_state, field, steps, dirty_mask);
 }

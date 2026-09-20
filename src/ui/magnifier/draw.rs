@@ -2,21 +2,15 @@ use cosmic_text::{FontSystem, Style, SwashCache, Weight};
 
 use crate::renderer::paths::rounded_rect_path;
 use crate::renderer::text::{HAlign, draw_aligned_text};
-use crate::theme::{Rgba, color, font, radius};
+use crate::config::Magnifier;
+use crate::theme::{font, radius};
 use crate::types::Capture;
-use crate::ui::magnifier::{LABEL_GAP, LABEL_HEIGHT, cells, offset, sample_pixel, size, zoom};
+use crate::ui::magnifier::{cells, offset, sample_pixel, size, zoom};
 use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform};
 
-// outline of magnifier, and color label if its in color picker mode
-pub const OUTLINE: f32 = 2.0;
-
-pub const GRID: Rgba = Rgba(205, 214, 244, 40); // text
-pub const GRID_SOFT: Rgba = Rgba(147, 153, 178, 80); // overlay2
-
-/// if its in color picker mode
-const SWATCH: f32 = 14.0;
-const SWATCH_GAP: f32 = 8.0;
-const SWATCH_RADIUS: f32 = 3.0;
+fn cfg() -> &'static Magnifier {
+    &crate::config::get().magnifier
+}
 
 /// Loupe plus, for the eyedropper, the colour plate under it.
 pub fn magnifier_rect(
@@ -32,7 +26,7 @@ pub fn magnifier_rect(
 
 fn box_height(with_label: bool) -> f32 {
     if with_label {
-        size() as f32 + LABEL_GAP + LABEL_HEIGHT
+        size() as f32 + cfg().label_gap + cfg().label_height
     } else {
         size() as f32
     }
@@ -110,10 +104,10 @@ pub fn draw_magnifier(
     );
 
     let mut paint = Paint::default();
-    paint.set_color(color::ON_PANEL.color());
+    paint.set_color(cfg().outline.get().color());
     paint.anti_alias = true;
     let mut stroke = Stroke::default();
-    stroke.width = OUTLINE;
+    stroke.width = cfg().outline_width;
     if let Some(circle_path) = PathBuilder::from_circle(cx, cy, radius) {
         canvas.stroke_path(&circle_path, &paint, &stroke, Transform::identity(), None);
     }
@@ -124,7 +118,7 @@ pub fn draw_magnifier(
         draw_color_label(
             canvas,
             mag_x,
-            mag_y + size() as f32 + LABEL_GAP,
+            mag_y + size() as f32 + cfg().label_gap,
             color,
             font_system,
             swash_cache,
@@ -140,28 +134,30 @@ fn draw_color_label(
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
 ) {
+    let cfg = cfg();
     let width = size() as f32;
-    let Some(plate) = Rect::from_xywh(x, y, width, LABEL_HEIGHT) else {
+    let Some(plate) = Rect::from_xywh(x, y, width, cfg.label_height) else {
         return;
     };
-    fill(canvas, plate, radius::PANEL, color::panel().color());
-    stroke_outline(canvas, plate, radius::PANEL);
+    fill(canvas, plate, radius::panel(), cfg.label_background.get().color());
+    stroke_outline(canvas, plate, radius::panel());
 
     let text = crate::ui::settings_panel::ValueField::Hex.text(color);
     let text_width = crate::renderer::measure_line_width(&text, font::label(), font_system);
-    let group = SWATCH + SWATCH_GAP + text_width;
-    let swatch_x = x + ((width - group) / 2.0).max(SWATCH_GAP);
+    let (swatch_size, swatch_gap) = (cfg.swatch_size, cfg.swatch_gap);
+    let group = swatch_size + swatch_gap + text_width;
+    let swatch_x = x + ((width - group) / 2.0).max(swatch_gap);
 
-    if let Some(swatch) = Rect::from_xywh(swatch_x, y + (LABEL_HEIGHT - SWATCH) / 2.0, SWATCH, SWATCH) {
-        fill(canvas, swatch, SWATCH_RADIUS, color);
-        stroke_outline(canvas, swatch, SWATCH_RADIUS);
+    if let Some(swatch) = Rect::from_xywh(swatch_x, y + (cfg.label_height - swatch_size) / 2.0, swatch_size, swatch_size) {
+        fill(canvas, swatch, cfg.swatch_radius, color);
+        stroke_outline(canvas, swatch, cfg.swatch_radius);
     }
 
     if let Some(text_rect) = Rect::from_xywh(
-        swatch_x + SWATCH + SWATCH_GAP,
+        swatch_x + swatch_size + swatch_gap,
         y,
-        (width - (swatch_x - x) - SWATCH - SWATCH_GAP).max(0.0),
-        LABEL_HEIGHT,
+        (width - (swatch_x - x) - swatch_size - swatch_gap).max(0.0),
+        cfg.label_height,
     ) {
         draw_aligned_text(
             canvas,
@@ -170,7 +166,7 @@ fn draw_color_label(
             swash_cache,
             text_rect,
             font::label(),
-            color::ON_PANEL.color(),
+            cfg.label_text.get().color(),
             HAlign::Left,
             (0.0, 0.0),
             Weight::NORMAL,
@@ -180,12 +176,13 @@ fn draw_color_label(
 }
 
 fn stroke_outline(canvas: &mut Pixmap, rect: Rect, radius: f32) {
-    let inset = OUTLINE / 2.0;
+    let outline = cfg().outline_width;
+    let inset = outline / 2.0;
     let Some(inner) = Rect::from_xywh(
         rect.left() + inset,
         rect.top() + inset,
-        (rect.width() - OUTLINE).max(0.1),
-        (rect.height() - OUTLINE).max(0.1),
+        (rect.width() - outline).max(0.1),
+        (rect.height() - outline).max(0.1),
     ) else {
         return;
     };
@@ -194,10 +191,10 @@ fn stroke_outline(canvas: &mut Pixmap, rect: Rect, radius: f32) {
         return;
     };
     let mut paint = Paint::default();
-    paint.set_color(color::ON_PANEL.color());
+    paint.set_color(cfg().outline.get().color());
     paint.anti_alias = true;
     let stroke = Stroke {
-        width: OUTLINE,
+        width: outline,
         ..Stroke::default()
     };
     canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
@@ -238,16 +235,18 @@ fn magnifier_position(
 }
 
 fn overlay_crosshair(zoomed: &mut Pixmap) {
+    let cfg = cfg();
+    let line = cfg.grid_width;
     let cell = zoom();
     let w = zoomed.width() as f32;
     let h = zoomed.height() as f32;
     let mut paint = Paint::default();
     paint.anti_alias = false;
 
-    paint.set_color(GRID.color());
+    paint.set_color(cfg.grid.color());
     for i in 0..cells() as i32 + 1 {
         let x = i as f32 * cell;
-        if let Some(r) = Rect::from_xywh(x, 0.0, 1.0, h) {
+        if let Some(r) = Rect::from_xywh(x, 0.0, line, h) {
             zoomed.fill_path(
                 &PathBuilder::from_rect(r),
                 &paint,
@@ -257,7 +256,7 @@ fn overlay_crosshair(zoomed: &mut Pixmap) {
             );
         }
         let y = i as f32 * cell;
-        if let Some(r) = Rect::from_xywh(0.0, y, w, 1.0) {
+        if let Some(r) = Rect::from_xywh(0.0, y, w, line) {
             zoomed.fill_path(
                 &PathBuilder::from_rect(r),
                 &paint,
@@ -268,7 +267,7 @@ fn overlay_crosshair(zoomed: &mut Pixmap) {
         }
     }
 
-    paint.set_color(GRID_SOFT.color());
+    paint.set_color(cfg.crosshair.color());
     paint.blend_mode = tiny_skia::BlendMode::SourceOver;
     let center_idx = (cells() / 2) as f32;
     let col_x = center_idx * cell;
