@@ -67,42 +67,57 @@ impl From<Rgba> for Color {
 pub mod color {
     use super::Rgba;
 
+    fn theme() -> &'static crate::config::Theme {
+        &crate::config::get().theme
+    }
 
     /// background color of all panels, popovers and toasts
     pub fn panel() -> Rgba {
-        crate::config::get().theme.panel_background
-    }
-    /// hovering color
-    pub fn accent() -> Rgba {
-        crate::config::get().theme.accent
-    }
-    /// selected color
-    pub fn accent_bright() -> Rgba {
-        crate::config::get().theme.accent_bright
+        theme().background
     }
     /// main color of elements on the panel, like text, seperators and etc
-    pub const ON_PANEL: Rgba = Rgba(205, 214, 244, 255); // text
+    pub fn foreground() -> Rgba {
+        theme().foreground
+    }
     /// secondary small labels
-    pub const MUTED: Rgba = Rgba(166, 173, 200, 255); // subtext0
-
+    pub fn muted() -> Rgba {
+        theme().muted
+    }
+    /// hovering color
+    pub fn hover() -> Rgba {
+        theme().hover
+    }
+    /// selected color (`theme.accent`)
+    pub fn active() -> Rgba {
+        theme().accent
+    }
+    /// icons and text over a hover or active fill
+    pub fn on_active() -> Rgba {
+        theme().on_accent
+    }
     /// blue color of text selection
-    pub fn select() -> Rgba {
-        crate::config::get().theme.selection
+    pub fn text_selection() -> Rgba {
+        theme().text_selection
     }
     /// input field
-    pub const FIELD_BG: Rgba = Rgba(49, 50, 68, 255); // surface0
+    pub fn field() -> Rgba {
+        theme().field
+    }
     /// empty part of downloading bar
-    pub const TRACK: Rgba = Rgba(69, 71, 90, 255); // surface1
-    pub const CARET: Rgba = Rgba(245, 224, 220, 255); // rosewater
-
-    pub const SHADOW: Rgba = Rgba(17, 17, 27, 130); // crust
-
+    pub fn track() -> Rgba {
+        theme().track
+    }
+    pub fn caret() -> Rgba {
+        theme().caret
+    }
     /// panels border
-    pub const BORDER_ON_DARK: Rgba = Rgba(69, 71, 90, 255); // surface1
-    pub const BORDER_ON_LIGHT: Rgba = Rgba(17, 17, 27, 55); // crust
-
-    /// dimming outside the selection, alpha comes from `general.dim_alpha`
-    pub const DIM: Rgba = Rgba(17, 17, 27, 255); // crust
+    pub fn border() -> Rgba {
+        theme().border
+    }
+    /// panels border on a light background
+    pub fn border_on_light() -> Rgba {
+        theme().border_on_light
+    }
 }
 
 // ==========================================
@@ -111,11 +126,17 @@ pub mod color {
 
 pub mod size {
     /// Height of the toolbar and of the settings panel.
-    pub const PANEL_HEIGHT: f32 = 42.0;
+    pub fn panel_height() -> f32 {
+        crate::config::get().theme.panel_height
+    }
     /// Padding between a panel's edge and its items.
-    pub const PADDING: f32 = 8.0;
+    pub fn padding() -> f32 {
+        crate::config::get().theme.panel_padding
+    }
     /// Gap between a panel and whatever it is anchored to.
-    pub const OFFSET: f32 = 5.0;
+    pub fn margin() -> f32 {
+        crate::config::get().theme.panel_margin
+    }
 }
 
 // ==========================================
@@ -123,9 +144,15 @@ pub mod size {
 // ==========================================
 
 pub mod radius {
-    pub const PANEL: f32 = 8.0;
-    pub const ITEM: f32 = 4.0;
-    pub const SEPARATOR: f32 = 1.0;
+    pub fn panel() -> f32 {
+        crate::config::get().theme.panel_radius
+    }
+    pub fn item() -> f32 {
+        crate::config::get().theme.item_radius
+    }
+    pub fn separator() -> f32 {
+        crate::config::get().theme.separator_radius
+    }
 }
 
 // ==========================================
@@ -133,9 +160,13 @@ pub mod radius {
 // ==========================================
 
 pub mod stroke {
-    pub const BORDER: f32 = 1.0;
+    pub fn border() -> f32 {
+        crate::config::get().theme.border_width
+    }
     /// downloading bar stroke
-    pub const PROGRESS: f32 = 4.0;
+    pub fn progress() -> f32 {
+        crate::config::get().theme.progress_height
+    }
 }
 
 // ==========================================
@@ -146,12 +177,13 @@ pub mod font {
     pub fn label() -> f32 {
         crate::config::get().theme.font_size
     }
-    /// Two points below the label size
     pub fn small() -> f32 {
-        label() - 2.0
+        crate::config::get().theme.small_font_size
     }
-    /// Line height as a factor of the font size.
-    pub const LINE_HEIGHT: f32 = 1.2;
+    /// Line height of the UI text as a factor of the font size.
+    pub fn line_height() -> f32 {
+        crate::config::get().theme.line_height
+    }
 }
 
 // ==========================================
@@ -162,12 +194,17 @@ pub mod anim {
     use std::time::Duration;
 
     /// The duration of a single frame in milliseconds.
-    const FRAME_MS: u64 = 10;
-    pub const FRAME: Duration = Duration::from_millis(FRAME_MS);
-    pub const DT: f32 = FRAME_MS as f32 / 1000.0;
-
+    pub fn frame() -> Duration {
+        Duration::from_millis(crate::config::get().animation.frame_ms)
+    }
+    /// A frame in seconds.
+    pub fn dt() -> f32 {
+        crate::config::get().animation.frame_ms as f32 / 1000.0
+    }
     /// Opacity per second while a popover fades in or out.
-    pub const POPOVER_FADE: f32 = 8.0;
+    pub fn popover_fade() -> f32 {
+        crate::config::get().animation.popover_fade
+    }
     /// Closer than this to the target opacity counts as settled.
     pub const OPACITY_EPSILON: f32 = 0.001;
 }
@@ -177,9 +214,9 @@ pub mod anim {
 // ==========================================
 
 pub mod shadow {
-    pub const OFFSET: (f32, f32) = (0.0, 3.0);
-    pub const LAYERS: usize = 2;
-    pub const SPREAD_PER_LAYER: f32 = 1.5;
-    // for damaged zone calculation
-    pub const WIDTH_BONUS: f32 = 4.0;
+    /// How far the shadow reaches past a stroke, for the damaged zone calculation.
+    pub fn width_bonus() -> f32 {
+        let shadow = &crate::config::get().annotations.shadow;
+        shadow.layers as f32 * shadow.spread + 1.0
+    }
 }

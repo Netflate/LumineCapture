@@ -1,39 +1,7 @@
-// Input thresholds and behavior logic: double-clicks, scroll accumulation, hit-test and etc
+// Input behavior logic (thresholds are in config [input]): double-clicks, scroll accumulation, hit-test and etc
 use std::time::{Duration, Instant};
 
 use crate::ui::color_popover::ColorField;
-
-// ==========================================
-// Thresholds
-// ==========================================
-
-pub const DOUBLE_CLICK: Duration = Duration::from_millis(400);
-pub const DOUBLE_CLICK_DIST: f32 = 6.0;
-
-// pixels around selection border
-pub const HANDLE_RADIUS: f64 = 8.0;
-pub const HANDLE_PAD: f64 = 20.0;
-
-pub const SCROLL_SENSITIVITY: f32 = 4.0;
-pub const SCROLL_PIXELS_PER_STEP: f32 = 10.0;
-
-pub const HOLD_INITIAL_DELAY: Duration = Duration::from_millis(400);
-pub const HOLD_REPEAT_INTERVAL: Duration = Duration::from_millis(120);
-pub const HOLD_ACCEL_AFTER: u32 = 8;
-pub const HOLD_FAST_INTERVAL: Duration = Duration::from_millis(40);
-
-/// Pointer distance at which a line still counts as hit.
-pub const OCR_HIT_SLACK: f32 = 3.0;
-/// Vertical slack before a drag is allowed to leave its anchor block.
-pub const OCR_VERTICAL_SLACK: f32 = 10.0;
-/// A drag has to cover at least this much before it counts as boxing out a new
-/// region. Below it, it was a shaky click - and honouring that would throw the
-/// result away and leave a handful of pixels selected.
-pub const OCR_MIN_REGION: f32 = 16.0;
-
-// 0.1-0.9 range
-pub const PEN_SMOOTHING: f32 = 0.7;
-pub const PEN_MIN_DIST_SQ: f32 = 1.0;
 
 // ==========================================
 // Double click
@@ -41,8 +9,8 @@ pub const PEN_MIN_DIST_SQ: f32 = 1.0;
 
 /// A double-click is counted only if all of:
 /// 1. Both clicks occur on the exact same target
-/// 2. Time elapsed between the two clicks is less than `DOUBLE_CLICK`.
-/// 3. Distance between the two clicks is within `DOUBLE_CLICK_DIST`.
+/// 2. Time elapsed between the two clicks is less than `input.double_click_ms`.
+/// 3. Distance between the two clicks is within `input.double_click_distance`.
 #[derive(Debug, Default)]
 pub struct DoubleClickTracker<T> {
     last: Option<(Instant, T, (f32, f32))>,
@@ -65,10 +33,11 @@ impl<T: PartialEq + Copy> DoubleClickTracker<T> {
     ///   or was on a different target.
     pub fn register(&mut self, target: T, pos: (f32, f32)) -> bool {
         let now = Instant::now();
+        let input = &crate::config::get().input;
         let is_double = self.last.is_some_and(|(t, prev_target, prev_pos)| {
             prev_target == target
-                && now.duration_since(t) < DOUBLE_CLICK
-                && dist(prev_pos, pos) <= DOUBLE_CLICK_DIST
+                && now.duration_since(t) < Duration::from_millis(input.double_click_ms)
+                && dist(prev_pos, pos) <= input.double_click_distance
         });
 
         self.last = Some((now, target, pos));
