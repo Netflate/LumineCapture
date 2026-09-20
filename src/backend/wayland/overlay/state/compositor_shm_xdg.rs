@@ -10,10 +10,6 @@ use smithay_client_toolkit::shell::xdg::window::{Window, WindowConfigure, Window
 use smithay_client_toolkit::shm::ShmHandler;
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{LayerShellHandler, LayerSurface, LayerSurfaceConfigure};
-use smithay_client_toolkit::{
-    delegate_compositor, delegate_layer, delegate_shm, delegate_subcompositor,
-    delegate_xdg_shell, delegate_xdg_window,
-};
 
 use wayland_client::protocol::{wl_output, wl_surface};
 use wayland_client::{Connection, QueueHandle};
@@ -69,16 +65,12 @@ impl CompositorHandler for OverlayState {
     ) {
     }
 }
-delegate_compositor!(OverlayState);
-delegate_subcompositor!(OverlayState);
-
 // ── shm ──────────────────────────────────────────────────────────────────────────────────────
 impl ShmHandler for OverlayState {
     fn shm_state(&mut self) -> &mut smithay_client_toolkit::shm::Shm {
         &mut self.shm
     }
 }
-delegate_shm!(OverlayState);
 
 // ── xdg ───────────────────────────────────────────────────────────────────────────────────────
 // unlike with the overlay, in the window display method we cannot work exclusively from the Wayland client side
@@ -164,7 +156,3 @@ impl LayerShellHandler for OverlayState {
         probe.buffer = Some(buffer);
     }
 }
-
-delegate_layer!(OverlayState);
-delegate_xdg_shell!(OverlayState);
-delegate_xdg_window!(OverlayState);

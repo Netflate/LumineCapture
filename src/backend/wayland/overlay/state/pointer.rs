@@ -3,7 +3,6 @@
 // use of 'pointer_frame', to group multiple mouse events in one cycle
 // instead of sending them one by one
 
-use smithay_client_toolkit::delegate_pointer;
 use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind, PointerHandler};
 use wayland_client::protocol::wl_pointer;
 use wayland_client::{Connection, QueueHandle};
@@ -90,5 +89,3 @@ impl PointerHandler for OverlayState {
         }
     }
 }
-
-delegate_pointer!(OverlayState);

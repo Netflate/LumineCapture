@@ -24,10 +24,7 @@ use smithay_client_toolkit::shell::xdg::window::{
 };
 use smithay_client_toolkit::shm::slot::{Buffer, SlotPool};
 use smithay_client_toolkit::shm::{Shm, ShmHandler};
-use smithay_client_toolkit::{
-    delegate_compositor, delegate_keyboard, delegate_output, delegate_pointer, delegate_registry,
-    delegate_seat, delegate_shm, delegate_xdg_shell, delegate_xdg_window, registry_handlers,
-};
+use smithay_client_toolkit::{delegate_dispatch2, delegate_registry, registry_handlers};
 use tiny_skia::{FillRule, IntSize, Mask, Pixmap, Rect, Transform};
 use wayland_client::globals::registry_queue_init;
 use wayland_client::protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface};
@@ -565,12 +562,5 @@ impl ProvidesRegistryState for Pin {
     registry_handlers![OutputState, SeatState];
 }
 
-delegate_compositor!(Pin);
-delegate_output!(Pin);
-delegate_shm!(Pin);
-delegate_seat!(Pin);
-delegate_keyboard!(Pin);
-delegate_pointer!(Pin);
-delegate_xdg_shell!(Pin);
-delegate_xdg_window!(Pin);
 delegate_registry!(Pin);
+delegate_dispatch2!(Pin);

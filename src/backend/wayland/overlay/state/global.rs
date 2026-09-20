@@ -4,7 +4,7 @@
 
 use smithay_client_toolkit::output::OutputState;
 use smithay_client_toolkit::registry::ProvidesRegistryState;
-use smithay_client_toolkit::{delegate_registry, registry_handlers};
+use smithay_client_toolkit::{delegate_dispatch2, delegate_registry, registry_handlers};
 use wayland_client::{Connection, Dispatch, QueueHandle};
 use wayland_protocols::wp::{
     fractional_scale::v1::client::{wp_fractional_scale_manager_v1, wp_fractional_scale_v1},
@@ -25,6 +25,7 @@ impl ProvidesRegistryState for OverlayState {
 }
 
 delegate_registry!(OverlayState);
+delegate_dispatch2!(OverlayState);
 
 // ── fractional scale protocol ──────────────────────────────────────────────────────
 // handles HiDPI support. The server tells us the monitor's scale factor,

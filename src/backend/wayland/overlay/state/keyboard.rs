@@ -8,7 +8,6 @@
 //       azerty users will redo on both ctrl z and ctrl w, will be fixed later, who cares
 //       about these sublayouts users anyways
 
-use smithay_client_toolkit::delegate_keyboard;
 use smithay_client_toolkit::seat::keyboard::{
     KeyEvent, KeyboardHandler, Keysym, Modifiers, RepeatInfo,
 };
@@ -104,8 +103,6 @@ impl KeyboardHandler for OverlayState {
     ) {
     }
 }
-
-delegate_keyboard!(OverlayState);
 
 impl OverlayState {
     fn process_key(&mut self, event: &KeyEvent) {

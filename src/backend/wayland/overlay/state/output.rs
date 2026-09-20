@@ -5,7 +5,6 @@
 // map them against our 'Placements'.
 // rebuild_outputs method is called whenever any display configuration changes
 
-use smithay_client_toolkit::delegate_output;
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
 use wayland_client::protocol::wl_output;
 use wayland_client::{Connection, QueueHandle};
@@ -44,5 +43,3 @@ impl OverlayState {
             .collect();
     }
 }
-
-delegate_output!(OverlayState);

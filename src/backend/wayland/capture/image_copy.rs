@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use rustix::event::{PollFd, PollFlags, poll};
 use rustix::time::Timespec;
-use smithay_client_toolkit::delegate_shm;
+use smithay_client_toolkit::delegate_dispatch2;
 use smithay_client_toolkit::shm::slot::{Buffer, SlotPool};
 use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use wayland_client::globals::{GlobalListContents, registry_queue_init};
@@ -312,7 +312,7 @@ impl ShmHandler for State {
     }
 }
 
-delegate_shm!(State);
+delegate_dispatch2!(State);
 
 impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for State {
     fn event(

@@ -3,7 +3,6 @@
 // stuff like mouse (pointer), keyboard
 //
 // We monitor for new capabilities (keyboard & mouse) to initialize input handlers
-use smithay_client_toolkit::delegate_seat;
 use smithay_client_toolkit::seat::{Capability, SeatHandler};
 use wayland_client::protocol::wl_seat;
 use wayland_client::{Connection, QueueHandle};
@@ -50,5 +49,3 @@ impl SeatHandler for OverlayState {
     }
     fn remove_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {}
 }
-
-delegate_seat!(OverlayState);
