@@ -95,7 +95,8 @@ impl OcrRuntime {
     /// Triggers build initialization immediately if the engine is uninitialized, not currently building, and not pending task completion.
     pub fn prepare(&mut self) {
         let coming_back = self.job.is_some() && !self.stale;
-        if self.backend.is_none() && self.warm_rx.is_none() && self.failed.is_none() && !coming_back {
+        if self.backend.is_none() && self.warm_rx.is_none() && self.failed.is_none() && !coming_back
+        {
             self.warm();
         }
     }
@@ -282,7 +283,10 @@ mod tests {
 
     fn drained(rt: &mut OcrRuntime) -> bool {
         wait_until(LONG, || {
-            assert!(rt.poll().is_none(), "a cancelled scan must not deliver text");
+            assert!(
+                rt.poll().is_none(),
+                "a cancelled scan must not deliver text"
+            );
             !rt.needs_poll()
         })
     }
@@ -352,7 +356,10 @@ mod tests {
         assert!(!rt.is_busy(), "a cancelled scan is not waited for");
         assert!(rt.needs_poll(), "but the engine still has to come back");
         assert!(drained(&mut rt));
-        assert!(cancelled_at.elapsed() < Duration::from_millis(300), "the scan ran to its end");
+        assert!(
+            cancelled_at.elapsed() < Duration::from_millis(300),
+            "the scan ran to its end"
+        );
         assert_eq!(fake.cancels(), 1);
         assert!(rt.backend.is_some());
         assert_eq!(builds.load(Ordering::SeqCst), 1);
@@ -369,7 +376,10 @@ mod tests {
             fake.calls() == 1
         }));
         rt.cancel();
-        assert!(matches!(rt.start(testing::image(9, 9)), StartOutcome::Started));
+        assert!(matches!(
+            rt.start(testing::image(9, 9)),
+            StartOutcome::Started
+        ));
         assert!(rt.is_busy());
         let text = result(&mut rt).unwrap().unwrap();
         assert_eq!(text.lines[0].text, "e 9x9");
@@ -399,7 +409,11 @@ mod tests {
     #[test]
     fn panicking_scan_does_not_leave_an_endless_spinner() {
         let (mut rt, builds) = runtime(Mode::AtLaunch, |n| {
-            Ok(if n == 0 { Fake::new("e0").panicking() } else { Fake::new(&format!("e{n}")) })
+            Ok(if n == 0 {
+                Fake::new("e0").panicking()
+            } else {
+                Fake::new(&format!("e{n}"))
+            })
         });
         rt.start(img());
         assert!(matches!(result(&mut rt), Some(Err(e)) if e.contains("vanished")));
@@ -465,7 +479,9 @@ mod tests {
 
     #[test]
     fn second_scan_while_busy_is_refused() {
-        let (mut rt, _) = runtime(Mode::AtLaunch, |_| Ok(Fake::new("e").slow(10, Duration::from_millis(5))));
+        let (mut rt, _) = runtime(Mode::AtLaunch, |_| {
+            Ok(Fake::new("e").slow(10, Duration::from_millis(5)))
+        });
         assert!(matches!(rt.start(img()), StartOutcome::Started));
         assert!(matches!(rt.start(img()), StartOutcome::Busy));
         assert!(result(&mut rt).is_some());

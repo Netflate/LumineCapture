@@ -2,9 +2,9 @@ pub mod notify;
 pub mod wayland;
 
 use crate::types::{Capture, CaptureResult, CursorIcon, DamageRect, Output, OverlayEvent};
-use std::time::Duration;
 use async_trait::async_trait;
 use log::{info, warn};
+use std::time::Duration;
 use wayland_client::Connection;
 
 #[async_trait]
@@ -105,5 +105,7 @@ pub trait Notifier {
 
 pub fn initialize_notifier() -> Box<dyn Notifier> {
     let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
-    Box::new(notify::freedesktop::FreedesktopNotifier { kde: desktop == "KDE" })
+    Box::new(notify::freedesktop::FreedesktopNotifier {
+        kde: desktop == "KDE",
+    })
 }

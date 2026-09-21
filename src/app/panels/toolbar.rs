@@ -68,7 +68,9 @@ pub fn update_toolbar(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     );
 
     if editor_state.toolbar.rect().is_some() {
-        let (_, hovered) = editor_state.toolbar.hit_test(editor_state.input.pointer.local);
+        let (_, hovered) = editor_state
+            .toolbar
+            .hit_test(editor_state.input.pointer.local);
         sync_panel_hover(
             &mut editor_state.toolbar,
             hovered,

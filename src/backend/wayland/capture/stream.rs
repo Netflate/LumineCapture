@@ -1,6 +1,6 @@
+use crate::utils::to_rgba;
 use pipewire as pw;
 use pw::{properties::properties, spa};
-use crate::utils::to_rgba;
 use spa::param::video::VideoFormat;
 use spa::pod::Pod;
 use std::os::fd::{BorrowedFd, OwnedFd};
@@ -50,8 +50,8 @@ pub fn capture_frame(
 fn run_stream(node_id: u32, fd: OwnedFd, tx: SyncSender<FrameResult>) -> Result<(), String> {
     pw::init();
 
-    let mainloop =
-        pw::main_loop::MainLoopRc::new(None).map_err(|e| format!("Failed to create main loop: {e}"))?;
+    let mainloop = pw::main_loop::MainLoopRc::new(None)
+        .map_err(|e| format!("Failed to create main loop: {e}"))?;
     let context = pw::context::ContextRc::new(&mainloop, None)
         .map_err(|e| format!("Failed to create context: {e}"))?;
 
@@ -92,11 +92,10 @@ fn run_stream(node_id: u32, fd: OwnedFd, tx: SyncSender<FrameResult>) -> Result<
                 return;
             }
 
-            let (media_type, media_subtype) =
-                match spa::param::format_utils::parse_format(param) {
-                    Ok(v) => v,
-                    Err(_) => return,
-                };
+            let (media_type, media_subtype) = match spa::param::format_utils::parse_format(param) {
+                Ok(v) => v,
+                Err(_) => return,
+            };
 
             if media_type != spa::param::format::MediaType::Video
                 || media_subtype != spa::param::format::MediaSubtype::Raw
@@ -112,7 +111,11 @@ fn run_stream(node_id: u32, fd: OwnedFd, tx: SyncSender<FrameResult>) -> Result<
                 if let Some(data) = datas.first_mut() {
                     let (offset, size, chunk_stride) = {
                         let chunk = data.chunk();
-                        (chunk.offset() as usize, chunk.size() as usize, chunk.stride())
+                        (
+                            chunk.offset() as usize,
+                            chunk.size() as usize,
+                            chunk.stride(),
+                        )
                     };
                     if size == 0 {
                         return;
@@ -207,7 +210,7 @@ fn build_format_pod(buffer: &mut Vec<u8>) -> &Pod {
                     value: Value::Id(Id(SPA_MEDIA_SUBTYPE_raw)),
                 },
                 Property {
-                    // previously it supported only BGRA 
+                    // previously it supported only BGRA
                     // added some of the others since cosmic didn't return BGRA
                     key: SPA_FORMAT_VIDEO_format,
                     flags: PropertyFlags::empty(),

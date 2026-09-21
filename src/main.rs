@@ -1,10 +1,10 @@
 mod app;
 pub mod backend;
 pub mod config;
-pub mod logging;
 pub mod editor;
 pub mod interaction;
 pub mod keys;
+pub mod logging;
 pub mod ocr;
 pub mod profiler;
 pub mod renderer;
@@ -52,7 +52,9 @@ fn usage_error(e: impl std::fmt::Display) -> ! {
     std::process::exit(2);
 }
 
-fn parse_launch(pargs: &mut pico_args::Arguments) -> Result<app::Launch, Box<dyn std::error::Error>> {
+fn parse_launch(
+    pargs: &mut pico_args::Arguments,
+) -> Result<app::Launch, Box<dyn std::error::Error>> {
     let modes = [
         (pargs.contains(["-f", "--full"]), app::Mode::Full),
         (pargs.contains(["-w", "--window"]), app::Mode::Window),
@@ -90,8 +92,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(launch) => launch,
         Err(e) => usage_error(e),
     };
-    let config_path: Option<PathBuf> = pargs
-        .opt_value_from_os_str("--config", |s| Ok::<_, String>(PathBuf::from(s)))?;
+    let config_path: Option<PathBuf> =
+        pargs.opt_value_from_os_str("--config", |s| Ok::<_, String>(PathBuf::from(s)))?;
     config::init(config_path);
 
     let mut args = pargs

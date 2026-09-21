@@ -27,7 +27,7 @@ pub(super) struct Block {
 
 // Groups text boxes on the same line into a single crop area.
 //
-// The OCR detector splits lines at wide spaces (tabs, columns). Merging them back 
+// The OCR detector splits lines at wide spaces (tabs, columns). Merging them back
 // together prevents split selections and avoids making multiple slow OCR calls.
 //
 // How it works:
@@ -140,7 +140,10 @@ pub(super) fn group_blocks(lines: &[OcrLine]) -> Vec<Block> {
         .map(|mut idxs| {
             idxs.sort_by(|&a, &b| cmp_reading(&lines[a].bounds, &lines[b].bounds));
             let bounds = union_bounds(&idxs, lines);
-            Block { lines: idxs, bounds }
+            Block {
+                lines: idxs,
+                bounds,
+            }
         })
         .collect();
 
@@ -248,7 +251,9 @@ fn median_of(values: impl Iterator<Item = f32>) -> f32 {
 }
 
 pub(super) fn cmp_reading(a: &Rect, b: &Rect) -> std::cmp::Ordering {
-    a.top().total_cmp(&b.top()).then(a.left().total_cmp(&b.left()))
+    a.top()
+        .total_cmp(&b.top())
+        .then(a.left().total_cmp(&b.left()))
 }
 
 /// Smallest rectangle containing both, or `a` when that somehow fails.

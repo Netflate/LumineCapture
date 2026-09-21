@@ -92,23 +92,139 @@ pub const ACTIONS: &[(&str, Action, &[&str])] = &[
     ("tool_arrow", Action::Tool(Tool::Arrow), &["A"]),
     ("tool_rectangle", Action::Tool(Tool::Rectangle), &["R"]),
     ("tool_circle", Action::Tool(Tool::Circle), &["C"]),
-    ("tool_numerated_arrow", Action::Tool(Tool::NumeratedArrow), &["N"]),
-    ("move_left", Action::Move { dir: Dir::Left, fast: false }, &["Left"]),
-    ("move_right", Action::Move { dir: Dir::Right, fast: false }, &["Right"]),
-    ("move_up", Action::Move { dir: Dir::Up, fast: false }, &["Up"]),
-    ("move_down", Action::Move { dir: Dir::Down, fast: false }, &["Down"]),
-    ("move_left_fast", Action::Move { dir: Dir::Left, fast: true }, &["Shift+Left"]),
-    ("move_right_fast", Action::Move { dir: Dir::Right, fast: true }, &["Shift+Right"]),
-    ("move_up_fast", Action::Move { dir: Dir::Up, fast: true }, &["Shift+Up"]),
-    ("move_down_fast", Action::Move { dir: Dir::Down, fast: true }, &["Shift+Down"]),
-    ("resize_left", Action::Resize { dir: Dir::Left, fast: false }, &["Alt+Left"]),
-    ("resize_right", Action::Resize { dir: Dir::Right, fast: false }, &["Alt+Right"]),
-    ("resize_up", Action::Resize { dir: Dir::Up, fast: false }, &["Alt+Up"]),
-    ("resize_down", Action::Resize { dir: Dir::Down, fast: false }, &["Alt+Down"]),
-    ("resize_left_fast", Action::Resize { dir: Dir::Left, fast: true }, &["Alt+Shift+Left"]),
-    ("resize_right_fast", Action::Resize { dir: Dir::Right, fast: true }, &["Alt+Shift+Right"]),
-    ("resize_up_fast", Action::Resize { dir: Dir::Up, fast: true }, &["Alt+Shift+Up"]),
-    ("resize_down_fast", Action::Resize { dir: Dir::Down, fast: true }, &["Alt+Shift+Down"]),
+    (
+        "tool_numerated_arrow",
+        Action::Tool(Tool::NumeratedArrow),
+        &["N"],
+    ),
+    (
+        "move_left",
+        Action::Move {
+            dir: Dir::Left,
+            fast: false,
+        },
+        &["Left"],
+    ),
+    (
+        "move_right",
+        Action::Move {
+            dir: Dir::Right,
+            fast: false,
+        },
+        &["Right"],
+    ),
+    (
+        "move_up",
+        Action::Move {
+            dir: Dir::Up,
+            fast: false,
+        },
+        &["Up"],
+    ),
+    (
+        "move_down",
+        Action::Move {
+            dir: Dir::Down,
+            fast: false,
+        },
+        &["Down"],
+    ),
+    (
+        "move_left_fast",
+        Action::Move {
+            dir: Dir::Left,
+            fast: true,
+        },
+        &["Shift+Left"],
+    ),
+    (
+        "move_right_fast",
+        Action::Move {
+            dir: Dir::Right,
+            fast: true,
+        },
+        &["Shift+Right"],
+    ),
+    (
+        "move_up_fast",
+        Action::Move {
+            dir: Dir::Up,
+            fast: true,
+        },
+        &["Shift+Up"],
+    ),
+    (
+        "move_down_fast",
+        Action::Move {
+            dir: Dir::Down,
+            fast: true,
+        },
+        &["Shift+Down"],
+    ),
+    (
+        "resize_left",
+        Action::Resize {
+            dir: Dir::Left,
+            fast: false,
+        },
+        &["Alt+Left"],
+    ),
+    (
+        "resize_right",
+        Action::Resize {
+            dir: Dir::Right,
+            fast: false,
+        },
+        &["Alt+Right"],
+    ),
+    (
+        "resize_up",
+        Action::Resize {
+            dir: Dir::Up,
+            fast: false,
+        },
+        &["Alt+Up"],
+    ),
+    (
+        "resize_down",
+        Action::Resize {
+            dir: Dir::Down,
+            fast: false,
+        },
+        &["Alt+Down"],
+    ),
+    (
+        "resize_left_fast",
+        Action::Resize {
+            dir: Dir::Left,
+            fast: true,
+        },
+        &["Alt+Shift+Left"],
+    ),
+    (
+        "resize_right_fast",
+        Action::Resize {
+            dir: Dir::Right,
+            fast: true,
+        },
+        &["Alt+Shift+Right"],
+    ),
+    (
+        "resize_up_fast",
+        Action::Resize {
+            dir: Dir::Up,
+            fast: true,
+        },
+        &["Alt+Shift+Up"],
+    ),
+    (
+        "resize_down_fast",
+        Action::Resize {
+            dir: Dir::Down,
+            fast: true,
+        },
+        &["Alt+Shift+Down"],
+    ),
 ];
 
 const PUNCTUATION: &[(char, &str)] = &[
@@ -134,7 +250,9 @@ fn parse_key(name: &str) -> Result<Key, String> {
         if PUNCTUATION.iter().any(|(p, _)| *p == c) {
             return Ok(Key::Char(c));
         }
-        return Err(format!("{name:?} is not a key, for shifted symbols write Shift and the base key"));
+        return Err(format!(
+            "{name:?} is not a key, for shifted symbols write Shift and the base key"
+        ));
     }
 
     let lower = name.to_ascii_lowercase();
@@ -169,7 +287,10 @@ fn parse_key(name: &str) -> Result<Key, String> {
 
 pub fn parse(text: &str) -> Result<Chord, String> {
     let mut parts: Vec<&str> = text.split('+').map(str::trim).collect();
-    let key = parts.pop().filter(|k| !k.is_empty()).ok_or_else(|| format!("{text:?} has no key"))?;
+    let key = parts
+        .pop()
+        .filter(|k| !k.is_empty())
+        .ok_or_else(|| format!("{text:?} has no key"))?;
 
     let mut mods = Mods::default();
     for part in parts {
@@ -182,7 +303,10 @@ pub fn parse(text: &str) -> Result<Chord, String> {
         };
         *flag = true;
     }
-    Ok(Chord { mods, key: parse_key(key)? })
+    Ok(Chord {
+        mods,
+        key: parse_key(key)?,
+    })
 }
 
 pub struct Keymap {
@@ -190,7 +314,7 @@ pub struct Keymap {
 }
 
 impl Keymap {
-    // wrong bindings fall back to defaults per-action 
+    // wrong bindings fall back to defaults per-action
     pub fn build(overrides: &BTreeMap<String, Binding>) -> Self {
         for name in overrides.keys() {
             if !ACTIONS.iter().any(|(n, ..)| n == name) {
@@ -213,7 +337,9 @@ impl Keymap {
             };
             for chord in chords {
                 if let Some(owner) = owners.get(&chord) {
-                    warn!("config: keys.{name} reuses a chord of keys.{owner}, keeping keys.{owner}");
+                    warn!(
+                        "config: keys.{name} reuses a chord of keys.{owner}, keeping keys.{owner}"
+                    );
                     continue;
                 }
                 owners.insert(chord, name);
@@ -229,7 +355,10 @@ impl Keymap {
 }
 
 fn parse_all(chords: &[&str]) -> Vec<Chord> {
-    chords.iter().map(|c| parse(c).expect("default chords parse")).collect()
+    chords
+        .iter()
+        .map(|c| parse(c).expect("default chords parse"))
+        .collect()
 }
 
 pub fn map() -> &'static Keymap {
@@ -245,11 +374,23 @@ mod tests {
         Chord { mods, key }
     }
 
-    const CTRL: Mods = Mods { ctrl: true, shift: false, alt: false, logo: false };
+    const CTRL: Mods = Mods {
+        ctrl: true,
+        shift: false,
+        alt: false,
+        logo: false,
+    };
 
     #[test]
     fn modifiers_parse_in_any_order_and_case() {
-        let expected = chord(Mods { ctrl: true, shift: true, ..Mods::default() }, Key::Char('z'));
+        let expected = chord(
+            Mods {
+                ctrl: true,
+                shift: true,
+                ..Mods::default()
+            },
+            Key::Char('z'),
+        );
         assert_eq!(parse("Ctrl+Shift+Z").unwrap(), expected);
         assert_eq!(parse("shift + control + z").unwrap(), expected);
     }
@@ -261,7 +402,16 @@ mod tests {
         assert_eq!(parse("F12").unwrap().key, Key::F(12));
         assert_eq!(parse("[").unwrap().key, Key::Char('['));
         assert_eq!(parse("bracketright").unwrap().key, Key::Char(']'));
-        assert_eq!(parse("Super+1").unwrap(), chord(Mods { logo: true, ..Mods::default() }, Key::Char('1')));
+        assert_eq!(
+            parse("Super+1").unwrap(),
+            chord(
+                Mods {
+                    logo: true,
+                    ..Mods::default()
+                },
+                Key::Char('1')
+            )
+        );
     }
 
     #[test]
@@ -309,14 +459,23 @@ mod tests {
             ("pin".into(), Binding::One("Ctrl+Shift+P".into())),
         ]);
         let map = Keymap::build(&overrides);
-        assert_eq!(map.lookup(chord(CTRL, Key::Char('s'))), Some(Action::Finish(Finish::Save)));
-        assert_eq!(map.lookup(parse("Ctrl+Shift+P").unwrap()), Some(Action::Finish(Finish::Pin)));
+        assert_eq!(
+            map.lookup(chord(CTRL, Key::Char('s'))),
+            Some(Action::Finish(Finish::Save))
+        );
+        assert_eq!(
+            map.lookup(parse("Ctrl+Shift+P").unwrap()),
+            Some(Action::Finish(Finish::Pin))
+        );
     }
 
     #[test]
     fn a_duplicate_chord_keeps_the_first_action() {
         let overrides = BTreeMap::from([("save".into(), Binding::One("Ctrl+C".into()))]);
         let map = Keymap::build(&overrides);
-        assert_eq!(map.lookup(chord(CTRL, Key::Char('c'))), Some(Action::Finish(Finish::Copy)));
+        assert_eq!(
+            map.lookup(chord(CTRL, Key::Char('c'))),
+            Some(Action::Finish(Finish::Copy))
+        );
     }
 }

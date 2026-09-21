@@ -19,8 +19,8 @@ use tiny_skia::{FillRule, Paint, Pixmap, Rect, Transform};
 use usvg::Tree;
 
 use crate::config::OcrLook;
-use crate::renderer::paths::{draw_panel_border, draw_svg_icon, rect_bounds, rounded_rect_path};
 use crate::ocr::OcrView;
+use crate::renderer::paths::{draw_panel_border, draw_svg_icon, rect_bounds, rounded_rect_path};
 use crate::theme::{Rgba, color};
 use crate::ui::icons;
 
@@ -130,13 +130,7 @@ pub fn scan_badge_rect(region: Rect) -> Rect {
     let cx = region.left() + region.width() / 2.0;
     let cy = region.top() + region.height() / 2.0;
     let size = look().badge_size;
-    Rect::from_xywh(
-        cx - size / 2.0,
-        cy - size / 2.0,
-        size,
-        size,
-    )
-    .unwrap_or(region)
+    Rect::from_xywh(cx - size / 2.0, cy - size / 2.0, size, size).unwrap_or(region)
 }
 
 // ── clipped painting ────────────────────────────────────────────────────────
@@ -162,12 +156,7 @@ impl Painter {
     }
 
     /// Fills every rectangle in one pass
-    fn fill_union(
-        &mut self,
-        rects: impl IntoIterator<Item = Rect>,
-        radius: f32,
-        color: Rgba,
-    ) {
+    fn fill_union(&mut self, rects: impl IntoIterator<Item = Rect>, radius: f32, color: Rgba) {
         let mut pb = tiny_skia::PathBuilder::new();
         let mut any = false;
         for rect in rects {
@@ -192,8 +181,13 @@ impl Painter {
         let mut paint = Paint::default();
         paint.set_color(color.color());
         paint.anti_alias = radius > 0.0;
-        self.buf
-            .fill_path(&path, &paint, FillRule::Winding, Transform::identity(), None);
+        self.buf.fill_path(
+            &path,
+            &paint,
+            FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
     }
 
     fn to_buf_rect(&self, rect: Rect) -> Option<Rect> {
@@ -251,8 +245,13 @@ impl Painter {
         };
         let Some(path) = path else { return };
 
-        self.buf
-            .fill_path(&path, &paint, FillRule::Winding, Transform::identity(), None);
+        self.buf.fill_path(
+            &path,
+            &paint,
+            FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
     }
 
     fn to_buf(&self, local: (f32, f32)) -> (f32, f32) {

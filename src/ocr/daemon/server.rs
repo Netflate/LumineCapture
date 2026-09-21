@@ -2,10 +2,10 @@
 // Main thread handles file locking (`flock`), the UNIX socket, `accept()`, and the idle timer,
 // sleeping inside `poll` without tick loops.
 //
-// Each incoming connection spawns a lightweight thread configured with read/write timeouts to 
+// Each incoming connection spawns a lightweight thread configured with read/write timeouts to
 // ensure idle clients do not hold resources.
 //
-// Recognition scans are executed sequentially (protected by an engine `Mutex`), while `Hello` 
+// Recognition scans are executed sequentially (protected by an engine `Mutex`), while `Hello`
 // and `Status` requests always respond immediately, even during active scanning.
 
 use log::{info, warn};
@@ -113,7 +113,8 @@ pub fn serve(config: Config) -> Result<Outcome, String> {
         lock_wait,
     } = config;
 
-    create_private_dir(&paths.dir).map_err(|e| format!("cannot create {}: {e}", paths.dir.display()))?;
+    create_private_dir(&paths.dir)
+        .map_err(|e| format!("cannot create {}: {e}", paths.dir.display()))?;
     let file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -125,7 +126,9 @@ pub fn serve(config: Config) -> Result<Outcome, String> {
     let Some(lock) = take_lock(file, lock_wait) else {
         return Ok(Outcome::AlreadyRunning);
     };
-    let _ = lock.set_len(0).and_then(|()| writeln!(&*lock, "{}", std::process::id()));
+    let _ = lock
+        .set_len(0)
+        .and_then(|()| writeln!(&*lock, "{}", std::process::id()));
 
     // Holding the lock guarantees the socket is unowned
     // any existing file is a leftover from a killed daemon instance.
@@ -138,7 +141,11 @@ pub fn serve(config: Config) -> Result<Outcome, String> {
         .map_err(|e| format!("cannot listen on {}: {e}", paths.socket.display()))?;
     let _ = fs::set_permissions(&paths.socket, fs::Permissions::from_mode(0o600));
     let (wake_rx, wake) = UnixStream::pair().map_err(|e| e.to_string())?;
-    for nonblocking in [listener.set_nonblocking(true), wake_rx.set_nonblocking(true), wake.set_nonblocking(true)] {
+    for nonblocking in [
+        listener.set_nonblocking(true),
+        wake_rx.set_nonblocking(true),
+        wake.set_nonblocking(true),
+    ] {
         nonblocking.map_err(|e| e.to_string())?;
     }
 
@@ -179,7 +186,11 @@ pub fn serve(config: Config) -> Result<Outcome, String> {
             Deadline::Never => PollTimeout::NONE,
             Deadline::In(left) if left.is_zero() => {
                 if shared.connections.load(Ordering::SeqCst) == 0 {
-                    break if shared.unusable() { Outcome::Unusable } else { Outcome::Idle };
+                    break if shared.unusable() {
+                        Outcome::Unusable
+                    } else {
+                        Outcome::Idle
+                    };
                 }
                 PollTimeout::try_from(Duration::from_millis(50)).unwrap_or(PollTimeout::MAX)
             }
@@ -214,7 +225,11 @@ impl Shared {
         if self.busy.load(Ordering::SeqCst) > 0 {
             return Deadline::Never;
         }
-        let limit = if self.unusable() { Some(self.grace) } else { self.idle };
+        let limit = if self.unusable() {
+            Some(self.grace)
+        } else {
+            self.idle
+        };
         match limit {
             None => Deadline::Never,
             Some(limit) => Deadline::In(limit.saturating_sub(lock(&self.activity).elapsed())),
@@ -222,7 +237,10 @@ impl Shared {
     }
 
     fn unusable(&self) -> bool {
-        matches!(*lock(&self.state), EngineState::Failed(_) | EngineState::NoGpu)
+        matches!(
+            *lock(&self.state),
+            EngineState::Failed(_) | EngineState::NoGpu
+        )
     }
 
     fn touch(&self) {
@@ -344,8 +362,12 @@ fn load(shared: &Arc<Shared>, files: ModelFiles) {
         let old = lock(&shared.engine).take();
         drop(old);
         let started = Instant::now();
-        let built = catch_unwind(AssertUnwindSafe(|| (shared.factory)(&files)))
-            .unwrap_or_else(|_| Err(BuildError::Failed("the engine panicked while loading".into())));
+        let built =
+            catch_unwind(AssertUnwindSafe(|| (shared.factory)(&files))).unwrap_or_else(|_| {
+                Err(BuildError::Failed(
+                    "the engine panicked while loading".into(),
+                ))
+            });
 
         let wanted = lock(&shared.wanted);
         // Discard build results if a different model was requested while construction was in progress.
@@ -368,7 +390,10 @@ fn load(shared: &Arc<Shared>, files: ModelFiles) {
             }
             Err(BuildError::Failed(e)) => EngineState::Failed(e),
         };
-        info!("ocr-daemon: engine {state:?} after {} ms", started.elapsed().as_millis());
+        info!(
+            "ocr-daemon: engine {state:?} after {} ms",
+            started.elapsed().as_millis()
+        );
         *lock(&shared.state) = state;
         drop(wanted);
         shared.touch();
@@ -384,7 +409,9 @@ fn recognize(shared: &Shared, peer: BorrowedFd, image: OcrImage) -> Reply {
         return Reply::Error("the engine is not ready".into());
     };
     let started = Instant::now();
-    let reply = match catch_unwind(AssertUnwindSafe(|| backend.recognize(image, &|| peer_gone(peer)))) {
+    let reply = match catch_unwind(AssertUnwindSafe(|| {
+        backend.recognize(image, &|| peer_gone(peer))
+    })) {
         Ok(Ok(text)) => {
             shared.served.fetch_add(1, Ordering::SeqCst);
             let ms = u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX);
@@ -463,7 +490,8 @@ fn create_private_dir(dir: &Path) -> io::Result<()> {
 
 /// Checks if the underlying binary was recompiled or modified on disk to prevent obsolete processes from handling new client requests.
 fn binary_replaced() -> bool {
-    fs::read_link("/proc/self/exe").is_ok_and(|exe| exe.as_os_str().as_bytes().ends_with(b" (deleted)"))
+    fs::read_link("/proc/self/exe")
+        .is_ok_and(|exe| exe.as_os_str().as_bytes().ends_with(b" (deleted)"))
 }
 
 fn rss_kb() -> u64 {
@@ -479,5 +507,7 @@ fn rss_kb() -> u64 {
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }

@@ -1,6 +1,6 @@
 // Shared stuff between color/setting changes and undo history
 // Kept below `app` so tools can use it without depending on the app layer
-// to keep one side relation yk 
+// to keep one side relation yk
 
 use tiny_skia::Color;
 

@@ -1,12 +1,12 @@
-// popover with list of model languages 
+// popover with list of model languages
 
 use crate::editor::EditorState;
 use crate::editor::dirty::apply_damage_rects;
 use crate::ocr::models::{MODELS, ModelEvent, ModelStatus};
 use crate::ui::model_popover::{ModelPopoverElement, ModelRow};
 use crate::ui::panel::{UiPanel, emit_panel_damage, sync_panel_hover, sync_panel_rect};
-use crate::ui::toast::ToastKind;
 use crate::ui::settings_panel::{SettingsAction, SettingsWidget};
+use crate::ui::toast::ToastKind;
 
 use super::settings::{compute_popover_placement, update_settings_panel};
 

@@ -17,11 +17,11 @@ pub mod state;
 use crate::backend::ScreenOverlay;
 use crate::backend::wayland::utils::shm::create_shm_buffer;
 use crate::backend::wayland::utils::surface::{Background, SurfaceData};
+use crate::types::{CursorIcon, DamageRect, Output, OverlayEvent};
 use smithay_client_toolkit::compositor::Region;
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{KeyboardInteractivity, Layer};
 use state::Probe;
-use crate::types::{CursorIcon, DamageRect, Output, OverlayEvent};
 
 const CONFIGURE_TIMEOUT: Duration = Duration::from_secs(5);
 const PROBE_TIMEOUT: Duration = Duration::from_millis(300);
@@ -111,12 +111,12 @@ impl ScreenOverlay for WaylandOverlay {
             );
         }
 
-        // IMPORTANT PART : 15 ms gain 
+        // IMPORTANT PART : 15 ms gain
         // when requesting memory, linux doesn't actually allocate physical ram, it just gives us an address space
         // physical allocation happens only on first write via page faults, which takes 15 ms on my machine
-        // so instead of triggering page faults after receiving the screenshot, we do it 
+        // so instead of triggering page faults after receiving the screenshot, we do it
         // now while waiting for wayland configure anyways
-        
+
         // we fill this memory with zeros to force physical page allocation before getting the screenshot
         // so when it arrives, pages are already mapped, giving us some speed gain
         rt.event_queue.flush()?;
@@ -255,17 +255,14 @@ impl ScreenOverlay for WaylandOverlay {
         let shell = rt.state.layer_shell.as_ref()?;
 
         let surface = rt.state.compositor_state.create_surface(&qh);
-        let layer = shell.create_layer_surface(
-            &qh,
-            surface,
-            Layer::Overlay,
-            Some("lumine-probe"),
-            None,
-        );
+        let layer =
+            shell.create_layer_surface(&qh, surface, Layer::Overlay, Some("lumine-probe"), None);
         layer.set_size(1, 1);
         layer.set_keyboard_interactivity(KeyboardInteractivity::None);
         if let Ok(region) = Region::new(&rt.state.compositor_state) {
-            layer.wl_surface().set_input_region(Some(region.wl_region()));
+            layer
+                .wl_surface()
+                .set_input_region(Some(region.wl_region()));
         }
         layer.commit();
         rt.state.probe = Some(Probe {
@@ -275,7 +272,9 @@ impl ScreenOverlay for WaylandOverlay {
         });
 
         let deadline = Instant::now() + PROBE_TIMEOUT;
-        while rt.state.probe.as_ref().is_some_and(|p| p.output.is_none()) && Instant::now() < deadline {
+        while rt.state.probe.as_ref().is_some_and(|p| p.output.is_none())
+            && Instant::now() < deadline
+        {
             if rt.event_queue.roundtrip(&mut rt.state).is_err() {
                 break;
             }
@@ -301,14 +300,15 @@ impl ScreenOverlay for WaylandOverlay {
 
         rt.state.pointer_surface_idx = rt.state.pointer_surface_idx.and_then(remap);
         rt.state.events.retain_mut(|ev| match ev {
-            OverlayEvent::PointerMove { monitor_idx, .. }
-            | OverlayEvent::Focus { monitor_idx } => match remap(*monitor_idx) {
-                Some(idx) => {
-                    *monitor_idx = idx;
-                    true
+            OverlayEvent::PointerMove { monitor_idx, .. } | OverlayEvent::Focus { monitor_idx } => {
+                match remap(*monitor_idx) {
+                    Some(idx) => {
+                        *monitor_idx = idx;
+                        true
+                    }
+                    None => false,
                 }
-                None => false,
-            },
+            }
             _ => true,
         });
 

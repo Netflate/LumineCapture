@@ -1,9 +1,9 @@
 // Handles background model downloads using a single sequential queue.
 //
-// Downloads are saved to temporary `.part` files, verified with SHA-256, 
+// Downloads are saved to temporary `.part` files, verified with SHA-256,
 // and renamed only after successful verification. Partial downloads resume automatically.
 //
-// Downloads stop immediately when the window closes (`Downloader::stop`) 
+// Downloads stop immediately when the window closes (`Downloader::stop`)
 // and do not auto-resume on the next run.
 
 use std::fs::{self, File, OpenOptions};
@@ -31,8 +31,16 @@ pub struct Job {
 }
 
 pub enum Update {
-    Progress { id: u64, model: usize, percent: u8 },
-    Done { id: u64, model: usize, result: Result<(), String> },
+    Progress {
+        id: u64,
+        model: usize,
+        percent: u8,
+    },
+    Done {
+        id: u64,
+        model: usize,
+        result: Result<(), String>,
+    },
 }
 
 impl Update {
@@ -142,7 +150,11 @@ fn fetch_model(
 ) -> Result<(), String> {
     fs::create_dir_all(&job.dir).map_err(err)?;
 
-    let missing: Vec<&Asset> = job.assets.iter().filter(|a| !on_disk(&job.dir, a)).collect();
+    let missing: Vec<&Asset> = job
+        .assets
+        .iter()
+        .filter(|a| !on_disk(&job.dir, a))
+        .collect();
     let total: u64 = missing.iter().map(|a| a.size).sum();
     let report = |percent: u8| {
         let _ = updates.send(Update::Progress {

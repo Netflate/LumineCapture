@@ -12,15 +12,15 @@
 // daemon   - persistent process keeping a pre-ready model instance ready in memory. (crucial for gpu ocr, see below)
 // settings - how to prepare the engine (on-demand / at-launch / daemon)
 
-// clarifications: 
-// Settings : 
-// - on-demand : load the engine when choosing ocr 
+// clarifications:
+// Settings :
+// - on-demand : load the engine when choosing ocr
 // - at-launch : load the engine at app launch
-// - daemon    : launches a background daemon, that outlives main process, which 
+// - daemon    : launches a background daemon, that outlives main process, which
 //               purpose is keeping ready ocr engine
 
-// When specific mode is chosen and why: 
-// first things to keep in mind: 
+// When specific mode is chosen and why:
+// first things to keep in mind:
 // * GPU initialization takes time, and decent chunk on memory (`1`)
 // * Preparing engine for cpu takes around 90ms, and some memory (`2`)
 
@@ -29,7 +29,7 @@
 //  it will make sense to make a separate bind, that instantly launches the engines, and chooses ocr tool, but that's later
 
 // 2. why not daemon: launching daemon for cpu is inefficient, running a separate daemon will gain practically nothing, only around
-// 90 ms on my machine. Yet, for gpu there is real gain, gpu scan is much faster than cpu, and launching engine with gpu 
+// 90 ms on my machine. Yet, for gpu there is real gain, gpu scan is much faster than cpu, and launching engine with gpu
 // takes much more time, so it makes sense for it to be in a daemon. Yet, daemon takes GPU memory, and having a background
 // daemon with always 100+mb taken is not a good idea, sooo it's not optimal
 pub mod bidi;
@@ -80,7 +80,7 @@ impl OcrLine {
     }
 }
 
-/// Checks if a character is a combining mark (diacritical mark that attaches 
+/// Checks if a character is a combining mark (diacritical mark that attaches
 /// to the previous letter without taking up horizontal spacing).
 pub fn is_mark(c: char) -> bool {
     matches!(
@@ -122,7 +122,8 @@ pub const CANCELLED: &str = "cancelled";
 /// to avoid copying the full screen buffer.
 /// Checked between pipeline stages so cancelled scans exit early with an error.
 pub trait OcrBackend: Send {
-    fn recognize(&self, image: OcrImage, cancelled: &dyn Fn() -> bool) -> Result<OcrText, OcrError>;
+    fn recognize(&self, image: OcrImage, cancelled: &dyn Fn() -> bool)
+    -> Result<OcrText, OcrError>;
 }
 
 /// Build the backend the app ships with today.
@@ -132,7 +133,10 @@ pub fn default_backend(files: &ModelFiles) -> Result<Box<dyn OcrBackend>, OcrErr
 
 /// Connects to the daemon client if running in daemon mode
 /// otherwise, initializes the engine directly within this process
-pub fn build_backend(mode: settings::Mode, files: &ModelFiles) -> Result<Box<dyn OcrBackend>, OcrError> {
+pub fn build_backend(
+    mode: settings::Mode,
+    files: &ModelFiles,
+) -> Result<Box<dyn OcrBackend>, OcrError> {
     match mode {
         settings::Mode::Daemon => daemon::client::connect(files),
         settings::Mode::OnDemand | settings::Mode::AtLaunch => default_backend(files),
@@ -146,7 +150,8 @@ pub fn composite_region(
     placements: &[Placement],
     region: Rect,
 ) -> Option<OcrImage> {
-    let (out, (left, top), _) = crate::renderer::composite(captures, placements, region, Some(1.0))?;
+    let (out, (left, top), _) =
+        crate::renderer::composite(captures, placements, region, Some(1.0))?;
     let (width, height) = (out.width(), out.height());
 
     // RGBA -> RGB

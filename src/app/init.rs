@@ -6,13 +6,12 @@ use crate::backend::ScreenOverlay;
 use crate::editor::EditorState;
 use crate::profiler::Profiler;
 use crate::renderer;
-use crate::ui::toolbar::{ToolbarButton, ToolbarItem};
 use crate::types::{Capture, MonitorFrame, Output, Placement};
 use crate::ui::icons;
+use crate::ui::toolbar::{ToolbarButton, ToolbarItem};
 use std::collections::HashMap;
 use tiny_skia::{IntSize, Pixmap};
 use usvg::Tree;
-
 
 pub fn build_captures(frames: Vec<MonitorFrame>) -> Result<Vec<Capture>, String> {
     frames
@@ -168,7 +167,11 @@ mod tests {
             pw_width: w,
             pw_height: h,
             pw_stride: stride,
-            info: StreamInfo { node_id: 0, size: logical, position: None },
+            info: StreamInfo {
+                node_id: 0,
+                size: logical,
+                position: None,
+            },
         }
     }
 
@@ -181,8 +184,20 @@ mod tests {
     #[test]
     fn frames_from_every_backend_become_the_same_pixmap() {
         let cases = [
-            ("kde: always tight, it de-pads KWin's stride itself", 4, 3, 16, 48),
-            ("image-copy: tight, dimensions already un-rotated", 3, 4, 12, 48),
+            (
+                "kde: always tight, it de-pads KWin's stride itself",
+                4,
+                3,
+                16,
+                48,
+            ),
+            (
+                "image-copy: tight, dimensions already un-rotated",
+                3,
+                4,
+                12,
+                48,
+            ),
             ("portal: padded rows", 4, 3, 32, 96),
             ("portal: padded rows, the last one unpadded", 4, 3, 32, 80),
         ];
@@ -219,8 +234,8 @@ mod tests {
         }
 
         // both KWin and PipeWire's chunk.size() may deliver a longer tail
-        // funny bug: for some reason, only and only in World of Tanks, kwin was delivering a shorter tail, like -20px  
-        // which was causing the programm to panick. Honestly, no idea what was that, none of my fixes didn't work out 
+        // funny bug: for some reason, only and only in World of Tanks, kwin was delivering a shorter tail, like -20px
+        // which was causing the programm to panick. Honestly, no idea what was that, none of my fixes didn't work out
         // it was expected, since kdescreenshot protocol is doing something wrong, not our end
         // so now if the screenshot has missing pixels, fill them with transparency
         let extra = build_captures(vec![frame(4, 3, 16, 64, None)]);

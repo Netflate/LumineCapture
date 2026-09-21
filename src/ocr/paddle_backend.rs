@@ -2,9 +2,9 @@
 //
 // Highlights:
 // - Uses the model picked in the language list (see `models`), e.g. Cyrillic supports Cyrillic, English, digits, and punctuation.
-// - Processes image crops one by one. Batching or multi-threading is avoided 
+// - Processes image crops one by one. Batching or multi-threading is avoided
 //   because it slows down execution and wastes memory cache.
-// - Uses direct low-level API access to get exact character positions (`return_word_box`) 
+// - Uses direct low-level API access to get exact character positions (`return_word_box`)
 //   for precise sub-line text selection.
 // - Logs performance metrics (`ocr: timing`) to stderr. (temporary).
 
@@ -12,8 +12,8 @@ use log::debug;
 use std::time::Instant;
 
 use oar_ocr::core::config::{OrtExecutionProvider, OrtSessionConfig};
-use oar_ocr::core::traits::{AdapterBuilder, OrtConfigurable};
 use oar_ocr::core::traits::task::ImageTaskInput;
+use oar_ocr::core::traits::{AdapterBuilder, OrtConfigurable};
 use oar_ocr::domain::adapters::TextRecognitionAdapterBuilder;
 use oar_ocr::domain::tasks::{TextDetectionConfig, TextRecognitionConfig, TextRecognitionTask};
 use oar_ocr::predictors::{TaskPredictorCore, TextDetectionPredictor};
@@ -66,7 +66,10 @@ impl PaddleBackend {
             // WebGPU keeps buffers sized for the largest image
             // Without cache it stays under +-130 MB, with only a +-5% slowdown on scans.
             for kind in ["storage", "uniform", "queryResolve", "default"] {
-                ort = ort.add_config_entry(format!("ep.webgpuexecutionprovider.{kind}BufferCacheMode"), "disabled");
+                ort = ort.add_config_entry(
+                    format!("ep.webgpuexecutionprovider.{kind}BufferCacheMode"),
+                    "disabled",
+                );
             }
         }
 
@@ -123,7 +126,11 @@ impl PaddleBackend {
 }
 
 impl OcrBackend for PaddleBackend {
-    fn recognize(&self, image: OcrImage, cancelled: &dyn Fn() -> bool) -> Result<OcrText, OcrError> {
+    fn recognize(
+        &self,
+        image: OcrImage,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<OcrText, OcrError> {
         let total = Instant::now();
 
         let stage = Instant::now();
@@ -306,7 +313,7 @@ fn recognize_one(recognizer: &Recognizer, crop: &image::RgbImage) -> Read {
 // Adjusts character positions returned by the OCR model.
 //
 // recognizer scales image crops to 48px high and pads them to a fixed width.
-// Because of this extra padding, character coordinates can get squished 
+// Because of this extra padding, character coordinates can get squished
 // to the left, especially on short lines.
 const REC_HEIGHT: f32 = 48.0;
 const REC_WIDTH: f32 = 320.0;
@@ -450,7 +457,11 @@ fn char_boundaries(bounds: &Rect, text: &str, norm: &[f32]) -> Vec<f32> {
 
     let at = |k: usize| left + bounds.width() * norm[k].clamp(0.0, 1.0);
     let total: f32 = widths.iter().sum();
-    let span = if norm.len() == n && n > 1 { at(n - 1) - at(0) } else { 0.0 };
+    let span = if norm.len() == n && n > 1 {
+        at(n - 1) - at(0)
+    } else {
+        0.0
+    };
     if span <= 0.0 || total <= 0.0 {
         return modelled(left, right, &widths);
     }

@@ -167,7 +167,9 @@ impl<'de> Deserialize<'de> for ThemeColor {
         if s.trim().is_empty() {
             return Ok(Self(None));
         }
-        parse_rgba(&s).map(|c| Self(Some(c))).map_err(serde::de::Error::custom)
+        parse_rgba(&s)
+            .map(|c| Self(Some(c)))
+            .map_err(serde::de::Error::custom)
     }
 }
 
@@ -225,7 +227,10 @@ impl Serialize for Outputs {
 
 section!(General {
     save_always: bool = true,
-    accept: Outputs = Outputs { copy: true, ..Outputs::default() },
+    accept: Outputs = Outputs {
+        copy: true,
+        ..Outputs::default()
+    },
 });
 
 section!(Save {
@@ -1102,8 +1107,8 @@ max_file_size_mb = 1
 
 static CONFIG: OnceLock<Config> = OnceLock::new();
 
-// complaints are filled before logger starts to work 
-// so we need to remember em 
+// complaints are filled before logger starts to work
+// so we need to remember em
 static WARNINGS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 fn complain(message: String) {
@@ -1114,14 +1119,21 @@ fn complain(message: String) {
 
 /// Logs what went wrong while reading the config; call once the logger is up.
 pub fn log_warnings() {
-    let warnings = WARNINGS.lock().map(|mut w| std::mem::take(&mut *w)).unwrap_or_default();
+    let warnings = WARNINGS
+        .lock()
+        .map(|mut w| std::mem::take(&mut *w))
+        .unwrap_or_default();
     for message in warnings {
         warn!("{message}");
     }
 }
 
 fn config_path() -> Option<PathBuf> {
-    Some(dirs::config_dir()?.join("LumineCapture").join("config.toml"))
+    Some(
+        dirs::config_dir()?
+            .join("LumineCapture")
+            .join("config.toml"),
+    )
 }
 
 const MAX_BAD_LINES: usize = 64;
@@ -1139,7 +1151,9 @@ fn parse(text: &str, origin: &str) -> Config {
             Err(e) => {
                 let Some(span) = e.span() else { break };
                 let start = text[..span.start].rfind('\n').map_or(0, |i| i + 1);
-                let end = text[span.start..].find('\n').map_or(text.len(), |i| span.start + i);
+                let end = text[span.start..]
+                    .find('\n')
+                    .map_or(text.len(), |i| span.start + i);
                 let line = text[..start].matches('\n').count() + 1;
                 complain(format!(
                     "config: {origin}:{line}: {}, skipping `{}`",
@@ -1150,7 +1164,9 @@ fn parse(text: &str, origin: &str) -> Config {
             }
         }
     }
-    complain(format!("config: {origin} can't be read, using the defaults"));
+    complain(format!(
+        "config: {origin} can't be read, using the defaults"
+    ));
     Config::default()
 }
 
@@ -1158,18 +1174,27 @@ fn parse(text: &str, origin: &str) -> Config {
 const UNSET_BY_DEFAULT: &[&str] = &["log.level"];
 
 fn warn_unknown_keys(text: &str, origin: &str) {
-    let (Ok(user), Ok(known)) = (text.parse::<toml::Table>(), toml::Table::try_from(Config::default())) else {
+    let (Ok(user), Ok(known)) = (
+        text.parse::<toml::Table>(),
+        toml::Table::try_from(Config::default()),
+    ) else {
         return;
     };
     fn walk(user: &toml::Table, known: &toml::Table, path: &str, origin: &str) {
         for (key, value) in user {
-            let full = if path.is_empty() { key.clone() } else { format!("{path}.{key}") };
+            let full = if path.is_empty() {
+                key.clone()
+            } else {
+                format!("{path}.{key}")
+            };
             match (known.get(key), value) {
                 (None, _) if UNSET_BY_DEFAULT.contains(&full.as_str()) => {}
                 (None, _) => complain(format!("config: {origin}: unknown key {full}, ignoring it")),
                 // keys.rs names the unknown actions itself
                 (Some(_), _) if full == "keys" => {}
-                (Some(toml::Value::Table(known)), toml::Value::Table(user)) => walk(user, known, &full, origin),
+                (Some(toml::Value::Table(known)), toml::Value::Table(user)) => {
+                    walk(user, known, &full, origin)
+                }
                 _ => {}
             }
         }
@@ -1180,52 +1205,72 @@ fn warn_unknown_keys(text: &str, origin: &str) {
 fn validate(config: &mut Config) {
     let magnifier = &mut config.magnifier;
     if magnifier.cells.is_multiple_of(2) {
-        complain(format!("config: magnifier.cells must be odd, using the default"));
+        complain(format!(
+            "config: magnifier.cells must be odd, using the default"
+        ));
         magnifier.cells = Magnifier::default().cells;
     }
     let animation = &mut config.animation;
     if animation.speed < 0.1 {
-        complain(format!("config: animation.speed must be at least 0.1, using the default"));
+        complain(format!(
+            "config: animation.speed must be at least 0.1, using the default"
+        ));
         animation.speed = Animation::default().speed;
     }
     if animation.frame_ms == 0 {
-        complain(format!("config: animation.frame_ms must be at least 1, using the default"));
+        complain(format!(
+            "config: animation.frame_ms must be at least 1, using the default"
+        ));
         animation.frame_ms = Animation::default().frame_ms;
     }
     let pen = &mut config.tools.pen;
     if !(0.0..1.0).contains(&pen.smoothing) {
-        complain(format!("config: tools.pen.smoothing must be at least 0 and below 1, using the default"));
+        complain(format!(
+            "config: tools.pen.smoothing must be at least 0 and below 1, using the default"
+        ));
         pen.smoothing = Pen::default().smoothing;
     }
 
     // clamp() panics when min > max, so a flipped range falls back as a whole
     let stroke = &mut config.tools.stroke;
     if stroke.min > stroke.max || stroke.step <= 0.0 {
-        complain(format!("config: tools.stroke needs min <= max and a positive step, using the defaults"));
+        complain(format!(
+            "config: tools.stroke needs min <= max and a positive step, using the defaults"
+        ));
         *stroke = Stroke::default();
     }
     let font = &mut config.tools.font;
     if font.min > font.max || font.step <= 0.0 {
-        complain(format!("config: tools.font needs min <= max and a positive step, using the defaults"));
+        complain(format!(
+            "config: tools.font needs min <= max and a positive step, using the defaults"
+        ));
         *font = Font::default();
     }
     let text = &mut config.annotations.text;
     if text.resize_min > text.resize_max {
-        complain(format!("config: annotations.text.resize_min is above resize_max, using the defaults"));
+        complain(format!(
+            "config: annotations.text.resize_min is above resize_max, using the defaults"
+        ));
         text.resize_min = TextBox::default().resize_min;
         text.resize_max = TextBox::default().resize_max;
     }
     if config.theme.line_height.is_nan() || config.theme.line_height <= 0.0 {
-        complain(format!("config: theme.line_height must be above 0, using the default"));
+        complain(format!(
+            "config: theme.line_height must be above 0, using the default"
+        ));
         config.theme.line_height = Theme::default().line_height;
     }
     if config.annotations.text.line_height.is_nan() || config.annotations.text.line_height <= 0.0 {
-        complain(format!("config: annotations.text.line_height must be above 0, using the default"));
+        complain(format!(
+            "config: annotations.text.line_height must be above 0, using the default"
+        ));
         config.annotations.text.line_height = TextBox::default().line_height;
     }
     let input = &mut config.input;
     if input.corner_min > input.corner_max {
-        complain(format!("config: input.corner_min is above corner_max, using the defaults"));
+        complain(format!(
+            "config: input.corner_min is above corner_max, using the defaults"
+        ));
         input.corner_min = Input::default().corner_min;
         input.corner_max = Input::default().corner_max;
     }
@@ -1283,7 +1328,11 @@ mod tests {
     fn the_template_mentions_every_option() {
         fn walk(table: &toml::Table, path: &str, missing: &mut Vec<String>) {
             for (key, value) in table {
-                let full = if path.is_empty() { key.clone() } else { format!("{path}.{key}") };
+                let full = if path.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{path}.{key}")
+                };
                 match value {
                     // [keys] is covered by the template-reads-back test
                     toml::Value::Table(_) if full == "keys" => {}
@@ -1298,7 +1347,11 @@ mod tests {
             }
         }
         let mut missing = Vec::new();
-        walk(&toml::Table::try_from(Config::default()).unwrap(), "", &mut missing);
+        walk(
+            &toml::Table::try_from(Config::default()).unwrap(),
+            "",
+            &mut missing,
+        );
         assert!(missing.is_empty(), "not in TEMPLATE: {missing:?}");
     }
 
@@ -1311,7 +1364,9 @@ mod tests {
 
     #[test]
     fn a_bad_line_is_skipped_and_the_rest_applies() {
-        let config = read("[toolbar]\nbutton_size = \"big\"\nbutton_gap = 9.0\n[theme]\naccent = \"nope\"\nhover = \"#112233\"\n");
+        let config = read(
+            "[toolbar]\nbutton_size = \"big\"\nbutton_gap = 9.0\n[theme]\naccent = \"nope\"\nhover = \"#112233\"\n",
+        );
         assert_eq!(config.toolbar.button_size, Toolbar::default().button_size);
         assert_eq!(config.toolbar.button_gap, 9.0);
         assert_eq!(config.theme.accent, Theme::default().accent);
@@ -1327,23 +1382,41 @@ mod tests {
 
     #[test]
     fn unset_colors_follow_the_theme() {
-        let config = read("[theme]\nforeground = \"#112233\"\n[toolbar]\nicon_selected = \"#445566\"\nicon_hovered = \"\"\n");
+        let config = read(
+            "[theme]\nforeground = \"#112233\"\n[toolbar]\nicon_selected = \"#445566\"\nicon_hovered = \"\"\n",
+        );
         assert_eq!(config.toolbar.icon.get(), Rgba(0x11, 0x22, 0x33, 255));
-        assert_eq!(config.toolbar.icon_selected.get(), Rgba(0x44, 0x55, 0x66, 255));
+        assert_eq!(
+            config.toolbar.icon_selected.get(),
+            Rgba(0x44, 0x55, 0x66, 255)
+        );
         assert_eq!(config.toolbar.icon_hovered.get(), config.theme.on_accent);
     }
 
     #[test]
     fn unknown_keys_are_ignored() {
-        assert_eq!(read("[general]\nfuture_key = 1\n[nope]\nx = 1\n"), Config::default());
+        assert_eq!(
+            read("[general]\nfuture_key = 1\n[nope]\nx = 1\n"),
+            Config::default()
+        );
     }
 
     #[test]
     fn accept_takes_letters_and_can_be_turned_off() {
         let config = read("[general]\naccept = \"ps\"\n");
-        assert_eq!(config.general.accept, Outputs { pin: true, save: true, copy: false });
+        assert_eq!(
+            config.general.accept,
+            Outputs {
+                pin: true,
+                save: true,
+                copy: false
+            }
+        );
         assert!(read("[general]\naccept = \"\"\n").general.accept.is_empty());
-        assert_eq!(read("[general]\naccept = \"x\"\n").general.accept, General::default().accept);
+        assert_eq!(
+            read("[general]\naccept = \"x\"\n").general.accept,
+            General::default().accept
+        );
     }
 
     #[test]
@@ -1355,12 +1428,18 @@ mod tests {
 
     #[test]
     fn even_magnifier_cells_fall_back_to_the_default() {
-        assert_eq!(read("[magnifier]\ncells = 20\n").magnifier.cells, Magnifier::default().cells);
+        assert_eq!(
+            read("[magnifier]\ncells = 20\n").magnifier.cells,
+            Magnifier::default().cells
+        );
     }
 
     #[test]
     fn too_slow_animation_speed_falls_back_to_the_default() {
-        assert_eq!(read("[animation]\nspeed = 0.0\n").animation.speed, Animation::default().speed);
+        assert_eq!(
+            read("[animation]\nspeed = 0.0\n").animation.speed,
+            Animation::default().speed
+        );
     }
 
     #[test]

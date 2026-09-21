@@ -581,9 +581,15 @@ mod tests {
         }
 
         let bytes = encode_request(Outgoing::Status);
-        assert!(matches!(read_request(&mut bytes.as_slice()), Ok(Request::Status)));
+        assert!(matches!(
+            read_request(&mut bytes.as_slice()),
+            Ok(Request::Status)
+        ));
         let bytes = encode_request(Outgoing::Shutdown);
-        assert!(matches!(read_request(&mut bytes.as_slice()), Ok(Request::Shutdown)));
+        assert!(matches!(
+            read_request(&mut bytes.as_slice()),
+            Ok(Request::Shutdown)
+        ));
     }
 
     #[test]
@@ -632,7 +638,10 @@ mod tests {
         roundtrip(Reply::Ok);
         roundtrip(Reply::Error("ошибка".into()));
         roundtrip(Reply::Lines(OcrText::default()));
-        roundtrip(Reply::Lines(testing::labelled("привет", &testing::image(30, 10))));
+        roundtrip(Reply::Lines(testing::labelled(
+            "привет",
+            &testing::image(30, 10),
+        )));
     }
 
     #[test]
@@ -642,12 +651,17 @@ mod tests {
         let mut r = bytes.as_slice();
         assert_eq!(read_reply(&mut r).unwrap(), Reply::Ok);
         assert_eq!(read_reply(&mut r).unwrap(), Reply::Error("x".into()));
-        assert!(matches!(read_reply(&mut r), Err(ProtoError::Io(e)) if e.kind() == io::ErrorKind::UnexpectedEof));
+        assert!(
+            matches!(read_reply(&mut r), Err(ProtoError::Io(e)) if e.kind() == io::ErrorKind::UnexpectedEof)
+        );
     }
 
     #[test]
     fn truncated_frames_are_errors_not_panics() {
-        let full = encode_reply(&Reply::Lines(testing::labelled("abc", &testing::image(4, 4))));
+        let full = encode_reply(&Reply::Lines(testing::labelled(
+            "abc",
+            &testing::image(4, 4),
+        )));
         for cut in 0..full.len() {
             assert!(read_reply(&mut &full[..cut]).is_err(), "cut at {cut}");
         }
@@ -661,11 +675,17 @@ mod tests {
     fn oversized_frames_are_refused_before_allocating() {
         let mut huge = ((MAX_FRAME + 1) as u32).to_le_bytes().to_vec();
         huge.push(tag::OK);
-        assert!(matches!(read_reply(&mut huge.as_slice()), Err(ProtoError::TooLarge(_))));
+        assert!(matches!(
+            read_reply(&mut huge.as_slice()),
+            Err(ProtoError::TooLarge(_))
+        ));
 
         let mut big_small = ((MAX_SMALL + 1) as u32).to_le_bytes().to_vec();
         big_small.push(tag::STATUS);
-        assert!(matches!(read_request(&mut big_small.as_slice()), Err(ProtoError::TooLarge(_))));
+        assert!(matches!(
+            read_request(&mut big_small.as_slice()),
+            Err(ProtoError::TooLarge(_))
+        ));
 
         assert!(read_request(&mut b"GET / HTTP/1.1\r\n\r\n".as_slice()).is_err());
     }
@@ -673,22 +693,43 @@ mod tests {
     #[test]
     fn empty_frame_and_unknown_tags() {
         let zero = 0u32.to_le_bytes();
-        assert!(matches!(read_reply(&mut zero.as_slice()), Err(ProtoError::Malformed(_)) | Err(ProtoError::Io(_))));
+        assert!(matches!(
+            read_reply(&mut zero.as_slice()),
+            Err(ProtoError::Malformed(_)) | Err(ProtoError::Io(_))
+        ));
         let mut zero = zero.to_vec();
         zero.push(0);
-        assert!(matches!(read_reply(&mut zero.as_slice()), Err(ProtoError::Malformed(_))));
+        assert!(matches!(
+            read_reply(&mut zero.as_slice()),
+            Err(ProtoError::Malformed(_))
+        ));
 
-        assert!(matches!(read_reply(&mut frame(200, &[]).as_slice()), Err(ProtoError::UnknownTag(200))));
-        assert!(matches!(read_request(&mut frame(200, &[]).as_slice()), Err(ProtoError::UnknownTag(200))));
+        assert!(matches!(
+            read_reply(&mut frame(200, &[]).as_slice()),
+            Err(ProtoError::UnknownTag(200))
+        ));
+        assert!(matches!(
+            read_request(&mut frame(200, &[]).as_slice()),
+            Err(ProtoError::UnknownTag(200))
+        ));
         // A reply is not mistaken for a request and vice versa
-        assert!(matches!(read_request(&mut frame(tag::OK, &[]).as_slice()), Err(ProtoError::UnknownTag(_))));
-        assert!(matches!(read_reply(&mut frame(tag::STATUS, &[]).as_slice()), Err(ProtoError::UnknownTag(_))));
+        assert!(matches!(
+            read_request(&mut frame(tag::OK, &[]).as_slice()),
+            Err(ProtoError::UnknownTag(_))
+        ));
+        assert!(matches!(
+            read_reply(&mut frame(tag::STATUS, &[]).as_slice()),
+            Err(ProtoError::UnknownTag(_))
+        ));
     }
 
     #[test]
     fn trailing_bytes_are_rejected() {
         assert!(malformed(read_reply(&mut frame(tag::OK, &[1]).as_slice())));
-        assert!(matches!(read_request(&mut frame(tag::STATUS, &[1]).as_slice()), Err(ProtoError::Malformed(_))));
+        assert!(matches!(
+            read_request(&mut frame(tag::STATUS, &[1]).as_slice()),
+            Err(ProtoError::Malformed(_))
+        ));
     }
 
     #[test]
@@ -700,7 +741,9 @@ mod tests {
         let mut bytes = Vec::new();
         body.send(&mut bytes, tag::HELLO).unwrap();
         match read_request(&mut bytes.as_slice()).unwrap() {
-            Request::Hello { proto, build } => assert_eq!((proto, build.as_str()), (PROTO + 1, "future")),
+            Request::Hello { proto, build } => {
+                assert_eq!((proto, build.as_str()), (PROTO + 1, "future"))
+            }
             _ => panic!("expected hello"),
         }
     }
@@ -731,14 +774,22 @@ mod tests {
             body.extend(std::iter::repeat_n(0u8, pixels));
             frame(tag::RECOGNIZE, &body)
         };
-        let is_malformed = |bytes: Vec<u8>| matches!(read_request(&mut bytes.as_slice()), Err(ProtoError::Malformed(_)));
+        let is_malformed = |bytes: Vec<u8>| {
+            matches!(
+                read_request(&mut bytes.as_slice()),
+                Err(ProtoError::Malformed(_))
+            )
+        };
 
         assert!(is_malformed(image_frame(2, 2, 11)));
         assert!(is_malformed(image_frame(2, 2, 13)));
         assert!(is_malformed(image_frame(0, 5, 0)));
         // `w * h * 3` can overflow and must not wrap around into an unexpectedly small buffer size.
         assert!(is_malformed(image_frame(u32::MAX, u32::MAX, 12)));
-        assert!(matches!(read_request(&mut frame(tag::RECOGNIZE, &[0; 3]).as_slice()), Err(ProtoError::Malformed(_))));
+        assert!(matches!(
+            read_request(&mut frame(tag::RECOGNIZE, &[0; 3]).as_slice()),
+            Err(ProtoError::Malformed(_))
+        ));
 
         let mut nan_origin = image_frame(1, 1, 3);
         nan_origin[13..17].copy_from_slice(&f32::NAN.to_le_bytes());
@@ -774,7 +825,12 @@ mod tests {
         let ok = [0.0, 0.0, 10.0, 5.0];
         assert!(line(b"ab", ok, &[0.0, 5.0, 10.0], None).is_ok());
         assert!(malformed(line(b"\xc3\x28", ok, &[0.0, 5.0, 10.0], None)));
-        assert!(malformed(line(b"ab", [0.0, 0.0, f32::INFINITY, 5.0], &[0.0], None)));
+        assert!(malformed(line(
+            b"ab",
+            [0.0, 0.0, f32::INFINITY, 5.0],
+            &[0.0],
+            None
+        )));
         assert!(malformed(line(b"ab", [10.0, 0.0, 0.0, 5.0], &[0.0], None)));
         assert!(malformed(line(b"ab", ok, &[0.0, f32::NAN, 10.0], None)));
         assert!(malformed(line(b"ab", ok, &[0.0], Some(u32::MAX))));
@@ -812,7 +868,9 @@ mod tests {
 
     #[test]
     fn too_many_lines_are_not_sent() {
-        let one = testing::labelled("a", &testing::image(2, 2)).lines.remove(0);
+        let one = testing::labelled("a", &testing::image(2, 2))
+            .lines
+            .remove(0);
         let text = OcrText {
             lines: vec![one; MAX_LINES + 1],
         };

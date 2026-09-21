@@ -12,10 +12,10 @@ pub use annotations::{
 pub use paths::{rect_bounds, rounded_rect_path};
 pub use text::measure_line_width;
 
+use crate::types::SelectionEdges;
 use crate::types::annotations::Annotation;
-use crate::types::{SelectionEdges};
-use crate::ui::magnifier::MagnifierState;
 use crate::ui::color_popover::ColorPickerPopover;
+use crate::ui::magnifier::MagnifierState;
 use crate::ui::settings_panel::SettingsPanel;
 use crate::ui::toolbar::Toolbar;
 use cosmic_text::{Editor, FontSystem, SwashCache};
@@ -211,9 +211,10 @@ pub fn render_frame(req: &mut RenderRequest) {
 
     // Dynamic selection chrome: handles for the currently selected annotation
     if let Some(idx) = req.selected_annotation
-        && let Some(ann) = req.annotations.get(idx) {
-            annotations::draw_annotation_handles_only(req.canvas, ann, req.offset);
-        }
+        && let Some(ann) = req.annotations.get(idx)
+    {
+        annotations::draw_annotation_handles_only(req.canvas, ann, req.offset);
+    }
 
     // Clipped to the dirty rect: everything the overlay paints is translucent,
     // so anything drawn outside the area just restored from `dimmed` would
@@ -315,7 +316,7 @@ pub fn render_frame(req: &mut RenderRequest) {
 // **************************/
 //
 // The dim layer is `base` layer but darkened everywhere except inside the selection
-// 
+//
 // The bright rectangle's corners are rounded to the *inner* edge of the
 // selection border, so the border doesn't have a hard-edged hole.
 // rounded corners are only visual, the screenshot result won't have such corners
@@ -332,11 +333,7 @@ fn dim_pixel() -> [u8; 4] {
     [px.red(), px.green(), px.blue(), px.alpha()]
 }
 
-pub fn init_dimming(
-    dimmed: &mut Pixmap,
-    selection: Option<&Rect>,
-    edges: Option<&SelectionEdges>,
-) {
+pub fn init_dimming(dimmed: &mut Pixmap, selection: Option<&Rect>, edges: Option<&SelectionEdges>) {
     let px = dim_pixel();
     for d in dimmed.data_mut().chunks_exact_mut(4) {
         d.copy_from_slice(&px);

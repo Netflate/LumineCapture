@@ -2,8 +2,8 @@
 //
 // The selection is represented as two points: start and end (line + character position).
 // Text between them includes full middle lines and partial outer lines.
-// 
-// Uses `best_line` for click/hover detection so mouse clicks and hover effects 
+//
+// Uses `best_line` for click/hover detection so mouse clicks and hover effects
 // always target the exact same line.
 
 use tiny_skia::Rect;
@@ -121,10 +121,10 @@ impl OcrView {
     // Finds which line a point belongs to and its distance from that line.
     //
     // When `by_row` is true, vertical distance is checked before horizontal distance.
-    // This matches how text selection works (dragging diagonally moves to the next line 
+    // This matches how text selection works (dragging diagonally moves to the next line
     // rather than sticking to the horizontally nearest line).
     //
-    // If `confine` is set, lines in other blocks are ignored while the pointer stays 
+    // If `confine` is set, lines in other blocks are ignored while the pointer stays
     // vertically level with the anchor block. Ties go to the line closer in reading order.
     fn best_line(&self, x: f32, y: f32, by_row: bool, confine: bool) -> Option<(usize, f32)> {
         let slack = crate::config::get().ocr.vertical_slack;
@@ -133,9 +133,7 @@ impl OcrView {
             && self
                 .anchor_block
                 .and_then(|bi| self.blocks.get(bi))
-                .is_some_and(|b| {
-                    y >= b.bounds.top() - slack && y <= b.bounds.bottom() + slack
-                });
+                .is_some_and(|b| y >= b.bounds.top() - slack && y <= b.bounds.bottom() + slack);
 
         let anchor_rank = self.sel.map(|(a, _)| self.rank[a.line]).unwrap_or(0);
         let mut best = None;
@@ -217,10 +215,10 @@ impl OcrView {
 
     /// Expands the selection to the nearest line position under the mouse.
     ///
-    /// While dragging horizontally inside the current block, only that block's lines 
+    /// While dragging horizontally inside the current block, only that block's lines
     /// can be selected (preventing accidental column grabs).
     ///
-    /// Once the mouse moves past the top or bottom of the block, selection flows 
+    /// Once the mouse moves past the top or bottom of the block, selection flows
     /// normally in reading order.
     pub fn extend_drag(&mut self, pointer: (f64, f64)) -> Option<Rect> {
         let (anchor, _) = self.sel?;
@@ -301,9 +299,9 @@ impl OcrView {
     fn sel_bounds(&self, sel: Option<(Caret, Caret)>) -> Option<Rect> {
         let (a, b) = self.ordered(sel)?;
         let (lo, hi) = (self.rank[a.line], self.rank[b.line]);
-        self.order[lo..=hi]
-            .iter()
-            .fold(None, |acc, &li| layout::union_rect(acc, self.lines[li].bounds))
+        self.order[lo..=hi].iter().fold(None, |acc, &li| {
+            layout::union_rect(acc, self.lines[li].bounds)
+        })
     }
 
     // ── reading the selection out ────────────────────────────────────────────

@@ -129,16 +129,22 @@ async fn capture_one(
         Ok(buf)
     });
 
-    // apparently without this option, scaling picture comes with reducing screenshots quality 
+    // apparently without this option, scaling picture comes with reducing screenshots quality
     let mut options = HashMap::from([("native-resolution", Value::from(true))]);
     let result = match target {
-        Target::Screen(name) => proxy.capture_screen(name, options, Fd::from(write_fd.as_fd())).await,
+        Target::Screen(name) => {
+            proxy
+                .capture_screen(name, options, Fd::from(write_fd.as_fd()))
+                .await
+        }
         Target::ActiveWindow => {
             // honestly copied from spectacle, with decorations and without shadow
             // you can disable it in spectacle launch options, but i find it kinda useless
             options.insert("include-decoration", Value::from(true));
             options.insert("include-shadow", Value::from(false));
-            proxy.capture_active_window(options, Fd::from(write_fd.as_fd())).await
+            proxy
+                .capture_active_window(options, Fd::from(write_fd.as_fd()))
+                .await
         }
     };
 
@@ -174,16 +180,19 @@ async fn capture_one(
     let needed = stride as usize * height as usize;
     if raw.len() < needed {
         let missing = needed - raw.len();
-        warn!(
-            "warning: short read for {label}: padding {missing} missing bytes with transparent"
-        );
+        warn!("warning: short read for {label}: padding {missing} missing bytes with transparent");
         raw.resize(needed, 0); // zero-pad remaining tail with black pixels
     }
 
     // if there is no padding, there is no point in allocations and copying
     if stride as usize == row_bytes {
         raw.truncate(row_bytes * height as usize);
-        return Ok(Shot { pixels: raw, width, height, scale });
+        return Ok(Shot {
+            pixels: raw,
+            width,
+            height,
+            scale,
+        });
     }
 
     // unless there is, we need to do heavy copy
@@ -194,7 +203,12 @@ async fn capture_one(
         dst.copy_from_slice(src);
     }
 
-    Ok(Shot { pixels: tight, width, height, scale })
+    Ok(Shot {
+        pixels: tight,
+        width,
+        height,
+        scale,
+    })
 }
 
 #[async_trait]
@@ -264,7 +278,10 @@ impl CaptureMethod for KdeMethod {
             .ok_or_else(|| format!("KWin sent an empty window: {}x{}", shot.width, shot.height))?;
         let pixmap = tiny_skia::Pixmap::from_vec(shot.pixels, size)
             .ok_or("KWin sent fewer pixels than the window size")?;
-        Ok(Capture { pixmap, scale: shot.scale.unwrap_or(1.0) as f32 })
+        Ok(Capture {
+            pixmap,
+            scale: shot.scale.unwrap_or(1.0) as f32,
+        })
     }
 }
 

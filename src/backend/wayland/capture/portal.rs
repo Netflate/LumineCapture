@@ -1,7 +1,7 @@
 pub struct PortalMethod;
 
-use log::warn;
 use crate::backend::wayland::capture::stream;
+use log::warn;
 use std::fs;
 use std::os::fd::AsFd;
 use std::path::PathBuf;
@@ -83,7 +83,7 @@ async fn start_session(
 // reconcile portal-reported monitor streams against the wayland output list.
 // the portal is a separate, independent source of truth from wayland, so unlike
 // present() in the overlay (which trusts its own outputs), here a subset is a
-// real, expected situation 
+// real, expected situation
 fn reconcile_streams(
     streams: Vec<StreamInfo>,
     outputs: &[Output],
@@ -108,7 +108,10 @@ fn reconcile_streams(
             warn!(
                 "Skipping portal stream at {:?}, it matches none of the captured outputs (positions: {:?})",
                 pos,
-                outputs.iter().map(|o| o.info.logical_position).collect::<Vec<_>>()
+                outputs
+                    .iter()
+                    .map(|o| o.info.logical_position)
+                    .collect::<Vec<_>>()
             );
             continue;
         };
@@ -118,7 +121,9 @@ fn reconcile_streams(
     }
 
     if matched.is_empty() {
-        return Err("none of the portal's monitor streams matches the monitors being captured".into());
+        return Err(
+            "none of the portal's monitor streams matches the monitors being captured".into(),
+        );
     }
     matched.sort_by_key(|(idx, _)| *idx);
     Ok(matched)

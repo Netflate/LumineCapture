@@ -1,7 +1,7 @@
 // Color picker tool: inspects raw pixels directly from base (original) screenshot layer
 //
-// Displays live color values in the magnifier (`ui::magnifier`) while locking the last 
-// selected color in the options panel. This prevents the value from drifting as the mouse 
+// Displays live color values in the magnifier (`ui::magnifier`) while locking the last
+// selected color in the options panel. This prevents the value from drifting as the mouse
 // moves toward the UI. Clicking the panel copies the value.
 //
 // Used in two ways via `pick`:
@@ -69,7 +69,9 @@ pub fn toggle_pick_once(state: &mut EditorState, dirty_mask: &mut u32) {
         return;
     }
     state.pick_once = true;
-    state.toasts.show(ToastKind::PickColor, &mut state.text.font_system);
+    state
+        .toasts
+        .show(ToastKind::PickColor, &mut state.text.font_system);
     damage_loupe(state, dirty_mask);
 }
 
@@ -88,12 +90,17 @@ pub fn copy_value(state: &mut EditorState, field: ValueField, color: Color) {
         Ok(()) => format!("Copied {text}"),
         Err(e) => format!("Couldn't copy: {e}"),
     };
-    state.toasts.show_text(ToastKind::ColorCopied, message, &mut state.text.font_system);
+    state
+        .toasts
+        .show_text(ToastKind::ColorCopied, message, &mut state.text.font_system);
 }
 
 fn color_under_pointer(state: &EditorState) -> Option<Color> {
     let capture = state.captures.get(state.input.pointer.monitor_idx)?;
-    sample_pixel(&capture.pixmap, capture.to_native(state.input.pointer.local))
+    sample_pixel(
+        &capture.pixmap,
+        capture.to_native(state.input.pointer.local),
+    )
 }
 
 fn damage_loupe(state: &mut EditorState, dirty_mask: &mut u32) {
@@ -102,8 +109,13 @@ fn damage_loupe(state: &mut EditorState, dirty_mask: &mut u32) {
         return;
     };
     let (mw, mh) = (placement.size.0 as f32, placement.size.1 as f32);
-    let cursor = (state.input.pointer.local.0 as f32, state.input.pointer.local.1 as f32);
+    let cursor = (
+        state.input.pointer.local.0 as f32,
+        state.input.pointer.local.1 as f32,
+    );
     let rect = magnifier_rect(cursor, mw, mh, true);
-    state.damage_rects.push(DamageZone::Local { monitor_idx, rect });
+    state
+        .damage_rects
+        .push(DamageZone::Local { monitor_idx, rect });
     crate::editor::dirty::mark_dirty(dirty_mask, monitor_idx);
 }

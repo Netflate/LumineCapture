@@ -131,7 +131,11 @@ pub fn hit_test_rect_handle(sel: &Rect, pos: (f64, f64)) -> SelectionHandle {
     let h = sel.height() as f64;
 
     let input = &crate::config::get().input;
-    let (ratio, min, max) = (input.corner_ratio as f64, input.corner_min as f64, input.corner_max as f64);
+    let (ratio, min, max) = (
+        input.corner_ratio as f64,
+        input.corner_min as f64,
+        input.corner_max as f64,
+    );
     let corner_w = (w * ratio).clamp(min, max).min(w * 0.5);
     let corner_h = (h * ratio).clamp(min, max).min(h * 0.5);
 
@@ -302,7 +306,6 @@ pub fn copy_swizzled(dst: &mut [u8], src: &[u8]) {
     }
 }
 
-
 /// Spawns a new instance of this binary and passes image bytes via stdin.
 /// Runs in its own process group so Ctrl+C in the terminal won't kill pins or the clipboard handler.
 pub fn spawn_self(args: &[&str], stdin: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
@@ -318,8 +321,8 @@ pub fn spawn_self_ready(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use std::io::BufRead;
 
-    let stdout = spawn_self_with(args, stdin, std::process::Stdio::piped())?
-        .ok_or("child has no stdout")?;
+    let stdout =
+        spawn_self_with(args, stdin, std::process::Stdio::piped())?.ok_or("child has no stdout")?;
 
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
@@ -353,7 +356,11 @@ fn spawn_self_with(
         .process_group(0)
         .spawn()?;
 
-    child.stdin.take().ok_or("child has no stdin")?.write_all(stdin)?;
+    child
+        .stdin
+        .take()
+        .ok_or("child has no stdin")?
+        .write_all(stdin)?;
     let stdout = child.stdout.take();
 
     std::thread::spawn(move || {
@@ -372,7 +379,8 @@ pub fn paste_from_clipboard() -> Option<String> {
     use std::io::Read;
     use wl_clipboard_rs::paste::{ClipboardType, MimeType, Seat, get_contents};
 
-    let (mut pipe, _) = get_contents(ClipboardType::Regular, Seat::Unspecified, MimeType::Text).ok()?;
+    let (mut pipe, _) =
+        get_contents(ClipboardType::Regular, Seat::Unspecified, MimeType::Text).ok()?;
     let mut text = String::new();
     pipe.read_to_string(&mut text).ok()?;
     Some(text)

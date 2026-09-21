@@ -1,12 +1,14 @@
 use cosmic_text::{FontSystem, Style, SwashCache, Weight};
 
+use crate::config::Magnifier;
 use crate::renderer::paths::rounded_rect_path;
 use crate::renderer::text::{HAlign, draw_aligned_text};
-use crate::config::Magnifier;
 use crate::theme::{font, radius};
 use crate::types::Capture;
 use crate::ui::magnifier::{cells, offset, sample_pixel, size, zoom};
-use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform};
+use tiny_skia::{
+    Color, FillRule, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform,
+};
 
 fn cfg() -> &'static Magnifier {
     &crate::config::get().magnifier
@@ -64,8 +66,11 @@ pub fn draw_magnifier(
         None,
     );
 
-    let (mag_x, mag_y) =
-        magnifier_position(cursor, (0.0, 0.0, screen_w, screen_h), box_height(label.is_some()));
+    let (mag_x, mag_y) = magnifier_position(
+        cursor,
+        (0.0, 0.0, screen_w, screen_h),
+        box_height(label.is_some()),
+    );
     let radius = size() as f32 / 2.0;
     let cx = mag_x + radius;
     let cy = mag_y + radius;
@@ -139,7 +144,12 @@ fn draw_color_label(
     let Some(plate) = Rect::from_xywh(x, y, width, cfg.label_height) else {
         return;
     };
-    fill(canvas, plate, radius::panel(), cfg.label_background.get().color());
+    fill(
+        canvas,
+        plate,
+        radius::panel(),
+        cfg.label_background.get().color(),
+    );
     stroke_outline(canvas, plate, radius::panel());
 
     let text = crate::ui::settings_panel::ValueField::Hex.text(color);
@@ -148,7 +158,12 @@ fn draw_color_label(
     let group = swatch_size + swatch_gap + text_width;
     let swatch_x = x + ((width - group) / 2.0).max(swatch_gap);
 
-    if let Some(swatch) = Rect::from_xywh(swatch_x, y + (cfg.label_height - swatch_size) / 2.0, swatch_size, swatch_size) {
+    if let Some(swatch) = Rect::from_xywh(
+        swatch_x,
+        y + (cfg.label_height - swatch_size) / 2.0,
+        swatch_size,
+        swatch_size,
+    ) {
         fill(canvas, swatch, cfg.swatch_radius, color);
         stroke_outline(canvas, swatch, cfg.swatch_radius);
     }
@@ -207,7 +222,13 @@ fn fill(canvas: &mut Pixmap, rect: Rect, radius: f32, color: Color) {
     let mut paint = Paint::default();
     paint.set_color(color);
     paint.anti_alias = true;
-    canvas.fill_path(&path, &paint, FillRule::Winding, Transform::identity(), None);
+    canvas.fill_path(
+        &path,
+        &paint,
+        FillRule::Winding,
+        Transform::identity(),
+        None,
+    );
 }
 
 fn magnifier_position(

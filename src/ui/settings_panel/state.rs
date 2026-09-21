@@ -1,11 +1,11 @@
 use crate::editor::EditorState;
-use crate::tools::Tool;
-use crate::ui::text_field::CursorInit;
-use crate::types::SpecialKey;
-use crate::types::annotations::{Annotation, AnnotationShape};
 use crate::interaction::ScrollAccumulator;
 use crate::theme::size;
+use crate::tools::Tool;
+use crate::types::SpecialKey;
+use crate::types::annotations::{Annotation, AnnotationShape};
 use crate::ui::panel::{HoverablePanel, PanelItem, UiPanel};
+use crate::ui::text_field::CursorInit;
 use crate::ui::text_field::{TextFieldGroup, is_stepper_char};
 use tiny_skia::{Pixmap, Rect};
 
@@ -155,11 +155,15 @@ pub fn widgets_for_tool(tool: Tool) -> &'static [SettingsWidget] {
             },
             SettingsWidget::Separator,
             SettingsWidget::Toggle {
-                visual: ToggleVisual::Icon { svg: crate::ui::icons::BOLD },
+                visual: ToggleVisual::Icon {
+                    svg: crate::ui::icons::BOLD,
+                },
                 field: ToggleField::Bold,
             },
             SettingsWidget::Toggle {
-                visual: ToggleVisual::Icon { svg: crate::ui::icons::ITALIC },
+                visual: ToggleVisual::Icon {
+                    svg: crate::ui::icons::ITALIC,
+                },
                 field: ToggleField::Italic,
             },
         ],
@@ -184,8 +188,12 @@ pub fn widgets_for_tool(tool: Tool) -> &'static [SettingsWidget] {
 }
 
 pub const EYEDROPPER_WIDGETS: &[SettingsWidget] = &[
-    SettingsWidget::Value { field: ValueField::Hex },
-    SettingsWidget::Value { field: ValueField::Rgb },
+    SettingsWidget::Value {
+        field: ValueField::Hex,
+    },
+    SettingsWidget::Value {
+        field: ValueField::Rgb,
+    },
     SettingsWidget::Separator,
     SettingsWidget::Label("Click anywhere to pick a color"),
 ];
@@ -269,9 +277,7 @@ impl PanelItem for SettingsWidget {
             SettingsWidget::Toggle { visual, .. } => match visual {
                 ToggleVisual::Icon { .. } => cfg.icon_button_size,
                 ToggleVisual::Checkbox { label } => {
-                    cfg.checkbox_size
-                        + cfg.checkbox_gap
-                        + label.len() as f32 * cfg.char_width
+                    cfg.checkbox_size + cfg.checkbox_gap + label.len() as f32 * cfg.char_width
                 }
             },
             SettingsWidget::Label(text) => {
@@ -326,7 +332,7 @@ pub struct SettingsPanel {
     /// Scroll accumulator for scrollable fields (hex/rgba)
     /// Keeps scroll fractional state separate from raw events to avoid
     /// processing every single scroll event, trackpad or mouse wheel held
-    /// will flood thousands of events that would freeze 
+    /// will flood thousands of events that would freeze
     pub scroll: ScrollAccumulator<usize>,
 }
 
@@ -377,7 +383,11 @@ impl SettingsPanel {
             let w = widget.size();
             let right = current_x + w;
             if px >= current_x && px <= right {
-                return if widget.is_button() { (true, Some(idx)) } else { (true, None) };
+                return if widget.is_button() {
+                    (true, Some(idx))
+                } else {
+                    (true, None)
+                };
             }
             current_x += w + widget.trailing_padding();
         }

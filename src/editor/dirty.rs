@@ -1,7 +1,7 @@
 use crate::editor::{DamageZone, EditorState};
 use crate::tools::selection::global_selection_to_local;
-use crate::types::annotations::Annotation;
 use crate::types::Placement;
+use crate::types::annotations::Annotation;
 use crate::ui::magnifier::MagnifierState;
 use crate::utils::get_overlapping_monitors;
 
@@ -134,14 +134,15 @@ impl EditorState {
             }
         }
         if let Some(ann_idx) = self.selected_annotation
-            && let Some(ann) = self.annotations.get(ann_idx) {
-                let pad = crate::renderer::selection_chrome_pad()
-                    .max(crate::renderer::visual_pad(ann.stroke_width));
-                dirty = union_rect(
-                    dirty,
-                    global_to_local_padded(&ann.bbox, offset, pad, mw, mh),
-                );
-            }
+            && let Some(ann) = self.annotations.get(ann_idx)
+        {
+            let pad = crate::renderer::selection_chrome_pad()
+                .max(crate::renderer::visual_pad(ann.stroke_width));
+            dirty = union_rect(
+                dirty,
+                global_to_local_padded(&ann.bbox, offset, pad, mw, mh),
+            );
+        }
 
         for zone in &self.damage_rects {
             match zone {
@@ -184,10 +185,12 @@ impl EditorState {
             let ix2 = r.min(mw);
             let iy2 = b.min(mh);
 
-            if ix2 > ix1 && iy2 > iy1
-                && let Some(local_r) = Rect::from_ltrb(ix1, iy1, ix2, iy2) {
-                    dirty = union_rect(dirty, Some(local_r));
-                }
+            if ix2 > ix1
+                && iy2 > iy1
+                && let Some(local_r) = Rect::from_ltrb(ix1, iy1, ix2, iy2)
+            {
+                dirty = union_rect(dirty, Some(local_r));
+            }
         }
 
         dirty

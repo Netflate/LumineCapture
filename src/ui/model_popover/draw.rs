@@ -92,7 +92,10 @@ fn draw_content(
 
     let title_x = cfg.padding + cfg.row_padding;
     let title_w = cfg.width - title_x * 2.0;
-    let no_model = popover.rows.iter().all(|row| row.status != ModelStatus::Installed);
+    let no_model = popover
+        .rows
+        .iter()
+        .all(|row| row.status != ModelStatus::Installed);
     let parts: &[(&str, Rgba, f32)] = if no_model {
         &[(TITLE_NO_MODEL, color::active(), font::label())]
     } else {
@@ -103,7 +106,12 @@ fn draw_content(
     };
     let mut x = title_x;
     for &(text, text_color, size) in parts {
-        if let Some(rect) = Rect::from_xywh(x, cfg.padding, (title_x + title_w - x).max(1.0), cfg.title_height) {
+        if let Some(rect) = Rect::from_xywh(
+            x,
+            cfg.padding,
+            (title_x + title_w - x).max(1.0),
+            cfg.title_height,
+        ) {
             draw_aligned_text(
                 canvas,
                 text,
@@ -144,9 +152,11 @@ fn draw_row(
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
 ) {
-    let (Some(rect), Some(button), Some(model)) =
-        (row_geom((0.0, 0.0), idx), button_geom((0.0, 0.0), idx), MODELS.get(idx))
-    else {
+    let (Some(rect), Some(button), Some(model)) = (
+        row_geom((0.0, 0.0), idx),
+        button_geom((0.0, 0.0), idx),
+        MODELS.get(idx),
+    ) else {
         return;
     };
     let cfg = cfg();
@@ -176,7 +186,9 @@ fn draw_row(
     } else {
         color::foreground()
     };
-    if let Some(name_rect) = Rect::from_xywh(left, rect.top() + cfg.name_top, text_w, cfg.name_height) {
+    if let Some(name_rect) =
+        Rect::from_xywh(left, rect.top() + cfg.name_top, text_w, cfg.name_height)
+    {
         draw_aligned_text(
             canvas,
             model.name,
@@ -230,9 +242,12 @@ fn draw_row(
         ModelStatus::Failed => "Failed".to_string(),
         ModelStatus::Installed => String::new(),
     };
-    if let Some(status_rect) =
-        Rect::from_xywh(button.left() - cfg.status_width, rect.top(), cfg.status_width, cfg.row_height)
-    {
+    if let Some(status_rect) = Rect::from_xywh(
+        button.left() - cfg.status_width,
+        rect.top(),
+        cfg.status_width,
+        cfg.row_height,
+    ) {
         draw_aligned_text(
             canvas,
             &status_text,
@@ -296,7 +311,13 @@ fn fill(canvas: &mut Pixmap, rect: Rect, radius: f32, color: Color) {
     let mut paint = Paint::default();
     paint.set_color(color);
     paint.anti_alias = true;
-    canvas.fill_path(&path, &paint, FillRule::Winding, Transform::identity(), None);
+    canvas.fill_path(
+        &path,
+        &paint,
+        FillRule::Winding,
+        Transform::identity(),
+        None,
+    );
 }
 
 fn size_label(bytes: u64) -> String {

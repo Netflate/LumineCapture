@@ -2,12 +2,12 @@ use cosmic_text::{FontSystem, SwashCache};
 use tiny_skia::{Paint, Pixmap, Rect, Transform};
 
 use crate::renderer::paths::{draw_panel_border, rounded_rect_path};
-use crate::theme::{font, radius};
 use crate::renderer::text::{HAlign, draw_aligned_text};
+use crate::theme::{font, radius};
 use crate::ui::toast::Toasts;
 /// clip is area of the screen cleared for current frame
-/// draw somewhat transparent toast only if it intersects with clip, otherwise 
-/// the background will be drawn oveer the old frame a second time and darken it 
+/// draw somewhat transparent toast only if it intersects with clip, otherwise
+/// the background will be drawn oveer the old frame a second time and darken it
 pub fn draw_toasts(
     canvas: &mut Pixmap,
     toasts: &Toasts,

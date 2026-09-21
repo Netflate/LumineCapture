@@ -21,7 +21,7 @@ pub struct Notification {
 
 pub enum Notice {
     Saved(PathBuf),
-    /// Contains `Some(PathBuf)` 
+    /// Contains `Some(PathBuf)`
     /// if the copied image was also auto-saved to disk.
     Copied(Option<PathBuf>),
     SaveFailed(String),
@@ -33,7 +33,12 @@ pub enum Notice {
 impl Notice {
     pub fn spec(self) -> Notification {
         let (summary, body, error, file) = match self {
-            Notice::Saved(path) => ("Screenshot saved", path.display().to_string(), false, Some(path)),
+            Notice::Saved(path) => (
+                "Screenshot saved",
+                path.display().to_string(),
+                false,
+                Some(path),
+            ),
             Notice::Copied(Some(path)) => (
                 "Screenshot copied",
                 format!("Also saved to {}", path.display()),
@@ -46,7 +51,12 @@ impl Notice {
             Notice::PinFailed(e) => ("Couldn't pin the screenshot", e, true, None),
             Notice::Failed(e) => ("Screenshot failed", e, true, None),
         };
-        Notification { summary, body, error, file }
+        Notification {
+            summary,
+            body,
+            error,
+            file,
+        }
     }
 }
 
@@ -75,14 +85,17 @@ pub async fn send(notice: Notice) {
     let _ = StderrNotifier.notify(&n).await;
 }
 
-/// Dispatches notifications synchronously for non Tokio worker processes 
+/// Dispatches notifications synchronously for non Tokio worker processes
 /// Panics if invoked inside an active Tokio context. Avoids `zbus::block_on` to prevent
 /// spawning per-core threads.
 pub fn send_blocking(notice: Notice) {
     if !crate::config::get().notifications.enabled {
         return;
     }
-    match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+    match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
         Ok(rt) => rt.block_on(send(notice)),
         Err(_) => {
             let n = notice.spec();

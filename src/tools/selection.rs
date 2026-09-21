@@ -67,7 +67,10 @@ impl ToolBehavior for SelectionTool {
                 .map(|sel| hit_test_rect_handle(sel, state.input.pointer.global))
                 .unwrap_or(SelectionHandle::None);
 
-            let pos = (state.input.pointer.global.0 as f32, state.input.pointer.global.1 as f32);
+            let pos = (
+                state.input.pointer.global.0 as f32,
+                state.input.pointer.global.1 as f32,
+            );
             // double click on selection is equal to saving the screenshot
             if handle == SelectionHandle::Move
                 && state.input.clicks.register(ClickTarget::Selection, pos)
@@ -93,7 +96,6 @@ impl ToolBehavior for SelectionTool {
         } else {
             state.tool_active = false;
 
-            // в --region снимаем сразу, как только отпустили только что протянутую область
             let fresh = state.input.drag_start.is_some();
             state.input.drag_start = None;
             state.selection.set_drag(SelectionHandle::None, None, None);
@@ -142,7 +144,10 @@ impl ToolBehavior for SelectionTool {
                 .unwrap_or(CursorIcon::Crosshair);
         }
         if let Some(sel) = state.selection.zone
-            && let Some(icon) = cursor_for_handle(hit_test_rect_handle(&sel, state.input.pointer.global), false)
+            && let Some(icon) = cursor_for_handle(
+                hit_test_rect_handle(&sel, state.input.pointer.global),
+                false,
+            )
         {
             return icon;
         }

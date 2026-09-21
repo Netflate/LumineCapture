@@ -1,7 +1,8 @@
-use log::warn;
 use crate::editor::dirty::damage_annotation;
 use crate::editor::{DamageZone, EditorState};
+use crate::interaction::ClickTarget;
 use crate::renderer::shadow_color_for;
+use crate::theme::color;
 use crate::tools::ToolBehavior;
 use crate::types::annotations::{
     apply_annotation_drag, begin_drag_for_annotation, commit_drag_if_changed,
@@ -10,12 +11,11 @@ use crate::types::annotations::{
 use crate::types::{
     Annotation, AnnotationShape, CursorIcon, MouseButton, SpecialKey, TextEditState,
 };
-use crate::interaction::ClickTarget;
-use crate::theme::color;
 use crate::utils::cursor_for_handle;
 use cosmic_text::{
     Action, Attrs, Buffer, Edit, Editor, Family, Metrics, Motion, Selection, Shaping, SwashCache,
 };
+use log::warn;
 use tiny_skia::{PixmapMut, Rect};
 
 pub struct TextTool;
@@ -189,7 +189,10 @@ impl ToolBehavior for TextTool {
             return;
         }
 
-        let pos = (state.input.pointer.global.0 as f32, state.input.pointer.global.1 as f32);
+        let pos = (
+            state.input.pointer.global.0 as f32,
+            state.input.pointer.global.1 as f32,
+        );
 
         // 1. possibility to select other text fields (replacing tools/pick.rs)
         for (i, ann) in state.annotations.iter().enumerate().rev() {
@@ -221,16 +224,17 @@ impl ToolBehavior for TextTool {
 
             if let Some(old_idx) = state.selected_annotation
                 && old_idx != i
-                    && let Some(old_ann) = state.annotations.get(old_idx) {
-                        damage_annotation(
-                            &mut state.damage_rects,
-                            &mut state.layer_damage_rects,
-                            old_ann,
-                        );
-                        if let Some(old_editor) = state.text.editors.get_mut(&old_ann.id) {
-                            old_editor.set_selection(Selection::None);
-                        }
-                    }
+                && let Some(old_ann) = state.annotations.get(old_idx)
+            {
+                damage_annotation(
+                    &mut state.damage_rects,
+                    &mut state.layer_damage_rects,
+                    old_ann,
+                );
+                if let Some(old_editor) = state.text.editors.get_mut(&old_ann.id) {
+                    old_editor.set_selection(Selection::None);
+                }
+            }
 
             state
                 .damage_rects
@@ -243,9 +247,13 @@ impl ToolBehavior for TextTool {
             let local_x = (state.input.pointer.global.0 as f32 - start.0).round() as i32;
             let local_y = (state.input.pointer.global.1 as f32 - start.1).round() as i32;
 
-            let click_pos = (state.input.pointer.global.0 as f32, state.input.pointer.global.1 as f32);
+            let click_pos = (
+                state.input.pointer.global.0 as f32,
+                state.input.pointer.global.1 as f32,
+            );
             let is_double = state
-                .input.clicks
+                .input
+                .clicks
                 .register(ClickTarget::TextAnnotation(ann_id), click_pos);
 
             if let Some(editor) = state.text.editors.get_mut(&ann_id) {
@@ -291,15 +299,16 @@ impl ToolBehavior for TextTool {
                 }
             }
             if let Some(old_idx) = state.selected_annotation.take()
-                && let Some(old_ann) = state.annotations.get(old_idx) {
-                    state.layer_damage_rects.push(old_ann.damage_bbox(false));
-                    state
-                        .damage_rects
-                        .push(DamageZone::Global(old_ann.damage_bbox(true)));
-                    if let Some(editor) = state.text.editors.get_mut(&old_ann.id) {
-                        editor.set_selection(Selection::None);
-                    }
+                && let Some(old_ann) = state.annotations.get(old_idx)
+            {
+                state.layer_damage_rects.push(old_ann.damage_bbox(false));
+                state
+                    .damage_rects
+                    .push(DamageZone::Global(old_ann.damage_bbox(true)));
+                if let Some(editor) = state.text.editors.get_mut(&old_ann.id) {
+                    editor.set_selection(Selection::None);
                 }
+            }
             state.selected_annotation = None;
             state.annotations_dirty = true;
             return;
@@ -368,9 +377,7 @@ impl ToolBehavior for TextTool {
             .push(DamageZone::Global(ann.damage_bbox(true)));
         state.annotations.push(ann);
 
-        state.text.editing = Some(TextEditState {
-            annotation_id: id,
-        });
+        state.text.editing = Some(TextEditState { annotation_id: id });
         state.selected_annotation = Some(state.annotations.len() - 1);
         state.annotations_dirty = true;
     }
@@ -398,7 +405,12 @@ impl ToolBehavior for TextTool {
 
         if let Some(editor) = state.text.editors.get_mut(&id) {
             editor.action(&mut state.text.font_system, Action::Insert(ch));
-            sync_content_from_editor(id, editor, &mut state.annotations, &mut state.text.font_system);
+            sync_content_from_editor(
+                id,
+                editor,
+                &mut state.annotations,
+                &mut state.text.font_system,
+            );
         }
 
         if let Some(ann) = state.annotations.iter().find(|a| a.id == id) {
@@ -466,15 +478,16 @@ impl ToolBehavior for TextTool {
             }
         }
         if let Some(old_idx) = state.selected_annotation.take()
-            && let Some(old_ann) = state.annotations.get(old_idx) {
-                state.layer_damage_rects.push(old_ann.damage_bbox(false));
-                state
-                    .damage_rects
-                    .push(DamageZone::Global(old_ann.damage_bbox(true)));
-                if let Some(editor) = state.text.editors.get_mut(&old_ann.id) {
-                    editor.set_selection(Selection::None);
-                }
+            && let Some(old_ann) = state.annotations.get(old_idx)
+        {
+            state.layer_damage_rects.push(old_ann.damage_bbox(false));
+            state
+                .damage_rects
+                .push(DamageZone::Global(old_ann.damage_bbox(true)));
+            if let Some(editor) = state.text.editors.get_mut(&old_ann.id) {
+                editor.set_selection(Selection::None);
             }
+        }
         state.text.editing = None;
         state.selected_annotation = None;
         state.annotations_dirty = true;
@@ -488,8 +501,10 @@ impl ToolBehavior for TextTool {
             .selected_annotation
             .and_then(|idx| state.annotations.get(idx))
             && matches!(ann.shape, AnnotationShape::Text { .. })
-            && let Some(icon) =
-                cursor_for_handle(handle_hit_test_for_annotation(ann, state.input.pointer.global), false)
+            && let Some(icon) = cursor_for_handle(
+                handle_hit_test_for_annotation(ann, state.input.pointer.global),
+                false,
+            )
         {
             return icon;
         }
@@ -564,7 +579,10 @@ fn sync_content_from_editor(
             }
             total_h = run.line_y + lh;
         }
-        (max_w.max(min_width()), if total_h > 0.0 { total_h } else { lh })
+        (
+            max_w.max(min_width()),
+            if total_h > 0.0 { total_h } else { lh },
+        )
     });
 
     ann.bbox = Rect::from_xywh(x, y, w, h)
@@ -726,7 +744,10 @@ pub fn update_text_bbox_inline(
             }
             total_h = run.line_y + lh;
         }
-        (max_w.max(min_width()), if total_h > 0.0 { total_h } else { lh })
+        (
+            max_w.max(min_width()),
+            if total_h > 0.0 { total_h } else { lh },
+        )
     });
 
     ann.bbox = Rect::from_xywh(x, y, w, h)
@@ -754,7 +775,12 @@ pub fn render_text_annotation(
     let text_color = tiny_skia_to_cosmic(ann.color);
     let cursor_color = color::caret().cosmic();
     let sel_color = color::text_selection().cosmic();
-    let sel_text_color = crate::config::get().annotations.text.selected_text.get().cosmic();
+    let sel_text_color = crate::config::get()
+        .annotations
+        .text
+        .selected_text
+        .get()
+        .cosmic();
     let transparent = cosmic_text::Color::rgba(0, 0, 0, 0);
 
     let (cur_col, sel_col) = if is_editing {

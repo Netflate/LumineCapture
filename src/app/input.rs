@@ -7,21 +7,21 @@
 
 use crate::editor::dirty::{apply_damage_rects, mark_all_dirty, mark_dirty};
 use crate::editor::{DamageZone, EditorState};
-use crate::ui::settings_panel::char_index_for_x;
+use crate::interaction::ClickTarget;
+use crate::keys::{self, Chord, Key};
+use crate::theme::{anim, font};
 use crate::tools::{
     Tool, dispatch_activate, dispatch_button, dispatch_cursor, dispatch_deactivate, dispatch_key,
     dispatch_move, dispatch_text,
 };
-use crate::interaction::ClickTarget;
-use crate::ui::color_popover::ColorField;
-use crate::ui::panel::UiPanel;
-use crate::theme::{anim, font};
-use crate::ui::text_field::CursorInit;
-use crate::keys::{self, Chord, Key};
-use crate::ui::toolbar::{ToolbarButton, ToolbarItem};
 use crate::types::{CursorIcon, MouseButton, PointerState, SpecialKey};
+use crate::ui::color_popover::ColorField;
 use crate::ui::magnifier::MagnifierState;
+use crate::ui::panel::UiPanel;
+use crate::ui::settings_panel::char_index_for_x;
 use crate::ui::settings_panel::{ArrowHoldState, SettingsWidget, StepperArrow};
+use crate::ui::text_field::CursorInit;
+use crate::ui::toolbar::{ToolbarButton, ToolbarItem};
 use crate::utils::{get_full_workspace_rect, global_point_to_local};
 
 use std::time::Instant;
@@ -32,12 +32,12 @@ use super::panels::color::{
     handle_color_popover_drag, handle_color_popover_release, step_color_field,
     update_color_popover,
 };
+use super::panels::model::{close_model_popover, handle_model_popover_click, update_model_popover};
 use super::panels::settings::{
     apply_stepper_arrow_step, apply_toggle_field, commit_stepper_text_edit,
     handle_settings_key_press, handle_settings_text_input, handle_stepper_scroll,
     run_settings_action, sync_stepper_edit_text, update_settings_panel,
 };
-use super::panels::model::{close_model_popover, handle_model_popover_click, update_model_popover};
 use super::panels::toolbar::update_toolbar;
 
 pub fn handle_pointer_move(
@@ -136,7 +136,11 @@ pub fn compute_cursor(editor_state: &EditorState) -> CursorIcon {
             CursorIcon::Pointer
         }
         UiHit::ModelPopoverInside => {
-            if editor_state.model_popover.element_at(editor_state.input.pointer.local).is_some() {
+            if editor_state
+                .model_popover
+                .element_at(editor_state.input.pointer.local)
+                .is_some()
+            {
                 CursorIcon::Pointer
             } else {
                 CursorIcon::Default
@@ -210,7 +214,7 @@ pub fn handle_pointer_button(
             UiHit::ModelPopoverOutside => unreachable!("popover is closed at this point"),
 
             UiHit::ToolbarBackground => {
-                return; 
+                return;
             }
 
             UiHit::ToolbarItem(tb_button) => {
@@ -229,11 +233,11 @@ pub fn handle_pointer_button(
                         }
                     }
                 }
-                return; 
+                return;
             }
 
             UiHit::SettingsBackground => {
-                return; 
+                return;
             }
 
             UiHit::SettingsItem(widget_idx) => {
@@ -276,7 +280,8 @@ pub fn handle_pointer_button(
                                 editor_state.input.pointer.local.1 as f32,
                             );
                             let is_double_click = editor_state
-                                .input.clicks
+                                .input
+                                .clicks
                                 .register(ClickTarget::SettingsWidget(widget_idx), click_pos);
 
                             let current_value = editor_state
@@ -390,9 +395,11 @@ pub fn handle_pointer_button(
 }
 
 pub fn select_tool(editor_state: &mut EditorState, tool: Tool, dirty_mask: &mut u32) {
-    let Some(tb_button) = editor_state.toolbar.items.iter().position(|item| {
-        matches!(item, ToolbarItem::Button(ToolbarButton::Tool(t)) if *t == tool)
-    }) else {
+    let Some(tb_button) =
+        editor_state.toolbar.items.iter().position(
+            |item| matches!(item, ToolbarItem::Button(ToolbarButton::Tool(t)) if *t == tool),
+        )
+    else {
         return;
     };
     editor_state.settings_panel.selected = None;
@@ -402,27 +409,18 @@ pub fn select_tool(editor_state: &mut EditorState, tool: Tool, dirty_mask: &mut 
     // so it doesn't want a forced full-workspace one
 
     // TODO:  better handling  of  cross  monitor ocr
-    // i think there must be a visual indicator, that 
+    // i think there must be a visual indicator, that
     // ocr worked in ONE monitor, but  not  the other
-    if editor_state.selection.zone.is_none()
-        && tool != Tool::Selection
-        && tool != Tool::Ocr
-    {
-        editor_state.selection.zone =
-            get_full_workspace_rect(&editor_state.placements);
+    if editor_state.selection.zone.is_none() && tool != Tool::Selection && tool != Tool::Ocr {
+        editor_state.selection.zone = get_full_workspace_rect(&editor_state.placements);
         mark_all_dirty(dirty_mask, editor_state.placements.len());
     } else if tool == Tool::Selection
-        && editor_state.selection.zone
-            == get_full_workspace_rect(&editor_state.placements)
+        && editor_state.selection.zone == get_full_workspace_rect(&editor_state.placements)
     {
         editor_state.selection.zone = None;
         mark_all_dirty(dirty_mask, editor_state.placements.len());
     }
-    dispatch_deactivate(
-        editor_state.selected_tool,
-        editor_state,
-        dirty_mask,
-    );
+    dispatch_deactivate(editor_state.selected_tool, editor_state, dirty_mask);
     editor_state.selected_tool = tool;
     editor_state.toolbar.selected = Some(tb_button);
     editor_state.toolbar.dirty = true;
@@ -526,12 +524,16 @@ fn special_key(chord: Chord) -> Option<SpecialKey> {
 
 fn hovers_stepper(editor_state: &EditorState) -> bool {
     let local = editor_state.input.pointer.local;
-    if editor_state.color_popover.open && hit_test_color_scroll_field(editor_state, local).is_some() {
+    if editor_state.color_popover.open && hit_test_color_scroll_field(editor_state, local).is_some()
+    {
         return true;
     }
     editor_state.settings_panel.visible
         && matches!(
-            editor_state.settings_panel.hit_test(local).1
+            editor_state
+                .settings_panel
+                .hit_test(local)
+                .1
                 .and_then(|idx| editor_state.settings_panel.widgets.get(idx)),
             Some(SettingsWidget::Stepper { .. })
         )
@@ -546,10 +548,9 @@ pub fn handle_key(
     let special = chord.and_then(special_key);
     // when typing ignore other actions
     let claimed = ((special.is_some() || text.is_some()) && typing(editor_state))
-        || (matches!(special, Some(SpecialKey::Up | SpecialKey::Down)) && hovers_stepper(editor_state));
-    if !claimed
-        && let Some(action) = chord.and_then(|c| keys::map().lookup(c))
-    {
+        || (matches!(special, Some(SpecialKey::Up | SpecialKey::Down))
+            && hovers_stepper(editor_state));
+    if !claimed && let Some(action) = chord.and_then(|c| keys::map().lookup(c)) {
         super::actions::run(editor_state, action, dirty_mask);
         return;
     }
@@ -656,26 +657,27 @@ pub fn handle_scroll(
     let delta_y = delta_y * crate::config::get().input.scroll_sensitivity;
 
     if editor_state.color_popover.open
-        && let Some(field) = hit_test_color_scroll_field(editor_state, local) {
-            handle_color_field_scroll(editor_state, field, delta_y, dirty_mask);
-            apply_damage_rects(editor_state, dirty_mask);
-            return;
-        }
+        && let Some(field) = hit_test_color_scroll_field(editor_state, local)
+    {
+        handle_color_field_scroll(editor_state, field, delta_y, dirty_mask);
+        apply_damage_rects(editor_state, dirty_mask);
+        return;
+    }
 
     if editor_state.settings_panel.visible
         && let (_, Some(widget_idx)) = editor_state.settings_panel.hit_test(local)
-            && matches!(
-                editor_state.settings_panel.widgets.get(widget_idx),
-                Some(SettingsWidget::Stepper { .. })
-            )
-        {
-            handle_stepper_scroll(editor_state, widget_idx, delta_y, dirty_mask);
-            apply_damage_rects(editor_state, dirty_mask);
-            return;
-        }
+        && matches!(
+            editor_state.settings_panel.widgets.get(widget_idx),
+            Some(SettingsWidget::Stepper { .. })
+        )
+    {
+        handle_stepper_scroll(editor_state, widget_idx, delta_y, dirty_mask);
+        apply_damage_rects(editor_state, dirty_mask);
+        return;
+    }
 
-    // scrolling on emtpy space changes width or font value 
-    // inspired by Flameshot, but doesn't show annotation preview 
+    // scrolling on emtpy space changes width or font value
+    // inspired by Flameshot, but doesn't show annotation preview
     // maybe will be implemented later
     if matches!(hit_test_ui(editor_state, local), UiHit::None)
         && let Some(widget_idx) = editor_state

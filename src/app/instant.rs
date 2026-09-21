@@ -33,7 +33,11 @@ pub async fn full(conn: wayland_client::Connection, launch: Launch) -> Result {
     drop(overlay);
     prof.mark("capture");
 
-    let outputs: Vec<_> = shots.frames.iter().map(|f| outputs[f.output].clone()).collect();
+    let outputs: Vec<_> = shots
+        .frames
+        .iter()
+        .map(|f| outputs[f.output].clone())
+        .collect();
     let captures = init::build_captures(shots.frames)?;
     let placements = init::build_placements(&outputs);
     let region = get_full_workspace_rect(&placements).ok_or("no monitor was captured")?;

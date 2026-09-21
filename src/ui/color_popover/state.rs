@@ -1,10 +1,10 @@
 use crate::config::ColorPicker;
-use crate::types::Annotation;
 use crate::interaction::ScrollAccumulator;
 use crate::theme::{anim, font};
+use crate::types::Annotation;
+use crate::types::tool_settings::default_color;
 use crate::ui::panel::{AnimatedPanel, HoverablePanel, PanelItem, UiPanel};
 use crate::ui::text_field::TextFieldGroup;
-use crate::types::tool_settings::default_color;
 use std::time::{Duration, Instant};
 use tiny_skia::{Color, Mask, Pixmap, Rect};
 
@@ -427,7 +427,7 @@ pub struct ColorPickerPopover {
     /// Scroll accumulator for scrollable fields (hex/rgba)
     /// Keeps scroll fractional state separate from raw events to avoid
     /// processing every single scroll event, trackpad or mouse wheel held
-    /// will flood thousands of events that would freeze 
+    /// will flood thousands of events that would freeze
     pub scroll: ScrollAccumulator<ColorField>,
 }
 
@@ -605,9 +605,10 @@ impl ColorPickerPopover {
 
     pub fn field_text(&self, field: ColorField) -> String {
         if let Some(edit) = self.fields.editing.as_ref()
-            && edit.key == field {
-                return edit.field.text.clone();
-            }
+            && edit.key == field
+        {
+            return edit.field.text.clone();
+        }
         self.fields.value(field).cloned().unwrap_or_default()
     }
 

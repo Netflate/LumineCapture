@@ -4,19 +4,19 @@ mod input;
 mod instant;
 mod panels;
 
+use crate::backend::ScreenOverlay;
 use crate::backend::notify::{self, Notice};
 use crate::backend::{initialize_capture, initialize_clipboard, initialize_overlay};
-use crate::backend::ScreenOverlay;
-use crate::editor::{EditorState, Layers, OcrState, TextState};
 use crate::editor::dirty::{apply_damage_rects, is_dirty, mark_all_dirty, mark_dirty};
+use crate::editor::{EditorState, Layers, OcrState, TextState};
 use crate::profiler::Profiler;
 use crate::renderer;
 use crate::theme::anim;
 use crate::tools::Tool;
 use crate::tools::selection::{global_selection_to_local, selection_edges_for_monitor};
-use crate::ui::panel::{AnimatedPanel, panel_to_draw, tick_panel_animation};
-use crate::types::{DamageRect, OverlayEvent, Outputs, Placement, SelectionEdges};
+use crate::types::{DamageRect, Outputs, OverlayEvent, Placement, SelectionEdges};
 use crate::ui::panel::UiPanel;
+use crate::ui::panel::{AnimatedPanel, panel_to_draw, tick_panel_animation};
 use crate::utils::{encode_png, get_full_workspace_rect, save_to_file};
 
 use cosmic_text::{FontSystem, SwashCache};
@@ -58,7 +58,10 @@ impl Launch {
     }
 }
 
-pub async fn run(conn: wayland_client::Connection, launch: Launch) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run(
+    conn: wayland_client::Connection,
+    launch: Launch,
+) -> Result<(), Box<dyn std::error::Error>> {
     if launch.mode != Mode::Editor && launch.outputs().is_empty() {
         return Err("nothing to do with the shot: pass --to or set general.accept".into());
     }
@@ -75,7 +78,8 @@ async fn make_screenshot(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut prof = Profiler::new(launch.speed);
 
-    let (mut editor_state, mut overlay) = start_capture(conn, launch.one_monitor, &mut prof).await?;
+    let (mut editor_state, mut overlay) =
+        start_capture(conn, launch.one_monitor, &mut prof).await?;
     editor_state.accept = launch.outputs();
     if launch.mode == Mode::Region {
         editor_state.region = true;
@@ -239,9 +243,9 @@ fn run_overlay(
                 match ev {
                     OverlayEvent::PointerMove { .. } => pointer_wait = None,
                     // initiailly toolbar didn't appear as magnifier untill the first pointer event
-                    // once again not a conscious chocie, thought it was enough since on kde it always 
-                    // send pointer event even without moving the pointer if overlay is under it 
-                    // but cosmic doesn't, so toolbar now appears when the keyboard is focused, which makes 
+                    // once again not a conscious chocie, thought it was enough since on kde it always
+                    // send pointer event even without moving the pointer if overlay is under it
+                    // but cosmic doesn't, so toolbar now appears when the keyboard is focused, which makes
                     // sense even more than pointer
                     OverlayEvent::Focus { monitor_idx } if pointer_wait.is_some() => {
                         editor_state.input.pointer.monitor_idx = monitor_idx;
@@ -285,7 +289,7 @@ fn run_overlay(
     Ok(())
 }
 
-/// system can't sleep waiting only for events, since we have animation and 
+/// system can't sleep waiting only for events, since we have animation and
 /// download beat and etc
 fn poll_timeout(editor_state: &EditorState) -> Option<Duration> {
     let is_animating = editor_state.toolbar.is_animating()
@@ -393,9 +397,7 @@ fn tick_panels(editor_state: &mut EditorState, dirty_mask: &mut u32) {
 fn damage_hidden_annotations(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     let has_annotations =
         !editor_state.annotations.is_empty() || editor_state.pending_pen_baked != 0;
-    if has_annotations
-        && let Some(workspace) = get_full_workspace_rect(&editor_state.placements)
-    {
+    if has_annotations && let Some(workspace) = get_full_workspace_rect(&editor_state.placements) {
         editor_state
             .damage_rects
             .push(crate::editor::DamageZone::Global(workspace));
@@ -601,8 +603,6 @@ async fn deliver(png: Vec<u8>, scale: f32, outputs: Outputs) {
 // ************************* //
 //      RENDER HELPERS       //
 // ************************* //
-
-
 
 /// Undo and redo can change what the panels show, so refresh is needed
 fn refresh_panels_after_history(editor_state: &mut EditorState, dirty_mask: &mut u32) {

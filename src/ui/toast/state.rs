@@ -26,7 +26,7 @@ pub enum ToastKind {
 #[derive(Clone, Copy)]
 pub enum ToastAnchor {
     CursorMonitorCenter,
-    /// if there is selection, center of local selection in the monitor, else just center 
+    /// if there is selection, center of local selection in the monitor, else just center
     SelectionCenter,
 }
 
@@ -144,8 +144,12 @@ impl Toast {
             ),
             _ => (place.size.0 / 2.0, place.size.1 / 2.0),
         };
-        let x = (cx - w / 2.0).max(margin).min((place.size.0 - w - margin).max(margin));
-        let y = (cy - height / 2.0).max(margin).min((place.size.1 - height - margin).max(margin));
+        let x = (cx - w / 2.0)
+            .max(margin)
+            .min((place.size.0 - w - margin).max(margin));
+        let y = (cy - height / 2.0)
+            .max(margin)
+            .min((place.size.1 - height - margin).max(margin));
         self.rect = Rect::from_xywh(x.round(), y.round(), w, height);
     }
 }

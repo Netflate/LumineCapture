@@ -110,7 +110,11 @@ pub fn open_log_file() -> Option<File> {
         let _ = fs::rename(&path, path.with_extension("log.1"));
     }
 
-    OpenOptions::new().create(true).append(true).open(&path).ok()
+    OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .ok()
 }
 
 fn log_panics() {

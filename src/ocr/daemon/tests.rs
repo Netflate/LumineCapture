@@ -20,8 +20,8 @@ use super::client::{self, Spawner, Timing};
 use super::protocol::{self, EngineState, Outgoing, PROTO, Reply, Request, Welcome};
 use super::server::{self, BuildError, Engine, Factory, Outcome};
 use super::{
-    Paths, Strike, daemon_blocked, gpu_ruled_out, lock_free, model_name, read_strikes, record_strike,
-    spawn_detached, unix_now,
+    Paths, Strike, daemon_blocked, gpu_ruled_out, lock_free, model_name, read_strikes,
+    record_strike, spawn_detached, unix_now,
 };
 use crate::ocr::models::ModelFiles;
 use crate::ocr::testing::{self, Fake, label_of, wait_until};
@@ -81,7 +81,10 @@ fn start(config: server::Config) -> Server {
 }
 
 fn finish(server: Server) -> Outcome {
-    assert!(wait_until(LONG, || server.is_finished()), "the server did not leave");
+    assert!(
+        wait_until(LONG, || server.is_finished()),
+        "the server did not leave"
+    );
     server.join().unwrap().unwrap()
 }
 
@@ -138,7 +141,10 @@ fn load(paths: &Paths, files: &ModelFiles) {
 
 fn wait_ready(paths: &Paths) {
     assert!(
-        wait_until(LONG, || matches!(state(paths), Some(EngineState::Ready { .. }))),
+        wait_until(LONG, || matches!(
+            state(paths),
+            Some(EngineState::Ready { .. })
+        )),
         "the engine never became ready: {:?}",
         state(paths)
     );
@@ -235,7 +241,11 @@ fn read(backend: &dyn OcrBackend) -> String {
 }
 
 /// Mock "daemon": accepts `n` incoming connections and executes prescribed scenario steps for each.
-fn fake_daemon(paths: &Paths, connections: usize, script: impl Fn(UnixStream) + Send + 'static) -> JoinHandle<()> {
+fn fake_daemon(
+    paths: &Paths,
+    connections: usize,
+    script: impl Fn(UnixStream) + Send + 'static,
+) -> JoinHandle<()> {
     fs::create_dir_all(&paths.dir).unwrap();
     let listener = UnixListener::bind(&paths.socket).unwrap();
     thread::spawn(move || {
@@ -246,7 +256,10 @@ fn fake_daemon(paths: &Paths, connections: usize, script: impl Fn(UnixStream) + 
 }
 
 fn answer_hello(mut stream: &UnixStream, state: EngineState) {
-    assert!(matches!(protocol::read_request(&mut stream), Ok(Request::Hello { .. })));
+    assert!(matches!(
+        protocol::read_request(&mut stream),
+        Ok(Request::Hello { .. })
+    ));
     let welcome = Welcome {
         proto: PROTO,
         build: BUILD.into(),
@@ -305,7 +318,11 @@ fn silent_client_is_dropped_without_blocking_others() {
     Conn::greeted(&paths);
     assert!(started.elapsed() < Duration::from_millis(250));
     let mut byte = [0u8; 1];
-    assert_eq!((&silent).read(&mut byte).unwrap(), 0, "the silent connection should be closed");
+    assert_eq!(
+        (&silent).read(&mut byte).unwrap(),
+        0,
+        "the silent connection should be closed"
+    );
     assert!(started.elapsed() < Duration::from_secs(3));
 
     shutdown(&paths);
@@ -319,14 +336,20 @@ fn garbage_and_requests_before_hello_close_only_that_connection() {
 
     let junk = UnixStream::connect(&paths.socket).unwrap();
     junk.set_read_timeout(Some(LONG)).unwrap();
-    (&junk).write_all(b"GET / HTTP/1.1\r\nHost: lumine\r\n\r\n").unwrap();
+    (&junk)
+        .write_all(b"GET / HTTP/1.1\r\nHost: lumine\r\n\r\n")
+        .unwrap();
     let mut buf = [0u8; 16];
     assert!(matches!((&junk).read(&mut buf), Ok(0) | Err(_)));
 
     let rude = Conn::open(&paths);
     rude.send(Outgoing::Load(&testing::files("m")));
     assert!(protocol::read_reply(&mut &rude.0).is_err());
-    assert_eq!(state(&paths), Some(EngineState::Idle), "a load without hello must be ignored");
+    assert_eq!(
+        state(&paths),
+        Some(EngineState::Idle),
+        "a load without hello must be ignored"
+    );
 
     shutdown(&paths);
     assert_eq!(finish(server), Outcome::Shutdown);
@@ -344,7 +367,10 @@ fn client_that_leaves_cancels_its_scan() {
     scan.send(Outgoing::Recognize(&img()));
     thread::sleep(Duration::from_millis(60));
     drop(scan);
-    assert!(wait_until(LONG, || fake.cancels() == 1), "the daemon kept scanning for nobody");
+    assert!(
+        wait_until(LONG, || fake.cancels() == 1),
+        "the daemon kept scanning for nobody"
+    );
 
     let (next, _) = Conn::greeted(&paths);
     match next.ask(Outgoing::Recognize(&img())) {
@@ -367,7 +393,11 @@ fn hello_and_status_answer_while_loading_and_scanning() {
     let quick_status = |what: &str| {
         let started = Instant::now();
         let reply = Conn::greeted(&paths).0.ask(Outgoing::Status);
-        assert!(started.elapsed() < Duration::from_millis(200), "{what} took {:?}", started.elapsed());
+        assert!(
+            started.elapsed() < Duration::from_millis(200),
+            "{what} took {:?}",
+            started.elapsed()
+        );
         match reply {
             Reply::Status(status) => status,
             other => panic!("expected status, got {other:?}"),
@@ -383,7 +413,11 @@ fn hello_and_status_answer_while_loading_and_scanning() {
     thread::sleep(Duration::from_millis(50));
     let scanning = quick_status("status while scanning");
     assert_eq!(scanning.served, 0);
-    assert_eq!(scanning.idle_left_secs, Some(60), "a scan keeps the idle timer full");
+    assert_eq!(
+        scanning.idle_left_secs,
+        Some(60),
+        "a scan keeps the idle timer full"
+    );
     assert!(matches!(scan.reply(), Reply::Lines(_)));
     assert_eq!(quick_status("status after").served, 1);
 
@@ -434,9 +468,15 @@ fn idle_exit_waits_for_an_open_connection() {
         ..config(&dir, factory(Fake::new("d")))
     });
     let held = Conn::open(&paths);
-    assert!(matches!(held.ask(Outgoing::Hello(BUILD)), Reply::Welcome(_)));
+    assert!(matches!(
+        held.ask(Outgoing::Hello(BUILD)),
+        Reply::Welcome(_)
+    ));
     thread::sleep(Duration::from_millis(500));
-    assert!(!server.is_finished(), "left while a client was mid-conversation");
+    assert!(
+        !server.is_finished(),
+        "left while a client was mid-conversation"
+    );
 
     drop(held);
     assert_eq!(finish(server), Outcome::Idle);
@@ -462,7 +502,10 @@ fn shutdown_does_not_wait_for_a_long_scan() {
 #[test]
 fn engine_that_cannot_run_makes_the_daemon_leave() {
     let cases: [(Factory, EngineState); 2] = [
-        (Arc::new(|_: &ModelFiles| Err(BuildError::NoGpu)), EngineState::NoGpu),
+        (
+            Arc::new(|_: &ModelFiles| Err(BuildError::NoGpu)),
+            EngineState::NoGpu,
+        ),
         (
             Arc::new(|_: &ModelFiles| Err(BuildError::Failed("boom".into()))),
             EngineState::Failed("boom".into()),
@@ -484,7 +527,10 @@ fn panicking_loader_is_reported_as_failed() {
     let make: Factory = Arc::new(|_: &ModelFiles| panic!("loader panicked on purpose"));
     let server = start(config(&dir, make));
     load(&paths, &testing::files("m"));
-    assert!(wait_until(LONG, || matches!(state(&paths), Some(EngineState::Failed(_)))));
+    assert!(wait_until(LONG, || matches!(
+        state(&paths),
+        Some(EngineState::Failed(_))
+    )));
     assert_eq!(finish(server), Outcome::Unusable);
 }
 
@@ -495,7 +541,10 @@ fn crashing_engine_is_dropped_and_the_daemon_leaves() {
     load(&paths, &testing::files("m"));
     wait_ready(&paths);
     let (conn, _) = Conn::greeted(&paths);
-    assert!(matches!(conn.ask(Outgoing::Recognize(&img())), Reply::Error(_)));
+    assert!(matches!(
+        conn.ask(Outgoing::Recognize(&img())),
+        Reply::Error(_)
+    ));
     assert_eq!(finish(server), Outcome::Unusable);
 }
 
@@ -527,7 +576,11 @@ fn only_the_latest_requested_model_is_kept() {
     let wanted = ready(&fast);
     assert!(wait_until(LONG, || state(&paths).as_ref() == Some(&wanted)));
     thread::sleep(Duration::from_millis(450));
-    assert_eq!(state(&paths), Some(wanted), "the slow, older build overwrote the newer model");
+    assert_eq!(
+        state(&paths),
+        Some(wanted),
+        "the slow, older build overwrote the newer model"
+    );
 
     shutdown(&paths);
     assert_eq!(finish(server), Outcome::Shutdown);
@@ -537,7 +590,11 @@ fn only_the_latest_requested_model_is_kept() {
 fn switching_models_during_a_scan_keeps_the_answer() {
     let (dir, paths) = dir_and_paths("switch-scan");
     let make: Factory = Arc::new(|files: &ModelFiles| {
-        let label = if model_name(files).contains("second") { "second" } else { "first" };
+        let label = if model_name(files).contains("second") {
+            "second"
+        } else {
+            "first"
+        };
         Ok(Engine {
             backend: Box::new(Fake::new(label).slow(60, Duration::from_millis(5))),
             device: "fake".into(),
@@ -553,7 +610,9 @@ fn switching_models_during_a_scan_keeps_the_answer() {
     thread::sleep(Duration::from_millis(50));
     load(&paths, &second);
     match scan.reply() {
-        Reply::Lines(text) => assert_eq!(label_of(&text), "first", "the running scan kept its engine"),
+        Reply::Lines(text) => {
+            assert_eq!(label_of(&text), "first", "the running scan kept its engine")
+        }
         other => panic!("expected lines, got {other:?}"),
     }
     let wanted = ready(&second);
@@ -566,12 +625,21 @@ fn switching_models_during_a_scan_keeps_the_answer() {
 #[test]
 fn scan_before_the_engine_is_ready_is_refused_quickly() {
     let (dir, paths) = dir_and_paths("not-ready");
-    let server = start(config(&dir, delayed(Fake::new("d"), Duration::from_millis(500))));
+    let server = start(config(
+        &dir,
+        delayed(Fake::new("d"), Duration::from_millis(500)),
+    ));
     let (conn, _) = Conn::greeted(&paths);
-    assert!(matches!(conn.ask(Outgoing::Recognize(&img())), Reply::Error(_)), "idle");
+    assert!(
+        matches!(conn.ask(Outgoing::Recognize(&img())), Reply::Error(_)),
+        "idle"
+    );
     assert_eq!(conn.ask(Outgoing::Load(&testing::files("m"))), Reply::Ok);
     let started = Instant::now();
-    assert!(matches!(conn.ask(Outgoing::Recognize(&img())), Reply::Error(_)), "loading");
+    assert!(
+        matches!(conn.ask(Outgoing::Recognize(&img())), Reply::Error(_)),
+        "loading"
+    );
     assert!(started.elapsed() < Duration::from_millis(200));
 
     shutdown(&paths);
@@ -586,11 +654,18 @@ fn status_and_stop_commands() {
     assert_eq!(status.pid, std::process::id());
     assert!(status.idle_left_secs.is_some_and(|secs| secs <= 60));
 
-    let obeys = client::stop(&paths, Duration::from_secs(2), &|_| panic!("an obedient daemon must not be killed"));
+    let obeys = client::stop(&paths, Duration::from_secs(2), &|_| {
+        panic!("an obedient daemon must not be killed")
+    });
     assert_eq!(obeys, Ok(true));
     assert_eq!(finish(server), Outcome::Shutdown);
     assert!(client::status(&paths).is_none());
-    assert_eq!(client::stop(&paths, Duration::from_millis(200), &|_| panic!("nothing to kill")), Ok(false));
+    assert_eq!(
+        client::stop(&paths, Duration::from_millis(200), &|_| panic!(
+            "nothing to kill"
+        )),
+        Ok(false)
+    );
 }
 
 // ---------------------------------------------------------------- client
@@ -600,11 +675,21 @@ fn client_starts_the_daemon_and_moves_to_it_when_warm() {
     let (dir, paths) = dir_and_paths("warm");
     let probe = Probe::default();
     let servers = Servers::default();
-    let spawn = thread_spawner(&dir, delayed(Fake::new("daemon"), Duration::from_millis(300)), &probe, &servers);
+    let spawn = thread_spawner(
+        &dir,
+        delayed(Fake::new("daemon"), Duration::from_millis(300)),
+        &probe,
+        &servers,
+    );
 
-    let backend = client::connect_with(client_config(&paths, spawn, &probe), &testing::files("m")).unwrap();
+    let backend =
+        client::connect_with(client_config(&paths, spawn, &probe), &testing::files("m")).unwrap();
     assert_eq!(probe.spawns(), 1);
-    assert_eq!(read(&*backend), "local", "a cold daemon must not make the user wait");
+    assert_eq!(
+        read(&*backend),
+        "local",
+        "a cold daemon must not make the user wait"
+    );
     assert!(wait_until(LONG, || read(&*backend) == "daemon"));
     assert_eq!(probe.spawns(), 1);
     assert_eq!(probe.locals(), 1);
@@ -626,13 +711,21 @@ fn daemon_dying_mid_scan_means_a_local_read_and_a_strike() {
         let _ = protocol::read_request(&mut reader);
     });
     let probe = Probe::default();
-    let backend = client::connect_with(client_config(&paths, refusing_spawner(&probe), &probe), &files).unwrap();
+    let backend = client::connect_with(
+        client_config(&paths, refusing_spawner(&probe), &probe),
+        &files,
+    )
+    .unwrap();
 
     assert_eq!(read(&*backend), "local");
     assert!(read_strikes(&paths).contains("failed"));
     daemon.join().unwrap();
     assert_eq!(read(&*backend), "local");
-    assert_eq!(probe.spawns(), 0, "a daemon that broke must not be retried in the same session");
+    assert_eq!(
+        probe.spawns(),
+        0,
+        "a daemon that broke must not be retried in the same session"
+    );
     assert_eq!(probe.locals(), 1);
 }
 
@@ -681,9 +774,13 @@ fn handshake_with_a_leaving_daemon_is_retried_without_a_strike() {
         drop(stream);
     });
 
-    let backend = client::connect_with(client_config(&paths, spawn, &probe), &testing::files("m")).unwrap();
+    let backend =
+        client::connect_with(client_config(&paths, spawn, &probe), &testing::files("m")).unwrap();
     leaving.join().unwrap();
-    assert!(read_strikes(&paths).is_empty(), "a daemon on its way out is not a failure");
+    assert!(
+        read_strikes(&paths).is_empty(),
+        "a daemon on its way out is not a failure"
+    );
     assert_eq!(probe.spawns(), 1);
     assert!(wait_until(LONG, || read(&*backend) == "fresh"));
 
@@ -700,9 +797,13 @@ fn a_successful_scan_clears_old_strikes() {
     let servers = Servers::default();
     let spawn = thread_spawner(&dir, factory(Fake::new("daemon")), &probe, &servers);
 
-    let backend = client::connect_with(client_config(&paths, spawn, &probe), &testing::files("m")).unwrap();
+    let backend =
+        client::connect_with(client_config(&paths, spawn, &probe), &testing::files("m")).unwrap();
     assert!(wait_until(LONG, || read(&*backend) == "daemon"));
-    assert!(read_strikes(&paths).is_empty(), "a working daemon forgets old failures");
+    assert!(
+        read_strikes(&paths).is_empty(),
+        "a working daemon forgets old failures"
+    );
 
     shutdown(&paths);
     assert_eq!(finish_all(&servers), vec![Outcome::Shutdown]);
@@ -719,12 +820,16 @@ fn daemon_from_another_build_is_replaced_exactly_once() {
     let servers = Servers::default();
     let spawn = thread_spawner(&dir, factory(Fake::new("new")), &probe, &servers);
 
-    let backend = client::connect_with(client_config(&paths, spawn, &probe), &testing::files("m")).unwrap();
+    let backend =
+        client::connect_with(client_config(&paths, spawn, &probe), &testing::files("m")).unwrap();
     assert_eq!(finish(old), Outcome::Shutdown);
     assert_eq!(probe.spawns(), 1);
     assert_eq!(Conn::greeted(&paths).1.build, BUILD);
     assert!(wait_until(LONG, || read(&*backend) == "new"));
-    assert!(probe.kills().is_empty(), "the old daemon obeyed, nobody should be killed");
+    assert!(
+        probe.kills().is_empty(),
+        "the old daemon obeyed, nobody should be killed"
+    );
 
     shutdown(&paths);
     assert_eq!(finish_all(&servers), vec![Outcome::Shutdown]);
@@ -750,14 +855,21 @@ fn concurrent_clients_start_a_single_daemon() {
     for client in clients {
         client.join().unwrap().unwrap();
     }
-    assert!(read_strikes(&paths).is_empty(), "a client gave up: {}", read_strikes(&paths));
+    assert!(
+        read_strikes(&paths).is_empty(),
+        "a client gave up: {}",
+        read_strikes(&paths)
+    );
     assert!(probe.spawns() >= 1);
 
     // Unsuccessful lock competitors wait for `lock_wait`: allow them to exit before issuing `Shutdown` for the winner.
     thread::sleep(Duration::from_millis(250));
     shutdown(&paths);
     let outcomes = finish_all(&servers);
-    let serving = outcomes.iter().filter(|o| **o != Outcome::AlreadyRunning).count();
+    let serving = outcomes
+        .iter()
+        .filter(|o| **o != Outcome::AlreadyRunning)
+        .count();
     assert_eq!(serving, 1, "{outcomes:?}");
 }
 
@@ -770,14 +882,28 @@ fn strike_rules() {
     let two = failed(10) + &failed(20);
     assert!(!daemon_blocked(&two, BUILD, now));
     assert!(daemon_blocked(&(two.clone() + &failed(30)), BUILD, now));
-    assert!(!daemon_blocked(&(two.clone() + &failed(601)), BUILD, now), "old failures expire");
-    assert!(!daemon_blocked(&(two + &format!("{now} failed other-build\n")), BUILD, now));
+    assert!(
+        !daemon_blocked(&(two.clone() + &failed(601)), BUILD, now),
+        "old failures expire"
+    );
+    assert!(!daemon_blocked(
+        &(two + &format!("{now} failed other-build\n")),
+        BUILD,
+        now
+    ));
 
     let no_gpu = format!("{now} no-gpu {BUILD}\n");
-    assert!(daemon_blocked(&no_gpu, BUILD, now + 10_000_000), "no GPU does not expire for a build");
+    assert!(
+        daemon_blocked(&no_gpu, BUILD, now + 10_000_000),
+        "no GPU does not expire for a build"
+    );
     assert!(gpu_ruled_out(&no_gpu, BUILD));
     assert!(!gpu_ruled_out(&no_gpu, "next-build"));
-    assert!(!daemon_blocked("junk\n\n1 2 3\nnan failed test-build\n42 exploded test-build\n", BUILD, now));
+    assert!(!daemon_blocked(
+        "junk\n\n1 2 3\nnan failed test-build\n42 exploded test-build\n",
+        BUILD,
+        now
+    ));
 }
 
 #[test]
@@ -786,12 +912,19 @@ fn repeated_failures_stop_spawning_for_a_while() {
     for _ in 0..20 {
         record_strike(&paths, BUILD, Strike::Failed);
     }
-    assert_eq!(read_strikes(&paths).lines().count(), 8, "the strike file must stay small");
+    assert_eq!(
+        read_strikes(&paths).lines().count(),
+        8,
+        "the strike file must stay small"
+    );
     assert!(daemon_blocked(&read_strikes(&paths), BUILD, unix_now()));
 
     let probe = Probe::default();
-    let backend =
-        client::connect_with(client_config(&paths, refusing_spawner(&probe), &probe), &testing::files("m")).unwrap();
+    let backend = client::connect_with(
+        client_config(&paths, refusing_spawner(&probe), &probe),
+        &testing::files("m"),
+    )
+    .unwrap();
     assert_eq!(read(&*backend), "local");
     assert_eq!(probe.spawns(), 0);
 }
@@ -801,17 +934,26 @@ fn daemon_without_gpu_is_remembered_and_not_started_again() {
     let (dir, paths) = dir_and_paths("no-gpu");
     let probe = Probe::default();
     let servers = Servers::default();
-    let spawn = thread_spawner(&dir, Arc::new(|_: &ModelFiles| Err(BuildError::NoGpu)), &probe, &servers);
+    let spawn = thread_spawner(
+        &dir,
+        Arc::new(|_: &ModelFiles| Err(BuildError::NoGpu)),
+        &probe,
+        &servers,
+    );
 
-    let backend = client::connect_with(client_config(&paths, spawn, &probe), &testing::files("m")).unwrap();
+    let backend =
+        client::connect_with(client_config(&paths, spawn, &probe), &testing::files("m")).unwrap();
     assert!(wait_until(LONG, || {
         read(&*backend) == "local" && gpu_ruled_out(&read_strikes(&paths), BUILD)
     }));
     assert_eq!(probe.spawns(), 1);
     assert_eq!(finish_all(&servers), vec![Outcome::Unusable]);
 
-    let again =
-        client::connect_with(client_config(&paths, refusing_spawner(&probe), &probe), &testing::files("m")).unwrap();
+    let again = client::connect_with(
+        client_config(&paths, refusing_spawner(&probe), &probe),
+        &testing::files("m"),
+    )
+    .unwrap();
     assert_eq!(read(&*again), "local");
     assert_eq!(probe.spawns(), 1);
 }
@@ -823,7 +965,8 @@ fn cancelling_while_the_daemon_scans_returns_at_once() {
     let probe = Probe::default();
     let servers = Servers::default();
     let spawn = thread_spawner(&dir, factory(fake.clone()), &probe, &servers);
-    let backend = client::connect_with(client_config(&paths, spawn, &probe), &testing::files("m")).unwrap();
+    let backend =
+        client::connect_with(client_config(&paths, spawn, &probe), &testing::files("m")).unwrap();
     wait_ready(&paths);
 
     let flag = Arc::new(AtomicBool::new(false));
@@ -838,7 +981,10 @@ fn cancelling_while_the_daemon_scans_returns_at_once() {
     let result = backend.recognize(img(), &|| flag.load(Ordering::SeqCst));
     assert_eq!(result.unwrap_err().to_string(), CANCELLED);
     assert!(started.elapsed() < Duration::from_millis(600));
-    assert!(wait_until(LONG, || fake.cancels() == 1), "the daemon did not notice the cancel");
+    assert!(
+        wait_until(LONG, || fake.cancels() == 1),
+        "the daemon did not notice the cancel"
+    );
     assert!(read_strikes(&paths).is_empty(), "a cancel is not a failure");
     assert_eq!(probe.locals(), 0);
 
@@ -861,7 +1007,10 @@ fn child_daemon() {
         return;
     };
     let _ = fs::write(dir.join(format!("pid-{}", std::process::id())), "");
-    if let Some(fd) = std::env::var(CHILD_FD).ok().and_then(|v| v.parse::<i32>().ok()) {
+    if let Some(fd) = std::env::var(CHILD_FD)
+        .ok()
+        .and_then(|v| v.parse::<i32>().ok())
+    {
         // SAFETY: Only queries flags for the provided descriptor number without opening or closing file handles.
         let open = unsafe { nix::libc::fcntl(fd, nix::libc::F_GETFD) } != -1;
         let _ = fs::write(dir.join("fd-inherited"), if open { "yes" } else { "no" });
@@ -872,7 +1021,9 @@ fn child_daemon() {
         .unwrap_or(0);
     let fake = Fake::new("child").slow(scan_ms / 5, Duration::from_millis(5));
     let factory = match std::env::var_os(CHILD_CRASH) {
-        Some(_) => Arc::new(|_: &ModelFiles| -> Result<Engine, BuildError> { std::process::abort() }),
+        Some(_) => {
+            Arc::new(|_: &ModelFiles| -> Result<Engine, BuildError> { std::process::abort() })
+        }
         None => factory(fake),
     };
     let _ = server::serve(server::Config {
@@ -925,7 +1076,14 @@ fn children(dir: &Path) -> Vec<i32> {
         .into_iter()
         .flatten()
         .flatten()
-        .filter_map(|entry| entry.file_name().to_str()?.strip_prefix("pid-")?.parse().ok())
+        .filter_map(|entry| {
+            entry
+                .file_name()
+                .to_str()?
+                .strip_prefix("pid-")?
+                .parse()
+                .ok()
+        })
         .filter(|&pid| alive(pid))
         .collect();
     pids.sort_unstable();
@@ -934,7 +1092,8 @@ fn children(dir: &Path) -> Vec<i32> {
 
 fn ready_pid(paths: &Paths) -> i32 {
     assert!(wait_until(LONG, || {
-        client::status(paths).is_some_and(|status| matches!(status.state, EngineState::Ready { .. }))
+        client::status(paths)
+            .is_some_and(|status| matches!(status.state, EngineState::Ready { .. }))
     }));
     client::status(paths).unwrap().pid as i32
 }
@@ -958,7 +1117,11 @@ fn real_daemon_processes_do_not_stack() {
     for client in clients {
         client.join().unwrap().unwrap();
     }
-    assert!(read_strikes(&paths).is_empty(), "a client gave up: {}", read_strikes(&paths));
+    assert!(
+        read_strikes(&paths).is_empty(),
+        "a client gave up: {}",
+        read_strikes(&paths)
+    );
     assert!(
         wait_until(LONG, || children(&dir).len() == 1),
         "live daemons: {:?}",
@@ -967,10 +1130,12 @@ fn real_daemon_processes_do_not_stack() {
     let pid = ready_pid(&paths);
     assert_eq!(children(&dir), vec![pid]);
 
-    assert_eq!(client::stop(&paths, Duration::from_secs(2), &client::kill_hard), Ok(true));
+    assert_eq!(
+        client::stop(&paths, Duration::from_secs(2), &client::kill_hard),
+        Ok(true)
+    );
     assert!(wait_until(LONG, || children(&dir).is_empty()));
 }
-
 
 #[test]
 fn killed_daemon_is_survived_and_replaced() {
@@ -979,7 +1144,8 @@ fn killed_daemon_is_survived_and_replaced() {
     let spawn = child_spawner(&dir, 1500, &probe);
     let files = testing::files("m");
 
-    let backend = client::connect_with(client_config(&paths, spawn.clone(), &probe), &files).unwrap();
+    let backend =
+        client::connect_with(client_config(&paths, spawn.clone(), &probe), &files).unwrap();
     let pid = ready_pid(&paths);
     let killer = thread::spawn(move || {
         thread::sleep(Duration::from_millis(300));
@@ -996,7 +1162,10 @@ fn killed_daemon_is_survived_and_replaced() {
     assert_eq!(read(&*fresh), "child");
     assert_eq!(probe.spawns(), 2);
 
-    assert_eq!(client::stop(&paths, Duration::from_secs(2), &client::kill_hard), Ok(true));
+    assert_eq!(
+        client::stop(&paths, Duration::from_secs(2), &client::kill_hard),
+        Ok(true)
+    );
     assert!(wait_until(LONG, || !alive(new_pid)));
 }
 
@@ -1018,7 +1187,10 @@ fn hung_real_daemon_is_killed_by_the_watchdog() {
     let started = Instant::now();
     assert_eq!(read(&*backend), "local");
     assert!(started.elapsed() < Duration::from_secs(3));
-    assert!(wait_until(LONG, || !alive(pid)), "the hung daemon is still alive");
+    assert!(
+        wait_until(LONG, || !alive(pid)),
+        "the hung daemon is still alive"
+    );
     assert!(wait_until(LONG, || lock_free(&paths.lock)));
 }
 
@@ -1034,7 +1206,8 @@ fn daemon_that_dies_while_loading_is_not_respawned_forever() {
         command.env(CHILD_CRASH, "1");
         spawn_detached(command, child_log(&root))
     });
-    let backend = client::connect_with(client_config(&paths, spawn, &probe), &testing::files("m")).unwrap();
+    let backend =
+        client::connect_with(client_config(&paths, spawn, &probe), &testing::files("m")).unwrap();
     for _ in 0..6 {
         assert!(wait_until(LONG, || children(&dir).is_empty()));
         assert_eq!(read(&*backend), "local");
@@ -1052,7 +1225,10 @@ fn a_daemon_that_died_on_the_gpu_is_not_followed_onto_it() {
     let (_dir, paths) = dir_and_paths("gpu-marker");
     fs::write(paths.dir.join("ocr.gpu-loading"), "1").unwrap();
     let factory = super::engine_factory(crate::ocr::settings::Device::Gpu, paths.clone());
-    assert!(matches!(factory(&testing::files("m")), Err(BuildError::NoGpu)));
+    assert!(matches!(
+        factory(&testing::files("m")),
+        Err(BuildError::NoGpu)
+    ));
     assert!(!paths.dir.join("ocr.gpu-loading").exists());
 }
 
@@ -1065,8 +1241,14 @@ fn stop_kills_a_frozen_daemon() {
     let pid = client::status(&paths).unwrap().pid as i32;
 
     kill(Pid::from_raw(pid), Signal::SIGSTOP).unwrap();
-    assert!(client::status(&paths).is_none(), "a frozen daemon cannot answer");
-    assert_eq!(client::stop(&paths, Duration::from_millis(500), &client::kill_hard), Ok(true));
+    assert!(
+        client::status(&paths).is_none(),
+        "a frozen daemon cannot answer"
+    );
+    assert_eq!(
+        client::stop(&paths, Duration::from_millis(500), &client::kill_hard),
+        Ok(true)
+    );
     assert!(wait_until(LONG, || !alive(pid)));
 }
 
@@ -1081,10 +1263,14 @@ fn daemon_does_not_inherit_descriptors() {
     spawn_detached(command, child_log(&dir)).unwrap();
 
     let marker = dir.join("fd-inherited");
-    assert!(wait_until(LONG, || fs::read_to_string(&marker).is_ok_and(|s| !s.is_empty())));
+    assert!(wait_until(LONG, || fs::read_to_string(&marker)
+        .is_ok_and(|s| !s.is_empty())));
     assert_eq!(fs::read_to_string(&marker).unwrap(), "no");
     assert!(wait_until(LONG, || client::status(&paths).is_some()));
-    assert_eq!(client::stop(&paths, Duration::from_secs(2), &client::kill_hard), Ok(true));
+    assert_eq!(
+        client::stop(&paths, Duration::from_secs(2), &client::kill_hard),
+        Ok(true)
+    );
 }
 
 use super::calibrate::{self, Record, Verdict};
@@ -1111,7 +1297,11 @@ fn a_measurement_survives_a_save_and_a_reload() {
 fn a_measurement_from_other_hardware_is_ignored() {
     let dir = testing::temp_dir("calib-foreign");
     let path = dir.join("ocr-device");
-    calibrate::store(&path, &measured(Verdict::Gpu, Some(1650), Some(680)), "card-a");
+    calibrate::store(
+        &path,
+        &measured(Verdict::Gpu, Some(1650), Some(680)),
+        "card-a",
+    );
     assert_eq!(calibrate::stored(&path, "card-b"), None);
     assert_eq!(calibrate::stored(&dir.join("nothing-here"), "card-a"), None);
 }
@@ -1136,7 +1326,11 @@ fn an_engine_that_could_not_be_measured_is_kept_as_failed() {
     let path = dir.join("ocr-device");
     let record = measured(Verdict::Cpu, Some(1500), None);
     calibrate::store(&path, &record, "card-a");
-    assert!(fs::read_to_string(&path).unwrap().contains("gpu_ms = failed"));
+    assert!(
+        fs::read_to_string(&path)
+            .unwrap()
+            .contains("gpu_ms = failed")
+    );
     assert_eq!(calibrate::stored(&path, "card-a"), Some(record));
 }
 
@@ -1156,9 +1350,18 @@ fn the_probe_image_is_the_same_every_time() {
     let first = calibrate::probe_image();
     let again = calibrate::probe_image();
     assert_eq!(first.rgb, again.rgb);
-    assert_eq!(first.rgb.len(), (first.width as usize) * (first.height as usize) * 3);
-    assert!(first.rgb.iter().any(|&value| value < 0x40), "no dark bars to detect");
-    assert!(first.rgb.iter().any(|&value| value > 0xC0), "no light background");
+    assert_eq!(
+        first.rgb.len(),
+        (first.width as usize) * (first.height as usize) * 3
+    );
+    assert!(
+        first.rgb.iter().any(|&value| value < 0x40),
+        "no dark bars to detect"
+    );
+    assert!(
+        first.rgb.iter().any(|&value| value > 0xC0),
+        "no light background"
+    );
 }
 
 #[test]
@@ -1173,7 +1376,10 @@ fn the_machine_key_does_not_drift() {
 fn a_summary_names_the_winner_and_the_numbers() {
     let gpu = measured(Verdict::Gpu, Some(1650), Some(680)).summary();
     assert!(gpu.contains("GPU is 2.4x faster"), "{gpu}");
-    assert!(gpu.contains("CPU 1650 ms") && gpu.contains("GPU 680 ms"), "{gpu}");
+    assert!(
+        gpu.contains("CPU 1650 ms") && gpu.contains("GPU 680 ms"),
+        "{gpu}"
+    );
 
     let cpu = measured(Verdict::Cpu, Some(2000), Some(40_000)).summary();
     assert!(cpu.contains("CPU is 20.0x faster"), "{cpu}");
@@ -1217,12 +1423,29 @@ fn gpu_traces() -> Vec<String> {
     let mut traces: Vec<String> = maps
         .lines()
         .filter_map(|line| line.split_whitespace().nth(5))
-        .filter(|lib| ["libwebgpu_dawn", "libvulkan", "libnvidia", "libGLX", "libEGL", "libdrm", "_dri"].iter().any(|name| lib.contains(name)))
+        .filter(|lib| {
+            [
+                "libwebgpu_dawn",
+                "libvulkan",
+                "libnvidia",
+                "libGLX",
+                "libEGL",
+                "libdrm",
+                "_dri",
+            ]
+            .iter()
+            .any(|name| lib.contains(name))
+        })
         .map(str::to_owned)
         .collect();
-    for fd in fs::read_dir("/proc/self/fd").into_iter().flatten().filter_map(Result::ok) {
+    for fd in fs::read_dir("/proc/self/fd")
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+    {
         if let Ok(target) = fs::read_link(fd.path())
-            && (target.starts_with("/dev/dri") || target.to_string_lossy().starts_with("/dev/nvidia"))
+            && (target.starts_with("/dev/dri")
+                || target.to_string_lossy().starts_with("/dev/nvidia"))
         {
             traces.push(target.display().to_string());
         }
@@ -1241,9 +1464,12 @@ fn read_probe(gpu: bool) -> Vec<String> {
     let backend: Box<dyn OcrBackend> = if gpu {
         Box::new(crate::ocr::paddle_backend::PaddleBackend::on_gpu(&files).expect("gpu engine"))
     } else {
-        crate::ocr::build_backend(crate::ocr::settings::Mode::OnDemand, &files).expect("local engine")
+        crate::ocr::build_backend(crate::ocr::settings::Mode::OnDemand, &files)
+            .expect("local engine")
     };
-    backend.recognize(super::calibrate::probe_image(), &never).expect("scan");
+    backend
+        .recognize(super::calibrate::probe_image(), &never)
+        .expect("scan");
     gpu_traces()
 }
 
@@ -1251,31 +1477,52 @@ fn read_probe(gpu: bool) -> Vec<String> {
 #[ignore]
 fn the_local_engine_never_touches_the_gpu() {
     let traces = read_probe(false);
-    assert!(traces.is_empty(), "on-demand OCR opened the GPU: {traces:?}");
+    assert!(
+        traces.is_empty(),
+        "on-demand OCR opened the GPU: {traces:?}"
+    );
 }
 
 #[test]
 #[ignore]
 fn the_gpu_engine_is_seen_by_the_check_above() {
     let traces = read_probe(true);
-    assert!(!traces.is_empty(), "the GPU engine left no trace, so the check proves nothing");
+    assert!(
+        !traces.is_empty(),
+        "the GPU engine left no trace, so the check proves nothing"
+    );
 }
 
 #[test]
 #[ignore]
 fn local_engine_cost() {
     let models = crate::ocr::models::OcrModels::load();
-    let files = models.active().and_then(|idx| models.files(idx)).expect("install an OCR model first");
+    let files = models
+        .active()
+        .and_then(|idx| models.files(idx))
+        .expect("install an OCR model first");
     let started = Instant::now();
     let backend = crate::ocr::build_backend(crate::ocr::settings::Mode::OnDemand, &files).unwrap();
     let build_ms = started.elapsed().as_millis();
     let mut scans = Vec::new();
     for _ in 0..5 {
         let started = Instant::now();
-        backend.recognize(super::calibrate::probe_image(), &never).unwrap();
+        backend
+            .recognize(super::calibrate::probe_image(), &never)
+            .unwrap();
         scans.push(started.elapsed().as_millis());
     }
     let status = fs::read_to_string("/proc/self/status").unwrap();
-    let field = |name: &str| status.lines().find(|l| l.starts_with(name)).unwrap_or_default().to_owned();
-    println!("COST build {build_ms} ms, scans {scans:?} ms, {}, {}", field("VmHWM"), field("Threads"));
+    let field = |name: &str| {
+        status
+            .lines()
+            .find(|l| l.starts_with(name))
+            .unwrap_or_default()
+            .to_owned()
+    };
+    println!(
+        "COST build {build_ms} ms, scans {scans:?} ms, {}, {}",
+        field("VmHWM"),
+        field("Threads")
+    );
 }

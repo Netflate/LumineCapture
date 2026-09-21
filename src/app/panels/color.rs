@@ -1,14 +1,13 @@
 use super::settings::compute_popover_placement;
-use crate::editor::edits::{apply_color_selection, damage_color_popover, use_color};
 use crate::editor::EditorState;
-use crate::ui::settings_panel::char_index_for_x;
-use crate::types::SpecialKey;
+use crate::editor::edits::{apply_color_selection, damage_color_popover, use_color};
 use crate::interaction::ClickTarget;
-use crate::ui::color_popover::{ColorField, ColorPopoverElement, field_font_size, step_hex_text};
+use crate::types::SpecialKey;
 use crate::ui::color_popover;
+use crate::ui::color_popover::{ColorField, ColorPopoverElement, field_font_size, step_hex_text};
 use crate::ui::panel::{UiPanel, sync_panel_hover, sync_panel_rect};
+use crate::ui::settings_panel::char_index_for_x;
 use crate::ui::text_field::{CursorInit, is_hex_char, is_rgba_channel_char};
-
 
 pub fn update_color_popover(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     let old_rect = editor_state.color_popover.rect();
@@ -96,8 +95,6 @@ fn hover_test(editor_state: &EditorState, local: (f64, f64)) -> Option<ColorPopo
     None
 }
 
-
-
 fn field_char_filter(field: ColorField) -> impl Fn(char) -> bool {
     move |ch| match field {
         ColorField::Hex => is_hex_char(ch),
@@ -159,7 +156,8 @@ fn begin_color_field_edit(
 
     let click_pos = (local.0 as f32, local.1 as f32);
     let is_double_click = editor_state
-        .input.clicks
+        .input
+        .clicks
         .register(ClickTarget::ColorField(field), click_pos);
 
     let cursor_init = if is_double_click {
@@ -194,10 +192,11 @@ pub fn commit_color_field_edit(editor_state: &mut EditorState, dirty_mask: &mut 
     apply_color_field_text(editor_state, field, &text, true, false, dirty_mask);
 
     if let Some(snapshot) = snapshot
-        && editor_state.annotations != snapshot {
-            editor_state.undo_stack.push(snapshot);
-            editor_state.redo_stack.clear();
-        }
+        && editor_state.annotations != snapshot
+    {
+        editor_state.undo_stack.push(snapshot);
+        editor_state.redo_stack.clear();
+    }
 
     editor_state.color_popover.sync_field_values();
     damage_color_popover(editor_state, dirty_mask);
@@ -297,9 +296,10 @@ pub fn handle_color_field_scroll(
     delta_y: f32,
     dirty_mask: &mut u32,
 ) {
-    let steps = editor_state
-        .color_popover
-        .scroll_step(field, delta_y / crate::config::get().input.scroll_step_pixels);
+    let steps = editor_state.color_popover.scroll_step(
+        field,
+        delta_y / crate::config::get().input.scroll_step_pixels,
+    );
 
     step_color_field(editor_state, field, steps, dirty_mask);
 }
@@ -396,10 +396,11 @@ pub fn handle_color_popover_release(editor_state: &mut EditorState, dirty_mask: 
 
     let snapshot = editor_state.color_popover.pre_edit_snapshot.take();
     if let Some(snapshot) = snapshot
-        && editor_state.annotations != snapshot {
-            editor_state.undo_stack.push(snapshot);
-            editor_state.redo_stack.clear();
-        }
+        && editor_state.annotations != snapshot
+    {
+        editor_state.undo_stack.push(snapshot);
+        editor_state.redo_stack.clear();
+    }
 
     let color = editor_state.color_popover.sv_square.color();
     editor_state.color_popover.record_used_color(color);
@@ -411,10 +412,11 @@ pub fn close_color_popover(editor_state: &mut EditorState, dirty_mask: &mut u32)
         commit_color_field_edit(editor_state, dirty_mask);
     }
     if let Some(snapshot) = editor_state.color_popover.pre_edit_snapshot.take()
-        && editor_state.annotations != snapshot {
-            editor_state.undo_stack.push(snapshot);
-            editor_state.redo_stack.clear();
-        }
+        && editor_state.annotations != snapshot
+    {
+        editor_state.undo_stack.push(snapshot);
+        editor_state.redo_stack.clear();
+    }
     editor_state.color_popover.open = false;
     update_color_popover(editor_state, dirty_mask);
 }

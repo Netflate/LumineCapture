@@ -2,8 +2,8 @@ use std::time::{Duration, Instant};
 use tiny_skia::Rect;
 
 use crate::editor::DamageZone;
-use crate::theme::anim;
 use crate::editor::dirty::mark_dirty;
+use crate::theme::anim;
 use crate::utils::rects_overlap;
 
 pub trait PanelItem {

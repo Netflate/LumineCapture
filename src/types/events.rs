@@ -26,14 +26,32 @@ impl PointerState {
 
 #[derive(Debug, Clone)]
 pub enum OverlayEvent {
-    PointerMove { monitor_idx: usize, x: f64, y: f64 },
-    Focus { monitor_idx: usize },
-    PointerButton { button: MouseButton, pressed: bool },
+    PointerMove {
+        monitor_idx: usize,
+        x: f64,
+        y: f64,
+    },
+    Focus {
+        monitor_idx: usize,
+    },
+    PointerButton {
+        button: MouseButton,
+        pressed: bool,
+    },
     EscapePressed,
     Tick,
-    Key { chord: Option<Chord>, text: Option<String> },
-    ModifiersChanged { ctrl: bool, shift: bool },
-    Scroll { delta_x: f32, delta_y: f32 },
+    Key {
+        chord: Option<Chord>,
+        text: Option<String>,
+    },
+    ModifiersChanged {
+        ctrl: bool,
+        shift: bool,
+    },
+    Scroll {
+        delta_x: f32,
+        delta_y: f32,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -91,7 +109,11 @@ mod tests {
 
     #[test]
     fn outputs_ignore_order_and_repeats() {
-        let all = Outputs { copy: true, pin: true, save: true };
+        let all = Outputs {
+            copy: true,
+            pin: true,
+            save: true,
+        };
         assert_eq!(Outputs::parse("cps"), Ok(all));
         assert_eq!(Outputs::parse("spc"), Ok(all));
         assert_eq!(Outputs::parse("PsSp c".replace(' ', "").as_str()), Ok(all));

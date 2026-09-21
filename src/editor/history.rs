@@ -122,8 +122,8 @@ impl EditorState {
 
     /// Annotations returns as copies, selection is followed by id.
     fn reselect_by_id(&mut self, selected_id: Option<u64>) {
-        self.selected_annotation = selected_id
-            .and_then(|id| self.annotations.iter().position(|ann| ann.id == id));
+        self.selected_annotation =
+            selected_id.and_then(|id| self.annotations.iter().position(|ann| ann.id == id));
 
         if let Some(idx) = self.selected_annotation {
             self.damage_rects
@@ -139,7 +139,11 @@ impl EditorState {
                     &mut self.text.editors,
                     &mut self.text.font_system,
                 );
-                crate::tools::text::update_text_bbox_inline(ann, editor, &mut self.text.font_system);
+                crate::tools::text::update_text_bbox_inline(
+                    ann,
+                    editor,
+                    &mut self.text.font_system,
+                );
             }
         }
     }

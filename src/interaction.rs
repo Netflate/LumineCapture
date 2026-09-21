@@ -132,9 +132,10 @@ impl<K: PartialEq> ScrollAccumulator<K> {
 
         // Rate limit: drop events that arrive too quickly.
         if let Some(last) = self.last_processed
-            && Instant::now().duration_since(last) < MIN_INTERVAL {
-                return 0;
-            }
+            && Instant::now().duration_since(last) < MIN_INTERVAL
+        {
+            return 0;
+        }
         self.last_processed = Some(Instant::now());
 
         self.accumulator += delta;

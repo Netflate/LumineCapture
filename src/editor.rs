@@ -9,9 +9,12 @@ use std::time::Instant;
 use tiny_skia::{Color, PathBuilder, Pixmap, Rect};
 use usvg::Tree;
 
-use crate::tools::Tool;
-use crate::types::{AnnDragState, Annotation, Capture, Placement, PointerState, SelectionState, TextEditState, ToolSettings};
 use crate::interaction::{ClickTarget, DoubleClickTracker};
+use crate::tools::Tool;
+use crate::types::{
+    AnnDragState, Annotation, Capture, Placement, PointerState, SelectionState, TextEditState,
+    ToolSettings,
+};
 use crate::ui::color_popover::ColorPickerPopover;
 use crate::ui::magnifier::MagnifierState;
 use crate::ui::settings_panel::SettingsPanel;
@@ -231,18 +234,18 @@ impl EditorState {
             );
             if let (Some(vis), Some(mon)) = (visual, placement.rect())
                 && rects_overlap(&vis, &mon)
-                {
-                    crate::renderer::draw_annotation(
-                        &mut self.annotations_layer[i],
-                        ann,
-                        offset,
-                        false,
-                        &mut self.text.font_system,
-                        &mut self.text.swash_cache,
-                        &mut self.text.editors,
-                        None,
-                    );
-                }
+            {
+                crate::renderer::draw_annotation(
+                    &mut self.annotations_layer[i],
+                    ann,
+                    offset,
+                    false,
+                    &mut self.text.font_system,
+                    &mut self.text.swash_cache,
+                    &mut self.text.editors,
+                    None,
+                );
+            }
         }
     }
 
@@ -263,10 +266,26 @@ impl EditorState {
         }
 
         let pad = crate::renderer::visual_pad(stroke_width);
-        let min_x = start.0.min(end.0).min(control.map(|c| c.0).unwrap_or(start.0)) - pad;
-        let min_y = start.1.min(end.1).min(control.map(|c| c.1).unwrap_or(start.1)) - pad;
-        let max_x = start.0.max(end.0).max(control.map(|c| c.0).unwrap_or(start.0)) + pad;
-        let max_y = start.1.max(end.1).max(control.map(|c| c.1).unwrap_or(start.1)) + pad;
+        let min_x = start
+            .0
+            .min(end.0)
+            .min(control.map(|c| c.0).unwrap_or(start.0))
+            - pad;
+        let min_y = start
+            .1
+            .min(end.1)
+            .min(control.map(|c| c.1).unwrap_or(start.1))
+            - pad;
+        let max_x = start
+            .0
+            .max(end.0)
+            .max(control.map(|c| c.0).unwrap_or(start.0))
+            + pad;
+        let max_y = start
+            .1
+            .max(end.1)
+            .max(control.map(|c| c.1).unwrap_or(start.1))
+            + pad;
         let segment_bbox = Rect::from_ltrb(min_x, min_y, max_x, max_y).unwrap_or_else(|| {
             Rect::from_xywh(start.0 - pad, start.1 - pad, pad * 2.0, pad * 2.0).unwrap()
         });
@@ -282,15 +301,15 @@ impl EditorState {
                 );
                 if let (Some(vis), Some(mon)) = (visual, placement.rect())
                     && rects_overlap(&vis, &mon)
-                    {
-                        crate::renderer::stroke_pen_segment(
-                            &mut self.annotations_layer[i],
-                            &path,
-                            color,
-                            stroke_width,
-                            offset,
-                        );
-                    }
+                {
+                    crate::renderer::stroke_pen_segment(
+                        &mut self.annotations_layer[i],
+                        &path,
+                        color,
+                        stroke_width,
+                        offset,
+                    );
+                }
             }
         }
 

@@ -25,7 +25,13 @@ pub fn draw_progress_bar(canvas: &mut Pixmap, x: f32, y: f32, w: f32, percent: u
             && let Some(path) = rounded_rect_path(&rect, h / 2.0, true, true, true, true)
         {
             paint.set_color(fill.color());
-            canvas.fill_path(&path, &paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
+            canvas.fill_path(
+                &path,
+                &paint,
+                tiny_skia::FillRule::Winding,
+                Transform::identity(),
+                None,
+            );
         }
     }
 }
@@ -88,10 +94,38 @@ pub fn rounded_rect_path(
 pub fn oval_path(cx: f32, cy: f32, rx: f32, ry: f32) -> Option<tiny_skia::Path> {
     let mut pb = PathBuilder::new();
     pb.move_to(cx, cy - ry);
-    pb.cubic_to(cx + rx * KAPPA, cy - ry, cx + rx, cy - ry * KAPPA, cx + rx, cy);
-    pb.cubic_to(cx + rx, cy + ry * KAPPA, cx + rx * KAPPA, cy + ry, cx, cy + ry);
-    pb.cubic_to(cx - rx * KAPPA, cy + ry, cx - rx, cy + ry * KAPPA, cx - rx, cy);
-    pb.cubic_to(cx - rx, cy - ry * KAPPA, cx - rx * KAPPA, cy - ry, cx, cy - ry);
+    pb.cubic_to(
+        cx + rx * KAPPA,
+        cy - ry,
+        cx + rx,
+        cy - ry * KAPPA,
+        cx + rx,
+        cy,
+    );
+    pb.cubic_to(
+        cx + rx,
+        cy + ry * KAPPA,
+        cx + rx * KAPPA,
+        cy + ry,
+        cx,
+        cy + ry,
+    );
+    pb.cubic_to(
+        cx - rx * KAPPA,
+        cy + ry,
+        cx - rx,
+        cy + ry * KAPPA,
+        cx - rx,
+        cy,
+    );
+    pb.cubic_to(
+        cx - rx,
+        cy - ry * KAPPA,
+        cx - rx * KAPPA,
+        cy - ry,
+        cx,
+        cy - ry,
+    );
     pb.close();
     pb.finish()
 }

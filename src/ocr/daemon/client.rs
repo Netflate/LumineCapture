@@ -151,7 +151,11 @@ enum Remote {
 }
 
 impl OcrBackend for DaemonBackend {
-    fn recognize(&self, image: OcrImage, cancelled: &dyn Fn() -> bool) -> Result<OcrText, OcrError> {
+    fn recognize(
+        &self,
+        image: OcrImage,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<OcrText, OcrError> {
         if !self.broken.get() {
             match self.remote(&image, cancelled) {
                 Remote::Done(text) => {
@@ -162,7 +166,9 @@ impl OcrBackend for DaemonBackend {
                     return Ok(text);
                 }
                 Remote::Cancelled => return Err(CANCELLED.into()),
-                Remote::Local => debug!("ocr: the daemon is not ready yet, reading in this process"),
+                Remote::Local => {
+                    debug!("ocr: the daemon is not ready yet, reading in this process")
+                }
                 Remote::Fail(fail) => {
                     self.strike(&fail);
                     self.broken.set(true);
@@ -175,7 +181,10 @@ impl OcrBackend for DaemonBackend {
         if local.is_none() {
             *local = Some((self.config.local)(&self.files)?);
         }
-        local.as_ref().expect("built above").recognize(image, cancelled)
+        local
+            .as_ref()
+            .expect("built above")
+            .recognize(image, cancelled)
     }
 }
 
@@ -197,7 +206,9 @@ impl DaemonBackend {
             self.retire(session);
             session = self.handshake()?;
             if self.foreign(&session.welcome) {
-                return Err(Fail::Protocol("the daemon is still from another build".into()));
+                return Err(Fail::Protocol(
+                    "the daemon is still from another build".into(),
+                ));
             }
         }
         match &session.welcome.state {
@@ -224,7 +235,11 @@ impl DaemonBackend {
         protocol::write_request(&mut &stream, Outgoing::Hello(&self.config.build))
             .map_err(|e| Fail::Protocol(format!("hello: {e}")))?;
         match protocol::read_reply(&mut &stream) {
-            Ok(Reply::Welcome(welcome)) => Ok(Session { stream, welcome, pid }),
+            Ok(Reply::Welcome(welcome)) => Ok(Session {
+                stream,
+                welcome,
+                pid,
+            }),
             Ok(_) => Err(Fail::Protocol("unexpected answer to hello".into())),
             Err(e) => Err(Fail::Protocol(format!("hello: {e}"))),
         }
@@ -236,26 +251,40 @@ impl DaemonBackend {
             Ok(stream) => return Ok(stream),
             // socket remains, but nobody is listening: the daemon we spawned has crashed. when GPU driver failed during load
             Err(e) if e.kind() == io::ErrorKind::ConnectionRefused && self.spawned.get() => {
-                return Err(Fail::Unreachable("the daemon started for this session crashed".into()));
+                return Err(Fail::Unreachable(
+                    "the daemon started for this session crashed".into(),
+                ));
             }
-            Err(e) if !matches!(e.kind(), io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused) => {
+            Err(e)
+                if !matches!(
+                    e.kind(),
+                    io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
+                ) =>
+            {
                 return Err(Fail::Unreachable(e.to_string()));
             }
             Err(_) => {}
         }
-        if daemon_blocked(&read_strikes(&self.config.paths), &self.config.build, unix_now()) {
+        if daemon_blocked(
+            &read_strikes(&self.config.paths),
+            &self.config.build,
+            unix_now(),
+        ) {
             return Err(Fail::Blocked);
         }
         self.spawned.set(true);
         info!("ocr: no daemon at {}, starting one", socket.display());
-        (self.config.spawn)().map_err(|e| Fail::Unreachable(format!("cannot start the daemon: {e}")))?;
+        (self.config.spawn)()
+            .map_err(|e| Fail::Unreachable(format!("cannot start the daemon: {e}")))?;
         let deadline = Instant::now() + self.config.timing.connect;
         loop {
             std::thread::sleep(self.config.timing.retry);
             match UnixStream::connect(socket) {
                 Ok(stream) => return Ok(stream),
                 Err(e) if Instant::now() >= deadline => {
-                    return Err(Fail::Unreachable(format!("the daemon did not come up: {e}")));
+                    return Err(Fail::Unreachable(format!(
+                        "the daemon did not come up: {e}"
+                    )));
                 }
                 Err(_) => {}
             }
@@ -283,7 +312,9 @@ impl DaemonBackend {
             EngineState::Ready { model, .. } if *model == ours => true,
             EngineState::Loading { model } if *model == ours => false,
             _ => {
-                if protocol::write_request(&mut &session.stream, Outgoing::Load(&self.files)).is_ok() {
+                if protocol::write_request(&mut &session.stream, Outgoing::Load(&self.files))
+                    .is_ok()
+                {
                     let _ = protocol::read_reply(&mut &session.stream);
                 }
                 false
@@ -317,7 +348,9 @@ impl DaemonBackend {
                 if let Some(pid) = session.pid {
                     (self.config.kill)(pid);
                 }
-                return Remote::Fail(Fail::Protocol(format!("no answer in {budget:?}, the daemon was killed")));
+                return Remote::Fail(Fail::Protocol(format!(
+                    "no answer in {budget:?}, the daemon was killed"
+                )));
             }
             let slice = PollTimeout::try_from(left.min(timing.slice)).unwrap_or(PollTimeout::MAX);
             let mut fds = [PollFd::new(session.stream.as_fd(), PollFlags::POLLIN)];
@@ -346,7 +379,9 @@ impl DaemonBackend {
                 return;
             }
             Fail::NoGpu => (Strike::NoGpu, "no GPU".to_owned()),
-            Fail::Unreachable(e) | Fail::Failed(e) | Fail::Protocol(e) => (Strike::Failed, e.clone()),
+            Fail::Unreachable(e) | Fail::Failed(e) | Fail::Protocol(e) => {
+                (Strike::Failed, e.clone())
+            }
         };
         warn!("ocr: daemon unusable ({reason}), OCR runs in this process");
         record_strike(&self.config.paths, &self.config.build, strike);
@@ -380,7 +415,8 @@ pub fn stop(paths: &Paths, wait: Duration, kill: &dyn Fn(i32)) -> Result<bool, S
         if lock_free(&paths.lock) {
             return Ok(false);
         }
-        let pid = lock_file_pid(paths).ok_or("the daemon holds its lock, does not answer and left no pid")?;
+        let pid = lock_file_pid(paths)
+            .ok_or("the daemon holds its lock, does not answer and left no pid")?;
         kill(pid);
         return if wait_lock_free(&paths.lock, wait) {
             Ok(true)

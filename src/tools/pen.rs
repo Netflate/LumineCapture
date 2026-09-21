@@ -15,7 +15,10 @@ impl ToolBehavior for PenTool {
         pressed: bool,
         dirty_mask: &mut u32,
     ) {
-        let pos = (state.input.pointer.global.0 as f32, state.input.pointer.global.1 as f32);
+        let pos = (
+            state.input.pointer.global.0 as f32,
+            state.input.pointer.global.1 as f32,
+        );
 
         if pressed {
             state.pending_pen_baked = 0;
@@ -54,7 +57,10 @@ impl ToolBehavior for PenTool {
     }
 
     fn on_move(&self, state: &mut EditorState, _global: (f64, f64), dirty_mask: &mut u32) {
-        let raw_pos = (state.input.pointer.global.0 as f32, state.input.pointer.global.1 as f32);
+        let raw_pos = (
+            state.input.pointer.global.0 as f32,
+            state.input.pointer.global.1 as f32,
+        );
 
         let Some(ann) = state.pending.as_ref() else {
             return;
@@ -111,8 +117,7 @@ impl ToolBehavior for PenTool {
                         let p_next = points[k + 1];
                         let p_after = points[k + 2];
                         let mid_k = ((p_k.0 + p_next.0) / 2.0, (p_k.1 + p_next.1) / 2.0);
-                        let mid_next =
-                            ((p_next.0 + p_after.0) / 2.0, (p_next.1 + p_after.1) / 2.0);
+                        let mid_next = ((p_next.0 + p_after.0) / 2.0, (p_next.1 + p_after.1) / 2.0);
                         segments_to_bake.push((mid_k, Some(p_next), mid_next, color, stroke_width));
                     }
                     k += 1;
@@ -124,8 +129,7 @@ impl ToolBehavior for PenTool {
                 let seg_bbox = state.bake_pen_segment(start_p, ctrl, end_p, color, stroke_width);
                 state.pending_pen_baked += 1;
                 state.damage_rects.push(DamageZone::Global(seg_bbox));
-                *dirty_mask |=
-                    crate::utils::get_overlapping_monitors(&seg_bbox, &state.placements);
+                *dirty_mask |= crate::utils::get_overlapping_monitors(&seg_bbox, &state.placements);
             }
 
             if let Some(ann) = state.pending.as_ref() {

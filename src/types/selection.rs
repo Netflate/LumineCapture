@@ -1,6 +1,5 @@
 use tiny_skia::Rect;
 
-
 pub struct SelectionState {
     pub zone: Option<Rect>,
     pub prev_zone: Option<Rect>,

@@ -1,14 +1,14 @@
-use log::{error, info, warn};
 use crate::editor::dirty::mark_all_dirty;
 use crate::editor::{DamageZone, EditorState};
-use crate::ocr::{self, StartOutcome};
+use crate::interaction::ClickTarget;
 use crate::ocr::draw::scan_badge_rect;
 use crate::ocr::models::MODELS;
-use crate::tools::{Tool, ToolBehavior};
+use crate::ocr::{self, StartOutcome};
 use crate::tools::selection::SelectionTool;
-use crate::interaction::ClickTarget;
-use crate::ui::toast::ToastKind;
+use crate::tools::{Tool, ToolBehavior};
 use crate::types::{CursorIcon, MouseButton, SelectionHandle, SpecialKey};
+use crate::ui::toast::ToastKind;
+use log::{error, info, warn};
 use std::time::Instant;
 use tiny_skia::Rect;
 
@@ -64,7 +64,10 @@ impl ToolBehavior for OcrTool {
 
         let hit = state.ocr.view.line_at(state.input.pointer.global);
         if let Some(line) = hit {
-            let pos = (state.input.pointer.global.0 as f32, state.input.pointer.global.1 as f32);
+            let pos = (
+                state.input.pointer.global.0 as f32,
+                state.input.pointer.global.1 as f32,
+            );
             if state.input.clicks.register(ClickTarget::OcrLine(line), pos) {
                 let damage = state.ocr.view.select_block(line);
                 damage_overlay(state, damage);
@@ -136,7 +139,9 @@ impl ToolBehavior for OcrTool {
     }
 
     fn cursor(&self, state: &EditorState) -> CursorIcon {
-        if state.ocr.view.is_active() && state.ocr.view.line_at(state.input.pointer.global).is_some() {
+        if state.ocr.view.is_active()
+            && state.ocr.view.line_at(state.input.pointer.global).is_some()
+        {
             CursorIcon::Text
         } else {
             CursorIcon::Crosshair
@@ -152,7 +157,11 @@ fn cancel_scan(state: &mut EditorState) {
 
 /// Takes down what the previous scan said, it no longer describes the screen.
 fn dismiss_scan_toasts(state: &mut EditorState) {
-    for kind in [ToastKind::OcrNoText, ToastKind::OcrFailed, ToastKind::CopyFailed] {
+    for kind in [
+        ToastKind::OcrNoText,
+        ToastKind::OcrFailed,
+        ToastKind::CopyFailed,
+    ] {
         state.toasts.dismiss(kind);
     }
 }
@@ -172,7 +181,6 @@ fn ask_for_model(state: &mut EditorState) {
         .show(ToastKind::OcrNoModel, &mut state.text.font_system);
 }
 
-
 fn boxed_out(state: &EditorState) -> bool {
     let min_region = crate::config::get().ocr.min_region;
     state.selection.zone.is_some_and(|zone| {
@@ -187,7 +195,10 @@ fn boxed_out(state: &EditorState) -> bool {
 /// "select a new area".
 fn pressed_inside_region(state: &EditorState) -> bool {
     state.ocr.view.region().is_some_and(|region| {
-        let (x, y) = (state.input.pointer.global.0 as f32, state.input.pointer.global.1 as f32);
+        let (x, y) = (
+            state.input.pointer.global.0 as f32,
+            state.input.pointer.global.1 as f32,
+        );
         x >= region.left() && x <= region.right() && y >= region.top() && y <= region.bottom()
     })
 }
@@ -228,7 +239,10 @@ fn end_region_drag(state: &mut EditorState) {
     }
 
     if state.selection.zone != state.ocr.redrag_from {
-        for zone in [state.selection.zone, state.ocr.redrag_from].into_iter().flatten() {
+        for zone in [state.selection.zone, state.ocr.redrag_from]
+            .into_iter()
+            .flatten()
+        {
             state.damage_rects.push(DamageZone::Global(zone));
         }
         state.selection.zone = state.ocr.redrag_from;
@@ -289,7 +303,9 @@ fn start_ocr(state: &mut EditorState) {
         StartOutcome::Busy => info!("ocr: still working on the previous region"),
         StartOutcome::Unavailable(e) => {
             error!("ocr: engine unavailable: {e}");
-            state.toasts.show(ToastKind::OcrFailed, &mut state.text.font_system);
+            state
+                .toasts
+                .show(ToastKind::OcrFailed, &mut state.text.font_system);
         }
     }
 }
@@ -312,7 +328,9 @@ pub fn copy_selection(state: &mut EditorState, _dirty_mask: &mut u32) {
         Ok(()) => info!("ocr: copied {} line(s)", text.lines().count()),
         Err(e) => {
             warn!("ocr: can't copy: {e}");
-            state.toasts.show(ToastKind::CopyFailed, &mut state.text.font_system);
+            state
+                .toasts
+                .show(ToastKind::CopyFailed, &mut state.text.font_system);
         }
     }
 }
@@ -351,7 +369,9 @@ pub fn finish_ocr(
         Ok(text) => text,
         Err(e) => {
             error!("ocr: recognition failed: {e}");
-            state.toasts.show(ToastKind::OcrFailed, &mut state.text.font_system);
+            state
+                .toasts
+                .show(ToastKind::OcrFailed, &mut state.text.font_system);
             state.ocr.view.clear();
             mark_all_dirty(dirty_mask, state.placements.len());
             return;
@@ -360,7 +380,9 @@ pub fn finish_ocr(
 
     if text.is_empty() {
         info!("ocr: no text found in the selected region");
-        state.toasts.show(ToastKind::OcrNoText, &mut state.text.font_system);
+        state
+            .toasts
+            .show(ToastKind::OcrNoText, &mut state.text.font_system);
         // Nothing to shade or select: drop the overlay rather than leaving the
         // region sitting under a wash with no text in it.
         state.ocr.view.clear();
@@ -436,4 +458,3 @@ pub fn cancel_model_download(state: &mut EditorState, idx: usize) {
         state.ocr.models.set_active(None);
     }
 }
-

@@ -7,9 +7,11 @@
 use smithay_client_toolkit::compositor::CompositorHandler;
 use smithay_client_toolkit::shell::xdg::window::{Window, WindowConfigure, WindowHandler};
 
-use smithay_client_toolkit::shm::ShmHandler;
 use smithay_client_toolkit::shell::WaylandSurface;
-use smithay_client_toolkit::shell::wlr_layer::{LayerShellHandler, LayerSurface, LayerSurfaceConfigure};
+use smithay_client_toolkit::shell::wlr_layer::{
+    LayerShellHandler, LayerSurface, LayerSurfaceConfigure,
+};
+use smithay_client_toolkit::shm::ShmHandler;
 
 use wayland_client::protocol::{wl_output, wl_surface};
 use wayland_client::{Connection, QueueHandle};

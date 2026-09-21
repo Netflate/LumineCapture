@@ -2,11 +2,18 @@ use std::collections::HashMap;
 
 use usvg::Tree;
 
-use crate::renderer::paths::{draw_item_border, draw_panel_border, draw_svg_icon, rounded_rect_path};
-use crate::renderer::text::{HAlign, draw_aligned_text, draw_input_box, draw_line_edit};
 use crate::config::ColorPicker;
-use crate::ui::color_popover::{ColorField, ColorPickerPopover, ColorPopoverElement, ColorSquareState, field_font_size, RECENT_LABEL, RGBA_FIELDS, eyedropper_center, hex_field_geom, hex_label_pos, hsv_to_color, hue_handle_center_y, hue_track_origin, recent_label_rect, rgba_field_geom, rgba_slot_origin, sv_square_origin, swatch_center, swatch_radius};
+use crate::renderer::paths::{
+    draw_item_border, draw_panel_border, draw_svg_icon, rounded_rect_path,
+};
+use crate::renderer::text::{HAlign, draw_aligned_text, draw_input_box, draw_line_edit};
 use crate::theme::{color, radius};
+use crate::ui::color_popover::{
+    ColorField, ColorPickerPopover, ColorPopoverElement, ColorSquareState, RECENT_LABEL,
+    RGBA_FIELDS, eyedropper_center, field_font_size, hex_field_geom, hex_label_pos, hsv_to_color,
+    hue_handle_center_y, hue_track_origin, recent_label_rect, rgba_field_geom, rgba_slot_origin,
+    sv_square_origin, swatch_center, swatch_radius,
+};
 use crate::ui::panel::UiPanel;
 use cosmic_text::{FontSystem, SwashCache, Weight};
 use tiny_skia::{
@@ -73,15 +80,7 @@ pub fn draw_color_popover(
         None,
     );
 
-    draw_panel_border(
-        canvas,
-        x,
-        y,
-        w,
-        h,
-        radius::panel(),
-        color_popover.opacity,
-    );
+    draw_panel_border(canvas, x, y, w, h, radius::panel(), color_popover.opacity);
 
     color_popover.colorpicker_pixmap = Some(popover_pixmap);
 }
@@ -428,7 +427,14 @@ fn draw_recent_colors(
 
     let (cx, cy) = eyedropper_center(origin);
     let is_hovered = color_popover.hovered == Some(ColorPopoverElement::Eyedropper);
-    draw_eyedropper(canvas, icons_cache, cx, cy, is_hovered, color_popover.picking);
+    draw_eyedropper(
+        canvas,
+        icons_cache,
+        cx,
+        cy,
+        is_hovered,
+        color_popover.picking,
+    );
 }
 
 fn draw_eyedropper(

@@ -69,7 +69,11 @@ impl Fake {
 }
 
 impl OcrBackend for Fake {
-    fn recognize(&self, image: OcrImage, cancelled: &dyn Fn() -> bool) -> Result<OcrText, OcrError> {
+    fn recognize(
+        &self,
+        image: OcrImage,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<OcrText, OcrError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         if self.panic {
             panic!("fake backend panicked on purpose");

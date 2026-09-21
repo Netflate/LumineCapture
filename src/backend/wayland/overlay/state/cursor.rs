@@ -1,5 +1,5 @@
 // ── Cursor shape (wp_cursor_shape_device_v1) ────────────────────────────────
-// using cursor-shape-v1 
+// using cursor-shape-v1
 
 use crate::backend::wayland::overlay::state::OverlayState;
 use crate::types::CursorIcon;

@@ -1,7 +1,7 @@
 // kind of a hotkey manager
 // transfers key actions to it respective function, depends of the config
 // handles some special cases
-// and overall is context aware, and does some safety checks 
+// and overall is context aware, and does some safety checks
 use tiny_skia::Rect;
 
 use crate::editor::dirty::{apply_damage_rects, mark_all_dirty, mark_dirty};
@@ -16,7 +16,9 @@ use crate::utils::get_full_workspace_rect;
 use super::input::{refresh_panels, select_tool};
 use super::panels::color::close_color_popover;
 use super::panels::model::close_model_popover;
-use super::panels::settings::{apply_stepper_arrow_step, sync_stepper_edit_text, update_settings_panel};
+use super::panels::settings::{
+    apply_stepper_arrow_step, sync_stepper_edit_text, update_settings_panel,
+};
 
 pub fn run(editor_state: &mut EditorState, action: Action, dirty_mask: &mut u32) {
     editor_state.settings_panel.cancel_scroll();
@@ -57,8 +59,12 @@ pub fn run(editor_state: &mut EditorState, action: Action, dirty_mask: &mut u32)
         Action::SizeUp => step_size(editor_state, StepperArrow::Up, dirty_mask),
         Action::SizeDown => step_size(editor_state, StepperArrow::Down, dirty_mask),
         Action::Tool(tool) if !busy => select_tool(editor_state, tool, dirty_mask),
-        Action::Move { dir, fast } if !busy => nudge_selection(editor_state, dir, fast, false, dirty_mask),
-        Action::Resize { dir, fast } if !busy => nudge_selection(editor_state, dir, fast, true, dirty_mask),
+        Action::Move { dir, fast } if !busy => {
+            nudge_selection(editor_state, dir, fast, false, dirty_mask)
+        }
+        Action::Resize { dir, fast } if !busy => {
+            nudge_selection(editor_state, dir, fast, true, dirty_mask)
+        }
         Action::Tool(_) | Action::Move { .. } | Action::Resize { .. } => {}
     }
     apply_damage_rects(editor_state, dirty_mask);
@@ -112,7 +118,11 @@ fn nudge_selection(
     };
 
     let selection = &crate::config::get().selection;
-    let step = if fast { selection.nudge_fast } else { selection.nudge };
+    let step = if fast {
+        selection.nudge_fast
+    } else {
+        selection.nudge
+    };
     let (dx, dy) = match dir {
         Dir::Left => (-step, 0.0),
         Dir::Right => (step, 0.0),

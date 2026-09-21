@@ -8,7 +8,10 @@ pub const LIBRARY: &str = "libwebgpu_dawn.so";
 
 pub fn candidates() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    if let Some(exe_dir) = std::env::current_exe().ok().and_then(|exe| exe.parent().map(Path::to_path_buf)) {
+    if let Some(exe_dir) = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(Path::to_path_buf))
+    {
         dirs.push(exe_dir.clone());
         dirs.push(exe_dir.join("../lib/LumineCapture"));
     }
@@ -28,7 +31,12 @@ pub const ORT: &str = "1.28.0";
 
 /// `~/.local/share/LumineCapture/gpu/onnxruntime-<ORT>`, next to `models`
 pub fn download_dir() -> Option<PathBuf> {
-    Some(dirs::data_dir()?.join("LumineCapture").join("gpu").join(format!("onnxruntime-{ORT}")))
+    Some(
+        dirs::data_dir()?
+            .join("LumineCapture")
+            .join("gpu")
+            .join(format!("onnxruntime-{ORT}")),
+    )
 }
 
 #[cfg(not(feature = "ocr-gpu"))]
@@ -76,29 +84,47 @@ mod fetch {
     use crate::ocr::download;
     use crate::ocr::models::Asset;
 
-    pub const URL: &str = "https://cdn.pyke.io/0/pyke:ort-rs/ms@1.28.0/x86_64-unknown-linux-gnu+webgpu.tar.lzma2";
+    pub const URL: &str =
+        "https://cdn.pyke.io/0/pyke:ort-rs/ms@1.28.0/x86_64-unknown-linux-gnu+webgpu.tar.lzma2";
     pub const ARCHIVE: Asset = Asset {
         file: "x86_64-unknown-linux-gnu+webgpu.tar.lzma2",
         size: 13_739_496,
         sha256: "68406bc32de516ee8baeaa4c5f2de2bb0031269f19ce8b76d64988c0498b93be",
     };
     pub const LIBRARY_SIZE: u64 = 12_129_088;
-    pub const LIBRARY_SHA256: &str = "e07cc47ed362fbc24d1aa305a39419ef025332b00973581bdbcbd66e7621a44a";
+    pub const LIBRARY_SHA256: &str =
+        "e07cc47ed362fbc24d1aa305a39419ef025332b00973581bdbcbd66e7621a44a";
 
     pub fn download() -> Result<(), String> {
-        let dir = super::download_dir().ok_or("no data directory to download the GPU library into")?;
+        let dir =
+            super::download_dir().ok_or("no data directory to download the GPU library into")?;
         fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
-        info!("ocr: downloading {LIBRARY} ({} MB) from {URL}", ARCHIVE.size / 1_000_000);
+        info!(
+            "ocr: downloading {LIBRARY} ({} MB) from {URL}",
+            ARCHIVE.size / 1_000_000
+        );
         let started = Instant::now();
         let never = AtomicBool::new(false);
-        download::fetch(&download::agent(), URL, &ARCHIVE, &dir, &never, &never, |_| {})
-            .map_err(|e| format!("cannot download {LIBRARY}: {e}"))?;
+        download::fetch(
+            &download::agent(),
+            URL,
+            &ARCHIVE,
+            &dir,
+            &never,
+            &never,
+            |_| {},
+        )
+        .map_err(|e| format!("cannot download {LIBRARY}: {e}"))?;
         let archive = dir.join(ARCHIVE.file);
         let extracted = extract(&archive, &dir);
         let _ = fs::remove_file(&archive);
         extracted?;
         remove_other_versions(&dir);
-        info!("ocr: {LIBRARY} is ready in {:.1} s, {}", started.elapsed().as_secs_f32(), dir.display());
+        info!(
+            "ocr: {LIBRARY} is ready in {:.1} s, {}",
+            started.elapsed().as_secs_f32(),
+            dir.display()
+        );
         Ok(())
     }
 
@@ -117,7 +143,11 @@ mod fetch {
             let size = u64::from_str_radix(field(&header[124..136]).trim(), 8)
                 .map_err(|_| format!("damaged entry in {}", archive.display()))?;
             if header[156] != b'0' || name.rsplit('/').next() != Some(LIBRARY) {
-                io::copy(&mut (&mut tar).take(size.next_multiple_of(512)), &mut io::sink()).map_err(broken)?;
+                io::copy(
+                    &mut (&mut tar).take(size.next_multiple_of(512)),
+                    &mut io::sink(),
+                )
+                .map_err(broken)?;
                 continue;
             }
             if size != LIBRARY_SIZE {
@@ -134,7 +164,8 @@ mod fetch {
     }
 
     fn write_checked(from: &mut impl Read, part: &Path) -> Result<(), String> {
-        let mut out = File::create(part).map_err(|e| format!("cannot write {}: {e}", part.display()))?;
+        let mut out =
+            File::create(part).map_err(|e| format!("cannot write {}: {e}", part.display()))?;
         let mut hash = hmac_sha256::Hash::new();
         let mut buf = vec![0u8; 64 * 1024];
         loop {
@@ -161,8 +192,14 @@ mod fetch {
     }
 
     fn remove_other_versions(current: &Path) {
-        let Some(parent) = current.parent() else { return };
-        for entry in fs::read_dir(parent).into_iter().flatten().filter_map(Result::ok) {
+        let Some(parent) = current.parent() else {
+            return;
+        };
+        for entry in fs::read_dir(parent)
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+        {
             if entry.path() != current {
                 let _ = fs::remove_dir_all(entry.path());
             }
@@ -216,7 +253,9 @@ mod trampolines {
 
     pub fn load() -> Result<(), String> {
         static LOADED: Mutex<bool> = Mutex::new(false);
-        let mut loaded = LOADED.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut loaded = LOADED
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         if !*loaded {
             open()?;
             *loaded = true;
@@ -225,8 +264,8 @@ mod trampolines {
     }
 
     fn open() -> Result<(), String> {
-        let path = super::find()
-            .ok_or_else(|| format!("{} is not downloaded yet", super::LIBRARY))?;
+        let path =
+            super::find().ok_or_else(|| format!("{} is not downloaded yet", super::LIBRARY))?;
         let name = CString::new(path.as_os_str().as_bytes()).map_err(|e| e.to_string())?;
         let handle = unsafe { libc::dlopen(name.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL) };
         if handle.is_null() {
@@ -242,7 +281,11 @@ mod trampolines {
         for symbol in NAMES {
             let address = unsafe { libc::dlsym(handle, symbol.as_ptr()) };
             if address.is_null() {
-                return Err(format!("{} has no {}, wrong version", path.display(), symbol.to_string_lossy()));
+                return Err(format!(
+                    "{} has no {}, wrong version",
+                    path.display(),
+                    symbol.to_string_lossy()
+                ));
             }
             found.push(address as usize);
         }

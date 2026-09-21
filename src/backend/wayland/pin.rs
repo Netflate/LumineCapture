@@ -97,7 +97,7 @@ pub fn run(image: &[u8], scale: f32) -> Result<(), Box<dyn std::error::Error>> {
     let viewporter = globals
         .bind::<wp_viewporter::WpViewporter, _, _>(&qh, 1..=1, ())
         .ok();
-    // buffer in native resolution, while the window uses logical size. 
+    // buffer in native resolution, while the window uses logical size.
     // otherwise pinned pciture will be low quality when changed scales
 
     let size = match viewporter {
@@ -182,9 +182,8 @@ fn render_pin(image: &[u8], scale: f32) -> Result<Pixmap, Box<dyn std::error::Er
     // border style and radius similar to panels one
     let (fw, fh) = (w as f32, h as f32);
     let rect = Rect::from_xywh(0.0, 0.0, fw, fh).ok_or("empty image")?;
-    let shape =
-        rounded_rect_path(&rect, radius::panel() * scale, true, true, true, true)
-            .ok_or("empty image")?;
+    let shape = rounded_rect_path(&rect, radius::panel() * scale, true, true, true, true)
+        .ok_or("empty image")?;
     let mut mask = Mask::new(w, h).ok_or("image is too large")?;
     mask.fill_path(&shape, FillRule::Winding, true, Transform::identity());
     pin.apply_mask(&mask);
@@ -203,7 +202,7 @@ fn whole_size(n: u32, scale: f32) -> u32 {
 }
 
 /// Pads image dimensions by repeating edge pixels
-/// 
+///
 /// prevents KWin rendering artifacts when dragging on a monitor with scale less than 100%
 fn pad_to_whole_pixels(data: Vec<u8>, w: u32, h: u32, scale: f32) -> (Vec<u8>, u32, u32) {
     let (pw, ph) = (whole_size(w, scale), whole_size(h, scale));
@@ -291,9 +290,12 @@ impl WindowHandler for Pin {
             return;
         };
         window.attach(Some(buffer.wl_buffer()), 0, 0);
-        window
-            .wl_surface()
-            .damage_buffer(0, 0, self.buffer_size.0 as i32, self.buffer_size.1 as i32);
+        window.wl_surface().damage_buffer(
+            0,
+            0,
+            self.buffer_size.0 as i32,
+            self.buffer_size.1 as i32,
+        );
         window.commit();
         self.mapped = true;
     }
@@ -317,7 +319,11 @@ impl PointerHandler for Pin {
                     self.set_cursor(Shape::Grab);
                 }
                 // now draggong and etc none of our business, fully handled by wayland window manager
-                PointerEventKind::Press { button: BTN_LEFT, serial, .. } => {
+                PointerEventKind::Press {
+                    button: BTN_LEFT,
+                    serial,
+                    ..
+                } => {
                     if let Some(seat) = &self.pointer_seat {
                         self.window.move_(seat, serial);
                     }
@@ -337,7 +343,7 @@ impl KeyboardHandler for Pin {
         _: u32,
         event: KeyEvent,
     ) {
-        // uses the same bind as our usual overlay 
+        // uses the same bind as our usual overlay
         let chord = keysym::chord(event.keysym, event.raw_code, self.mods);
         match chord.and_then(|c| keys::map().lookup(c)) {
             Some(Action::Cancel) => self.exit = true,

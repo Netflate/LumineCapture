@@ -1,4 +1,6 @@
-use crate::renderer::paths::{draw_item_border, draw_panel_border, draw_progress_bar, draw_svg_icon, rounded_rect_path};
+use crate::renderer::paths::{
+    draw_item_border, draw_panel_border, draw_progress_bar, draw_svg_icon, rounded_rect_path,
+};
 use crate::renderer::text::{HAlign, draw_aligned_text, draw_line_edit};
 use crate::theme::{color, font, radius, size, stroke};
 use crate::ui::panel::{PanelItem, UiPanel};
@@ -141,7 +143,11 @@ fn draw_settings_content(
                     is_hovered,
                     is_selected,
                 );
-                let tint = if is_hovered { cfg.icon_hovered.get() } else { cfg.icon.get() };
+                let tint = if is_hovered {
+                    cfg.icon_hovered.get()
+                } else {
+                    cfg.icon.get()
+                };
                 let icon_size = action.icon_size();
                 draw_svg_icon(
                     canvas,
@@ -240,18 +246,18 @@ fn draw_settings_content(
                 if let Some(sep_rect) = Rect::from_xywh(sep_x, sep_y, sep_w, sep_h)
                     && let Some(sep_path) =
                         rounded_rect_path(&sep_rect, radius::separator(), true, true, true, true)
-                    {
-                        let mut sep_paint = Paint::default();
-                        sep_paint.set_color(cfg.separator.get().color());
-                        sep_paint.anti_alias = true;
-                        canvas.fill_path(
-                            &sep_path,
-                            &sep_paint,
-                            tiny_skia::FillRule::Winding,
-                            Transform::identity(),
-                            None,
-                        );
-                    }
+                {
+                    let mut sep_paint = Paint::default();
+                    sep_paint.set_color(cfg.separator.get().color());
+                    sep_paint.anti_alias = true;
+                    canvas.fill_path(
+                        &sep_path,
+                        &sep_paint,
+                        tiny_skia::FillRule::Winding,
+                        Transform::identity(),
+                        None,
+                    );
+                }
             }
         }
 
@@ -259,7 +265,7 @@ fn draw_settings_content(
     }
 }
 
-/// looks like the input field, but on click just copies the value to clipboard 
+/// looks like the input field, but on click just copies the value to clipboard
 fn draw_value_field(
     canvas: &mut Pixmap,
     rect: Rect,
@@ -463,7 +469,11 @@ fn draw_stepper(
         swash_cache,
         font::label(),
         text_color,
-        if cfg.stepper_bold { cosmic_text::Weight::BOLD } else { cosmic_text::Weight::NORMAL },
+        if cfg.stepper_bold {
+            cosmic_text::Weight::BOLD
+        } else {
+            cosmic_text::Weight::NORMAL
+        },
     );
 
     let hovered_arrow = panel
@@ -509,30 +519,18 @@ fn draw_stepper_arrows(
 
     paint.set_color(up_color);
     let mut pb = PathBuilder::new();
-    pb.move_to(
-        cx - arrow_w / 2.0,
-        up_cy + arrow_h / 2.0,
-    );
+    pb.move_to(cx - arrow_w / 2.0, up_cy + arrow_h / 2.0);
     pb.line_to(cx, up_cy - arrow_h / 2.0);
-    pb.line_to(
-        cx + arrow_w / 2.0,
-        up_cy + arrow_h / 2.0,
-    );
+    pb.line_to(cx + arrow_w / 2.0, up_cy + arrow_h / 2.0);
     if let Some(path) = pb.finish() {
         canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
     }
 
     paint.set_color(down_color);
     let mut pb = PathBuilder::new();
-    pb.move_to(
-        cx - arrow_w / 2.0,
-        down_cy - arrow_h / 2.0,
-    );
+    pb.move_to(cx - arrow_w / 2.0, down_cy - arrow_h / 2.0);
     pb.line_to(cx, down_cy + arrow_h / 2.0);
-    pb.line_to(
-        cx + arrow_w / 2.0,
-        down_cy - arrow_h / 2.0,
-    );
+    pb.line_to(cx + arrow_w / 2.0, down_cy - arrow_h / 2.0);
     if let Some(path) = pb.finish() {
         canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
     }
@@ -637,12 +635,9 @@ fn draw_toggle(
             let box_x = x + w - box_size;
             let box_y = y + (h - box_size) / 2.0;
 
-            if let Some(label_rect) = Rect::from_xywh(
-                x,
-                y,
-                (w - box_size - cfg.checkbox_gap).max(0.0),
-                h,
-            ) {
+            if let Some(label_rect) =
+                Rect::from_xywh(x, y, (w - box_size - cfg.checkbox_gap).max(0.0), h)
+            {
                 draw_aligned_text(
                     canvas,
                     label,

@@ -1,7 +1,7 @@
 use super::paths::{luminance, normalized_rect, oval_path};
 use super::text::{draw_text_buffer, shape_single_line};
-use crate::tools::text::render_text_annotation;
 use crate::renderer::paths::KAPPA;
+use crate::tools::text::render_text_annotation;
 use crate::types::annotations::{Annotation, AnnotationShape, arrow_head};
 
 use cosmic_text::{Editor, FontSystem, SwashCache};
@@ -36,7 +36,6 @@ fn transforms_for(offset: (f32, f32)) -> (Transform, Transform) {
     (transform, shadow_transform)
 }
 
-
 // Only matters for the offset-shadow path (stroke_with_shadow), not halo
 // (draw_text_box / draw_annotation_handles, which don't use shadow.offset
 // at all — their layers spread evenly on every side by design).
@@ -56,7 +55,8 @@ pub fn visual_pad(stroke_width: f32) -> f32 {
 pub fn selection_chrome_pad() -> f32 {
     let cfg = crate::config::get();
     let shadow = &cfg.annotations.shadow;
-    let max_stroke_extent = (cfg.annotations.handles.width + shadow.layers as f32 * shadow.spread) / 2.0;
+    let max_stroke_extent =
+        (cfg.annotations.handles.width + shadow.layers as f32 * shadow.spread) / 2.0;
     cfg.input.handle_hit_width / 2.0 + max_stroke_extent + 2.0
 }
 
@@ -108,31 +108,82 @@ pub fn draw_annotation(
 ) {
     match &ann.shape {
         AnnotationShape::Arrow { start, end } => {
-            draw_arrow(canvas, *start, *end, ann.color, ann.stroke_width, offset, ann.shadow_color);
+            draw_arrow(
+                canvas,
+                *start,
+                *end,
+                ann.color,
+                ann.stroke_width,
+                offset,
+                ann.shadow_color,
+            );
         }
         AnnotationShape::Rectangle { start, end, filled } => {
             if let Some(rect) = normalized_rect(*start, *end) {
                 if *filled {
-                    fill_rect(canvas, &rect, ann.color, ann.stroke_width, offset, ann.shadow_color);
+                    fill_rect(
+                        canvas,
+                        &rect,
+                        ann.color,
+                        ann.stroke_width,
+                        offset,
+                        ann.shadow_color,
+                    );
                 } else {
-                    draw_rect(canvas, &rect, ann.color, ann.stroke_width, offset, ann.shadow_color);
+                    draw_rect(
+                        canvas,
+                        &rect,
+                        ann.color,
+                        ann.stroke_width,
+                        offset,
+                        ann.shadow_color,
+                    );
                 }
             }
         }
         AnnotationShape::Circle { start, end, filled } => {
             if let Some(rect) = normalized_rect(*start, *end) {
                 if *filled {
-                    fill_circle(canvas, &rect, ann.color, ann.stroke_width, offset, ann.shadow_color);
+                    fill_circle(
+                        canvas,
+                        &rect,
+                        ann.color,
+                        ann.stroke_width,
+                        offset,
+                        ann.shadow_color,
+                    );
                 } else {
-                    draw_circle(canvas, &rect, ann.color, ann.stroke_width, offset, ann.shadow_color);
+                    draw_circle(
+                        canvas,
+                        &rect,
+                        ann.color,
+                        ann.stroke_width,
+                        offset,
+                        ann.shadow_color,
+                    );
                 }
             }
         }
         AnnotationShape::Line { start, end } => {
-            draw_line(canvas, *start, *end, ann.color, ann.stroke_width, offset, ann.shadow_color);
+            draw_line(
+                canvas,
+                *start,
+                *end,
+                ann.color,
+                ann.stroke_width,
+                offset,
+                ann.shadow_color,
+            );
         }
         AnnotationShape::Pen { points } => {
-            draw_pen(canvas, points, ann.color, ann.stroke_width, offset, ann.shadow_color);
+            draw_pen(
+                canvas,
+                points,
+                ann.color,
+                ann.stroke_width,
+                offset,
+                ann.shadow_color,
+            );
         }
         AnnotationShape::Text { .. } => {
             let is_editing = active_text_id == Some(ann.id);
@@ -360,7 +411,13 @@ fn fill_rect(
     ) else {
         return;
     };
-    fill_with_shadow(canvas, &PathBuilder::from_rect(outer), color, offset, shadow_color);
+    fill_with_shadow(
+        canvas,
+        &PathBuilder::from_rect(outer),
+        color,
+        offset,
+        shadow_color,
+    );
 }
 
 fn fill_circle(
@@ -393,7 +450,13 @@ fn fill_with_shadow(
     let mut shadow_paint = Paint::default();
     shadow_paint.set_color(shadow_color);
     shadow_paint.anti_alias = true;
-    canvas.fill_path(path, &shadow_paint, FillRule::Winding, shadow_transform, None);
+    canvas.fill_path(
+        path,
+        &shadow_paint,
+        FillRule::Winding,
+        shadow_transform,
+        None,
+    );
 
     let mut paint = Paint::default();
     paint.set_color(color);

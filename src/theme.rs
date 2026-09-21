@@ -9,7 +9,7 @@ use tiny_skia::Color;
 // ==========================================
 
 /// rgba struct since there is multiple definition of color
-/// (tiny_skia::color, usvg::color, (u8,u8,u8,u8) tuple in ocr) 
+/// (tiny_skia::color, usvg::color, (u8,u8,u8,u8) tuple in ocr)
 /// while we want to have a single source of truth
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Rgba(pub u8, pub u8, pub u8, pub u8);

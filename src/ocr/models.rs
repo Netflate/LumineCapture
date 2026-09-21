@@ -1,9 +1,9 @@
 // Manages OCR models: downloadable assets, local disk cache, and active selection.
 //
-// Model files are stored in `~/.local/share/LumineCapture/models`, and active choice 
+// Model files are stored in `~/.local/share/LumineCapture/models`, and active choice
 // in `~/.local/state/LumineCapture/ocr-model`.
 //
-// Uses a shared text detector across all languages, while each language has its own 
+// Uses a shared text detector across all languages, while each language has its own
 // recognizer and dictionary file.
 
 use log::{error, warn};
@@ -254,7 +254,11 @@ impl OcrModels {
 
     pub fn download_size(&self, idx: usize) -> u64 {
         let model = &MODELS[idx];
-        let detector = if self.detector_on_disk { 0 } else { DETECTOR.size };
+        let detector = if self.detector_on_disk {
+            0
+        } else {
+            DETECTOR.size
+        };
         detector + model.recognizer.size + model.dict.size
     }
 
@@ -301,8 +305,9 @@ impl OcrModels {
     pub fn remove(&mut self, idx: usize) {
         let Some(dir) = self.dir.clone() else { return };
         let model = &MODELS[idx];
-        let others = (0..MODELS.len())
-            .any(|i| i != idx && (self.status[i] == ModelStatus::Installed || in_flight(self.status[i])));
+        let others = (0..MODELS.len()).any(|i| {
+            i != idx && (self.status[i] == ModelStatus::Installed || in_flight(self.status[i]))
+        });
 
         let mut files = vec![model.recognizer.file, model.dict.file];
         if !others {
@@ -322,7 +327,10 @@ impl OcrModels {
         let mut events = Vec::new();
         while let Some(update) = self.downloader.try_recv() {
             let (id, idx) = update.job();
-            if self.jobs[idx].as_ref().is_none_or(|(current, _)| *current != id) {
+            if self.jobs[idx]
+                .as_ref()
+                .is_none_or(|(current, _)| *current != id)
+            {
                 continue;
             }
             match update {
@@ -350,14 +358,17 @@ impl OcrModels {
     }
 
     fn refresh(&mut self) {
-        let Some(dir) = self.dir.as_deref() else { return };
+        let Some(dir) = self.dir.as_deref() else {
+            return;
+        };
         self.detector_on_disk = on_disk(dir, &DETECTOR);
         for (idx, model) in MODELS.iter().enumerate() {
             if in_flight(self.status[idx]) {
                 continue;
             }
-            let installed =
-                self.detector_on_disk && on_disk(dir, &model.recognizer) && on_disk(dir, &model.dict);
+            let installed = self.detector_on_disk
+                && on_disk(dir, &model.recognizer)
+                && on_disk(dir, &model.dict);
             self.status[idx] = if installed {
                 ModelStatus::Installed
             } else {

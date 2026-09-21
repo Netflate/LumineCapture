@@ -1,5 +1,5 @@
-use crate::tools::Tool;
 use crate::theme::{anim, size};
+use crate::tools::Tool;
 use crate::types::{Finish, Placement};
 use crate::ui::panel::{AnimatedPanel, HoverablePanel, PanelItem, UiPanel};
 use std::time::{Duration, Instant};

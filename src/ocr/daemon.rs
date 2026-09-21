@@ -122,7 +122,10 @@ pub fn resolve_mode(settings: &EngineSettings) -> Mode {
         let how = match (mode, measured) {
             (_, Some(record)) if settings.device == Device::Auto => match record.verdict {
                 Verdict::Gpu => {
-                    format!("{}, the daemon holds that engine in video memory", record.summary())
+                    format!(
+                        "{}, the daemon holds that engine in video memory",
+                        record.summary()
+                    )
                 }
                 Verdict::Cpu => record.summary(),
             },
@@ -131,11 +134,15 @@ pub fn resolve_mode(settings: &EngineSettings) -> Mode {
             }
             _ => format!("device {:?}", settings.device),
         };
-        let fetch = if mode == Mode::Daemon && settings.device != Device::Cpu && dawn::find().is_none() {
-            format!("; the daemon downloads {} (14 MB) first, OCR runs here meanwhile", dawn::LIBRARY)
-        } else {
-            String::new()
-        };
+        let fetch =
+            if mode == Mode::Daemon && settings.device != Device::Cpu && dawn::find().is_none() {
+                format!(
+                    "; the daemon downloads {} (14 MB) first, OCR runs here meanwhile",
+                    dawn::LIBRARY
+                )
+            } else {
+                String::new()
+            };
         info!("ocr: engine mode = {mode:?} ({how}{fetch})");
     } else {
         let why = if paths.is_none() {
@@ -145,7 +152,8 @@ pub fn resolve_mode(settings: &EngineSettings) -> Mode {
         } else if ruled_out {
             "this binary already failed to put the engine on a GPU here".to_owned()
         } else {
-            "this binary has no GPU engine compiled in yet (nothing to do with your graphics card)".to_owned()
+            "this binary has no GPU engine compiled in yet (nothing to do with your graphics card)"
+                .to_owned()
         };
         let hint = if cpu_won {
             "--ocr-daemon calibrate measures again"
@@ -161,7 +169,9 @@ pub fn resolve_mode(settings: &EngineSettings) -> Mode {
         && let Some(paths) = &paths
         && !lock_free(&paths.lock)
     {
-        warn!("ocr: a daemon from an earlier run is still up, this mode does not use it (--ocr-daemon stop)");
+        warn!(
+            "ocr: a daemon from an earlier run is still up, this mode does not use it (--ocr-daemon stop)"
+        );
     }
     mode
 }
@@ -207,13 +217,15 @@ fn gpu_library() -> Result<(), server::BuildError> {
 
 fn gpu_engine(paths: &Paths, files: &ModelFiles) -> Result<server::Engine, server::BuildError> {
     gpu_library()?;
-    // fixxxx, segfault in the driver cannot be caught by catch_unwind 
+    // fixxxx, segfault in the driver cannot be caught by catch_unwind
     // next daemon learns about it from the leftover file
     let marker = paths.dir.join("ocr.gpu-loading");
     let pid = std::process::id().to_string();
     if fs::read_to_string(&marker).is_ok_and(|owner| owner.trim() != pid) {
         let _ = fs::remove_file(&marker);
-        warn!("ocr-daemon: the previous daemon died while putting the engine on the GPU, not trying again");
+        warn!(
+            "ocr-daemon: the previous daemon died while putting the engine on the GPU, not trying again"
+        );
         return Err(server::BuildError::NoGpu);
     }
     let _ = fs::write(&marker, &pid);
@@ -298,7 +310,7 @@ pub fn unix_now() -> u64 {
         .map_or(0, |d| d.as_secs())
 }
 
-/// Lock is free implies daemon is inactive 
+/// Lock is free implies daemon is inactive
 /// kernel automatically releases flock upon process termination.
 pub fn lock_free(path: &Path) -> bool {
     match OpenOptions::new().read(true).open(path) {
@@ -342,7 +354,12 @@ pub fn spawn_detached(mut command: Command, log: Option<std::fs::File>) -> io::R
             // Spawns a new process session so terminal signals (e.g., `SIGHUP`) do not affect the daemon.
             nix::unistd::setsid().map_err(io::Error::from)?;
             // Ensures overlay file descriptors without `CLOEXEC` (Wayland, PipeWire, portal handles) close automatically on `exec`.
-            nix::libc::syscall(nix::libc::SYS_close_range, 3u32, u32::MAX, CLOSE_RANGE_CLOEXEC);
+            nix::libc::syscall(
+                nix::libc::SYS_close_range,
+                3u32,
+                u32::MAX,
+                CLOSE_RANGE_CLOEXEC,
+            );
             Ok(())
         });
     }
@@ -357,15 +374,17 @@ pub fn spawn_detached(mut command: Command, log: Option<std::fs::File>) -> io::R
 pub const DAEMON_ARG: &str = "--ocr-daemon";
 
 pub fn cli(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn Error>> {
-    let paths = Paths::from_env().ok_or("XDG_RUNTIME_DIR is not set, the OCR daemon has nowhere to live")?;
+    let paths = Paths::from_env()
+        .ok_or("XDG_RUNTIME_DIR is not set, the OCR daemon has nowhere to live")?;
     match args.next().as_deref() {
         None | Some("serve") => serve(paths),
         Some("status") => status(&paths),
         Some("stop") => stop(&paths),
         Some("calibrate") => recalibrate(&paths),
-        Some(other) => {
-            Err(format!("unknown command `{other}`, expected serve | status | stop | calibrate").into())
-        }
+        Some(other) => Err(format!(
+            "unknown command `{other}`, expected serve | status | stop | calibrate"
+        )
+        .into()),
     }
 }
 
@@ -409,7 +428,9 @@ fn status(paths: &Paths) -> Result<(), Box<dyn Error>> {
             std::process::exit(3);
         }
         let pid = lock_file_pid(paths).map_or("?".to_owned(), |pid| pid.to_string());
-        println!("ocr daemon: pid {pid} holds the lock but does not answer (try --ocr-daemon stop)");
+        println!(
+            "ocr daemon: pid {pid} holds the lock but does not answer (try --ocr-daemon stop)"
+        );
         std::process::exit(4);
     };
     let engine = match &status.state {
@@ -417,9 +438,15 @@ fn status(paths: &Paths) -> Result<(), Box<dyn Error>> {
         EngineState::Loading { model } => format!("loading {}", file_name(model)),
         EngineState::Ready { device, model } => format!("ready on {device}, {}", file_name(model)),
         EngineState::Failed(e) => format!("failed: {e}"),
-        EngineState::NoGpu => "no GPU available, leaving (OCR runs in the overlay instead)".to_owned(),
+        EngineState::NoGpu => {
+            "no GPU available, leaving (OCR runs in the overlay instead)".to_owned()
+        }
     };
-    println!("ocr daemon: running, pid {}, up {}", status.pid, human(status.uptime_secs));
+    println!(
+        "ocr daemon: running, pid {}, up {}",
+        status.pid,
+        human(status.uptime_secs)
+    );
     println!("engine:     {engine}");
     if let Some(record) = measurement() {
         println!("measured:   {}", record.summary());
@@ -427,10 +454,15 @@ fn status(paths: &Paths) -> Result<(), Box<dyn Error>> {
     if GPU_BUILD {
         match dawn::find() {
             Some(path) => println!("gpu lib:    {}", path.display()),
-            None => println!("gpu lib:    not downloaded yet, the daemon fetches it when it needs the GPU"),
+            None => println!(
+                "gpu lib:    not downloaded yet, the daemon fetches it when it needs the GPU"
+            ),
         }
     }
-    println!("served:     {} scan(s), last took {} ms", status.served, status.last_ms);
+    println!(
+        "served:     {} scan(s), last took {} ms",
+        status.served, status.last_ms
+    );
     println!("memory:     {} MB", status.rss_kb / 1024);
     match status.idle_left_secs {
         Some(secs) => println!("idle exit:  in {}", human(secs)),

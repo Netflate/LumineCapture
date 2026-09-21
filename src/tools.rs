@@ -84,9 +84,13 @@ pub fn dispatch_move(
 
             let tool_impl = SimpleShapeTool {
                 make_shape: match tool {
-                    Tool::Rectangle => |start, end, filled| AnnotationShape::Rectangle { start, end, filled },
+                    Tool::Rectangle => {
+                        |start, end, filled| AnnotationShape::Rectangle { start, end, filled }
+                    }
                     Tool::Arrow => |start, end, _| AnnotationShape::Arrow { start, end },
-                    Tool::Circle => |start, end, filled| AnnotationShape::Circle { start, end, filled },
+                    Tool::Circle => {
+                        |start, end, filled| AnnotationShape::Circle { start, end, filled }
+                    }
                     _ => |start, end, _| AnnotationShape::Line { start, end },
                 },
                 color,
@@ -122,9 +126,13 @@ pub fn dispatch_button(
 
             let tool_impl = SimpleShapeTool {
                 make_shape: match tool {
-                    Tool::Rectangle => |start, end, filled| AnnotationShape::Rectangle { start, end, filled },
+                    Tool::Rectangle => {
+                        |start, end, filled| AnnotationShape::Rectangle { start, end, filled }
+                    }
                     Tool::Arrow => |start, end, _| AnnotationShape::Arrow { start, end },
-                    Tool::Circle => |start, end, filled| AnnotationShape::Circle { start, end, filled },
+                    Tool::Circle => {
+                        |start, end, filled| AnnotationShape::Circle { start, end, filled }
+                    }
                     _ => |start, end, _| AnnotationShape::Line { start, end },
                 },
                 color,
@@ -138,7 +146,7 @@ pub fn dispatch_button(
 }
 
 // runs when a tool becomes the active one (Ocr uses it to start recognition)
-// yet its still a `Tool`, since after ocr user can highlight  text and  copy 
+// yet its still a `Tool`, since after ocr user can highlight  text and  copy
 pub fn dispatch_activate(tool: Tool, state: &mut EditorState, dirty_mask: &mut u32) {
     match tool {
         Tool::Ocr => OcrTool.on_activate(state, dirty_mask),
@@ -181,8 +189,11 @@ pub fn dispatch_cursor(tool: Tool, state: &EditorState) -> CursorIcon {
         Tool::Text => TextTool.cursor(state),
         Tool::Ocr => OcrTool.cursor(state),
         Tool::Eyedropper => EyedropperTool.cursor(state),
-        Tool::Pen | Tool::NumeratedArrow | Tool::Rectangle | Tool::Arrow | Tool::Circle | Tool::Line => {
-            CursorIcon::Crosshair
-        }
+        Tool::Pen
+        | Tool::NumeratedArrow
+        | Tool::Rectangle
+        | Tool::Arrow
+        | Tool::Circle
+        | Tool::Line => CursorIcon::Crosshair,
     }
 }

@@ -1,10 +1,9 @@
 use crate::editor::{DamageZone, EditorState};
+use crate::theme::shadow;
 use crate::tools::text::update_text_bbox_inline;
 use crate::types::{SelectionHandle, SignedRect};
 use crate::utils::{apply_handle_drag, hit_test_rect_handle};
-use crate::theme::shadow;
 use tiny_skia::{Color, Rect};
-
 
 /// Arrow head size for a stroke over a shaft of `len`. The renderer and the
 /// bbox must agree on it, otherwise the damage rect clips the drawn head.
@@ -194,7 +193,8 @@ impl Annotation {
             }
 
             AnnotationShape::NumeratedArrow { start, end, .. } => {
-                let circle_radius = self.stroke_width * crate::config::get().annotations.numbered.circle;
+                let circle_radius =
+                    self.stroke_width * crate::config::get().annotations.numbered.circle;
                 let xs = [start.0 - circle_radius, start.0 + circle_radius, end.0];
                 let ys = [start.1 - circle_radius, start.1 + circle_radius, end.1];
 
@@ -248,13 +248,7 @@ impl Annotation {
             }
             AnnotationShape::Pen { points } if points.len() == 1 => {
                 let p0 = points[0];
-                Rect::from_ltrb(
-                    p0.0 - pad,
-                    p0.1 - pad,
-                    p0.0 + pad,
-                    p0.1 + pad,
-                )
-                .unwrap_or(self.bbox)
+                Rect::from_ltrb(p0.0 - pad, p0.1 - pad, p0.0 + pad, p0.1 + pad).unwrap_or(self.bbox)
             }
             _ => self.damage_bbox(false),
         }
@@ -443,26 +437,26 @@ pub fn begin_drag_for_annotation(state: &mut EditorState, idx: usize) {
 
 pub fn commit_drag_if_changed(state: &mut EditorState) {
     if let Some(drag) = state.ann_drag.take()
-        && let Some(ann) = state.pending.take() {
-            let actually_changed =
-                !matches!(drag.handle, SelectionHandle::None) && ann != drag.orig;
+        && let Some(ann) = state.pending.take()
+    {
+        let actually_changed = !matches!(drag.handle, SelectionHandle::None) && ann != drag.orig;
 
-            let insert_idx = drag.orig_index.min(state.annotations.len());
-            if actually_changed {
-                let mut pre_drag = state.annotations.clone();
-                pre_drag.insert(insert_idx, drag.orig);
-                state.undo_stack.push(pre_drag);
-                state.redo_stack.clear();
-            }
-
-            state.bake_annotation(&ann);
-            state
-                .damage_rects
-                .push(DamageZone::Global(ann.damage_bbox(true)));
-            state.annotations.insert(insert_idx, ann);
-            state.prev_pending = None;
-            state.selected_annotation = Some(insert_idx);
+        let insert_idx = drag.orig_index.min(state.annotations.len());
+        if actually_changed {
+            let mut pre_drag = state.annotations.clone();
+            pre_drag.insert(insert_idx, drag.orig);
+            state.undo_stack.push(pre_drag);
+            state.redo_stack.clear();
         }
+
+        state.bake_annotation(&ann);
+        state
+            .damage_rects
+            .push(DamageZone::Global(ann.damage_bbox(true)));
+        state.annotations.insert(insert_idx, ann);
+        state.prev_pending = None;
+        state.selected_annotation = Some(insert_idx);
+    }
 }
 
 pub fn apply_annotation_drag(state: &mut EditorState, global: (f64, f64)) {
@@ -559,7 +553,11 @@ pub fn rebuild_annotation(state: &mut EditorState, idx: usize) {
             &mut state.text.editors,
             &mut state.text.font_system,
         );
-        update_text_bbox_inline(&mut state.annotations[idx], editor, &mut state.text.font_system);
+        update_text_bbox_inline(
+            &mut state.annotations[idx],
+            editor,
+            &mut state.text.font_system,
+        );
     } else {
         state.annotations[idx].update_bbox();
     }

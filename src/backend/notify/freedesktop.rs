@@ -41,14 +41,25 @@ impl Notifier for FreedesktopNotifier {
     async fn notify(&self, n: &Notification) -> Result<(), Box<dyn Error + Send + Sync>> {
         let conn = Connection::session().await?;
         let dbus = zbus::fdo::DBusProxy::new(&conn).await?;
-        if !dbus.name_has_owner("org.freedesktop.Notifications".try_into()?).await? {
+        if !dbus
+            .name_has_owner("org.freedesktop.Notifications".try_into()?)
+            .await?
+        {
             return Err("no notification daemon running".into());
         }
         let proxy = NotificationsProxy::new(&conn).await?;
 
         // Escape markup special characters (like `&`) if the daemon supports `body-markup` to prevent parsing errors.
-        let markup = proxy.get_capabilities().await?.iter().any(|c| c == "body-markup");
-        let body = if markup { escape_markup(&n.body) } else { n.body.clone() };
+        let markup = proxy
+            .get_capabilities()
+            .await?
+            .iter()
+            .any(|c| c == "body-markup");
+        let body = if markup {
+            escape_markup(&n.body)
+        } else {
+            n.body.clone()
+        };
 
         let mut hints: HashMap<&str, Value> = HashMap::new();
         hints.insert("urgency", Value::U8(1));
@@ -62,14 +73,25 @@ impl Notifier for FreedesktopNotifier {
         }
 
         proxy
-            .notify(APP_NAME, 0, "lumine-capture", n.summary, &body, &[], hints, -1)
+            .notify(
+                APP_NAME,
+                0,
+                "lumine-capture",
+                n.summary,
+                &body,
+                &[],
+                hints,
+                -1,
+            )
             .await?;
         Ok(())
     }
 }
 
 fn escape_markup(text: &str) -> String {
-    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 fn file_url(path: &Path) -> String {

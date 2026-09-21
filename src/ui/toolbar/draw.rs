@@ -1,8 +1,8 @@
 use crate::renderer::paths::{draw_panel_border, draw_svg_icon, rounded_rect_path};
 use crate::theme::{radius, size};
-use crate::ui::panel::UiPanel;
 use crate::ui::icons::{get_svg_for_finish, get_svg_for_tool};
 use crate::ui::panel::PanelItem;
+use crate::ui::panel::UiPanel;
 use crate::ui::toolbar::{Toolbar, ToolbarButton, ToolbarItem};
 use std::collections::HashMap;
 use tiny_skia::{BlendMode, FilterQuality, Paint, Pixmap, PixmapPaint, Rect, Transform};
@@ -73,7 +73,14 @@ fn draw_toolbar_content(
     };
 
     let (top_left, top_right, bot_left, bot_right) = (true, true, true, true);
-    let Some(path) = rounded_rect_path(&rect, radius::panel(), top_left, top_right, bot_left, bot_right) else {
+    let Some(path) = rounded_rect_path(
+        &rect,
+        radius::panel(),
+        top_left,
+        top_right,
+        bot_left,
+        bot_right,
+    ) else {
         return;
     };
 
@@ -98,25 +105,25 @@ fn draw_toolbar_content(
             ToolbarItem::Button(button) => {
                 if (toolbar.selected == Some(index) || toolbar.hovered == Some(index))
                     && let Some(cell_rect) = Rect::from_xywh(current_x, bg_y, cell_size, bg_h)
-                        && let Some(cell_path) =
-                            rounded_rect_path(&cell_rect, radius::item(), true, true, true, true)
-                        {
-                            let mut cell_paint = Paint::default();
-                            let color = if toolbar.selected == Some(index) {
-                                cfg.button_selected.get().color()
-                            } else {
-                                cfg.button_hovered.get().color()
-                            };
-                            cell_paint.set_color(color);
-                            cell_paint.anti_alias = true;
-                            canvas.fill_path(
-                                &cell_path,
-                                &cell_paint,
-                                tiny_skia::FillRule::Winding,
-                                Transform::identity(),
-                                None,
-                            );
-                        }
+                    && let Some(cell_path) =
+                        rounded_rect_path(&cell_rect, radius::item(), true, true, true, true)
+                {
+                    let mut cell_paint = Paint::default();
+                    let color = if toolbar.selected == Some(index) {
+                        cfg.button_selected.get().color()
+                    } else {
+                        cfg.button_hovered.get().color()
+                    };
+                    cell_paint.set_color(color);
+                    cell_paint.anti_alias = true;
+                    canvas.fill_path(
+                        &cell_path,
+                        &cell_paint,
+                        tiny_skia::FillRule::Winding,
+                        Transform::identity(),
+                        None,
+                    );
+                }
 
                 let (svg_str, icon_size) = match button {
                     ToolbarButton::Tool(tool) => get_svg_for_tool(*tool),
@@ -152,18 +159,18 @@ fn draw_toolbar_content(
                 if let Some(sep_rect) = Rect::from_xywh(sep_x, sep_y, sep_w, sep_h)
                     && let Some(sep_path) =
                         rounded_rect_path(&sep_rect, radius::separator(), true, true, true, true)
-                    {
-                        let mut sep_paint = Paint::default();
-                        sep_paint.set_color(cfg.separator.get().color());
-                        sep_paint.anti_alias = true;
-                        canvas.fill_path(
-                            &sep_path,
-                            &sep_paint,
-                            tiny_skia::FillRule::Winding,
-                            Transform::identity(),
-                            None,
-                        );
-                    }
+                {
+                    let mut sep_paint = Paint::default();
+                    sep_paint.set_color(cfg.separator.get().color());
+                    sep_paint.anti_alias = true;
+                    canvas.fill_path(
+                        &sep_path,
+                        &sep_paint,
+                        tiny_skia::FillRule::Winding,
+                        Transform::identity(),
+                        None,
+                    );
+                }
             }
         }
         current_x += cell_size + item.trailing_padding();

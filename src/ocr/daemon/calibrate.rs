@@ -13,7 +13,7 @@ use super::unix_now;
 
 pub const FORMAT: u32 = 1;
 
-/// margin between gpu and cpu, how much gpu needs to win to bo chosen in the auto mode 
+/// margin between gpu and cpu, how much gpu needs to win to bo chosen in the auto mode
 const MARGIN: f64 = 0.8;
 
 const PROBE_WIDTH: u32 = 1280;
@@ -49,7 +49,9 @@ impl Record {
         let side = |ms: Option<u32>| ms.map_or("failed".to_owned(), |ms| format!("{ms} ms"));
         let times = format!("CPU {}, GPU {}", side(self.cpu_ms), side(self.gpu_ms));
         match (self.verdict, self.speedup()) {
-            (Verdict::Gpu, Some(times_faster)) => format!("GPU is {times_faster:.1}x faster ({times})"),
+            (Verdict::Gpu, Some(times_faster)) => {
+                format!("GPU is {times_faster:.1}x faster ({times})")
+            }
             (Verdict::Gpu, None) => format!("GPU wins ({times})"),
             (Verdict::Cpu, Some(times_faster)) if times_faster > 0.0 => {
                 format!("CPU is {:.1}x faster ({times})", 1.0 / times_faster)
@@ -173,7 +175,7 @@ pub fn run(files: &ModelFiles, save: &dyn Fn(&Record)) -> Record {
         at: unix_now(),
     };
     if GPU_BUILD {
-        // FIX 
+        // FIX
         // If gpu fails, the whoole process will crash, record remains "CPU, GPU failed"
         // and the measurement will not be repeated in an inifnite glitched loop
         save(&record);
@@ -194,11 +196,17 @@ fn guarded(files: &ModelFiles, gpu: bool) -> Option<u32> {
     match rx.recv_timeout(BUDGET) {
         Ok(result) => result,
         Err(RecvTimeoutError::Timeout) => {
-            warn!("ocr-daemon: the {} engine did not answer in {BUDGET:?}", device(gpu));
+            warn!(
+                "ocr-daemon: the {} engine did not answer in {BUDGET:?}",
+                device(gpu)
+            );
             None
         }
         Err(RecvTimeoutError::Disconnected) => {
-            warn!("ocr-daemon: the {} engine crashed while measuring", device(gpu));
+            warn!(
+                "ocr-daemon: the {} engine crashed while measuring",
+                device(gpu)
+            );
             None
         }
     }
@@ -217,16 +225,23 @@ fn measure(files: &ModelFiles, gpu: bool) -> Option<u32> {
     let backend = match built {
         Ok(backend) => backend,
         Err(e) => {
-            info!("ocr-daemon: no {} engine for the measurement: {e}", device(gpu));
+            info!(
+                "ocr-daemon: no {} engine for the measurement: {e}",
+                device(gpu)
+            );
             return None;
         }
     };
     let mut best = None;
     for scan in 0..SCANS {
         let started = Instant::now();
-        let read: Result<OcrText, _> = crate::ocr::OcrBackend::recognize(&backend, probe_image(), &|| false);
+        let read: Result<OcrText, _> =
+            crate::ocr::OcrBackend::recognize(&backend, probe_image(), &|| false);
         let Ok(text) = read else {
-            warn!("ocr-daemon: the {} engine could not read the probe image", device(gpu));
+            warn!(
+                "ocr-daemon: the {} engine could not read the probe image",
+                device(gpu)
+            );
             return None;
         };
         let ms = u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX);

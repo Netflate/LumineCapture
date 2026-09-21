@@ -1,15 +1,18 @@
 // Settings panel animation and positioning logic.
+use crate::editor::EditorState;
 use crate::editor::dirty::apply_damage_rects;
 use crate::editor::edits::{active_annotation_idx, commit_settings_change};
-use crate::editor::EditorState;
 use crate::tools::Tool;
-use crate::ui::panel::{emit_panel_damage, sync_panel_hover, sync_panel_rect};
 use crate::types::{AnnotationShape, SpecialKey};
 use crate::ui::panel::UiPanel;
-use crate::ui::settings_panel::{OCR_AWAITING_WIDGETS, OCR_DOWNLOADING_WIDGETS, OCR_NO_MODEL_WIDGETS, OCR_SCANNING_WIDGETS, OCR_WIDGETS, OCR_WIDGETS_DOWNLOADING, SettingsAction, SettingsSource, SettingsWidget, StepperArrow, ToggleField, compute_settings_placement, widgets_for_annotation, widgets_for_tool};
+use crate::ui::panel::{emit_panel_damage, sync_panel_hover, sync_panel_rect};
+use crate::ui::settings_panel::{
+    OCR_AWAITING_WIDGETS, OCR_DOWNLOADING_WIDGETS, OCR_NO_MODEL_WIDGETS, OCR_SCANNING_WIDGETS,
+    OCR_WIDGETS, OCR_WIDGETS_DOWNLOADING, SettingsAction, SettingsSource, SettingsWidget,
+    StepperArrow, ToggleField, compute_settings_placement, widgets_for_annotation,
+    widgets_for_tool,
+};
 use std::time::{Duration, Instant};
-
-
 
 pub fn current_color(editor_state: &EditorState) -> tiny_skia::Color {
     active_annotation_idx(editor_state)
@@ -382,7 +385,6 @@ pub fn commit_stepper_text_edit(editor_state: &mut EditorState, dirty_mask: &mut
     editor_state.commit_snapshot(snapshot);
 }
 
-
 fn try_apply_stepper_text(
     editor_state: &mut EditorState,
     widget_idx: usize,
@@ -548,7 +550,8 @@ pub fn sync_stepper_edit_text(editor_state: &mut EditorState, widget_idx: usize)
         .settings_panel
         .fields
         .editing
-        .as_ref().is_none_or(|e| e.key != widget_idx)
+        .as_ref()
+        .is_none_or(|e| e.key != widget_idx)
     {
         return;
     }
@@ -585,9 +588,10 @@ pub fn handle_stepper_scroll(
         return;
     }
 
-    let steps = editor_state
-        .settings_panel
-        .scroll_step(widget_idx, delta_y / crate::config::get().input.scroll_step_pixels);
+    let steps = editor_state.settings_panel.scroll_step(
+        widget_idx,
+        delta_y / crate::config::get().input.scroll_step_pixels,
+    );
 
     if steps == 0 {
         return;

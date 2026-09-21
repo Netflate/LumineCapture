@@ -49,7 +49,8 @@ impl EngineSettings {
         Self {
             mode: ocr.mode,
             device: ocr.device,
-            daemon_idle: (ocr.daemon_idle_secs > 0).then(|| Duration::from_secs(ocr.daemon_idle_secs)),
+            daemon_idle: (ocr.daemon_idle_secs > 0)
+                .then(|| Duration::from_secs(ocr.daemon_idle_secs)),
         }
     }
 
@@ -74,15 +75,24 @@ mod tests {
 
     #[test]
     fn daemon_needs_a_gpu_unless_cpu_is_forced() {
-        let daemon = EngineSettings { mode: Mode::Daemon, ..EngineSettings::default() };
+        let daemon = EngineSettings {
+            mode: Mode::Daemon,
+            ..EngineSettings::default()
+        };
         assert_eq!(daemon.resolve(true, true), Mode::Daemon);
         assert_eq!(daemon.resolve(true, false), Mode::OnDemand);
         assert_eq!(daemon.resolve(false, true), Mode::OnDemand);
 
-        let gpu = EngineSettings { device: Device::Gpu, ..daemon };
+        let gpu = EngineSettings {
+            device: Device::Gpu,
+            ..daemon
+        };
         assert_eq!(gpu.resolve(true, false), Mode::OnDemand);
 
-        let cpu = EngineSettings { device: Device::Cpu, ..daemon };
+        let cpu = EngineSettings {
+            device: Device::Cpu,
+            ..daemon
+        };
         assert_eq!(cpu.resolve(true, false), Mode::Daemon);
         assert_eq!(cpu.resolve(false, false), Mode::OnDemand);
     }
@@ -90,7 +100,10 @@ mod tests {
     #[test]
     fn local_modes_are_kept() {
         for mode in [Mode::OnDemand, Mode::AtLaunch] {
-            let settings = EngineSettings { mode, ..EngineSettings::default() };
+            let settings = EngineSettings {
+                mode,
+                ..EngineSettings::default()
+            };
             assert_eq!(settings.resolve(false, false), mode);
             assert_eq!(settings.resolve(true, true), mode);
         }

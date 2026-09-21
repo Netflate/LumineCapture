@@ -1,5 +1,5 @@
 // saved responsible for saving and reading user's options
-// such as font width, stroke width, color choice, and etc 
+// such as font width, stroke width, color choice, and etc
 
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -92,7 +92,12 @@ pub fn get() -> &'static Saved {
     SAVED.get_or_init(load)
 }
 
-pub fn save(settings: &ToolSettings, history: &[Color], initial_history: &[Color], magnifier: bool) {
+pub fn save(
+    settings: &ToolSettings,
+    history: &[Color],
+    initial_history: &[Color],
+    magnifier: bool,
+) {
     let magnifier_unchanged = get().magnifier.unwrap_or(true) == magnifier;
     if *settings == ToolSettings::default() && history == initial_history && magnifier_unchanged {
         return;

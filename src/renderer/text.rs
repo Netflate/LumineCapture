@@ -216,9 +216,12 @@ pub fn draw_text_caret(canvas: &mut Pixmap, rect: Rect, cursor_x: f32) {
     let theme = &crate::config::get().theme;
     let cur_h = rect.height() * theme.field_text_height;
     let cur_y = rect.top() + (rect.height() - cur_h) / 2.0;
-    let Some(cur_rect) =
-        Rect::from_xywh((rect.left() + cursor_x).round(), cur_y, theme.caret_width, cur_h)
-    else {
+    let Some(cur_rect) = Rect::from_xywh(
+        (rect.left() + cursor_x).round(),
+        cur_y,
+        theme.caret_width,
+        cur_h,
+    ) else {
         return;
     };
 

@@ -42,16 +42,17 @@ impl ToolBehavior for PickTool {
             // select empty space > deselect
             if selected_annotation.is_none() {
                 if let Some(old_idx) = state.selected_annotation
-                    && let Some(old_ann) = state.annotations.get(old_idx) {
-                        damage_annotation(
-                            &mut state.damage_rects,
-                            &mut state.layer_damage_rects,
-                            old_ann,
-                        );
-                        if let Some(editor) = state.text.editors.get_mut(&old_ann.id) {
-                            editor.set_selection(cosmic_text::Selection::None);
-                        }
+                    && let Some(old_ann) = state.annotations.get(old_idx)
+                {
+                    damage_annotation(
+                        &mut state.damage_rects,
+                        &mut state.layer_damage_rects,
+                        old_ann,
+                    );
+                    if let Some(editor) = state.text.editors.get_mut(&old_ann.id) {
+                        editor.set_selection(cosmic_text::Selection::None);
                     }
+                }
                 state.selected_annotation = None;
                 state.ann_drag = None;
                 state.text.editing = None;
@@ -62,16 +63,17 @@ impl ToolBehavior for PickTool {
             // select a different annotation -> switch selection, no undo commit
             if state.selected_annotation != selected_annotation {
                 if let Some(old_idx) = state.selected_annotation
-                    && let Some(old_ann) = state.annotations.get(old_idx) {
-                        damage_annotation(
-                            &mut state.damage_rects,
-                            &mut state.layer_damage_rects,
-                            old_ann,
-                        );
-                        if let Some(editor) = state.text.editors.get_mut(&old_ann.id) {
-                            editor.set_selection(cosmic_text::Selection::None);
-                        }
+                    && let Some(old_ann) = state.annotations.get(old_idx)
+                {
+                    damage_annotation(
+                        &mut state.damage_rects,
+                        &mut state.layer_damage_rects,
+                        old_ann,
+                    );
+                    if let Some(editor) = state.text.editors.get_mut(&old_ann.id) {
+                        editor.set_selection(cosmic_text::Selection::None);
                     }
+                }
                 state.selected_annotation = selected_annotation;
                 let idx = selected_annotation.unwrap();
                 let ann = &state.annotations[idx];
