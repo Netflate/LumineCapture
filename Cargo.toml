@@ -55,7 +55,7 @@ serde = { version = "1", features = ["derive"] }
 toml = "1.1"
 
 [features]
-default = ["ocr-gpu"]
+default = []
 ocr-gpu = ["dep:ort", "dep:lzma-rust2", "oar-ocr/webgpu"]
 
 # optimize dependencies in dev builds too. ONNX Runtime's glue and image
