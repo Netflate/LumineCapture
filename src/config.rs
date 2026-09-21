@@ -40,7 +40,6 @@ const SURFACE0: Rgba = rgb(49, 50, 68);
 const SURFACE1: Rgba = rgb(69, 71, 90);
 const BASE: Rgba = rgb(30, 30, 46);
 const CRUST: Rgba = rgb(17, 17, 27);
-const LAVENDER: Rgba = rgb(180, 190, 254);
 const MAUVE: Rgba = rgb(203, 166, 247);
 const BLUE: Rgba = rgb(137, 180, 250);
 const ROSEWATER: Rgba = rgb(245, 224, 220);
@@ -257,8 +256,8 @@ section!(Theme {
     background: Rgba = BASE.with_alpha(250),
     foreground: Rgba = TEXT,
     muted: Rgba = SUBTEXT0,
-    hover: Rgba = LAVENDER,
-    accent: Rgba = MAUVE,
+    hover: Rgba = MAUVE,
+    accent: Rgba = rgb(0xB4, 0x83, 0xEF),
     on_accent: Rgba = BASE,
     border: Rgba = SURFACE1,
     border_on_light: Rgba = CRUST.with_alpha(55),
@@ -432,7 +431,7 @@ impl Magnifier {
 }
 
 section!(Selection {
-    dim: Rgba = CRUST.with_alpha(140),
+    dim: Rgba = rgb(0, 0, 0).with_alpha(140),
     border: ThemeColor = ThemeColor::default(),
     border_width: f32 = 2.0,
     border_radius: f32 = 8.0,
@@ -688,9 +687,9 @@ line_height = 1.2
 background = "#1E1E2EFA"
 foreground = "#CDD6F4"
 muted = "#A6ADC8"
-hover = "#B4BEFE"
+hover = "#CBA6F7"
 # selected and active things, progress bars, titles
-accent = "#CBA6F7"
+accent = "#b483ef"
 # icons and text drawn over a hover or accent fill
 on_accent = "#1E1E2E"
 border = "#45475A"
