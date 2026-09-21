@@ -59,7 +59,6 @@ impl Launch {
 }
 
 pub async fn run(conn: wayland_client::Connection, launch: Launch) -> Result<(), Box<dyn std::error::Error>> {
-    // без выбора действий эти режимы просто выбросили бы снимок
     if launch.mode != Mode::Editor && launch.outputs().is_empty() {
         return Err("nothing to do with the shot: pass --to or set general.accept".into());
     }
@@ -223,7 +222,7 @@ fn run_overlay(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut dirty_mask: u32 = 0;
     let mut annotations_were_hidden = false;
-    // COSMIC шлёт enter указателя только после первого движения мыши, поэтому вечно его не ждём
+    // wayland on COSMIC unlike KDE doesn't immediately send pointer event
     let mut pointer_wait = Some(Instant::now() + POINTER_GRACE);
 
     loop {
