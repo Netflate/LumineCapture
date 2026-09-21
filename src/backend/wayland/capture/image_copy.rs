@@ -411,3 +411,75 @@ impl Dispatch<ExtImageCopyCaptureFrameV1, usize> for State {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn img(ids: &[u8]) -> Vec<u8> {
+        ids.iter().flat_map(|&id| [id, id, id, 255]).collect()
+    }
+
+    fn ids(pixels: &[u8]) -> Vec<u8> {
+        pixels.chunks_exact(4).map(|p| p[0]).collect()
+    }
+
+    #[test]
+    fn rotated_frames_come_back_upright() {
+        use wl_output::Transform as T;
+
+        // 2 wide, 3 tall: a square source would hide every w/h and dw/dh mix-up
+        //   1 2
+        //   3 4
+        //   5 6
+        let source = [1, 2, 3, 4, 5, 6];
+
+        // the mapping is inverted on purpose: T::_90 means the compositor already
+        // turned the content, so undoing it takes the opposite quarter-turn
+        let cases = [
+            (T::Normal, [1, 2, 3, 4, 5, 6], (2, 3)),
+            (T::_90, [5, 3, 1, 6, 4, 2], (3, 2)),
+            (T::_180, [6, 5, 4, 3, 2, 1], (2, 3)),
+            (T::_270, [2, 4, 6, 1, 3, 5], (3, 2)),
+            (T::Flipped, [2, 1, 4, 3, 6, 5], (2, 3)),
+            (T::Flipped90, [1, 3, 5, 2, 4, 6], (3, 2)),
+            (T::Flipped180, [5, 6, 3, 4, 1, 2], (2, 3)),
+            (T::Flipped270, [6, 4, 2, 5, 3, 1], (3, 2)),
+        ];
+
+        for (transform, expected, size) in cases {
+            let (pixels, w, h) = untransform(img(&source), 2, 3, transform);
+            assert_eq!(ids(&pixels), expected, "{transform:?}");
+            assert_eq!((w, h), size, "{transform:?}");
+            assert_eq!(
+                pixels.len(),
+                source.len() * 4,
+                "{transform:?}: pixels went missing"
+            );
+        }
+    }
+
+    #[test]
+    fn the_best_shm_format_wins_over_the_advertised_order() {
+        use wl_shm::Format;
+
+        let all = [
+            Format::Abgr8888,
+            Format::Xbgr8888,
+            Format::Argb8888,
+            Format::Xrgb8888,
+        ];
+        assert_eq!(pick_format(&all), Some((Format::Xrgb8888, true)));
+
+        assert_eq!(
+            pick_format(&[Format::Abgr8888, Format::Argb8888]),
+            Some((Format::Argb8888, true))
+        );
+        assert_eq!(
+            pick_format(&[Format::Xbgr8888]),
+            Some((Format::Xbgr8888, false))
+        );
+        assert_eq!(pick_format(&[]), None);
+        assert_eq!(pick_format(&[Format::Rgb565]), None);
+    }
+}

@@ -144,3 +144,111 @@ pub fn initial_paint(
     prof.mark("frames staged + flushed");
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::StreamInfo;
+
+    // every byte of row padding is 0xEE, so leaked padding is recognisable in the pixmap
+    fn frame(w: u32, h: u32, stride: u32, len: usize, logical: Option<(i32, i32)>) -> MonitorFrame {
+        let mut pixels = vec![0xEE; len];
+        for y in 0..h as usize {
+            for x in 0..w as usize {
+                let off = y * stride as usize + x * 4;
+                if off + 4 <= len {
+                    pixels[off..off + 4].copy_from_slice(&[x as u8, y as u8, 0, 255]);
+                }
+            }
+        }
+
+        MonitorFrame {
+            output: 0,
+            pixels,
+            pw_width: w,
+            pw_height: h,
+            pw_stride: stride,
+            info: StreamInfo { node_id: 0, size: logical, position: None },
+        }
+    }
+
+    fn tight(w: u32, h: u32) -> Vec<u8> {
+        (0..h)
+            .flat_map(|y| (0..w).flat_map(move |x| [x as u8, y as u8, 0, 255]))
+            .collect()
+    }
+
+    #[test]
+    fn frames_from_every_backend_become_the_same_pixmap() {
+        let cases = [
+            ("kde: always tight, it de-pads KWin's stride itself", 4, 3, 16, 48),
+            ("image-copy: tight, dimensions already un-rotated", 3, 4, 12, 48),
+            ("portal: padded rows", 4, 3, 32, 96),
+            ("portal: padded rows, the last one unpadded", 4, 3, 32, 80),
+        ];
+
+        for (label, w, h, stride, len) in cases {
+            let logical = Some((w as i32, h as i32));
+            let captures = build_captures(vec![frame(w, h, stride, len, logical)])
+                .unwrap_or_else(|e| panic!("{label}: {e}"));
+            let pixmap = &captures[0].pixmap;
+
+            assert_eq!((pixmap.width(), pixmap.height()), (w, h), "{label}");
+            assert_eq!(pixmap.data(), tight(w, h), "{label}");
+            assert!(
+                !pixmap.data().contains(&0xEE),
+                "{label}: row padding leaked into the pixmap"
+            );
+            assert_eq!(captures[0].scale, 1.0, "{label}");
+        }
+    }
+
+    #[test]
+    fn broken_frames_are_reported_not_panicking() {
+        let broken = [
+            ("zero width", 0, 3, 0, 0),
+            ("zero height", 4, 0, 16, 0),
+            ("stride smaller than a row", 4, 3, 12, 36),
+            ("tight but truncated", 4, 3, 16, 47),
+            ("padded and truncated", 4, 3, 32, 79),
+        ];
+
+        for (label, w, h, stride, len) in broken {
+            let built = build_captures(vec![frame(w, h, stride, len, None)]);
+            assert!(built.is_err(), "{label}: expected an error, not a pixmap");
+        }
+
+        // both KWin and PipeWire's chunk.size() may deliver a longer tail
+        // funny bug: for some reason, only and only in World of Tanks, kwin was delivering a shorter tail, like -20px  
+        // which was causing the programm to panick. Honestly, no idea what was that, none of my fixes didn't work out 
+        // it was expected, since kdescreenshot protocol is doing something wrong, not our end
+        // so now if the screenshot has missing pixels, fill them with transparency
+        let extra = build_captures(vec![frame(4, 3, 16, 64, None)]);
+        assert!(
+            extra.is_ok(),
+            "trailing bytes past the frame must be ignored, not rejected"
+        );
+    }
+
+    #[test]
+    fn the_scale_comes_from_the_logical_size() {
+        let cases = [
+            ("hidpi", 3840u32, Some((1920, 1080)), 2.0),
+            ("no logical size at all", 1920, None, 1.0),
+        ];
+
+        for (label, w, logical, expected) in cases {
+            let captures = build_captures(vec![frame(w, 1, w * 4, (w * 4) as usize, logical)])
+                .unwrap_or_else(|e| panic!("{label}: {e}"));
+            assert_eq!(captures[0].scale, expected, "{label}");
+        }
+
+        for logical in [Some((0, 0)), Some((-1, 1080))] {
+            let captures = build_captures(vec![frame(64, 1, 256, 256, logical)]).unwrap();
+            assert!(
+                captures[0].scale.is_finite(),
+                "a {logical:?} logical size must not produce inf"
+            );
+        }
+    }
+}
