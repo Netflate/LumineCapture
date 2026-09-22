@@ -46,7 +46,7 @@ pub async fn full(conn: wayland_client::Connection, launch: Launch) -> Result {
     let png = encode_png(&pixmap);
     prof.mark("png encoded");
 
-    deliver(png, scale, launch.outputs()).await;
+    deliver(png, scale, launch.outputs(), launch.output.as_deref()).await;
     prof.mark("delivered");
     prof.dump();
     Ok(())
@@ -63,7 +63,13 @@ pub async fn window(conn: wayland_client::Connection, launch: Launch) -> Result 
     let png = encode_png(&capture.pixmap);
     prof.mark("png encoded");
 
-    deliver(png, capture.scale, launch.outputs()).await;
+    deliver(
+        png,
+        capture.scale,
+        launch.outputs(),
+        launch.output.as_deref(),
+    )
+    .await;
     prof.mark("delivered");
     prof.dump();
     Ok(())

@@ -31,6 +31,8 @@ Options:
   -t, --to <LETTERS>   What to do with the shot: c copy, p pin, s save, in any order
                        and mix, e.g. -t pc. Defaults to general.accept in the config.
                        In the editor, this is what Enter and a double click do
+  -o, --output <DIR>   Save the shot into this directory instead of the configured
+                       one, creating it if needed; implies s in --to
   -s, --speed          Print how long each startup step took to stderr
       --config <PATH>  Use this config file instead of the default location
       --print-default-config
@@ -69,6 +71,8 @@ fn parse_launch(
         mode,
         one_monitor: pargs.contains(["-m", "--monitor"]),
         to: pargs.opt_value_from_fn(["-t", "--to"], types::Outputs::parse)?,
+        output: pargs
+            .opt_value_from_os_str(["-o", "--output"], |s| Ok::<_, String>(PathBuf::from(s)))?,
         speed: pargs.contains(["-s", "--speed"]),
     })
 }

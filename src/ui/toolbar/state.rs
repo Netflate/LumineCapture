@@ -186,6 +186,13 @@ impl Toolbar {
         toolbar
     }
 
+    /// Starts fully faded out, so the first frame doesn't flash it at the corner.
+    pub fn start_hidden(&mut self) {
+        self.opacity = 0.0;
+        self.interferes = true;
+        self.placement_kind = Some(ToolbarPlacementKind::Hidden);
+    }
+
     /// hit-tests a local point against the toolbar's current render rect
     /// Returns (is_inside, option_of_button_index).
     pub fn hit_test(&self, local: (f64, f64)) -> (bool, Option<usize>) {

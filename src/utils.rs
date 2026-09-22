@@ -58,15 +58,21 @@ pub fn encode_png(pixmap: &Pixmap) -> Vec<u8> {
     png_bytes
 }
 
-pub fn save_to_file(png_data: &[u8]) -> Result<PathBuf, Box<dyn std::error::Error>> {
+pub fn save_to_file(
+    png_data: &[u8],
+    dir: Option<&std::path::Path>,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let now = chrono::Local::now();
     let save = &crate::config::get().save;
 
-    let dir = dirs::picture_dir()
-        .or_else(|| dirs::home_dir().map(|home| home.join("Pictures")))
-        .ok_or("can't find a pictures or home directory")?
-        .join(&save.directory)
-        .join(now.format(&save.month_format).to_string());
+    let dir = match dir {
+        Some(dir) => dir.to_path_buf(),
+        None => dirs::picture_dir()
+            .or_else(|| dirs::home_dir().map(|home| home.join("Pictures")))
+            .ok_or("can't find a pictures or home directory")?
+            .join(&save.directory)
+            .join(now.format(&save.month_format).to_string()),
+    };
 
     std::fs::create_dir_all(&dir)?;
 

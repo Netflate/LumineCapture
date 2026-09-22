@@ -21,6 +21,7 @@ use crate::utils::{encode_png, get_full_workspace_rect, save_to_file};
 
 use cosmic_text::{FontSystem, SwashCache};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tiny_skia::Rect;
 
@@ -44,17 +45,20 @@ pub enum Mode {
 }
 
 /// Launch options from the command line.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Launch {
     pub mode: Mode,
     pub one_monitor: bool,
     pub to: Option<Outputs>,
+    pub output: Option<PathBuf>,
     pub speed: bool,
 }
 
 impl Launch {
     fn outputs(&self) -> Outputs {
-        self.to.unwrap_or(crate::config::get().general.accept)
+        let mut outputs = self.to.unwrap_or(crate::config::get().general.accept);
+        outputs.save |= self.output.is_some();
+        outputs
     }
 }
 
@@ -81,9 +85,11 @@ async fn make_screenshot(
     let (mut editor_state, mut overlay) =
         start_capture(conn, launch.one_monitor, &mut prof).await?;
     editor_state.accept = launch.outputs();
+    editor_state.output = launch.output.clone();
     if launch.mode == Mode::Region {
         editor_state.region = true;
         editor_state.ui_hidden = true;
+        editor_state.toolbar.start_hidden();
     }
 
     init::initial_paint(&mut editor_state, &mut overlay, &mut prof)?;
@@ -566,19 +572,19 @@ async fn finish_capture(editor_state: &mut EditorState) -> Result<(), Box<dyn st
     let Some((png, _, scale)) = render_final(editor_state) else {
         return Ok(());
     };
-    deliver(png, scale, outputs).await;
+    deliver(png, scale, outputs, editor_state.output.as_deref()).await;
     Ok(())
 }
 
 /// Pins, saves and copies the finished shot, then tells the user about it.
-async fn deliver(png: Vec<u8>, scale: f32, outputs: Outputs) {
+async fn deliver(png: Vec<u8>, scale: f32, outputs: Outputs, dir: Option<&Path>) {
     if outputs.pin
         && let Err(e) = crate::backend::wayland::pin::spawn(&png, scale)
     {
         notify::send(Notice::PinFailed(e.to_string())).await;
     }
     let saved = if outputs.save || crate::config::get().general.save_always {
-        match save_to_file(&png) {
+        match save_to_file(&png, dir) {
             Ok(path) => Some(path),
             Err(e) => {
                 notify::send(Notice::SaveFailed(e.to_string())).await;
