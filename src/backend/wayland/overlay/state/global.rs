@@ -39,13 +39,10 @@ impl Dispatch<wp_fractional_scale_v1::WpFractionalScaleV1, ()> for OverlayState 
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        match event {
-            // wayland sends the scale factor as a fixed point integer (multiplied by 120)
-            // we divide by 120.0 to convert it into a usual floating point scale (1.0, 1.25, 2.0, etc)
-            wp_fractional_scale_v1::Event::PreferredScale { scale } => {
-                state.scale = scale as f64 / 120.0;
-            }
-            _ => {}
+        // wayland sends the scale factor as a fixed point integer (multiplied by 120)
+        // we divide by 120.0 to convert it into a usual floating point scale (1.0, 1.25, 2.0, etc)
+        if let wp_fractional_scale_v1::Event::PreferredScale { scale } = event {
+            state.scale = scale as f64 / 120.0;
         }
     }
 }

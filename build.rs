@@ -78,8 +78,8 @@ fn main() {
     }
     let dist = dawn_dir();
     if std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("x86_64") {
-        // launching without Dawn, ORT hits the trampolines
-        // while the library itself is loaded via dlopen only for GPU (ocr/dawn.rs)
+        // Without Dawn enabled, ORT uses dynamic stubs.
+        // Dawn is lazily loaded via dlopen only for GPU execution (ocr/dawn.rs)
         if let Some(dir) = &dist {
             println!("cargo:rustc-env=LUMINE_DAWN_DIST={}", dir.display());
         }

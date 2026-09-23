@@ -10,10 +10,6 @@ use tiny_skia::{
     Color, FillRule, LineCap, LineJoin, Paint, PathBuilder, Pixmap, Rect, Stroke, Transform,
 };
 
-/// Offset of the drop shadow relative to the shape it belongs to, in the
-/// same pixel space as `offset`/`transform`. One constant so every shape
-/// casts its shadow the same way.
-
 /// Scales the shadow's own fixed alpha by the annotation color's alpha,
 /// so a half-transparent stroke doesn't end up with a full-opacity shadow
 /// sitting underneath it.

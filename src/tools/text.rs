@@ -530,7 +530,7 @@ pub fn shape_entire_buffer(
 fn sync_content_from_editor(
     id: u64,
     editor: &mut Editor<'static>,
-    annotations: &mut Vec<Annotation>,
+    annotations: &mut [Annotation],
     font_system: &mut cosmic_text::FontSystem,
 ) {
     editor.with_buffer_mut(|buf| {

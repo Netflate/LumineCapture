@@ -58,6 +58,12 @@ toml = "1.1"
 default = []
 ocr-gpu = ["dep:ort", "dep:lzma-rust2", "oar-ocr/webgpu"]
 
+# drawing and Wayland glue pass many plain values around, and the Stroke::default()
+# + field tweaks pattern reads better than a struct literal there
+[lints.clippy]
+too_many_arguments = "allow"
+field_reassign_with_default = "allow"
+
 # optimize dependencies in dev builds too. ONNX Runtime's glue and image
 # decode/resize are +-2x slower without it; recompiles of this crate are unaffected.
 [profile.dev.package."*"]

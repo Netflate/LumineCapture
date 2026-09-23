@@ -1205,72 +1205,66 @@ fn warn_unknown_keys(text: &str, origin: &str) {
 fn validate(config: &mut Config) {
     let magnifier = &mut config.magnifier;
     if magnifier.cells.is_multiple_of(2) {
-        complain(format!(
-            "config: magnifier.cells must be odd, using the default"
-        ));
+        complain("config: magnifier.cells must be odd, using the default".to_string());
         magnifier.cells = Magnifier::default().cells;
     }
     let animation = &mut config.animation;
     if animation.speed < 0.1 {
-        complain(format!(
-            "config: animation.speed must be at least 0.1, using the default"
-        ));
+        complain("config: animation.speed must be at least 0.1, using the default".to_string());
         animation.speed = Animation::default().speed;
     }
     if animation.frame_ms == 0 {
-        complain(format!(
-            "config: animation.frame_ms must be at least 1, using the default"
-        ));
+        complain("config: animation.frame_ms must be at least 1, using the default".to_string());
         animation.frame_ms = Animation::default().frame_ms;
     }
     let pen = &mut config.tools.pen;
     if !(0.0..1.0).contains(&pen.smoothing) {
-        complain(format!(
+        complain(
             "config: tools.pen.smoothing must be at least 0 and below 1, using the default"
-        ));
+                .to_string(),
+        );
         pen.smoothing = Pen::default().smoothing;
     }
 
     // clamp() panics when min > max, so a flipped range falls back as a whole
     let stroke = &mut config.tools.stroke;
     if stroke.min > stroke.max || stroke.step <= 0.0 {
-        complain(format!(
+        complain(
             "config: tools.stroke needs min <= max and a positive step, using the defaults"
-        ));
+                .to_string(),
+        );
         *stroke = Stroke::default();
     }
     let font = &mut config.tools.font;
     if font.min > font.max || font.step <= 0.0 {
-        complain(format!(
+        complain(
             "config: tools.font needs min <= max and a positive step, using the defaults"
-        ));
+                .to_string(),
+        );
         *font = Font::default();
     }
     let text = &mut config.annotations.text;
     if text.resize_min > text.resize_max {
-        complain(format!(
+        complain(
             "config: annotations.text.resize_min is above resize_max, using the defaults"
-        ));
+                .to_string(),
+        );
         text.resize_min = TextBox::default().resize_min;
         text.resize_max = TextBox::default().resize_max;
     }
     if config.theme.line_height.is_nan() || config.theme.line_height <= 0.0 {
-        complain(format!(
-            "config: theme.line_height must be above 0, using the default"
-        ));
+        complain("config: theme.line_height must be above 0, using the default".to_string());
         config.theme.line_height = Theme::default().line_height;
     }
     if config.annotations.text.line_height.is_nan() || config.annotations.text.line_height <= 0.0 {
-        complain(format!(
-            "config: annotations.text.line_height must be above 0, using the default"
-        ));
+        complain(
+            "config: annotations.text.line_height must be above 0, using the default".to_string(),
+        );
         config.annotations.text.line_height = TextBox::default().line_height;
     }
     let input = &mut config.input;
     if input.corner_min > input.corner_max {
-        complain(format!(
-            "config: input.corner_min is above corner_max, using the defaults"
-        ));
+        complain("config: input.corner_min is above corner_max, using the defaults".to_string());
         input.corner_min = Input::default().corner_min;
         input.corner_max = Input::default().corner_max;
     }
