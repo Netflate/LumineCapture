@@ -74,3 +74,34 @@ opt-level = 3
 inherits = "release"
 lto = true
 codegen-units = 1
+strip = "symbols"
+
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/lumine-capture", dest = "/usr/bin/lumine-capture", mode = "755" },
+    { source = "assets/lumine-capture.desktop", dest = "/usr/share/applications/lumine-capture.desktop", mode = "644" },
+    { source = "assets/hicolor/16x16/apps/lumine-capture.png", dest = "/usr/share/icons/hicolor/16x16/apps/lumine-capture.png", mode = "644" },
+    { source = "assets/hicolor/16x16/apps/lumine-pin.png", dest = "/usr/share/icons/hicolor/16x16/apps/lumine-pin.png", mode = "644" },
+    { source = "assets/hicolor/22x22/apps/lumine-capture.png", dest = "/usr/share/icons/hicolor/22x22/apps/lumine-capture.png", mode = "644" },
+    { source = "assets/hicolor/22x22/apps/lumine-pin.png", dest = "/usr/share/icons/hicolor/22x22/apps/lumine-pin.png", mode = "644" },
+    { source = "assets/hicolor/24x24/apps/lumine-capture.png", dest = "/usr/share/icons/hicolor/24x24/apps/lumine-capture.png", mode = "644" },
+    { source = "assets/hicolor/24x24/apps/lumine-pin.png", dest = "/usr/share/icons/hicolor/24x24/apps/lumine-pin.png", mode = "644" },
+    { source = "assets/hicolor/32x32/apps/lumine-capture.png", dest = "/usr/share/icons/hicolor/32x32/apps/lumine-capture.png", mode = "644" },
+    { source = "assets/hicolor/32x32/apps/lumine-pin.png", dest = "/usr/share/icons/hicolor/32x32/apps/lumine-pin.png", mode = "644" },
+    { source = "assets/hicolor/48x48/apps/lumine-capture.png", dest = "/usr/share/icons/hicolor/48x48/apps/lumine-capture.png", mode = "644" },
+    { source = "assets/hicolor/48x48/apps/lumine-pin.png", dest = "/usr/share/icons/hicolor/48x48/apps/lumine-pin.png", mode = "644" },
+    { source = "assets/hicolor/64x64/apps/lumine-capture.png", dest = "/usr/share/icons/hicolor/64x64/apps/lumine-capture.png", mode = "644" },
+    { source = "assets/hicolor/64x64/apps/lumine-pin.png", dest = "/usr/share/icons/hicolor/64x64/apps/lumine-pin.png", mode = "644" },
+    { source = "assets/hicolor/128x128/apps/lumine-capture.png", dest = "/usr/share/icons/hicolor/128x128/apps/lumine-capture.png", mode = "644" },
+    { source = "assets/hicolor/128x128/apps/lumine-pin.png", dest = "/usr/share/icons/hicolor/128x128/apps/lumine-pin.png", mode = "644" },
+    { source = "assets/hicolor/256x256/apps/lumine-capture.png", dest = "/usr/share/icons/hicolor/256x256/apps/lumine-capture.png", mode = "644" },
+    { source = "assets/hicolor/256x256/apps/lumine-pin.png", dest = "/usr/share/icons/hicolor/256x256/apps/lumine-pin.png", mode = "644" },
+    { source = "assets/hicolor/512x512/apps/lumine-capture.png", dest = "/usr/share/icons/hicolor/512x512/apps/lumine-capture.png", mode = "644" },
+    { source = "assets/hicolor/512x512/apps/lumine-pin.png", dest = "/usr/share/icons/hicolor/512x512/apps/lumine-pin.png", mode = "644" },
+    { source = "assets/hicolor/scalable/apps/lumine-capture.svg", dest = "/usr/share/icons/hicolor/scalable/apps/lumine-capture.svg", mode = "644" },
+    { source = "assets/hicolor/scalable/apps/lumine-pin.svg", dest = "/usr/share/icons/hicolor/scalable/apps/lumine-pin.svg", mode = "644" },
+    { source = "LICENSE-MIT", dest = "/usr/share/licenses/lumine-capture/LICENSE-MIT", mode = "644" },
+    { source = "LICENSE-APACHE", dest = "/usr/share/licenses/lumine-capture/LICENSE-APACHE", mode = "644" },
+    { source = "README.md", dest = "/usr/share/doc/lumine-capture/README.md", mode = "644" },
+    { source = "docs/lumine-capture-shortcuts-kde.kksrc", dest = "/usr/share/doc/lumine-capture/lumine-capture-shortcuts-kde.kksrc", mode = "644" },
+]
