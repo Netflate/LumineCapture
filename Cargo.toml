@@ -1,6 +1,7 @@
 [package]
 name = "lumine-capture"
 version = "0.1.0"
+authors = ["Netflate <netflate@gmail.com>"]
 edition = "2024"
 rust-version = "1.88"
 description = "Screenshot and annotation tool for Wayland with built-in OCR"
@@ -104,4 +105,41 @@ assets = [
     { source = "LICENSE-APACHE", dest = "/usr/share/licenses/lumine-capture/LICENSE-APACHE", mode = "644" },
     { source = "README.md", dest = "/usr/share/doc/lumine-capture/README.md", mode = "644" },
     { source = "docs/lumine-capture-shortcuts-kde.kksrc", dest = "/usr/share/doc/lumine-capture/lumine-capture-shortcuts-kde.kksrc", mode = "644" },
+]
+
+[package.metadata.deb]
+copyright = "Netflate"
+section = "graphics"
+priority = "optional"
+depends = "$auto"
+extended-description = """\
+Screenshot and annotation tool for Wayland with built-in OCR. \
+Currently captures through KWin, ext-image-copy-capture or the desktop portal."""
+assets = [
+    ["target/release/lumine-capture", "usr/bin/", "755"],
+    ["assets/lumine-capture.desktop", "usr/share/applications/", "644"],
+    ["assets/hicolor/16x16/apps/lumine-capture.png", "usr/share/icons/hicolor/16x16/apps/", "644"],
+    ["assets/hicolor/16x16/apps/lumine-pin.png", "usr/share/icons/hicolor/16x16/apps/", "644"],
+    ["assets/hicolor/22x22/apps/lumine-capture.png", "usr/share/icons/hicolor/22x22/apps/", "644"],
+    ["assets/hicolor/22x22/apps/lumine-pin.png", "usr/share/icons/hicolor/22x22/apps/", "644"],
+    ["assets/hicolor/24x24/apps/lumine-capture.png", "usr/share/icons/hicolor/24x24/apps/", "644"],
+    ["assets/hicolor/24x24/apps/lumine-pin.png", "usr/share/icons/hicolor/24x24/apps/", "644"],
+    ["assets/hicolor/32x32/apps/lumine-capture.png", "usr/share/icons/hicolor/32x32/apps/", "644"],
+    ["assets/hicolor/32x32/apps/lumine-pin.png", "usr/share/icons/hicolor/32x32/apps/", "644"],
+    ["assets/hicolor/48x48/apps/lumine-capture.png", "usr/share/icons/hicolor/48x48/apps/", "644"],
+    ["assets/hicolor/48x48/apps/lumine-pin.png", "usr/share/icons/hicolor/48x48/apps/", "644"],
+    ["assets/hicolor/64x64/apps/lumine-capture.png", "usr/share/icons/hicolor/64x64/apps/", "644"],
+    ["assets/hicolor/64x64/apps/lumine-pin.png", "usr/share/icons/hicolor/64x64/apps/", "644"],
+    ["assets/hicolor/128x128/apps/lumine-capture.png", "usr/share/icons/hicolor/128x128/apps/", "644"],
+    ["assets/hicolor/128x128/apps/lumine-pin.png", "usr/share/icons/hicolor/128x128/apps/", "644"],
+    ["assets/hicolor/256x256/apps/lumine-capture.png", "usr/share/icons/hicolor/256x256/apps/", "644"],
+    ["assets/hicolor/256x256/apps/lumine-pin.png", "usr/share/icons/hicolor/256x256/apps/", "644"],
+    ["assets/hicolor/512x512/apps/lumine-capture.png", "usr/share/icons/hicolor/512x512/apps/", "644"],
+    ["assets/hicolor/512x512/apps/lumine-pin.png", "usr/share/icons/hicolor/512x512/apps/", "644"],
+    ["assets/hicolor/scalable/apps/lumine-capture.svg", "usr/share/icons/hicolor/scalable/apps/", "644"],
+    ["assets/hicolor/scalable/apps/lumine-pin.svg", "usr/share/icons/hicolor/scalable/apps/", "644"],
+    ["LICENSE-MIT", "usr/share/doc/lumine-capture/", "644"],
+    ["LICENSE-APACHE", "usr/share/doc/lumine-capture/", "644"],
+    ["README.md", "usr/share/doc/lumine-capture/", "644"],
+    ["docs/lumine-capture-shortcuts-kde.kksrc", "usr/share/doc/lumine-capture/", "644"],
 ]

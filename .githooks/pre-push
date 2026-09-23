@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Refuses to push a red build. Enable once per clone:
+#   git config core.hooksPath .githooks
+# Bypass a single push with: git push --no-verify
+exec "$(dirname "$0")/../scripts/ci.sh" quick
