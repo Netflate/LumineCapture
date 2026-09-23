@@ -157,7 +157,12 @@ pub fn composite_region(
     // RGBA -> RGB
     let rgba = out.data();
     let mut rgb = vec![0u8; (width as usize) * (height as usize) * 3];
-    for (dst, src) in rgb.chunks_exact_mut(3).zip(rgba.chunks_exact(4)) {
+    for (dst, src) in rgb
+        .as_chunks_mut::<3>()
+        .0
+        .iter_mut()
+        .zip(rgba.as_chunks::<4>().0)
+    {
         dst.copy_from_slice(&src[..3]);
     }
 

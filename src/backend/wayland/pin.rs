@@ -167,7 +167,7 @@ fn render_pin(image: &[u8], scale: f32) -> Result<Pixmap, Box<dyn std::error::Er
     let rgba = image::load_from_memory(image)?.into_rgba8();
     let (w, h) = rgba.dimensions();
     let mut data = rgba.into_raw();
-    for px in data.chunks_exact_mut(4) {
+    for px in data.as_chunks_mut::<4>().0 {
         let a = px[3] as u16;
         if a != 255 {
             for c in &mut px[..3] {

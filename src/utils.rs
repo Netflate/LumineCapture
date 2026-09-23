@@ -288,7 +288,7 @@ pub fn get_full_workspace_rect(placements: &[Placement]) -> Option<Rect> {
 // pixels swap
 #[inline]
 pub fn to_rgba(pixels: &mut [u8], bgr: bool) {
-    for chunk in pixels.chunks_exact_mut(4) {
+    for chunk in pixels.as_chunks_mut::<4>().0 {
         if bgr {
             chunk.swap(0, 2);
         }
@@ -304,7 +304,12 @@ pub fn to_rgba(pixels: &mut [u8], bgr: bool) {
 /// shows a frame with red and blue exchanged. One pass per pixel means the
 /// buffer only ever holds correct colors.
 pub fn copy_swizzled(dst: &mut [u8], src: &[u8]) {
-    for (d, s) in dst.chunks_exact_mut(4).zip(src.chunks_exact(4)) {
+    for (d, s) in dst
+        .as_chunks_mut::<4>()
+        .0
+        .iter_mut()
+        .zip(src.as_chunks::<4>().0)
+    {
         d[0] = s[2];
         d[1] = s[1];
         d[2] = s[0];

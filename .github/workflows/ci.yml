@@ -18,7 +18,7 @@ jobs:
           dnf install -y --setopt=install_weak_deps=False \
             gcc gcc-c++ clang pkgconf-pkg-config pipewire-devel libxkbcommon-devel openssl-devel \
             rust cargo clippy rustfmt git
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: Swatinem/rust-cache@v2
       - name: fmt, clippy, tests
         run: ./scripts/ci.sh quick

@@ -421,7 +421,7 @@ mod tests {
     }
 
     fn ids(pixels: &[u8]) -> Vec<u8> {
-        pixels.chunks_exact(4).map(|p| p[0]).collect()
+        pixels.as_chunks::<4>().0.iter().map(|p| p[0]).collect()
     }
 
     #[test]

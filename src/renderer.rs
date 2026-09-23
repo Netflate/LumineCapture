@@ -335,7 +335,7 @@ fn dim_pixel() -> [u8; 4] {
 
 pub fn init_dimming(dimmed: &mut Pixmap, selection: Option<&Rect>, edges: Option<&SelectionEdges>) {
     let px = dim_pixel();
-    for d in dimmed.data_mut().chunks_exact_mut(4) {
+    for d in dimmed.data_mut().as_chunks_mut::<4>().0 {
         d.copy_from_slice(&px);
     }
 
@@ -469,7 +469,7 @@ fn fill_rect(pixmap: &mut Pixmap, rect: &Rect, px: [u8; 4]) {
     let data = pixmap.data_mut();
     for row in 0..rh {
         let off = (y + row) as usize * stride + x as usize * 4;
-        for d in data[off..off + row_bytes].chunks_exact_mut(4) {
+        for d in data[off..off + row_bytes].as_chunks_mut::<4>().0 {
             d.copy_from_slice(&px);
         }
     }
