@@ -1,21 +1,21 @@
-[Custom Commands][net.local.lumine-capture.desktop]
+[Custom Commands][net.local.lumine-capture-5.desktop]
 Exec=lumine-capture
-Name=Take full workspace screenshot with gui 
+Name=Full + Editor
 
 [Custom Commands][net.local.lumine-capture-2.desktop]
 Exec=lumine-capture -f -t s
-Name=Take a full workspace screenshot and save it immediately (no gui)
+Name=Full -> File
 
 [Custom Commands][net.local.lumine-capture-3.desktop]
 Exec=lumine-capture -f -t c
-Name=Take a full workspace screenshot and save it to clipboard (no gui)
+Name=Full -> Clipboard
 
 [Custom Commands][net.local.lumine-capture-4.desktop]
 Exec=lumine-capture -r
-Name=Drag a region and take the screenshot immediately (file + clipboard)
+Name=Instant save after dragging
 
-[net.local.lumine-capture.desktop][Global Shortcuts]
-_launch=Print
+[net.local.lumine-capture-5.desktop][Global Shortcuts]
+_launch=Meta+Shift+S
 
 [net.local.lumine-capture-2.desktop][Global Shortcuts]
 _launch=Shift+Print

@@ -138,7 +138,35 @@ These shortcuts are available in the editor. All of them can be changed in the `
 
 With the OCR tool active, <kbd>Return</kbd> and <kbd>Ctrl</kbd> + <kbd>C</kbd> copy the selected text, and <kbd>Ctrl</kbd> + <kbd>A</kbd> selects all recognized text. With the Eyedropper they copy the picked color.
 
+### Global
+
+- **KDE Plasma:** import [lumine-capture-shortcuts-kde.kksrc](docs/lumine-capture-shortcuts-kde.kksrc) in *System Settings -> Keyboard -> Shortcuts -> Import -> Custom Scheme*, or bind commands youself. Spectacle holds <kbd>Meta</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd> and <kbd>Shift</kbd> + <kbd>Print</kbd> by default, so clear them there first if you want.
+- **COSMIC and others:** bind them in your bind settings.
+
+
 ## Installation
+
+Wayland only. Packages are on the [releases page](https://github.com/Netflate/LumineCapture/releases/latest).
+
+**Fedora 43+**
+```sh
+sudo dnf install https://github.com/Netflate/LumineCapture/releases/download/v0.1.0/lumine-capture-0.1.0-1.x86_64.rpm
+```
+
+**Ubuntu 24.04+ / Debian 13+**
+```sh
+wget https://github.com/Netflate/LumineCapture/releases/download/v0.1.0/lumine-capture_0.1.0-1_amd64.deb
+sudo apt install ./lumine-capture_0.1.0-1_amd64.deb
+```
+
+**Arch Linux**
+```sh
+sudo pacman -U https://github.com/Netflate/LumineCapture/releases/download/v0.1.0/lumine-capture-0.1.0-1-x86_64.pkg.tar.zst
+```
+or build it yourself from the [PKGBUILD](packaging/arch/PKGBUILD):
+```sh
+git clone https://github.com/Netflate/LumineCapture && cd LumineCapture/packaging/arch && makepkg -si
+```
 
 ## License
 
