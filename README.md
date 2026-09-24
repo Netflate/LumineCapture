@@ -7,17 +7,14 @@
       <br />
       LumineCapture
     </h1>
-    <h4>Lightweight, fast and powerful software</h4>
+    <h4>Fast, lightweight Wayland screenshot tool</h4>
   </p>
 </div>
 
 
+## Preview
 
-## Preview & Benchmark against other screenshot utilities
-### Preview
-### Comparison (LumineCapture vs Flameshot vs Spectacle)
-1. In perfect conditions
-2. In high usage conditions (under heavy load)
+![preview](https://github.com/user-attachments/assets/12fa88ad-6643-414c-a8d6-4e4cdf7be0a1)
 
 ## Features
 
@@ -28,6 +25,30 @@
 - In-app screenshot editing.
 - OCR.
 - Pin.
+  
+## Speed Comparison (LumineCapture vs Flameshot vs Spectacle)
+> every test ran on a dual-monitor setup, so each screenshot covered the whole workspace (both screens), which made every run a bit slower. Compare the tools with each other rather than looking at the absolute numbers.
+
+
+### 1) In optimal conditions:
+The measurement for each of the three started exactly one frame before the command execution, so the actual time is approximately 0.10 ms lower for each one. 
+It's also important to note that the Spectacle measurement might be unfair. I decided to end the measurement exactly when the application is fully initialized and ready to use, and that's when the toolbar starts appearing, not immediately after the screen dims. This is because Spectacle hasn't loaded the toolbar by that point. The measurement ends at the frame when the toolbar animation starts
+
+![first](https://github.com/user-attachments/assets/7648e73b-9d0f-41f6-84d0-12f127f3c84a)
+
+### 2) In high CPU usage condition: 
+
+![second](https://github.com/user-attachments/assets/8ea42674-09bd-437d-8bee-08865c5a211f)
+
+### 3) Saving a full-workspace screenshot without a GUI (30 times):
+
+| Command | Mean [ms] | Min [ms] | Max [ms] | Relative |
+|:---|---:|---:|---:|---:|
+| `LumineCapture` | 150.5 ± 51.9 | 111.0 | 280.9 | 1.00 |
+| `Spectacle` | 576.1 ± 11.7 | 556.5 | 605.4 | 3.83 ± 1.32 |
+| `Flameshot (daemon running)` | 737.9 ± 33.4 | 692.5 | 841.0 | 4.90 ± 1.71 |
+
+Script: [`scripts/bench.sh`](scripts/bench.sh) 
 
 ## Usage
 
