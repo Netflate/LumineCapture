@@ -7,6 +7,10 @@ rust-version = "1.88"
 description = "Screenshot and annotation tool for Wayland with built-in OCR"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
+repository = "https://github.com/Netflate/LumineCapture"
+homepage = "https://github.com/Netflate/LumineCapture"
+keywords = ["screenshot", "wayland", "ocr", "annotation", "kde"]
+categories = ["multimedia::images", "graphics", "gui"]
 
 [dependencies]
 # async & core Runtime
