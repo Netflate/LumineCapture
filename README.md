@@ -146,7 +146,10 @@ With the OCR tool active, <kbd>Return</kbd> and <kbd>Ctrl</kbd> + <kbd>C</kbd> c
 
 ## Installation
 
-Wayland only. Packages are on the [releases page](https://github.com/Netflate/LumineCapture/releases/latest).
+Packages are on the [releases page](https://github.com/Netflate/LumineCapture/releases/latest).
+
+> [!NOTE]
+> Tested only on **KDE Plasma** and **COSMIC**. Other Wayland compositors may work but were never tried. **GNOME is not supported yet.**
 
 **Fedora 43+**
 ```sh
