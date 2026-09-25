@@ -44,7 +44,22 @@ pub fn encode_png(pixmap: &Pixmap) -> Vec<u8> {
     let rgba = pixmap.data();
 
     let encoder =
-        PngEncoder::new_with_quality(&mut png_bytes, CompressionType::Fast, FilterType::Adaptive);
+        PngEncoder::new_with_quality(&mut png_bytes, CompressionType::Fast, FilterType::Paeth);
+    //  Why specifically Paeth ?
+
+    //  filter type     | png encoded timing │ size
+    //  --------------------------------------------
+    //  Adaptive (prev) |       44.74        | 1.92 MB
+    //  --------------------------------------------
+    //  NoFilter        |       69.95        | 15.82 MB
+    //  --------------------------------------------
+    //  Sub             |       39.48       | 2.34 MB
+    //  --------------------------------------------
+    //  Up              |       38.19       | 2.19 MB
+    //  --------------------------------------------
+    //  Avg             |       39.93       | 2.68 MB
+    //  --------------------------------------------
+    //  Paeth           |       39.43       | 2.21 MB
 
     encoder
         .write_image(
@@ -364,6 +379,9 @@ fn spawn_self_with(
         .args(args)
         .stdin(Stdio::piped())
         .stdout(stdout)
+        // the helper outlives us, so an inherited stderr keeps our pipe open and
+        // hangs whoever reads our output; the log file takes it instead
+        .stderr(crate::logging::open_log_file().map_or_else(Stdio::null, Stdio::from))
         .process_group(0)
         .spawn()?;
 
