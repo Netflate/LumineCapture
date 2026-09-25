@@ -164,7 +164,8 @@ sudo apt install ./lumine-capture_0.1.0-1_amd64.deb
 
 **Arch Linux**
 ```sh
-sudo pacman -U https://github.com/Netflate/LumineCapture/releases/download/v0.1.0/lumine-capture-0.1.0-1-x86_64.pkg.tar.zst
+curl -LO https://github.com/Netflate/LumineCapture/releases/download/v0.1.0/lumine-capture-0.1.0-1-x86_64.pkg.tar.zst
+sudo pacman -U lumine-capture-0.1.0-1-x86_64.pkg.tar.zst
 ```
 or build it yourself from the [PKGBUILD](packaging/arch/PKGBUILD):
 ```sh
