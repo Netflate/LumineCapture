@@ -108,6 +108,7 @@ assets = [
     { source = "assets/hicolor/scalable/apps/lumine-pin.svg", dest = "/usr/share/icons/hicolor/scalable/apps/lumine-pin.svg", mode = "644" },
     { source = "LICENSE-MIT", dest = "/usr/share/licenses/lumine-capture/LICENSE-MIT", mode = "644" },
     { source = "LICENSE-APACHE", dest = "/usr/share/licenses/lumine-capture/LICENSE-APACHE", mode = "644" },
+    { source = "assets/fonts/LICENSE-OFL.txt", dest = "/usr/share/licenses/lumine-capture/LICENSE-OFL-Inter.txt", mode = "644" },
     { source = "README.md", dest = "/usr/share/doc/lumine-capture/README.md", mode = "644" },
     { source = "docs/lumine-capture-shortcuts-kde.kksrc", dest = "/usr/share/doc/lumine-capture/lumine-capture-shortcuts-kde.kksrc", mode = "644" },
 ]
@@ -145,6 +146,7 @@ assets = [
     ["assets/hicolor/scalable/apps/lumine-pin.svg", "usr/share/icons/hicolor/scalable/apps/", "644"],
     ["LICENSE-MIT", "usr/share/doc/lumine-capture/", "644"],
     ["LICENSE-APACHE", "usr/share/doc/lumine-capture/", "644"],
+    ["assets/fonts/LICENSE-OFL.txt", "usr/share/doc/lumine-capture/LICENSE-OFL-Inter.txt", "644"],
     ["README.md", "usr/share/doc/lumine-capture/", "644"],
     ["docs/lumine-capture-shortcuts-kde.kksrc", "usr/share/doc/lumine-capture/", "644"],
 ]

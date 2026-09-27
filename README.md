@@ -179,6 +179,8 @@ Licensed under either of
 - Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
 - MIT license ([LICENSE-MIT](LICENSE-MIT))
 
+The bundled [Inter](https://github.com/rsms/inter) font is under the SIL Open Font License 1.1 ([LICENSE-OFL](assets/fonts/LICENSE-OFL.txt)).
+
 ## Acknowledgments
 
 A lot of the reference for this project, including the layout of this README, was taken from [Spectacle](https://invent.kde.org/graphics/spectacle) and [Flameshot](https://github.com/flameshot-org/flameshot). Thanks to both projects and everyone who works on them.

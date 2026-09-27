@@ -5,7 +5,7 @@ pkgrel=1
 pkgdesc='Screenshot and annotation tool for Wayland with built-in OCR'
 arch=(x86_64)
 url='https://github.com/Netflate/LumineCapture'
-license=('MIT OR Apache-2.0')
+license=('MIT OR Apache-2.0' 'OFL-1.1')
 depends=(gcc-libs glibc libpipewire libxkbcommon openssl zlib)
 makedepends=(cargo clang)
 options=(!debug !lto)
@@ -39,5 +39,6 @@ package() {
     done
 
     install -Dm644 LICENSE-MIT LICENSE-APACHE -t "$pkgdir/usr/share/licenses/$pkgname"
+    install -Dm644 assets/fonts/LICENSE-OFL.txt "$pkgdir/usr/share/licenses/$pkgname/LICENSE-OFL-Inter.txt"
     install -Dm644 README.md docs/lumine-capture-shortcuts-kde.kksrc -t "$pkgdir/usr/share/doc/$pkgname"
 }
