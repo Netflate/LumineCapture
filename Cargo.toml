@@ -36,6 +36,7 @@ rustix = { version = "1.1.4", features = ["event"] }
 
 # graphics
 cosmic-text = "0.19.0"
+sys-locale = "0.3.2"
 image = "0.25.10"
 resvg = "0.48.1"
 tiny-skia = "0.12.0"

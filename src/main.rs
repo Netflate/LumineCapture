@@ -2,6 +2,7 @@ mod app;
 pub mod backend;
 pub mod config;
 pub mod editor;
+pub mod fonts;
 pub mod interaction;
 pub mod keys;
 pub mod logging;

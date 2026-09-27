@@ -1753,6 +1753,7 @@ dependencies = [
  "serde",
  "smithay-client-toolkit",
  "strum",
+ "sys-locale",
  "tiny-skia",
  "tokio",
  "toml",

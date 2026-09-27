@@ -59,6 +59,7 @@ pub struct Magnifier {
 /// system at the same time), so this deliberately has no `&mut self` methods.
 pub struct TextState {
     pub font_system: FontSystem,
+    pub system_fonts: Option<std::thread::JoinHandle<cosmic_text::fontdb::Database>>,
     pub swash_cache: SwashCache,
     pub editors: HashMap<u64, Editor<'static>>,
     pub editing: Option<TextEditState>,

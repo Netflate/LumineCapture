@@ -19,7 +19,7 @@ use crate::ui::panel::UiPanel;
 use crate::ui::panel::{AnimatedPanel, panel_to_draw, tick_panel_animation};
 use crate::utils::{encode_png, get_full_workspace_rect, save_to_file};
 
-use cosmic_text::{FontSystem, SwashCache};
+use cosmic_text::SwashCache;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -116,7 +116,7 @@ async fn start_capture(
     prof: &mut Profiler,
 ) -> Result<(EditorState, Box<dyn ScreenOverlay>), Box<dyn std::error::Error>> {
     let icons_handle = std::thread::spawn(init::load_icons_cache);
-    let text_handle = std::thread::spawn(|| (SwashCache::new(), FontSystem::new()));
+    let system_fonts = std::thread::spawn(crate::fonts::system);
 
     let mut overlay = initialize_overlay(conn.clone())?;
     prof.mark("overlay init");
@@ -165,7 +165,6 @@ async fn start_capture(
     };
     prof.mark("base_pixmaps + layers + placements");
 
-    let (swash_cache, font_system) = text_handle.join().expect("Failed to join text thread");
     let icons_cache = icons_handle.join().expect("Failed to join icons thread");
 
     let editor_state = EditorState::new(
@@ -178,8 +177,9 @@ async fn start_capture(
         placements,
         icons_cache,
         TextState {
-            font_system,
-            swash_cache,
+            font_system: crate::fonts::bundled(),
+            system_fonts: Some(system_fonts),
+            swash_cache: SwashCache::new(),
             editors: HashMap::new(),
             editing: None,
         },
@@ -315,6 +315,11 @@ fn poll_timeout(editor_state: &EditorState) -> Option<Duration> {
 }
 
 fn poll_background_work(editor_state: &mut EditorState, dirty_mask: &mut u32) {
+    if let Some(fonts) = editor_state.text.system_fonts.take_if(|f| f.is_finished())
+        && let Ok(db) = fonts.join()
+    {
+        crate::fonts::add_system(&mut editor_state.text.font_system, db);
+    }
     if let Some(result) = editor_state.ocr.runtime.poll() {
         crate::tools::ocr::finish_ocr(editor_state, result, dirty_mask);
         panels::settings::update_settings_panel(editor_state, dirty_mask);
