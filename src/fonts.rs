@@ -11,6 +11,11 @@ static BUNDLED: [&[u8]; 4] = [
     include_bytes!("../assets/fonts/Inter-BoldItalic.ttf"),
 ];
 
+// apparently since FontSystem::new() is reading all fonts in the system,
+// it takes around 10ms when they are cached which is already bad, but when
+// they are not cached, after reboot for example, it increases up untill
+// +- 350 ms which is catastrohpic. Now it uses Inter installed with
+// the screenshotter itself, to avoid working with system fonts at launch
 pub fn bundled() -> FontSystem {
     let mut db = Database::new();
     for font in BUNDLED {
