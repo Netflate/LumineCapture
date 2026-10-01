@@ -481,6 +481,11 @@ fn char_boundaries(bounds: &Rect, text: &str, norm: &[f32]) -> Vec<f32> {
     for x in &mut xs {
         *x = x.clamp(left, right);
     }
+    // Now line edges are anchored to the box edge, simple as that,
+    // instead of calculating them from character positions, since the
+    // position of the first letter in large text often broke due to delay
+    xs[0] = left;
+    xs[n] = right;
     for k in 0..n {
         xs[k + 1] = xs[k + 1].max(xs[k]);
     }
@@ -565,5 +570,19 @@ fn advance(c: char) -> f32 {
         _ if c as u32 >= 0x2E80 => 2.0,
         _ if c.is_uppercase() => 1.2,
         _ => 1.0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn outer_boundaries_sit_on_the_box_edges() {
+        let bounds = Rect::from_ltrb(100.0, 0.0, 610.0, 115.0).unwrap();
+        let xs = char_boundaries(&bounds, "MONDAY", &[0.2, 0.35, 0.45, 0.6, 0.75, 0.9]);
+        assert_eq!(xs.len(), 7);
+        assert_eq!((xs[0], xs[6]), (100.0, 610.0));
+        assert!(xs.windows(2).all(|w| w[0] <= w[1]));
     }
 }
