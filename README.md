@@ -11,10 +11,9 @@
   </p>
 </div>
 
-
 ## Preview
 
-![preview](https://github.com/user-attachments/assets/12fa88ad-6643-414c-a8d6-4e4cdf7be0a1)
+![preview](https://github.com/user-attachments/assets/05a7bdd1-9d6d-416a-a52c-e184d4314433)
 
 ## Features
 
