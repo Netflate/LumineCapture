@@ -2,7 +2,10 @@
 //
 // this module implements the 'ScreenOverlay' trait for wayland using SCTK
 // It is responsible for creating surfaces, mapping them to the correct outputs
-// via layer_shell, managing shm pixel buffers, and driving the event loop
+// via xdg windows or layer_shell, managing shm pixel buffers, and driving the event loop
+//
+// by default, auto decides what to use, for everything a fullscreen window
+// for scrolling wm (for now only niri) layer, since creating a window there will start a clunky animation for a screenshot app
 use rustix::{
     event::{PollFd, PollFlags, poll},
     time::Timespec,
@@ -157,7 +160,7 @@ impl ScreenOverlay for WaylandOverlay {
 
         let deadline = Instant::now() + CONFIGURE_TIMEOUT;
         while rt.state.surfaces.values().any(|sd| sd.shm_buffer.is_none()) {
-            // freezes untill WindowHandler create necessary buffers in utils/compositor_shm_xdg.rs
+            // freezes untill configure_surface create necessary buffers in state/compositor_shm.rs
             // if we continue without waiting compositor response, app will crash
             rt.event_queue.roundtrip(&mut rt.state)?;
             if let Some(e) = rt.state.configure_error.take() {

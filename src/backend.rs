@@ -4,6 +4,7 @@ pub mod wayland;
 use crate::types::{Capture, CaptureResult, CursorIcon, DamageRect, Output, OverlayEvent};
 use async_trait::async_trait;
 use log::{info, warn};
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use wayland_client::Connection;
 
@@ -91,13 +92,43 @@ pub trait ScreenOverlay: Send {
     fn set_cursor(&mut self, icon: CursorIcon);
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OverlayShell {
+    Auto,
+    Window,
+    Layer,
+}
+
+/// Selection of backend for displaying on the screenshot and interface screen
+/// GNOME is not supported and has not been tested yet.
+///
+/// layer_shell works as a system overlay; it will be on top of everything else, so the screenshot
+/// cannot be temporarily moved to another desktop or minimized, which seems non-optimal.
+/// Therefore, a forced full-screen window is used as default.
+///
+/// Niri, and likely other scroll managers, places every new full-screen window on the side
+/// making the user experience clunky since every trigger plays an animation of opening a new app.
+/// Therefore, layer_shell is used there instead.
 pub fn initialize_overlay(
     conn: Connection,
 ) -> Result<Box<dyn ScreenOverlay>, Box<dyn std::error::Error>> {
-    // TODO: won't work on gnome anyways :p will be implemented in the future
+    let layer = match crate::config::get().general.overlay {
+        OverlayShell::Auto => on_niri(),
+        shell => shell == OverlayShell::Layer,
+    };
+    info!(
+        "overlay surface: {}",
+        if layer { "layer" } else { "window" }
+    );
     Ok(Box::new(wayland::overlay::WaylandOverlay::new(
-        conn, false,
+        conn, layer,
     )?))
+}
+
+fn on_niri() -> bool {
+    let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
+    desktop.split(':').any(|d| d == "niri") || std::env::var_os("NIRI_SOCKET").is_some()
 }
 
 pub fn initialize_clipboard() -> Box<dyn ClipboardProvider> {

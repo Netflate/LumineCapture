@@ -7,6 +7,7 @@ use std::sync::{Mutex, OnceLock};
 use log::warn;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use crate::backend::OverlayShell;
 use crate::ocr::settings::{Device, Mode};
 use crate::theme::Rgba;
 use crate::types::Outputs;
@@ -231,6 +232,7 @@ section!(General {
         copy: true,
         ..Outputs::default()
     },
+    overlay: OverlayShell = OverlayShell::Auto,
 });
 
 section!(Save {
@@ -651,7 +653,7 @@ impl Default for Keys {
     }
 }
 
-pub const TEMPLATE: &str = r##"# LumineCapture config. 
+pub const TEMPLATE: &str = r##"# LumineCapture config.
 
 # Commented or empty color follows the [theme] role written next to it
 # Uncomment to deliberately set a specific color separate from theme
@@ -660,10 +662,10 @@ pub const TEMPLATE: &str = r##"# LumineCapture config.
 # A line with a mistake is skipped with a warning in ~/.local/state/LumineCapture/lumine.log,
 # the rest of the file still applies.
 
-# The config file may be excessive, yet I decided to make the absolute majority of constants in the 
+# The config file may be excessive, yet I decided to make the absolute majority of constants in the
 # project configurable. Some of the customized options aren't guaranteed to even apply correctly. F
 
-# First come  traditionally customizable sections that will work perfectly, and then stuff you can 
+# First come  traditionally customizable sections that will work perfectly, and then stuff you can
 # tinker with if you want but it's not really recommended and can result in breaking the application.
 # Useful, important options will be moved to the GUI later on.
 
@@ -674,6 +676,13 @@ save_always = true
 # like pressing enter or double click on the selection zone
 # c (copy), p (pin), s(save), in any order
 accept = "c"
+
+# How does the screenshot with editing gui appear :
+# window  a fullscreen window: can be sent to another desktop or minimized (Recommended)
+# layer   drawn above everything else until the capture is finished, so to check something
+#         outside the screenshot you'd have to cancel the capture.
+# auto    layer on niri, where a window would open as a new column, window everywhere else
+overlay = "auto"
 
 [save]
 directory = "screenshots"
@@ -1021,7 +1030,7 @@ hold_fast_repeat_ms = 40
 [animation]
 # multiplies every animation below; 0.1 at least
 speed = 1.0
-# one animation tick (100fps) 
+# one animation tick (100fps)
 frame_ms = 10
 # opacity per second
 popover_fade = 8.0
@@ -1411,6 +1420,18 @@ mod tests {
             read("[general]\naccept = \"x\"\n").general.accept,
             General::default().accept
         );
+    }
+
+    #[test]
+    fn overlay_is_window_layer_or_auto() {
+        let overlay = |value: &str| {
+            read(&format!("[general]\noverlay = \"{value}\"\n"))
+                .general
+                .overlay
+        };
+        assert_eq!(overlay("window"), OverlayShell::Window);
+        assert_eq!(overlay("layer"), OverlayShell::Layer);
+        assert_eq!(overlay("fullscreen"), OverlayShell::Auto);
     }
 
     #[test]

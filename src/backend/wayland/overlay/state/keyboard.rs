@@ -3,10 +3,6 @@
 // 1. first, checks 'Keysym' to match shortcuts by their actual letter/symbol
 // 2. if not latin symbol matches (e.g, user is on a cyrillic layout), it falls
 //    back to 'raw_code' to trigger the shortcut based on the physical key position
-//
-// TODO: it doesn't absolutyely corerctly works on latin keyboard, like
-//       azerty users will redo on both ctrl z and ctrl w, will be fixed later, who cares
-//       about these sublayouts users anyways
 
 use smithay_client_toolkit::seat::keyboard::{
     KeyEvent, KeyboardHandler, Keysym, Modifiers, RepeatInfo,
