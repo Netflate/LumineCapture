@@ -30,9 +30,16 @@ impl Drop for Background {
     }
 }
 
+// NOT USED ANYWHERE
+// for keeping role alive
+pub enum Role {
+    Window(smithay_client_toolkit::shell::xdg::window::Window),
+    Layer(smithay_client_toolkit::shell::wlr_layer::LayerSurface),
+}
+
 pub struct SurfaceData {
     pub background: Option<Background>,
-    pub window: smithay_client_toolkit::shell::xdg::window::Window,
+    pub role: Role,
     pub surface: wl_surface::WlSurface,
 
     pub shm_buffer: Option<ShmBuffer>,

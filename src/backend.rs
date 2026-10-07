@@ -95,7 +95,9 @@ pub fn initialize_overlay(
     conn: Connection,
 ) -> Result<Box<dyn ScreenOverlay>, Box<dyn std::error::Error>> {
     // TODO: won't work on gnome anyways :p will be implemented in the future
-    Ok(Box::new(wayland::overlay::WaylandOverlay::new(conn)?))
+    Ok(Box::new(wayland::overlay::WaylandOverlay::new(
+        conn, false,
+    )?))
 }
 
 pub fn initialize_clipboard() -> Box<dyn ClipboardProvider> {

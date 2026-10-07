@@ -16,11 +16,12 @@ pub mod state;
 
 use crate::backend::ScreenOverlay;
 use crate::backend::wayland::utils::shm::create_shm_buffer;
-use crate::backend::wayland::utils::surface::{Background, SurfaceData};
+use crate::backend::wayland::utils::surface::{Background, Role, SurfaceData};
 use crate::types::{CursorIcon, DamageRect, Output, OverlayEvent};
+use log::warn;
 use smithay_client_toolkit::compositor::Region;
 use smithay_client_toolkit::shell::WaylandSurface;
-use smithay_client_toolkit::shell::wlr_layer::{KeyboardInteractivity, Layer};
+use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer};
 use state::Probe;
 
 const CONFIGURE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -28,13 +29,24 @@ const PROBE_TIMEOUT: Duration = Duration::from_millis(300);
 
 pub struct WaylandOverlay {
     runtime: state::OverlayRunTime,
+    layer: bool,
 }
 
 impl WaylandOverlay {
-    pub fn new(connection: wayland_client::Connection) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new(
+        connection: wayland_client::Connection,
+        layer: bool,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let rt = state::OverlayRunTime::new(&connection)?;
+        let has_layer_shell = rt.state.layer_shell.is_some();
+        if layer && !has_layer_shell {
+            warn!("compositor has no wlr-layer-shell, the overlay opens as a window");
+        }
 
-        Ok(Self { runtime: rt })
+        Ok(Self {
+            runtime: rt,
+            layer: layer && has_layer_shell,
+        })
     }
 }
 
@@ -81,15 +93,34 @@ impl ScreenOverlay for WaylandOverlay {
                 viewport.set_destination(w as i32, h as i32);
             }
 
-            // ── creating a forced full screen window, with screenshot itself and etc ────────────────────
-            let window = rt.state.xdg_shell.create_window(
-                surface.clone(),
-                smithay_client_toolkit::shell::xdg::window::WindowDecorations::None,
-                &qh,
-            );
-            window.set_title("lumine-capture");
-            window.set_app_id("lumine-capture");
-            window.set_fullscreen(Some(&wl_output));
+            let role = match rt.state.layer_shell.as_ref().filter(|_| self.layer) {
+                Some(shell) => {
+                    // ── creating a wayland overlay on top, with screenshot itself and etc ────────────────────
+                    let layer = shell.create_layer_surface(
+                        &qh,
+                        surface.clone(),
+                        Layer::Overlay,
+                        Some("lumine-capture"),
+                        Some(&wl_output),
+                    );
+                    layer.set_anchor(Anchor::all());
+                    layer.set_exclusive_zone(-1);
+                    layer.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
+                    Role::Layer(layer)
+                }
+                None => {
+                    // ── creating a forced full screen window, with screenshot itself and etc ────────────────────
+                    let window = rt.state.xdg_shell.create_window(
+                        surface.clone(),
+                        smithay_client_toolkit::shell::xdg::window::WindowDecorations::None,
+                        &qh,
+                    );
+                    window.set_title("lumine-capture");
+                    window.set_app_id("lumine-capture");
+                    window.set_fullscreen(Some(&wl_output));
+                    Role::Window(window)
+                }
+            };
 
             // handle fractional scaling calculations for HiDPI setups
             if let Some(frac) = rt.state.frac.as_ref() {
@@ -103,7 +134,7 @@ impl ScreenOverlay for WaylandOverlay {
                 SurfaceData {
                     background: None,
                     surface,
-                    window,
+                    role,
                     shm_buffer: None,
                     width: w,
                     height: h,

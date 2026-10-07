@@ -1,10 +1,12 @@
-pub mod compositor_shm_xdg;
+pub mod compositor_shm;
 pub mod cursor;
 pub mod global;
 pub mod keyboard;
+pub mod layer;
 pub mod output;
 pub mod pointer;
 pub mod seat;
+pub mod xdg;
 
 use std::collections::HashMap;
 use std::collections::VecDeque;
