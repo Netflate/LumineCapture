@@ -25,10 +25,12 @@ pub fn initialize_capture(conn: &Connection) -> Box<dyn CaptureMethod> {
     let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
     let forced = std::env::var("LUMINE_CAPTURE").unwrap_or_default();
     let method = match forced.as_str() {
-        "kde" | "image-copy" | "portal" => forced.as_str(),
+        "kde" | "image-copy" | "screencopy" | "portal" => forced.as_str(),
         other => {
             if !other.is_empty() {
-                warn!("Unknown LUMINE_CAPTURE={other}, expected kde, image-copy or portal");
+                warn!(
+                    "Unknown LUMINE_CAPTURE={other}, expected kde, image-copy, screencopy or portal"
+                );
             }
             // portal is the one asking for permission and monitor choice
             // kinda annoying, and kde protocol / image-copy seems to be faster than through portal
@@ -36,6 +38,8 @@ pub fn initialize_capture(conn: &Connection) -> Box<dyn CaptureMethod> {
                 "kde"
             } else if wayland::capture::image_copy::supported(conn) {
                 "image-copy"
+            } else if wayland::capture::screencopy::supported(conn) {
+                "screencopy"
             } else {
                 "portal"
             }
@@ -46,6 +50,9 @@ pub fn initialize_capture(conn: &Connection) -> Box<dyn CaptureMethod> {
     match method {
         "kde" => Box::new(wayland::capture::kde::KdeMethod::new()),
         "image-copy" => Box::new(wayland::capture::image_copy::ImageCopyMethod::new(
+            conn.clone(),
+        )),
+        "screencopy" => Box::new(wayland::capture::screencopy::ScreencopyMethod::new(
             conn.clone(),
         )),
         _ => Box::new(wayland::capture::portal::PortalMethod),

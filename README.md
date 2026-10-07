@@ -53,7 +53,7 @@ Script: [`scripts/bench.sh`](scripts/bench.sh)
 
 LumineCapture supports different launch options, but if you don't really care about them and just want to use it, the three most obvious commands are:
 
-1. `lumine-capture`: takes a screenshot of the whole workspace and opens it in the editor. (If the capture goes through the portal you can of course also pick a single monitor by hand in its dialog, but it is better to use KWin or image-copy directly. The backend is chosen automatically; set `LUMINE_CAPTURE=kde`, `image-copy` or `portal` to force one.)
+1. `lumine-capture`: takes a screenshot of the whole workspace and opens it in the editor. (If the capture goes through the portal you can of course also pick a single monitor by hand in its dialog, but it is better to use KWin, image-copy or screencopy directly. The backend is chosen automatically; set `LUMINE_CAPTURE=kde`, `image-copy`, `screencopy` or `portal` to force one.)
 2. `lumine-capture -m`: takes a screenshot of the monitor under the pointer.
 3. `lumine-capture -r`: no editor and no annotations, just drag a region; the screenshot is taken as soon as you release the mouse button (by default it is both saved and copied).
 

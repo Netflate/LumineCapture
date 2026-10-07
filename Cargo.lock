@@ -1761,6 +1761,7 @@ dependencies = [
  "usvg",
  "wayland-client",
  "wayland-protocols",
+ "wayland-protocols-wlr",
  "wl-clipboard-rs",
  "zbus",
 ]
