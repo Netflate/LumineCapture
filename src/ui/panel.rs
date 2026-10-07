@@ -72,8 +72,8 @@ pub fn panel_to_draw<'p, P: UiPanel>(
         return None;
     }
     if !panel.is_dirty()
-        && let (Some(dirty), Some(rect)) = (dirty_rect, panel.rect())
-        && rects_overlap(dirty, &rect)
+        && let Some(rect) = panel.rect()
+        && dirty_rect.is_none_or(|dirty| rects_overlap(dirty, &rect))
     {
         panel.set_dirty();
     }
@@ -147,7 +147,7 @@ pub fn sync_panel_hover<P: HoverablePanel>(
 
 pub trait AnimatedPanel: UiPanel {
     fn last_tick(&self) -> Option<Instant>;
-    fn set_last_tick(&mut self, at: Instant);
+    fn set_last_tick(&mut self, at: Option<Instant>);
 
     fn anim_interval(&self) -> Duration {
         anim::frame()
@@ -191,7 +191,6 @@ pub fn tick_panel_animation<P: AnimatedPanel>(
     }
 
     let steps = ((elapsed.as_secs_f32() / dt).floor() as u32).clamp(1, MAX_CATCH_UP_STEPS);
-    panel.set_last_tick(now);
 
     let old_render_pos = panel.render_pos();
     let mut changed = false;
@@ -201,6 +200,7 @@ pub fn tick_panel_animation<P: AnimatedPanel>(
             changed = true;
         }
     }
+    panel.set_last_tick(panel.is_animating().then_some(now));
 
     if !changed {
         return;

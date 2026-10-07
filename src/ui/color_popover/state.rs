@@ -714,8 +714,8 @@ impl AnimatedPanel for ColorPickerPopover {
     fn last_tick(&self) -> Option<Instant> {
         self.last_tick
     }
-    fn set_last_tick(&mut self, at: Instant) {
-        self.last_tick = Some(at);
+    fn set_last_tick(&mut self, at: Option<Instant>) {
+        self.last_tick = at;
     }
 
     fn anim_interval(&self) -> Duration {

@@ -368,7 +368,6 @@ pub fn handle_pointer_button(
                 .damage_rects
                 .push(DamageZone::Local { monitor_idx, rect });
         }
-        mark_dirty(dirty_mask, monitor_idx);
     }
 
     //                                       ⬇⬇⬇⬇⬇⬇⬇⬇⬇
