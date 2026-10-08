@@ -29,6 +29,7 @@ impl OverlayState {
         if let Some(device) = &self.cursor_shape_device {
             device.set_shape(self.pointer_enter_serial, map_cursor_icon(icon));
             self.cursor_applied_since_enter = true;
+            self.pending_flush = true;
         }
     }
 }
