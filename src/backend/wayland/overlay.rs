@@ -25,6 +25,7 @@ use log::warn;
 use smithay_client_toolkit::compositor::Region;
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer};
+use smithay_client_toolkit::shm::slot::SlotPool;
 use state::Probe;
 
 const CONFIGURE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -83,6 +84,15 @@ impl ScreenOverlay for WaylandOverlay {
             .filter_map(|&i| rt.state.outputs.get(i))
             .map(|o| (o.wl_output.clone(), o.info.logical_size.unwrap_or((0, 0))))
             .collect();
+
+        let fault_in = |pool: &mut SlotPool| {
+            if let Ok(slot) = pool.new_slot(prefault) {
+                pool.raw_data_mut(&slot).fill(0);
+            }
+        };
+        if self.layer {
+            fault_in(&mut rt.state.pool);
+        }
 
         // for each output
         for (i, (wl_output, (w, h))) in outputs_snapshot.into_iter().enumerate() {
@@ -154,8 +164,8 @@ impl ScreenOverlay for WaylandOverlay {
         // we fill this memory with zeros to force physical page allocation before getting the screenshot
         // so when it arrives, pages are already mapped, giving us some speed gain
         rt.event_queue.flush()?;
-        if let Ok(slot) = rt.state.pool.new_slot(prefault) {
-            rt.state.pool.raw_data_mut(&slot).fill(0);
+        if !self.layer {
+            fault_in(&mut rt.state.pool);
         }
 
         let deadline = Instant::now() + CONFIGURE_TIMEOUT;
