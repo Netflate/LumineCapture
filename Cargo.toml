@@ -1,6 +1,6 @@
 [package]
 name = "lumine-capture"
-version = "0.1.1"
+version = "0.2.0"
 authors = ["Netflate <netflate@gmail.com>"]
 edition = "2024"
 rust-version = "1.88"

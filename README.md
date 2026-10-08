@@ -152,19 +152,19 @@ Packages are on the [releases page](https://github.com/Netflate/LumineCapture/re
 
 **Fedora 43+**
 ```sh
-sudo dnf install https://github.com/Netflate/LumineCapture/releases/download/v0.1.1/lumine-capture-0.1.1-1.x86_64.rpm
+sudo dnf install https://github.com/Netflate/LumineCapture/releases/download/v0.2.0/lumine-capture-0.2.0-1.x86_64.rpm
 ```
 
 **Ubuntu 24.04+ / Debian 13+**
 ```sh
-wget https://github.com/Netflate/LumineCapture/releases/download/v0.1.1/lumine-capture_0.1.1-1_amd64.deb
-sudo apt install ./lumine-capture_0.1.1-1_amd64.deb
+wget https://github.com/Netflate/LumineCapture/releases/download/v0.2.0/lumine-capture_0.2.0-1_amd64.deb
+sudo apt install ./lumine-capture_0.2.0-1_amd64.deb
 ```
 
 **Arch Linux**
 ```sh
-curl -LO https://github.com/Netflate/LumineCapture/releases/download/v0.1.1/lumine-capture-0.1.1-1-x86_64.pkg.tar.zst
-sudo pacman -U lumine-capture-0.1.1-1-x86_64.pkg.tar.zst
+curl -LO https://github.com/Netflate/LumineCapture/releases/download/v0.2.0/lumine-capture-0.2.0-1-x86_64.pkg.tar.zst
+sudo pacman -U lumine-capture-0.2.0-1-x86_64.pkg.tar.zst
 ```
 or build it yourself from the [PKGBUILD](packaging/arch/PKGBUILD):
 ```sh
