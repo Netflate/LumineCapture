@@ -148,7 +148,7 @@ With the OCR tool active, <kbd>Return</kbd> and <kbd>Ctrl</kbd> + <kbd>C</kbd> c
 Packages are on the [releases page](https://github.com/Netflate/LumineCapture/releases/latest).
 
 > [!NOTE]
-> Tested only on **KDE Plasma** and **COSMIC**. Other Wayland compositors may work but were never tried. **GNOME is not supported yet.**
+> Tested only on **KDE Plasma**, **COSMIC** and **niri**. Other Wayland compositors may work but were never tried. **GNOME is not supported yet.**
 
 **Fedora 43+**
 ```sh
