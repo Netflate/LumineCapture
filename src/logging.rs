@@ -56,15 +56,15 @@ pub fn init(process: Process) {
                 .and_then(|v| v.trim().parse::<LevelFilter>().ok())
         });
 
-    // the daemon's stderr is already redirected into the log file
-    // so it logs everything there through stderr and keeps no sink
-    let daemon = process == Process::OcrDaemon;
-    let stderr_level = asked.unwrap_or(if daemon {
+    // helpers' stderr is already redirected into the log file
+    // so they log everything there through stderr and keep no sink
+    let helper = process != Process::Overlay;
+    let stderr_level = asked.unwrap_or(if helper {
         DEFAULT_DAEMON_STDERR_LEVEL
     } else {
         DEFAULT_STDERR_LEVEL
     });
-    let file_level = if daemon {
+    let file_level = if helper {
         LevelFilter::Off
     } else {
         asked.unwrap_or(DEFAULT_FILE_LEVEL)

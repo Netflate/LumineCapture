@@ -602,7 +602,10 @@ async fn deliver(png: Vec<u8>, scale: f32, outputs: Outputs, dir: Option<&Path>)
     if outputs.copy {
         match initialize_clipboard().copy_image_to_clipboard(png) {
             Ok(()) => notify::send(Notice::Copied(saved)).await,
-            Err(e) => notify::send(Notice::CopyFailed(e.to_string())).await,
+            Err(e) => {
+                log::error!("copy failed: {e}");
+                notify::send(Notice::CopyFailed(e.to_string())).await
+            }
         }
     } else if outputs.save
         && let Some(path) = saved

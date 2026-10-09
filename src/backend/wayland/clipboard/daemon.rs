@@ -3,7 +3,9 @@
 // data until something else takes the clipboard over.
 
 use std::io::{Read, Write};
+use std::time::Instant;
 
+use log::{error, info};
 use wl_clipboard_rs::copy::{MimeSource, MimeType, Options, Source};
 
 use super::TEXT_ARG;
@@ -20,6 +22,8 @@ pub fn cli(mut args: impl Iterator<Item = String>) {
     let mut opts = Options::new();
     opts.foreground(true);
 
+    let len = buf.len();
+    let kind = if text { "text" } else { "image" };
     let sources = if text {
         vec![MimeSource {
             source: Source::Bytes(buf.into()),
@@ -48,8 +52,14 @@ pub fn cli(mut args: impl Iterator<Item = String>) {
         Ok(copy) => {
             let _ = writeln!(stdout);
             let _ = stdout.flush();
-            if copy.serve().is_err() {
-                std::process::exit(1);
+            info!("serving {len} bytes of {kind}");
+            let started = Instant::now();
+            match copy.serve() {
+                Ok(()) => info!("taken over after {:.1?}", started.elapsed()),
+                Err(e) => {
+                    error!("stopped serving after {:.1?}: {e:?}", started.elapsed());
+                    std::process::exit(1);
+                }
             }
         }
         Err(e) => {

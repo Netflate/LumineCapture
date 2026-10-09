@@ -350,7 +350,10 @@ impl KeyboardHandler for Pin {
             Some(Action::Finish(Finish::Copy)) => {
                 let notice = match self.clipboard.copy_image_to_clipboard(self.png.clone()) {
                     Ok(()) => Notice::Copied(None),
-                    Err(e) => Notice::CopyFailed(e.to_string()),
+                    Err(e) => {
+                        log::error!("copy failed: {e}");
+                        Notice::CopyFailed(e.to_string())
+                    }
                 };
                 notify::send_blocking(notice);
             }

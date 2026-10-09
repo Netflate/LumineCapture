@@ -88,7 +88,10 @@ pub fn copy_value(state: &mut EditorState, field: ValueField, color: Color) {
     let text = field.text(color);
     let message = match crate::utils::copy_to_clipboard(&text) {
         Ok(()) => format!("Copied {text}"),
-        Err(e) => format!("Couldn't copy: {e}"),
+        Err(e) => {
+            log::warn!("eyedropper: can't copy: {e}");
+            format!("Couldn't copy: {e}")
+        }
     };
     state
         .toasts
