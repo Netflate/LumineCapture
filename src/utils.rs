@@ -5,14 +5,17 @@ use tiny_skia::Rect;
 
 #[inline]
 pub fn make_rect(a: (f64, f64), b: (f64, f64)) -> Option<Rect> {
-    let x = a.0.min(b.0) as f32;
-    let y = a.1.min(b.1) as f32;
-    let w = (a.0 - b.0).abs() as f32;
-    let h = (a.1 - b.1).abs() as f32;
+    let w = (a.0 - b.0).abs();
+    let h = (a.1 - b.1).abs();
     if w < 1.0 || h < 1.0 {
         return None;
     }
-    Rect::from_xywh(x, y, w, h)
+    Rect::from_ltrb(
+        a.0.min(b.0).floor() as f32,
+        a.1.min(b.1).floor() as f32,
+        a.0.max(b.0).ceil() as f32,
+        a.1.max(b.1).ceil() as f32,
+    )
 }
 
 pub fn global_point_to_local(
