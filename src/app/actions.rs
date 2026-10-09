@@ -122,7 +122,9 @@ fn nudge_selection(
         selection.nudge_fast
     } else {
         selection.nudge
-    };
+    }
+    .round()
+    .max(1.0);
     let (dx, dy) = match dir {
         Dir::Left => (-step, 0.0),
         Dir::Right => (step, 0.0),

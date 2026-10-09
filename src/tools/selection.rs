@@ -115,7 +115,7 @@ impl ToolBehavior for SelectionTool {
                 state.selection.drag_origin,
                 state.selection.selection_at_drag_start,
             ) {
-                let delta = (global.0 - origin.0, global.1 - origin.1);
+                let delta = ((global.0 - origin.0).round(), (global.1 - origin.1).round());
                 state.selection.zone =
                     apply_handle_drag(&sel_start, state.selection.active_handle, delta).to_rect();
                 selection_changed = true;
