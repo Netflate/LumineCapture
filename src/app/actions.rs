@@ -28,8 +28,8 @@ pub fn run(editor_state: &mut EditorState, action: Action, dirty_mask: &mut u32)
     let busy = editor_state.tool_active || editor_state.input.mouse_down;
     match action {
         Action::Accept => {
-            if !tool_copy(editor_state, dirty_mask) && !editor_state.accept.is_empty() {
-                editor_state.finish = Some(editor_state.accept);
+            if !tool_copy(editor_state, dirty_mask) && !editor_state.to.is_empty() {
+                editor_state.finish = Some(editor_state.to);
             }
         }
         Action::Finish(Finish::Copy) => {

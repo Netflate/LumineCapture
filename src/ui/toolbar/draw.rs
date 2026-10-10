@@ -136,6 +136,8 @@ fn draw_toolbar_content(
                     cfg.icon_selected.get()
                 } else if toolbar.hovered == Some(index) {
                     cfg.icon_hovered.get()
+                } else if matches!(button, ToolbarButton::Finish(f) if toolbar.to.has(*f)) {
+                    cfg.icon_to.get()
                 } else {
                     cfg.icon.get()
                 };

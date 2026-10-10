@@ -57,13 +57,26 @@ LumineCapture supports different launch options, but if you don't really care ab
 2. `lumine-capture -m`: takes a screenshot of the monitor under the pointer.
 3. `lumine-capture -r`: no editor and no annotations, just drag a region; the screenshot is taken as soon as you release the mouse button (by default it is both saved and copied).
 
-There is also `-t <letters>`, which changes what happens to the screenshot depending on your choice, where the letters are:
+**Important:** by default every screenshot is also saved as a file and copied to the clipboard, even if in the editor you only chose to copy or pin it. There are two ways to change that:
 
-* `s` saves it to the screenshots folder, `~/Pictures/screenshots/<year-month>/` by default
-* `c` copies it to the clipboard
-* `p` pins it to the screen
+1. `-t <letters>` decides what happens to the screenshot for this launch, where the letters are:
 
-The letters can be used in any order, even `scp`; they don't get in each other's way.
+    * `s` saves it to the screenshots folder, `~/Pictures/screenshots/<year-month>/` by default
+    * `c` copies it to the clipboard
+    * `p` pins it to the screen
+
+    The letters can be used in any order, even `scp`; they don't get in each other's way.
+
+2. `to` in the config sets what happens to every screenshot on top of what you choose in the editor:
+
+    ```toml
+    [general]
+    to = "c"
+    ```
+
+    An empty value (`to = ""`) stops it from doing anything with the screenshot on its own.
+
+Whatever `-t` or the config picked is highlighted on the toolbar.
 
 In detail:
 
@@ -79,8 +92,9 @@ Modes (without one, the editor opens):
 Options:
   -m, --monitor        Only the monitor under the pointer
   -t, --to <LETTERS>   What to do with the shot: c copy, p pin, s save, in any order
-                       and mix, e.g. -t pc. Defaults to general.accept in the config.
-                       In the editor, this is what Enter and a double click do
+                       and mix, e.g. -t pc. Defaults to general.to in the config.
+                       In the editor, Enter and a double click do this, and any
+                       other finish adds it. A bare -t means nothing by default
   -o, --output <DIR>   Save the shot into this directory instead of the configured
                        one, creating it if needed; implies s in --to
   -s, --speed          Print how long each startup step took to stderr
@@ -119,7 +133,7 @@ These shortcuts are available in the editor. All of them can be changed in the `
 | <kbd>Shift</kbd> + <kbd>←</kbd>, <kbd>↓</kbd>, <kbd>↑</kbd>, <kbd>→</kbd>     | Move the selection faster                                                      |
 | <kbd>Alt</kbd> + <kbd>←</kbd>, <kbd>↓</kbd>, <kbd>↑</kbd>, <kbd>→</kbd>       | Resize the selection                                                           |
 | <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>←</kbd>, <kbd>↓</kbd>, <kbd>↑</kbd>, <kbd>→</kbd> | Resize the selection faster                                      |
-| <kbd>Return</kbd>                                                             | Finish with the default action (`general.accept`, copy by default)             |
+| <kbd>Return</kbd>                                                             | Finish with `general.to` (copy and save by default)                            |
 | <kbd>Ctrl</kbd> + <kbd>C</kbd>                                                | Copy to the clipboard and finish                                               |
 | <kbd>Ctrl</kbd> + <kbd>S</kbd>                                                | Save as a file and finish                                                      |
 | <kbd>Ctrl</kbd> + <kbd>P</kbd>                                                | Pin to the screen and finish                                                   |

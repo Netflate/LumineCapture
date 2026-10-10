@@ -56,7 +56,7 @@ pub struct Launch {
 
 impl Launch {
     fn outputs(&self) -> Outputs {
-        let mut outputs = self.to.unwrap_or(crate::config::get().general.accept);
+        let mut outputs = self.to.unwrap_or(crate::config::get().general.to);
         outputs.save |= self.output.is_some();
         outputs
     }
@@ -67,7 +67,7 @@ pub async fn run(
     launch: Launch,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if launch.mode != Mode::Editor && launch.outputs().is_empty() {
-        return Err("nothing to do with the shot: pass --to or set general.accept".into());
+        return Err("nothing to do with the shot: pass --to or set general.to".into());
     }
     match launch.mode {
         Mode::Editor | Mode::Region => make_screenshot(conn, launch).await,
@@ -84,7 +84,8 @@ async fn make_screenshot(
 
     let (mut editor_state, mut overlay) =
         start_capture(conn, launch.one_monitor, &mut prof).await?;
-    editor_state.accept = launch.outputs();
+    editor_state.to = launch.outputs();
+    editor_state.toolbar.to = editor_state.to;
     editor_state.output = launch.output.clone();
     if launch.mode == Mode::Region {
         editor_state.region = true;
@@ -577,7 +578,13 @@ async fn finish_capture(editor_state: &mut EditorState) -> Result<(), Box<dyn st
     let Some((png, _, scale)) = render_final(editor_state) else {
         return Ok(());
     };
-    deliver(png, scale, outputs, editor_state.output.as_deref()).await;
+    deliver(
+        png,
+        scale,
+        outputs | editor_state.to,
+        editor_state.output.as_deref(),
+    )
+    .await;
     Ok(())
 }
 
@@ -588,7 +595,7 @@ async fn deliver(png: Vec<u8>, scale: f32, outputs: Outputs, dir: Option<&Path>)
     {
         notify::send(Notice::PinFailed(e.to_string())).await;
     }
-    let saved = if outputs.save || crate::config::get().general.save_always {
+    let saved = if outputs.save {
         match save_to_file(&png, dir) {
             Ok(path) => Some(path),
             Err(e) => {

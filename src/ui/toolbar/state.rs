@@ -1,6 +1,6 @@
 use crate::theme::{anim, size};
 use crate::tools::Tool;
-use crate::types::{Finish, Placement};
+use crate::types::{Finish, Outputs, Placement};
 use crate::ui::panel::{AnimatedPanel, HoverablePanel, PanelItem, UiPanel};
 use std::time::{Duration, Instant};
 use tiny_skia::{Pixmap, Rect};
@@ -47,6 +47,7 @@ pub struct Toolbar {
 
     pub selected: Option<usize>,
     pub hovered: Option<usize>,
+    pub to: Outputs,
 
     pub interferes: bool,
     pub last_tick: Option<Instant>,
@@ -173,6 +174,7 @@ impl Toolbar {
             dirty: false,
             selected: Some(0),
             hovered: None,
+            to: Outputs::default(),
 
             interferes: false,
             last_tick: None,
