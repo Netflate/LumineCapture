@@ -104,6 +104,7 @@ impl Config {
         toolbar.icon.or(t.foreground);
         toolbar.icon_hovered.or(t.on_accent);
         toolbar.icon_selected.or(t.on_accent);
+        toolbar.icon_to.or(t.accent);
         toolbar.button_hovered.or(t.hover);
         toolbar.button_selected.or(t.accent);
         toolbar.separator.or(t.foreground);
@@ -227,9 +228,9 @@ impl Serialize for Outputs {
 // ==========================================
 
 section!(General {
-    save_always: bool = true,
-    accept: Outputs = Outputs {
+    to: Outputs = Outputs {
         copy: true,
+        save: true,
         ..Outputs::default()
     },
     overlay: OverlayShell = OverlayShell::Auto,
@@ -312,6 +313,7 @@ section!(Toolbar {
     icon: ThemeColor = ThemeColor::default(),
     icon_hovered: ThemeColor = ThemeColor::default(),
     icon_selected: ThemeColor = ThemeColor::default(),
+    icon_to: ThemeColor = ThemeColor::default(),
     button_hovered: ThemeColor = ThemeColor::default(),
     button_selected: ThemeColor = ThemeColor::default(),
     separator: ThemeColor = ThemeColor::default(),
@@ -670,12 +672,11 @@ pub const TEMPLATE: &str = r##"# LumineCapture config.
 # Useful, important options will be moved to the GUI later on.
 
 [general]
-# by default both pin and copy still saves screenshot in the folder
-save_always = true
-# what to do with screenshot after finishing capture without an explicit bind
-# like pressing enter or double click on the selection zone
-# c (copy), p (pin), s(save), in any order
-accept = "c"
+# What to do with the screenshot, the same letters as -t: c (copy), p (pin), s (save), in any order.
+# In the editor it is added to whatever you choose, e.g. with to = "s" copying saves the file as well,
+# and finishing without an explicit choice (Enter, a double click) does just this.
+# Overridden by -t
+to = "cs"
 
 # How does the screenshot with editing gui appear :
 # window  a fullscreen window: can be sent to another desktop or minimized (Recommended)
@@ -782,6 +783,7 @@ highlight_height = 0.8
 # icon = "#CDD6F4"              # theme.foreground
 # icon_hovered = "#1E1E2E"      # theme.on_accent
 # icon_selected = "#1E1E2E"     # theme.on_accent
+# icon_to = "#B483EF"           # theme.accent
 # button_hovered = "#B4BEFE"    # theme.hover
 # button_selected = "#CBA6F7"   # theme.accent
 # separator = "#CDD6F4"         # theme.foreground
@@ -1405,20 +1407,20 @@ mod tests {
     }
 
     #[test]
-    fn accept_takes_letters_and_can_be_turned_off() {
-        let config = read("[general]\naccept = \"ps\"\n");
+    fn to_takes_letters_and_can_be_turned_off() {
+        let config = read("[general]\nto = \"ps\"\n");
         assert_eq!(
-            config.general.accept,
+            config.general.to,
             Outputs {
                 pin: true,
                 save: true,
                 copy: false
             }
         );
-        assert!(read("[general]\naccept = \"\"\n").general.accept.is_empty());
+        assert!(read("[general]\nto = \"\"\n").general.to.is_empty());
         assert_eq!(
-            read("[general]\naccept = \"x\"\n").general.accept,
-            General::default().accept
+            read("[general]\nto = \"x\"\n").general.to,
+            General::default().to
         );
     }
 

@@ -30,8 +30,9 @@ Modes (without one, the editor opens):
 Options:
   -m, --monitor        Only the monitor under the pointer
   -t, --to <LETTERS>   What to do with the shot: c copy, p pin, s save, in any order
-                       and mix, e.g. -t pc. Defaults to general.accept in the config.
-                       In the editor, this is what Enter and a double click do
+                       and mix, e.g. -t pc. Defaults to general.to in the config.
+                       In the editor, Enter and a double click do this, and any
+                       other finish adds it. A bare -t means nothing by default
   -o, --output <DIR>   Save the shot into this directory instead of the configured
                        one, creating it if needed; implies s in --to
   -s, --speed          Print how long each startup step took to stderr
@@ -68,13 +69,23 @@ fn parse_launch(
     if picked.next().is_some() {
         return Err("pick one mode: --full, --window or --region".into());
     }
+    let one_monitor = pargs.contains(["-m", "--monitor"]);
+    let output =
+        pargs.opt_value_from_os_str(["-o", "--output"], |s| Ok::<_, String>(PathBuf::from(s)))?;
+    let speed = pargs.contains(["-s", "--speed"]);
+    let to = match pargs.opt_value_from_fn(["-t", "--to"], types::Outputs::parse) {
+        Err(pico_args::Error::OptionWithoutAValue(_)) => {
+            pargs.contains(["-t", "--to"]);
+            Some(types::Outputs::default())
+        }
+        to => to?,
+    };
     Ok(app::Launch {
         mode,
-        one_monitor: pargs.contains(["-m", "--monitor"]),
-        to: pargs.opt_value_from_fn(["-t", "--to"], types::Outputs::parse)?,
-        output: pargs
-            .opt_value_from_os_str(["-o", "--output"], |s| Ok::<_, String>(PathBuf::from(s)))?,
-        speed: pargs.contains(["-s", "--speed"]),
+        one_monitor,
+        to,
+        output,
+        speed,
     })
 }
 
@@ -93,12 +104,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         print!("{}", config::TEMPLATE);
         return Ok(());
     }
+    let config_path: Option<PathBuf> =
+        pargs.opt_value_from_os_str("--config", |s| Ok::<_, String>(PathBuf::from(s)))?;
     let launch = match parse_launch(&mut pargs) {
         Ok(launch) => launch,
         Err(e) => usage_error(e),
     };
-    let config_path: Option<PathBuf> =
-        pargs.opt_value_from_os_str("--config", |s| Ok::<_, String>(PathBuf::from(s)))?;
     config::init(config_path);
 
     let mut args = pargs

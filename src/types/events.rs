@@ -91,6 +91,26 @@ impl Outputs {
     pub fn is_empty(self) -> bool {
         self == Self::default()
     }
+
+    pub fn has(self, finish: Finish) -> bool {
+        match finish {
+            Finish::Copy => self.copy,
+            Finish::Pin => self.pin,
+            Finish::Save => self.save,
+        }
+    }
+}
+
+impl std::ops::BitOr for Outputs {
+    type Output = Self;
+
+    fn bitor(self, other: Self) -> Self {
+        Self {
+            copy: self.copy || other.copy,
+            pin: self.pin || other.pin,
+            save: self.save || other.save,
+        }
+    }
 }
 
 impl From<Finish> for Outputs {

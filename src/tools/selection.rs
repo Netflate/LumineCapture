@@ -74,11 +74,11 @@ impl ToolBehavior for SelectionTool {
             // double click on selection is equal to saving the screenshot
             if handle == SelectionHandle::Move
                 && state.input.clicks.register(ClickTarget::Selection, pos)
-                && !state.accept.is_empty()
+                && !state.to.is_empty()
             {
                 state.input.mouse_down = false;
                 state.tool_active = false;
-                state.finish = Some(state.accept);
+                state.finish = Some(state.to);
                 return;
             }
 
@@ -100,7 +100,7 @@ impl ToolBehavior for SelectionTool {
             state.input.drag_start = None;
             state.selection.set_drag(SelectionHandle::None, None, None);
             if state.region && fresh && state.selection.zone.is_some() {
-                state.finish = Some(state.accept);
+                state.finish = Some(state.to);
             }
         }
     }
