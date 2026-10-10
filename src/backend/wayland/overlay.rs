@@ -109,11 +109,16 @@ impl ScreenOverlay for WaylandOverlay {
             let role = match rt.state.layer_shell.as_ref().filter(|_| self.layer) {
                 Some(shell) => {
                     // ── creating a wayland overlay on top, with screenshot itself and etc ────────────────────
+                    let namespace = match std::env::var("XDG_CURRENT_DESKTOP").as_deref() {
+                        // namespace utility on kde ignores both opening & closing animations
+                        Ok("KDE") => "utility",
+                        _ => "lumine-capture",
+                    };
                     let layer = shell.create_layer_surface(
                         &qh,
                         surface.clone(),
                         Layer::Overlay,
-                        Some("lumine-capture"),
+                        Some(namespace),
                         Some(&wl_output),
                     );
                     layer.set_anchor(Anchor::all());
