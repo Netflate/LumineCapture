@@ -82,6 +82,12 @@ impl KdeMethod {
             conn: OnceCell::new(),
         }
     }
+
+    async fn session_bus(&self) -> Result<&Connection, BoxErr> {
+        self.conn
+            .get_or_try_init(|| async { Connection::session().await.map_err(BoxErr::from) })
+            .await
+    }
 }
 
 // without this its going to break on new kde version
@@ -215,11 +221,7 @@ async fn capture_one(
 impl CaptureMethod for KdeMethod {
     async fn capture_frame(&self, outputs: &[Output]) -> Result<CaptureResult, Box<dyn Error>> {
         let inner = async {
-            let conn = self
-                .conn
-                .get_or_try_init(|| async { Connection::session().await.map_err(BoxErr::from) })
-                .await?;
-            let proxy = ScreenShot2Proxy::new(conn).await?;
+            let proxy = ScreenShot2Proxy::new(self.session_bus().await?).await?;
 
             // one CaptureScreen call per monitor, all concurrent
             let futs = outputs.iter().map(|o| {
@@ -266,11 +268,7 @@ impl CaptureMethod for KdeMethod {
 
     async fn capture_active_window(&self) -> Result<Capture, Box<dyn Error>> {
         let inner = async {
-            let conn = self
-                .conn
-                .get_or_try_init(|| async { Connection::session().await.map_err(BoxErr::from) })
-                .await?;
-            let proxy = ScreenShot2Proxy::new(conn).await?;
+            let proxy = ScreenShot2Proxy::new(self.session_bus().await?).await?;
             capture_one(&proxy, Target::ActiveWindow, None).await
         };
         let shot = inner.await.map_err(|e: BoxErr| -> Box<dyn Error> { e })?;
@@ -282,6 +280,16 @@ impl CaptureMethod for KdeMethod {
             pixmap,
             scale: shot.scale.unwrap_or(1.0) as f32,
         })
+    }
+
+    /// Used only for delayed screenshots
+    /// since connecting to zbus take some time, and can be completed ahead
+    /// of the timing for getting screenshot
+    async fn prepare(&self) -> Result<(), Box<dyn Error>> {
+        self.session_bus()
+            .await
+            .map_err(|e| -> Box<dyn Error> { e })?;
+        Ok(())
     }
 }
 

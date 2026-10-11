@@ -15,6 +15,10 @@ pub trait CaptureMethod: Send + Sync {
         outputs: &[Output],
     ) -> Result<CaptureResult, Box<dyn std::error::Error>>;
 
+    async fn prepare(&self) -> Result<(), Box<dyn std::error::Error>> {
+        Ok(())
+    }
+
     // im not super sure how it works on cosmic
     // maybe i'll implement it later
     async fn capture_active_window(&self) -> Result<Capture, Box<dyn std::error::Error>> {
@@ -65,6 +69,7 @@ pub trait ClipboardProvider {
 }
 
 pub trait ScreenOverlay: Send {
+    fn prefault(&mut self);
     fn present(&mut self, targets: &[usize]) -> Result<(), Box<dyn std::error::Error>>;
     fn stage_frame(
         &mut self,

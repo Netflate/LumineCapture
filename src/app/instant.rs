@@ -5,7 +5,7 @@ use crate::profiler::Profiler;
 use crate::renderer;
 use crate::utils::{encode_png, get_full_workspace_rect};
 
-use super::{Launch, deliver, init};
+use super::{Launch, delay, deliver, init};
 
 type Result = std::result::Result<(), Box<dyn std::error::Error>>;
 
@@ -16,6 +16,8 @@ pub async fn full(conn: wayland_client::Connection, launch: Launch) -> Result {
     // witout actually showing the overlay
     let mut overlay = initialize_overlay(conn.clone())?;
     prof.mark("outputs discovered");
+    let capture = initialize_capture(&conn);
+    delay::wait(launch.shot_at, &*capture, &mut prof).await?;
     let all = overlay.discovered_outputs().to_vec();
     let outputs = match launch.one_monitor.then(|| overlay.active_output()) {
         Some(Some(idx)) => vec![all[idx].clone()],
@@ -29,7 +31,7 @@ pub async fn full(conn: wayland_client::Connection, launch: Launch) -> Result {
         prof.mark("active output probed");
     }
 
-    let shots = initialize_capture(&conn).capture_frame(&outputs).await?;
+    let shots = capture.capture_frame(&outputs).await?;
     drop(overlay);
     prof.mark("capture");
 
@@ -58,7 +60,9 @@ pub async fn window(conn: wayland_client::Connection, launch: Launch) -> Result 
         log::warn!("--monitor does nothing with --window, ignoring it");
     }
 
-    let capture = initialize_capture(&conn).capture_active_window().await?;
+    let method = initialize_capture(&conn);
+    delay::wait(launch.shot_at, &*method, &mut prof).await?;
+    let capture = method.capture_active_window().await?;
     prof.mark("capture");
     let png = encode_png(&capture.pixmap);
     prof.mark("png encoded");

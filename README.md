@@ -91,6 +91,8 @@ Modes (without one, the editor opens):
 
 Options:
   -m, --monitor        Only the monitor under the pointer
+  -d, --delay <SECONDS>
+                       Take the shot this long after the launch, e.g. -d 3 or -d 0.5
   -t, --to <LETTERS>   What to do with the shot: c copy, p pin, s save, in any order
                        and mix, e.g. -t pc. Defaults to general.to in the config.
                        In the editor, Enter and a double click do this, and any

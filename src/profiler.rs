@@ -32,6 +32,20 @@ impl Profiler {
         self.last = now;
     }
 
+    /// used to show taken delay
+    pub fn idle(&mut self) {
+        let now = Instant::now();
+        let idle = now.duration_since(self.last);
+        self.t0 += idle;
+        self.last = now;
+        if self.enabled {
+            self.lines.push(format!(
+                "           ({:>7.0}ms) was delayed (-d / --delay)",
+                idle.as_secs_f64() * 1000.0
+            ));
+        }
+    }
+
     pub fn mark_external(&mut self, label: &str, elapsed_since_t0: Duration) {
         if !self.enabled {
             return;

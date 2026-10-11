@@ -1,4 +1,5 @@
 mod actions;
+mod delay;
 mod init;
 mod input;
 mod instant;
@@ -52,6 +53,7 @@ pub struct Launch {
     pub to: Option<Outputs>,
     pub output: Option<PathBuf>,
     pub speed: bool,
+    pub shot_at: Option<Instant>,
 }
 
 impl Launch {
@@ -82,8 +84,7 @@ async fn make_screenshot(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut prof = Profiler::new(launch.speed);
 
-    let (mut editor_state, mut overlay) =
-        start_capture(conn, launch.one_monitor, &mut prof).await?;
+    let (mut editor_state, mut overlay) = start_capture(conn, &launch, &mut prof).await?;
     editor_state.to = launch.outputs();
     editor_state.toolbar.to = editor_state.to;
     editor_state.output = launch.output.clone();
@@ -113,7 +114,7 @@ async fn make_screenshot(
 /// on its own thread while screens are captured, running both slow setup steps in parallel.
 async fn start_capture(
     conn: wayland_client::Connection,
-    one: bool,
+    launch: &Launch,
     prof: &mut Profiler,
 ) -> Result<(EditorState, Box<dyn ScreenOverlay>), Box<dyn std::error::Error>> {
     let icons_handle = std::thread::spawn(init::load_icons_cache);
@@ -123,6 +124,20 @@ async fn start_capture(
     prof.mark("overlay init");
 
     let all = overlay.discovered_outputs().to_vec();
+    let delayed = launch.shot_at.is_some();
+    // with a delay the shot can't happen before the deadline anyway, so the backend is
+    // created and prepared in advance (on KDE that's connecting to the session bus).
+    // that time is part of the delay, not added to it.
+    // without a delay it stays after the present spawn, so present starts sooner
+    let mut early = None;
+    if delayed {
+        let capture = early.insert(initialize_capture(&conn));
+        overlay.prefault();
+        prof.mark("pool prefaulted");
+        delay::wait(launch.shot_at, &**capture, prof).await?;
+    }
+
+    let one = launch.one_monitor;
     let targets: Vec<usize> = match one.then(|| overlay.active_output()) {
         Some(Some(idx)) => vec![idx],
         Some(None) => {
@@ -139,14 +154,23 @@ async fn start_capture(
         let placements = init::build_placements(&outputs);
         std::thread::spawn(move || init::build_layers(&placements))
     };
+    // with delay window is created only after the shot, since at least
+    // kwin puts a new window into the taskbar and pins it to the current
+    // virtual desktop right at creation, while doing it before capturing
+    // doesn't really gain anything, less than 1ms, and might be unstable
+    let (shot_tx, shot_rx) = std::sync::mpsc::channel::<()>();
     let present_handle = std::thread::spawn(move || {
+        if delayed {
+            let _ = shot_rx.recv();
+        }
         let t = std::time::Instant::now();
         let res = overlay.present(&targets).map_err(|e| e.to_string());
         (overlay, res, t.elapsed())
     });
 
-    let capture = initialize_capture(&conn);
+    let capture = early.unwrap_or_else(|| initialize_capture(&conn));
     let screenshots = capture.capture_frame(&outputs).await?;
+    drop(shot_tx);
     prof.mark("capture");
 
     let kept: Vec<usize> = screenshots.frames.iter().map(|f| f.output).collect();
@@ -673,7 +697,7 @@ pub fn selection_render_info(
 }
 
 /// Returns the final PNG and the global position of its top-left corner.
-/// position is required for the pin feature ^^^      
+/// position is required for the pin feature ^^^
 fn render_final(editor_state: &mut EditorState) -> Option<(Vec<u8>, (i32, i32), f32)> {
     let sel = match editor_state.selection.zone {
         Some(s) => s,

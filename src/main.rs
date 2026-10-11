@@ -17,6 +17,7 @@ pub mod utils;
 
 use backend::wayland::{clipboard, pin};
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 const HELP: &str = "\
 Usage: {name} [MODE] [OPTIONS]
@@ -29,6 +30,8 @@ Modes (without one, the editor opens):
 
 Options:
   -m, --monitor        Only the monitor under the pointer
+  -d, --delay <SECONDS>
+                       Take the shot this long after the launch, e.g. -d 3 or -d 0.5
   -t, --to <LETTERS>   What to do with the shot: c copy, p pin, s save, in any order
                        and mix, e.g. -t pc. Defaults to general.to in the config.
                        In the editor, Enter and a double click do this, and any
@@ -56,8 +59,16 @@ fn usage_error(e: impl std::fmt::Display) -> ! {
     std::process::exit(2);
 }
 
+fn parse_delay(s: &str) -> Result<Duration, &'static str> {
+    s.parse::<f64>()
+        .ok()
+        .and_then(|secs| Duration::try_from_secs_f64(secs).ok())
+        .ok_or("expected seconds, e.g. 3 or 0.5")
+}
+
 fn parse_launch(
     pargs: &mut pico_args::Arguments,
+    started: Instant,
 ) -> Result<app::Launch, Box<dyn std::error::Error>> {
     let modes = [
         (pargs.contains(["-f", "--full"]), app::Mode::Full),
@@ -73,6 +84,10 @@ fn parse_launch(
     let output =
         pargs.opt_value_from_os_str(["-o", "--output"], |s| Ok::<_, String>(PathBuf::from(s)))?;
     let speed = pargs.contains(["-s", "--speed"]);
+    let shot_at = match pargs.opt_value_from_fn(["-d", "--delay"], parse_delay)? {
+        Some(delay) => Some(started.checked_add(delay).ok_or("the delay is too long")?),
+        None => None,
+    };
     let to = match pargs.opt_value_from_fn(["-t", "--to"], types::Outputs::parse) {
         Err(pico_args::Error::OptionWithoutAValue(_)) => {
             pargs.contains(["-t", "--to"]);
@@ -86,10 +101,12 @@ fn parse_launch(
         to,
         output,
         speed,
+        shot_at,
     })
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let started = Instant::now();
     let mut pargs = pico_args::Arguments::from_env();
 
     if pargs.contains(["-h", "--help"]) {
@@ -106,7 +123,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let config_path: Option<PathBuf> =
         pargs.opt_value_from_os_str("--config", |s| Ok::<_, String>(PathBuf::from(s)))?;
-    let launch = match parse_launch(&mut pargs) {
+    let launch = match parse_launch(&mut pargs, started) {
         Ok(launch) => launch,
         Err(e) => usage_error(e),
     };

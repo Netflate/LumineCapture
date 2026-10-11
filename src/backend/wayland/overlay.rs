@@ -34,6 +34,7 @@ const PROBE_TIMEOUT: Duration = Duration::from_millis(300);
 pub struct WaylandOverlay {
     runtime: state::OverlayRunTime,
     layer: bool,
+    faulted: usize,
 }
 
 impl WaylandOverlay {
@@ -50,11 +51,25 @@ impl WaylandOverlay {
         Ok(Self {
             runtime: rt,
             layer: layer && has_layer_shell,
+            faulted: 0,
         })
     }
 }
 
 impl ScreenOverlay for WaylandOverlay {
+    /// Preloads memory for all monitors
+    /// this is done in advance so as not to waste extra time on it later.
+    ///
+    /// function is called before capturing
+    /// At this point, we can't know which monitor is active, so it's called for literally all of them.
+    ///
+    /// TODO: on -m, instead of preloading memory for all amonitors, preloading max possible size of one monitor
+    fn prefault(&mut self) {
+        let state = &mut self.runtime.state;
+        let size = prefault_size(state.outputs.iter());
+        fault_in(&mut state.pool, &mut self.faulted, size);
+    }
+
     fn present(&mut self, targets: &[usize]) -> Result<(), Box<dyn std::error::Error>> {
         let rt = &mut self.runtime;
         let qh = rt.event_queue.handle();
@@ -62,36 +77,15 @@ impl ScreenOverlay for WaylandOverlay {
         if rt.state.outputs.is_empty() {
             return Err("compositor reported no outputs".into());
         }
-        let prefault: usize = targets
-            .iter()
-            .filter_map(|&i| rt.state.outputs.get(i))
-            .flat_map(|o| {
-                let top = o.info.logical_size.unwrap_or((0, 0));
-                let background = o
-                    .info
-                    .modes
-                    .iter()
-                    .find(|m| m.current)
-                    .map_or((0, 0), |m| m.dimensions);
-                [top, background]
-            })
-            // every buffer get rounded to 64 byte, since when working with uneven resolution
-            // it would cause to use realloc which cause bugs and overall not effecient
-            .map(|(w, h)| (w.max(0) as usize * h.max(0) as usize * 4).next_multiple_of(64))
-            .sum();
+        let prefault = prefault_size(targets.iter().filter_map(|&i| rt.state.outputs.get(i)));
         let outputs_snapshot: Vec<_> = targets
             .iter()
             .filter_map(|&i| rt.state.outputs.get(i))
             .map(|o| (o.wl_output.clone(), o.info.logical_size.unwrap_or((0, 0))))
             .collect();
 
-        let fault_in = |pool: &mut SlotPool| {
-            if let Ok(slot) = pool.new_slot(prefault) {
-                pool.raw_data_mut(&slot).fill(0);
-            }
-        };
         if self.layer {
-            fault_in(&mut rt.state.pool);
+            fault_in(&mut rt.state.pool, &mut self.faulted, prefault);
         }
 
         // for each output
@@ -170,7 +164,7 @@ impl ScreenOverlay for WaylandOverlay {
         // so when it arrives, pages are already mapped, giving us some speed gain
         rt.event_queue.flush()?;
         if !self.layer {
-            fault_in(&mut rt.state.pool);
+            fault_in(&mut rt.state.pool, &mut self.faulted, prefault);
         }
 
         let deadline = Instant::now() + CONFIGURE_TIMEOUT;
@@ -416,5 +410,33 @@ impl ScreenOverlay for WaylandOverlay {
 
     fn set_cursor(&mut self, icon: CursorIcon) {
         self.runtime.state.apply_cursor(icon);
+    }
+}
+
+fn prefault_size<'a>(outputs: impl Iterator<Item = &'a Output>) -> usize {
+    outputs
+        .flat_map(|o| {
+            let top = o.info.logical_size.unwrap_or((0, 0));
+            let background = o
+                .info
+                .modes
+                .iter()
+                .find(|m| m.current)
+                .map_or((0, 0), |m| m.dimensions);
+            [top, background]
+        })
+        // every buffer get rounded to 64 byte, since when working with uneven resolution
+        // it would cause to use realloc which cause bugs and overall not effecient
+        .map(|(w, h)| (w.max(0) as usize * h.max(0) as usize * 4).next_multiple_of(64))
+        .sum()
+}
+
+fn fault_in(pool: &mut SlotPool, faulted: &mut usize, size: usize) {
+    if size <= *faulted {
+        return;
+    }
+    if let Ok(slot) = pool.new_slot(size) {
+        pool.raw_data_mut(&slot).fill(0);
+        *faulted = size;
     }
 }
