@@ -18,7 +18,7 @@ use crate::tools::selection::{global_selection_to_local, selection_edges_for_mon
 use crate::types::{DamageRect, Outputs, OverlayEvent, Placement, SelectionEdges};
 use crate::ui::panel::UiPanel;
 use crate::ui::panel::{AnimatedPanel, panel_to_draw, tick_panel_animation};
-use crate::utils::{encode_png, get_full_workspace_rect, save_to_file};
+use crate::utils::{encode_png, get_full_workspace_rect, save_to_file, write_to_stdout};
 
 use cosmic_text::SwashCache;
 use std::collections::HashMap;
@@ -60,6 +60,7 @@ impl Launch {
     fn outputs(&self) -> Outputs {
         let mut outputs = self.to.unwrap_or(crate::config::get().general.to);
         outputs.save |= self.output.is_some();
+        outputs.primary = false;
         outputs
     }
 }
@@ -68,6 +69,9 @@ pub async fn run(
     conn: wayland_client::Connection,
     launch: Launch,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    if launch.to.is_some_and(|to| to.primary) {
+        log::warn!("r (primary selection) works only with -r ocr, ignoring it");
+    }
     if launch.mode != Mode::Editor && launch.outputs().is_empty() {
         return Err("nothing to do with the shot: pass --to or set general.to".into());
     }
@@ -617,12 +621,20 @@ async fn deliver(png: Vec<u8>, scale: f32, outputs: Outputs, dir: Option<&Path>)
     if outputs.pin
         && let Err(e) = crate::backend::wayland::pin::spawn(&png, scale)
     {
+        log::error!("pin failed: {e}");
         notify::send(Notice::PinFailed(e.to_string())).await;
+    }
+    if outputs.stdout
+        && let Err(e) = write_to_stdout(&png)
+    {
+        log::error!("can't write to stdout: {e}");
+        notify::send(Notice::StdoutFailed(e.to_string())).await;
     }
     let saved = if outputs.save {
         match save_to_file(&png, dir) {
             Ok(path) => Some(path),
             Err(e) => {
+                log::error!("save failed: {e}");
                 notify::send(Notice::SaveFailed(e.to_string())).await;
                 None
             }

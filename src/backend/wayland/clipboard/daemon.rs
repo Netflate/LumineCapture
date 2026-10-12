@@ -6,12 +6,17 @@ use std::io::{Read, Write};
 use std::time::Instant;
 
 use log::{error, info};
-use wl_clipboard_rs::copy::{MimeSource, MimeType, Options, Source};
+use wl_clipboard_rs::copy::{ClipboardType, MimeSource, MimeType, Options, Source};
 
-use super::TEXT_ARG;
+use super::{Selection, TEXT_ARG};
 
-pub fn cli(mut args: impl Iterator<Item = String>) {
-    let text = args.next().as_deref() == Some(TEXT_ARG);
+pub fn cli(args: impl Iterator<Item = String>) {
+    let args: Vec<String> = args.collect();
+    let text = args.iter().any(|a| a == TEXT_ARG);
+    let selection = args
+        .iter()
+        .find_map(|a| Selection::from_arg(a))
+        .unwrap_or(Selection::Clipboard);
 
     let mut buf = Vec::new();
     if let Err(e) = std::io::stdin().read_to_end(&mut buf) {
@@ -21,6 +26,10 @@ pub fn cli(mut args: impl Iterator<Item = String>) {
 
     let mut opts = Options::new();
     opts.foreground(true);
+    opts.clipboard(match selection {
+        Selection::Clipboard => ClipboardType::Regular,
+        Selection::Primary => ClipboardType::Primary,
+    });
 
     let len = buf.len();
     let kind = if text { "text" } else { "image" };
@@ -52,7 +61,7 @@ pub fn cli(mut args: impl Iterator<Item = String>) {
         Ok(copy) => {
             let _ = writeln!(stdout);
             let _ = stdout.flush();
-            info!("serving {len} bytes of {kind}");
+            info!("serving {len} bytes of {kind} to {}", selection.arg());
             let started = Instant::now();
             match copy.serve() {
                 Ok(()) => info!("taken over after {:.1?}", started.elapsed()),

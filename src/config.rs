@@ -214,11 +214,17 @@ impl<'de> Deserialize<'de> for Outputs {
 
 impl Serialize for Outputs {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        let letters: String = [(self.copy, 'c'), (self.pin, 'p'), (self.save, 's')]
-            .iter()
-            .filter(|(on, _)| *on)
-            .map(|(_, letter)| letter)
-            .collect();
+        let letters: String = [
+            (self.copy, 'c'),
+            (self.pin, 'p'),
+            (self.save, 's'),
+            (self.stdout, 'o'),
+            (self.primary, 'r'),
+        ]
+        .iter()
+        .filter(|(on, _)| *on)
+        .map(|(_, letter)| letter)
+        .collect();
         s.serialize_str(&letters)
     }
 }
@@ -672,7 +678,11 @@ pub const TEMPLATE: &str = r##"# LumineCapture config.
 # Useful, important options will be moved to the GUI later on.
 
 [general]
-# What to do with the screenshot, the same letters as -t: c (copy), p (pin), s (save), in any order.
+# What to do with the screenshot, the same letters as -t: c (copy), p (pin), s (save),
+# o (stdout), in any order.
+# r (primary selection, pasted with the middle click) works ONLY with text from -r ocr.
+# Screenshots ignore it, since apps mostly paste only text with the middle click.
+#
 # In the editor it is added to whatever you choose, e.g. with to = "s" copying saves the file as well,
 # and finishing without an explicit choice (Enter, a double click) does just this.
 # Overridden by -t
@@ -1292,9 +1302,9 @@ fn write_template(path: &PathBuf) {
 }
 
 /// Config overide path set via `--config`. Only the first call takes effect
-pub fn init(override_path: Option<PathBuf>) {
+pub fn init(override_path: Option<PathBuf>, overrides: impl FnOnce(&mut Config)) {
     let path = override_path.or_else(config_path);
-    let config = match &path {
+    let mut config = match &path {
         Some(path) => match std::fs::read_to_string(path) {
             Ok(text) => parse(&text, &path.display().to_string()),
             Err(_) => {
@@ -1304,6 +1314,7 @@ pub fn init(override_path: Option<PathBuf>) {
         },
         None => Config::default(),
     };
+    overrides(&mut config);
     let _ = CONFIG.set(config);
 }
 
@@ -1414,7 +1425,7 @@ mod tests {
             Outputs {
                 pin: true,
                 save: true,
-                copy: false
+                ..Outputs::default()
             }
         );
         assert!(read("[general]\nto = \"\"\n").general.to.is_empty());

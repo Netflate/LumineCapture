@@ -118,6 +118,19 @@ fn write_unique(dir: &std::path::Path, stem: &str, data: &[u8]) -> std::io::Resu
     }
 }
 
+pub fn write_to_stdout(png_data: &[u8]) -> std::io::Result<()> {
+    use std::io::{IsTerminal, Write};
+
+    let mut stdout = std::io::stdout().lock();
+    if stdout.is_terminal() {
+        return Err(std::io::Error::other(
+            "stdout is a terminal, redirect it to a file or a pipe",
+        ));
+    }
+    stdout.write_all(png_data)?;
+    stdout.flush()
+}
+
 #[inline]
 pub fn rects_overlap(a: &Rect, b: &Rect) -> bool {
     a.left() < b.right() && a.right() > b.left() && a.top() < b.bottom() && a.bottom() > b.top()

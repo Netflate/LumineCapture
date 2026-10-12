@@ -12,6 +12,8 @@ use crate::backend::{Notifier, initialize_notifier};
 /// duration to wait for the desktop notification daemon via DBus.
 const TIMEOUT: Duration = Duration::from_millis(500);
 
+pub const NO_NOTIFY_ARG: &str = "--nonotify";
+
 pub struct Notification {
     pub summary: &'static str,
     pub body: String,
@@ -27,6 +29,7 @@ pub enum Notice {
     SaveFailed(String),
     CopyFailed(String),
     PinFailed(String),
+    StdoutFailed(String),
     Failed(String),
 }
 
@@ -49,6 +52,7 @@ impl Notice {
             Notice::SaveFailed(e) => ("Couldn't save the screenshot", e, true, None),
             Notice::CopyFailed(e) => ("Couldn't copy the screenshot", e, true, None),
             Notice::PinFailed(e) => ("Couldn't pin the screenshot", e, true, None),
+            Notice::StdoutFailed(e) => ("Couldn't write the screenshot to stdout", e, true, None),
             Notice::Failed(e) => ("Screenshot failed", e, true, None),
         };
         Notification {

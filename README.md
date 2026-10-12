@@ -64,6 +64,8 @@ LumineCapture supports different launch options, but if you don't really care ab
     * `s` saves it to the screenshots folder, `~/Pictures/screenshots/<year-month>/` by default
     * `c` copies it to the clipboard
     * `p` pins it to the screen
+    * `o` writes the PNG to stdout for piping to utilities and other tools
+    * `r` copies the recognized text to the primary selection (middle click). **It works only with `-r ocr`**: screenshot ignores `r`, since vast majority of apps paste only text with the middle click
 
     The letters can be used in any order, even `scp`; they don't get in each other's way.
 
@@ -93,12 +95,15 @@ Options:
   -m, --monitor        Only the monitor under the pointer
   -d, --delay <SECONDS>
                        Take the shot this long after the launch, e.g. -d 3 or -d 0.5
-  -t, --to <LETTERS>   What to do with the shot: c copy, p pin, s save, in any order
-                       and mix, e.g. -t pc. Defaults to general.to in the config.
-                       In the editor, Enter and a double click do this, and any
-                       other finish adds it. A bare -t means nothing by default
+  -t, --to <LETTERS>   What to do with the shot: c copy, p pin, s save, o write the PNG
+                       to stdout, in any order and mix, e.g. -t pc. Defaults to general.to
+                       in the config. In the editor, Enter and a double click do this, and
+                       any other finish adds it. A bare -t means nothing by default.
+                       Only for -r ocr: r copies the text to the primary selection (middle
+                       click). Screenshots ignore r, apps paste only text with the middle click
   -o, --output <DIR>   Save the shot into this directory instead of the configured
                        one, creating it if needed; implies s in --to
+  -n, --nonotify       Disable notifications for this launch
   -s, --speed          Print how long each startup step took to stderr
       --config <PATH>  Use this config file instead of the default location
       --print-default-config

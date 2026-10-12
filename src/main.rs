@@ -32,12 +32,15 @@ Options:
   -m, --monitor        Only the monitor under the pointer
   -d, --delay <SECONDS>
                        Take the shot this long after the launch, e.g. -d 3 or -d 0.5
-  -t, --to <LETTERS>   What to do with the shot: c copy, p pin, s save, in any order
-                       and mix, e.g. -t pc. Defaults to general.to in the config.
-                       In the editor, Enter and a double click do this, and any
-                       other finish adds it. A bare -t means nothing by default
+  -t, --to <LETTERS>   What to do with the shot: c copy, p pin, s save, o write the PNG
+                       to stdout, in any order and mix, e.g. -t pc. Defaults to general.to
+                       in the config. In the editor, Enter and a double click do this, and
+                       any other finish adds it. A bare -t means nothing by default.
+                       Only for -r ocr: r copies the text to the primary selection (middle
+                       click). Screenshots ignore r, apps paste only text with the middle click
   -o, --output <DIR>   Save the shot into this directory instead of the configured
                        one, creating it if needed; implies s in --to
+  -n, --nonotify       Disable notifications for this launch
   -s, --speed          Print how long each startup step took to stderr
       --config <PATH>  Use this config file instead of the default location
       --print-default-config
@@ -123,11 +126,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let config_path: Option<PathBuf> =
         pargs.opt_value_from_os_str("--config", |s| Ok::<_, String>(PathBuf::from(s)))?;
+    let no_notify = pargs.contains(["-n", backend::notify::NO_NOTIFY_ARG]);
     let launch = match parse_launch(&mut pargs, started) {
         Ok(launch) => launch,
         Err(e) => usage_error(e),
     };
-    config::init(config_path);
+    config::init(config_path, |config| {
+        if no_notify {
+            config.notifications.enabled = false;
+        }
+    });
 
     let mut args = pargs
         .finish()

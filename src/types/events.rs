@@ -67,6 +67,8 @@ pub struct Outputs {
     pub copy: bool,
     pub pin: bool,
     pub save: bool,
+    pub stdout: bool,
+    pub primary: bool,
 }
 
 impl Outputs {
@@ -78,9 +80,11 @@ impl Outputs {
                 'c' => outputs.copy = true,
                 'p' => outputs.pin = true,
                 's' => outputs.save = true,
+                'o' => outputs.stdout = true,
+                'r' => outputs.primary = true,
                 other => {
                     return Err(format!(
-                        "unknown letter {other:?} in {letters:?}, expected c (copy), p (pin) or s (save)"
+                        "unknown letter {other:?} in {letters:?}, expected c (copy), p (pin), s (save), o (stdout) or r (primary selection)"
                     ));
                 }
             }
@@ -109,6 +113,8 @@ impl std::ops::BitOr for Outputs {
             copy: self.copy || other.copy,
             pin: self.pin || other.pin,
             save: self.save || other.save,
+            stdout: self.stdout || other.stdout,
+            primary: self.primary || other.primary,
         }
     }
 }
@@ -119,6 +125,7 @@ impl From<Finish> for Outputs {
             copy: finish == Finish::Copy,
             pin: finish == Finish::Pin,
             save: finish == Finish::Save,
+            ..Self::default()
         }
     }
 }
@@ -133,10 +140,15 @@ mod tests {
             copy: true,
             pin: true,
             save: true,
+            stdout: true,
+            primary: true,
         };
-        assert_eq!(Outputs::parse("cps"), Ok(all));
-        assert_eq!(Outputs::parse("spc"), Ok(all));
-        assert_eq!(Outputs::parse("PsSp c".replace(' ', "").as_str()), Ok(all));
+        assert_eq!(Outputs::parse("cpsor"), Ok(all));
+        assert_eq!(Outputs::parse("rospc"), Ok(all));
+        assert_eq!(
+            Outputs::parse("PsSp cOR".replace(' ', "").as_str()),
+            Ok(all)
+        );
         assert_eq!(Outputs::parse("p"), Ok(Outputs::from(Finish::Pin)));
     }
 

@@ -81,7 +81,12 @@ pub fn cli(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::er
 
 /// Re execs this binary to pin a finished capture.
 pub fn spawn(png: &[u8], scale: f32) -> Result<(), Box<dyn std::error::Error>> {
-    crate::utils::spawn_self(&[PIN_ARG, SCALE_ARG, &scale.to_string()], png)
+    let scale = scale.to_string();
+    let mut args = vec![PIN_ARG, SCALE_ARG, &scale];
+    if !crate::config::get().notifications.enabled {
+        args.push(notify::NO_NOTIFY_ARG);
+    }
+    crate::utils::spawn_self(&args, png)
 }
 
 pub fn run(image: &[u8], scale: f32) -> Result<(), Box<dyn std::error::Error>> {
