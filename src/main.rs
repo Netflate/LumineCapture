@@ -26,7 +26,11 @@ Usage: {name} [MODE] [OPTIONS]
 Modes (without one, the editor opens):
   -f, --full           Capture the screen right away, no editor
   -w, --window         Capture the active window right away (KDE Plasma only)
-  -r, --region         Drag a region, releasing the mouse takes the shot
+  -r, --region [ocr]   Drag a region, releasing the mouse immediately takes the shot.
+                       With ocr, reads the text in it instead. Unlike OCR in the editor,
+                       it doesn't show any scanning progress: it closes, and when the scan
+                       finishes, shows a notification with the outcome.
+                       Recommended to use with -t, see below
 
 Options:
   -m, --monitor        Only the monitor under the pointer
@@ -97,6 +101,20 @@ fn parse_launch(
             Some(types::Outputs::default())
         }
         to => to?,
+    };
+    // since it's -r [ocr], with ocr being optional,
+    // i didn't find any other solution but to read 'ocr' after every option,
+    // because pico-args takes any next argument as the value of -r
+    let mode = if mode == app::Mode::Region {
+        match pargs.opt_free_from_str::<String>()?.as_deref() {
+            Some("ocr") => app::Mode::Ocr,
+            Some(other) => {
+                return Err(format!("unknown argument {other:?}, -r only takes ocr").into());
+            }
+            None => mode,
+        }
+    } else {
+        mode
     };
     Ok(app::Launch {
         mode,
@@ -176,5 +194,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             result
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(list: &[&str]) -> pico_args::Arguments {
+        pico_args::Arguments::from_vec(list.iter().map(Into::into).collect())
+    }
+
+    fn mode(list: &[&str]) -> Result<app::Mode, String> {
+        parse_launch(&mut args(list), Instant::now())
+            .map(|launch| launch.mode)
+            .map_err(|e| e.to_string())
+    }
+
+    #[test]
+    fn region_takes_an_optional_ocr() {
+        assert_eq!(mode(&["-r"]), Ok(app::Mode::Region));
+        assert_eq!(mode(&["-r", "ocr"]), Ok(app::Mode::Ocr));
+        assert_eq!(mode(&["--region", "ocr"]), Ok(app::Mode::Ocr));
+        assert_eq!(mode(&["-rm", "ocr"]), Ok(app::Mode::Ocr));
+        assert_eq!(mode(&["-r", "-t", "c", "ocr"]), Ok(app::Mode::Ocr));
+        assert_eq!(mode(&["-r", "-o", "ocr"]), Ok(app::Mode::Region));
+    }
+
+    #[test]
+    fn region_rejects_any_other_word() {
+        assert!(mode(&["-r", "nope"]).is_err());
     }
 }

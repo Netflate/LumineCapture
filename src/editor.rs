@@ -136,6 +136,7 @@ pub struct EditorState {
     pub ui_hidden: bool,
     /// `--region`: no toolbar, releasing a freshly dragged selection finishes the shot.
     pub region: bool,
+    pub region_ocr: bool,
     /// `--output`: explicitely set the output folder path, overriding the one in config
     pub output: Option<std::path::PathBuf>,
 
@@ -212,6 +213,7 @@ impl EditorState {
             cancel: false,
             ui_hidden: false,
             region: false,
+            region_ocr: false,
             output: None,
         }
     }

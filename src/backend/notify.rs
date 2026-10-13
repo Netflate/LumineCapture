@@ -31,6 +31,11 @@ pub enum Notice {
     PinFailed(String),
     StdoutFailed(String),
     Failed(String),
+    TextCopied(String),
+    TextInPrimary(String),
+    NoText,
+    TextFailed(String),
+    TextCopyFailed(String),
 }
 
 impl Notice {
@@ -52,8 +57,18 @@ impl Notice {
             Notice::SaveFailed(e) => ("Couldn't save the screenshot", e, true, None),
             Notice::CopyFailed(e) => ("Couldn't copy the screenshot", e, true, None),
             Notice::PinFailed(e) => ("Couldn't pin the screenshot", e, true, None),
-            Notice::StdoutFailed(e) => ("Couldn't write the screenshot to stdout", e, true, None),
+            Notice::StdoutFailed(e) => ("Couldn't write to stdout", e, true, None),
             Notice::Failed(e) => ("Screenshot failed", e, true, None),
+            Notice::TextCopied(text) => ("Text copied", preview(&text), false, None),
+            Notice::TextInPrimary(text) => (
+                "Text ready to paste with the middle click",
+                preview(&text),
+                false,
+                None,
+            ),
+            Notice::NoText => ("No text found", String::new(), false, None),
+            Notice::TextFailed(e) => ("Couldn't read the text", e, true, None),
+            Notice::TextCopyFailed(e) => ("Couldn't copy the text", e, true, None),
         };
         Notification {
             summary,
@@ -61,6 +76,14 @@ impl Notice {
             error,
             file,
         }
+    }
+}
+
+fn preview(text: &str) -> String {
+    const MAX: usize = 200;
+    match text.char_indices().nth(MAX) {
+        Some((end, _)) => format!("{}…", &text[..end]),
+        None => text.to_string(),
     }
 }
 

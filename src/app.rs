@@ -3,6 +3,7 @@ mod delay;
 mod init;
 mod input;
 mod instant;
+mod ocr;
 mod panels;
 
 use crate::backend::ScreenOverlay;
@@ -43,6 +44,7 @@ pub enum Mode {
     Full,
     Window,
     Region,
+    Ocr,
 }
 
 /// Launch options from the command line.
@@ -60,8 +62,29 @@ impl Launch {
     fn outputs(&self) -> Outputs {
         let mut outputs = self.to.unwrap_or(crate::config::get().general.to);
         outputs.save |= self.output.is_some();
-        outputs.primary = false;
+        if self.mode == Mode::Ocr {
+            outputs.pin = false;
+            outputs.save = false;
+        } else {
+            outputs.primary = false;
+        }
         outputs
+    }
+
+    fn warn_ignored(&self) {
+        let to = self.to.unwrap_or_default();
+        if self.mode != Mode::Ocr {
+            if to.primary {
+                log::warn!("r (primary selection) works only with -r ocr, ignoring it");
+            }
+            return;
+        }
+        if to.pin || to.save {
+            log::warn!("p and s don't apply to -r ocr, ignoring them");
+        }
+        if self.output.is_some() {
+            log::warn!("--output has no effect with -r ocr, ignoring it, use stdout");
+        }
     }
 }
 
@@ -69,14 +92,17 @@ pub async fn run(
     conn: wayland_client::Connection,
     launch: Launch,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if launch.to.is_some_and(|to| to.primary) {
-        log::warn!("r (primary selection) works only with -r ocr, ignoring it");
-    }
+    launch.warn_ignored();
     if launch.mode != Mode::Editor && launch.outputs().is_empty() {
         return Err("nothing to do with the shot: pass --to or set general.to".into());
     }
+    if launch.mode == Mode::Ocr && !crate::ocr::models::OcrModels::load().active_installed() {
+        return Err(
+            "no OCR model is installed: open the editor, pick the OCR tool and download one".into(),
+        );
+    }
     match launch.mode {
-        Mode::Editor | Mode::Region => make_screenshot(conn, launch).await,
+        Mode::Editor | Mode::Region | Mode::Ocr => make_screenshot(conn, launch).await,
         Mode::Full => instant::full(conn, launch).await,
         Mode::Window => instant::window(conn, launch).await,
     }
@@ -92,10 +118,16 @@ async fn make_screenshot(
     editor_state.to = launch.outputs();
     editor_state.toolbar.to = editor_state.to;
     editor_state.output = launch.output.clone();
-    if launch.mode == Mode::Region {
+    if matches!(launch.mode, Mode::Region | Mode::Ocr) {
         editor_state.region = true;
         editor_state.ui_hidden = true;
         editor_state.toolbar.start_hidden();
+    }
+    if launch.mode == Mode::Ocr {
+        editor_state.region_ocr = true;
+        // preparing the ocr engine immediately after launch,
+        // by default, in the editor, it does that only after choosing ocr
+        editor_state.ocr.runtime.prepare();
     }
 
     init::initial_paint(&mut editor_state, &mut overlay, &mut prof)?;
@@ -111,7 +143,11 @@ async fn make_screenshot(
     );
 
     editor_state.ocr.models.shutdown();
-    finish_capture(&mut editor_state).await
+    if launch.mode == Mode::Ocr {
+        ocr::finish(&mut editor_state).await
+    } else {
+        finish_capture(&mut editor_state).await
+    }
 }
 
 /// Shows the overlay and builds the editor at the same time. The overlay renders
@@ -624,11 +660,8 @@ async fn deliver(png: Vec<u8>, scale: f32, outputs: Outputs, dir: Option<&Path>)
         log::error!("pin failed: {e}");
         notify::send(Notice::PinFailed(e.to_string())).await;
     }
-    if outputs.stdout
-        && let Err(e) = write_to_stdout(&png)
-    {
-        log::error!("can't write to stdout: {e}");
-        notify::send(Notice::StdoutFailed(e.to_string())).await;
+    if outputs.stdout {
+        to_stdout(&png, true).await;
     }
     let saved = if outputs.save {
         match save_to_file(&png, dir) {
@@ -654,6 +687,13 @@ async fn deliver(png: Vec<u8>, scale: f32, outputs: Outputs, dir: Option<&Path>)
         && let Some(path) = saved
     {
         notify::send(Notice::Saved(path)).await;
+    }
+}
+
+async fn to_stdout(data: &[u8], binary: bool) {
+    if let Err(e) = write_to_stdout(data, binary) {
+        log::error!("can't write to stdout: {e}");
+        notify::send(Notice::StdoutFailed(e.to_string())).await;
     }
 }
 

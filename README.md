@@ -51,11 +51,12 @@ Script: [`scripts/bench.sh`](scripts/bench.sh)
 
 ## Usage
 
-LumineCapture supports different launch options, but if you don't really care about them and just want to use it, the three most obvious commands are:
+LumineCapture supports different launch options, but if you don't really care about them and just want to use it, the four most obvious commands are:
 
 1. `lumine-capture`: takes a screenshot of the whole workspace and opens it in the editor. (If the capture goes through the portal you can of course also pick a single monitor by hand in its dialog, but it is better to use KWin, image-copy or screencopy directly. The backend is chosen automatically; set `LUMINE_CAPTURE=kde`, `image-copy`, `screencopy` or `portal` to force one.)
 2. `lumine-capture -m`: takes a screenshot of the monitor under the pointer.
 3. `lumine-capture -r`: no editor and no annotations, just drag a region; the screenshot is taken as soon as you release the mouse button (by default it is both saved and copied).
+4. `lumine-capture -r ocr`: the same drag, but instead of screenshotting, it scans the text. By default, it is copied to the clipboard. 
 
 **Important:** by default every screenshot is also saved as a file and copied to the clipboard, even if in the editor you only chose to copy or pin it. There are two ways to change that:
 
@@ -89,7 +90,11 @@ lumine-capture --ocr-daemon [serve|status|stop|calibrate]
 Modes (without one, the editor opens):
   -f, --full           Capture the screen right away, no editor
   -w, --window         Capture the active window right away (KDE Plasma only)
-  -r, --region         Drag a region, releasing the mouse takes the shot
+  -r, --region [ocr]   Drag a region, releasing the mouse immediately takes the shot.
+                       With ocr, reads the text in it instead. Unlike OCR in the editor,
+                       it doesn't show any scanning progress: it closes, and when the scan
+                       finishes, shows a notification with the outcome.
+                       Recommended to use with -t, see below
 
 Options:
   -m, --monitor        Only the monitor under the pointer

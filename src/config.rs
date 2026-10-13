@@ -682,6 +682,7 @@ pub const TEMPLATE: &str = r##"# LumineCapture config.
 # o (stdout), in any order.
 # r (primary selection, pasted with the middle click) works ONLY with text from -r ocr.
 # Screenshots ignore it, since apps mostly paste only text with the middle click.
+# -r ocr uses c, r and o for its text and ignores p and s.
 #
 # In the editor it is added to whatever you choose, e.g. with to = "s" copying saves the file as well,
 # and finishing without an explicit choice (Enter, a double click) does just this.

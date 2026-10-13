@@ -118,16 +118,16 @@ fn write_unique(dir: &std::path::Path, stem: &str, data: &[u8]) -> std::io::Resu
     }
 }
 
-pub fn write_to_stdout(png_data: &[u8]) -> std::io::Result<()> {
+pub fn write_to_stdout(data: &[u8], binary: bool) -> std::io::Result<()> {
     use std::io::{IsTerminal, Write};
 
     let mut stdout = std::io::stdout().lock();
-    if stdout.is_terminal() {
+    if binary && stdout.is_terminal() {
         return Err(std::io::Error::other(
             "stdout is a terminal, redirect it to a file or a pipe",
         ));
     }
-    stdout.write_all(png_data)?;
+    stdout.write_all(data)?;
     stdout.flush()
 }
 
@@ -418,6 +418,16 @@ pub fn copy_to_clipboard(text: &str) -> Result<(), Box<dyn std::error::Error>> {
     use crate::backend::wayland::clipboard::{DAEMON_ARG, READY_TIMEOUT, TEXT_ARG};
 
     spawn_self_ready(&[DAEMON_ARG, TEXT_ARG], text.as_bytes(), READY_TIMEOUT)
+}
+
+pub fn copy_to_primary(text: &str) -> Result<(), Box<dyn std::error::Error>> {
+    use crate::backend::wayland::clipboard::{DAEMON_ARG, PRIMARY_ARG, READY_TIMEOUT, TEXT_ARG};
+
+    spawn_self_ready(
+        &[DAEMON_ARG, TEXT_ARG, PRIMARY_ARG],
+        text.as_bytes(),
+        READY_TIMEOUT,
+    )
 }
 
 pub fn paste_from_clipboard() -> Option<String> {

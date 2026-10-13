@@ -47,8 +47,14 @@ impl ToolBehavior for SelectionTool {
         pressed: bool,
         dirty_mask: &mut u32,
     ) {
-        if matches!(button, MouseButton::Right) && pressed && !state.input.mouse_down {
-            if state.selection.zone.take().is_some() {
+        if matches!(button, MouseButton::Right) && pressed {
+            let drawing = state.input.mouse_down && state.input.drag_start.is_some();
+            if drawing {
+                state.input.mouse_down = false;
+                state.tool_active = false;
+                state.input.drag_start = None;
+            }
+            if !state.input.mouse_down && state.selection.zone.take().is_some() {
                 mark_all_dirty(dirty_mask, state.placements.len());
             }
             return;

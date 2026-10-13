@@ -21,6 +21,9 @@ use super::panels::settings::{
 };
 
 pub fn run(editor_state: &mut EditorState, action: Action, dirty_mask: &mut u32) {
+    if editor_state.region_ocr && !matches!(action, Action::Cancel | Action::ToggleMagnifier) {
+        return;
+    }
     editor_state.settings_panel.cancel_scroll();
     editor_state.color_popover.cancel_scroll();
 
