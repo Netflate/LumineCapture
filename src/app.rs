@@ -16,7 +16,7 @@ use crate::renderer;
 use crate::theme::anim;
 use crate::tools::Tool;
 use crate::tools::selection::{global_selection_to_local, selection_edges_for_monitor};
-use crate::types::{DamageRect, Outputs, OverlayEvent, Placement, SelectionEdges};
+use crate::types::{DamageRect, Mode, Outputs, OverlayEvent, Placement, SelectionEdges};
 use crate::ui::panel::UiPanel;
 use crate::ui::panel::{AnimatedPanel, panel_to_draw, tick_panel_animation};
 use crate::utils::{encode_png, get_full_workspace_rect, save_to_file, write_to_stdout};
@@ -36,16 +36,6 @@ const POINTER_GRACE: Duration = Duration::from_millis(100);
 // ************************* //
 //      ENTRY POINT          //
 // ************************* //
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Mode {
-    #[default]
-    Editor,
-    Full,
-    Window,
-    Region,
-    Ocr,
-}
 
 /// Launch options from the command line.
 #[derive(Debug, Clone, Default)]
@@ -118,13 +108,12 @@ async fn make_screenshot(
     editor_state.to = launch.outputs();
     editor_state.toolbar.to = editor_state.to;
     editor_state.output = launch.output.clone();
-    if matches!(launch.mode, Mode::Region | Mode::Ocr) {
-        editor_state.region = true;
+    editor_state.mode = launch.mode;
+    if editor_state.region() {
         editor_state.ui_hidden = true;
         editor_state.toolbar.start_hidden();
     }
     if launch.mode == Mode::Ocr {
-        editor_state.region_ocr = true;
         // preparing the ocr engine immediately after launch,
         // by default, in the editor, it does that only after choosing ocr
         editor_state.ocr.runtime.prepare();

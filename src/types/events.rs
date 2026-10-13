@@ -54,6 +54,16 @@ pub enum OverlayEvent {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Mode {
+    #[default]
+    Editor,
+    Full,
+    Window,
+    Region,
+    Ocr,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Finish {
     Pin,

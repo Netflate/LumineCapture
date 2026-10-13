@@ -8,7 +8,7 @@ use crate::editor::dirty::{apply_damage_rects, mark_all_dirty, mark_dirty};
 use crate::editor::{DamageZone, EditorState};
 use crate::keys::{Action, Dir};
 use crate::tools::Tool;
-use crate::types::Finish;
+use crate::types::{Finish, Mode};
 use crate::ui::magnifier::magnifier_rect;
 use crate::ui::settings_panel::{SettingsWidget, StepperArrow, ValueField};
 use crate::utils::get_full_workspace_rect;
@@ -21,7 +21,8 @@ use super::panels::settings::{
 };
 
 pub fn run(editor_state: &mut EditorState, action: Action, dirty_mask: &mut u32) {
-    if editor_state.region_ocr && !matches!(action, Action::Cancel | Action::ToggleMagnifier) {
+    if editor_state.mode == Mode::Ocr && !matches!(action, Action::Cancel | Action::ToggleMagnifier)
+    {
         return;
     }
     editor_state.settings_panel.cancel_scroll();
@@ -56,7 +57,7 @@ pub fn run(editor_state: &mut EditorState, action: Action, dirty_mask: &mut u32)
             }
         }
         Action::SelectAll => select_all(editor_state, dirty_mask),
-        Action::ToggleUi | Action::Tool(_) if editor_state.region => {}
+        Action::ToggleUi | Action::Tool(_) if editor_state.region() => {}
         Action::ToggleUi => toggle_ui(editor_state, dirty_mask),
         Action::ToggleMagnifier => toggle_magnifier(editor_state, dirty_mask),
         Action::SizeUp => step_size(editor_state, StepperArrow::Up, dirty_mask),

@@ -105,7 +105,7 @@ impl ToolBehavior for SelectionTool {
             let fresh = state.input.drag_start.is_some();
             state.input.drag_start = None;
             state.selection.set_drag(SelectionHandle::None, None, None);
-            if state.region && fresh && state.selection.zone.is_some() {
+            if state.region() && fresh && state.selection.zone.is_some() {
                 state.finish = Some(state.to);
             }
         }

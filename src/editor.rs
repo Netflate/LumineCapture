@@ -12,8 +12,8 @@ use usvg::Tree;
 use crate::interaction::{ClickTarget, DoubleClickTracker};
 use crate::tools::Tool;
 use crate::types::{
-    AnnDragState, Annotation, Capture, Placement, PointerState, SelectionState, TextEditState,
-    ToolSettings,
+    AnnDragState, Annotation, Capture, Mode, Placement, PointerState, SelectionState,
+    TextEditState, ToolSettings,
 };
 use crate::ui::color_popover::ColorPickerPopover;
 use crate::ui::magnifier::MagnifierState;
@@ -135,8 +135,7 @@ pub struct EditorState {
     pub cancel: bool,
     pub ui_hidden: bool,
     /// `--region`: no toolbar, releasing a freshly dragged selection finishes the shot.
-    pub region: bool,
-    pub region_ocr: bool,
+    pub mode: Mode,
     /// `--output`: explicitely set the output folder path, overriding the one in config
     pub output: Option<std::path::PathBuf>,
 
@@ -212,10 +211,13 @@ impl EditorState {
             to: crate::config::get().general.to,
             cancel: false,
             ui_hidden: false,
-            region: false,
-            region_ocr: false,
+            mode: Mode::Editor,
             output: None,
         }
+    }
+
+    pub fn region(&self) -> bool {
+        matches!(self.mode, Mode::Region | Mode::Ocr)
     }
 
     /// Returns true if the user is currently picking a color

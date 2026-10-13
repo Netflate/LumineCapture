@@ -78,9 +78,9 @@ fn parse_launch(
     started: Instant,
 ) -> Result<app::Launch, Box<dyn std::error::Error>> {
     let modes = [
-        (pargs.contains(["-f", "--full"]), app::Mode::Full),
-        (pargs.contains(["-w", "--window"]), app::Mode::Window),
-        (pargs.contains(["-r", "--region"]), app::Mode::Region),
+        (pargs.contains(["-f", "--full"]), types::Mode::Full),
+        (pargs.contains(["-w", "--window"]), types::Mode::Window),
+        (pargs.contains(["-r", "--region"]), types::Mode::Region),
     ];
     let mut picked = modes.iter().filter(|(on, _)| *on).map(|(_, mode)| *mode);
     let mode = picked.next().unwrap_or_default();
@@ -105,9 +105,9 @@ fn parse_launch(
     // since it's -r [ocr], with ocr being optional,
     // i didn't find any other solution but to read 'ocr' after every option,
     // because pico-args takes any next argument as the value of -r
-    let mode = if mode == app::Mode::Region {
+    let mode = if mode == types::Mode::Region {
         match pargs.opt_free_from_str::<String>()?.as_deref() {
-            Some("ocr") => app::Mode::Ocr,
+            Some("ocr") => types::Mode::Ocr,
             Some(other) => {
                 return Err(format!("unknown argument {other:?}, -r only takes ocr").into());
             }
@@ -205,7 +205,7 @@ mod tests {
         pico_args::Arguments::from_vec(list.iter().map(Into::into).collect())
     }
 
-    fn mode(list: &[&str]) -> Result<app::Mode, String> {
+    fn mode(list: &[&str]) -> Result<types::Mode, String> {
         parse_launch(&mut args(list), Instant::now())
             .map(|launch| launch.mode)
             .map_err(|e| e.to_string())
@@ -213,12 +213,12 @@ mod tests {
 
     #[test]
     fn region_takes_an_optional_ocr() {
-        assert_eq!(mode(&["-r"]), Ok(app::Mode::Region));
-        assert_eq!(mode(&["-r", "ocr"]), Ok(app::Mode::Ocr));
-        assert_eq!(mode(&["--region", "ocr"]), Ok(app::Mode::Ocr));
-        assert_eq!(mode(&["-rm", "ocr"]), Ok(app::Mode::Ocr));
-        assert_eq!(mode(&["-r", "-t", "c", "ocr"]), Ok(app::Mode::Ocr));
-        assert_eq!(mode(&["-r", "-o", "ocr"]), Ok(app::Mode::Region));
+        assert_eq!(mode(&["-r"]), Ok(types::Mode::Region));
+        assert_eq!(mode(&["-r", "ocr"]), Ok(types::Mode::Ocr));
+        assert_eq!(mode(&["--region", "ocr"]), Ok(types::Mode::Ocr));
+        assert_eq!(mode(&["-rm", "ocr"]), Ok(types::Mode::Ocr));
+        assert_eq!(mode(&["-r", "-t", "c", "ocr"]), Ok(types::Mode::Ocr));
+        assert_eq!(mode(&["-r", "-o", "ocr"]), Ok(types::Mode::Region));
     }
 
     #[test]
