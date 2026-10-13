@@ -21,10 +21,11 @@ use nix::unistd::Pid;
 
 use super::protocol::{self, EngineState, Outgoing, PROTO, Reply, Status, Welcome};
 use super::{
-    Paths, Strike, build_id, clear_strikes, daemon_blocked, lock_file_pid, lock_free, model_name,
-    read_strikes, record_strike, spawn_daemon, unix_now, wait_lock_free,
+    Paths, Strike, build_id, clear_strikes, daemon_blocked, identity, lock_file_pid, lock_free,
+    model_name, read_strikes, record_strike, spawn_daemon, unix_now, wait_lock_free,
 };
 use crate::ocr::models::ModelFiles;
+use crate::ocr::settings::EngineSettings;
 use crate::ocr::{CANCELLED, OcrBackend, OcrError, OcrImage, OcrText, default_backend};
 
 pub type Spawner = Arc<dyn Fn() -> io::Result<()> + Send + Sync>;
@@ -68,7 +69,7 @@ impl Config {
     pub fn system(paths: Paths) -> Self {
         Self {
             paths,
-            build: build_id().to_owned(),
+            build: identity(&EngineSettings::load()),
             spawn: Arc::new(spawn_daemon),
             kill: Arc::new(kill_hard),
             local: Arc::new(default_backend),
@@ -200,14 +201,14 @@ impl DaemonBackend {
         let mut session = self.handshake()?;
         if self.foreign(&session.welcome) {
             info!(
-                "ocr: the running daemon is from another build ({}), replacing it",
+                "ocr: the running daemon is from another build or settings ({}), replacing it",
                 session.welcome.build
             );
             self.retire(session);
             session = self.handshake()?;
             if self.foreign(&session.welcome) {
                 return Err(Fail::Protocol(
-                    "the daemon is still from another build".into(),
+                    "the daemon is still from another build or settings".into(),
                 ));
             }
         }

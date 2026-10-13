@@ -143,7 +143,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     let config_path: Option<PathBuf> =
-        pargs.opt_value_from_os_str("--config", |s| Ok::<_, String>(PathBuf::from(s)))?;
+        pargs.opt_value_from_os_str(config::CONFIG_ARG, |s| Ok::<_, String>(PathBuf::from(s)))?;
     let no_notify = pargs.contains(["-n", backend::notify::NO_NOTIFY_ARG]);
     let launch = match parse_launch(&mut pargs, started) {
         Ok(launch) => launch,

@@ -1128,6 +1128,9 @@ max_file_size_mb = 1
 "##;
 
 static CONFIG: OnceLock<Config> = OnceLock::new();
+static OVERRIDE_PATH: OnceLock<PathBuf> = OnceLock::new();
+
+pub const CONFIG_ARG: &str = "--config";
 
 // complaints are filled before logger starts to work
 // so we need to remember em
@@ -1304,6 +1307,9 @@ fn write_template(path: &PathBuf) {
 
 /// Config overide path set via `--config`. Only the first call takes effect
 pub fn init(override_path: Option<PathBuf>, overrides: impl FnOnce(&mut Config)) {
+    if let Some(path) = &override_path {
+        let _ = OVERRIDE_PATH.set(std::path::absolute(path).unwrap_or_else(|_| path.clone()));
+    }
     let path = override_path.or_else(config_path);
     let mut config = match &path {
         Some(path) => match std::fs::read_to_string(path) {
@@ -1321,6 +1327,12 @@ pub fn init(override_path: Option<PathBuf>, overrides: impl FnOnce(&mut Config))
 
 pub fn get() -> &'static Config {
     CONFIG.get_or_init(Config::default)
+}
+
+pub fn pass_to(command: &mut std::process::Command) {
+    if let Some(path) = OVERRIDE_PATH.get() {
+        command.arg(CONFIG_ARG).arg(path);
+    }
 }
 
 #[cfg(test)]

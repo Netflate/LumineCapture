@@ -57,6 +57,16 @@ impl Paths {
     }
 }
 
+/// Builds id & settings
+/// A new running daemon with a different identity gets replaced
+pub fn identity(settings: &EngineSettings) -> String {
+    let idle = match settings.daemon_idle {
+        Some(idle) => idle.as_secs(),
+        None => 0,
+    };
+    format!("{}-{:?}-{idle}", build_id(), settings.device)
+}
+
 /// Application version along with binary size and modification timestamp
 /// rebuilding or updating changes the ID.
 pub fn build_id() -> &'static str {
@@ -113,7 +123,7 @@ pub fn resolve_mode(settings: &EngineSettings) -> Mode {
 
     let ruled_out = paths
         .as_ref()
-        .is_some_and(|paths| gpu_ruled_out(&read_strikes(paths), build_id()));
+        .is_some_and(|paths| gpu_ruled_out(&read_strikes(paths), &identity(settings)));
     let measured = measurement();
     let cpu_won = measured.is_some_and(|record| record.verdict == Verdict::Cpu);
     let mode = settings.resolve(paths.is_some(), GPU_BUILD && !ruled_out && !cpu_won);
@@ -339,6 +349,7 @@ pub fn lock_file_pid(paths: &Paths) -> Option<i32> {
 pub fn spawn_daemon() -> io::Result<()> {
     let mut command = Command::new(std::env::current_exe()?);
     command.args([DAEMON_ARG, "serve"]);
+    crate::config::pass_to(&mut command);
     spawn_detached(command, crate::logging::open_log_file())
 }
 
@@ -413,7 +424,7 @@ fn serve(paths: Paths) -> Result<(), Box<dyn Error>> {
     let settings = EngineSettings::load();
     let config = server::Config::new(
         paths.clone(),
-        build_id().to_owned(),
+        identity(&settings),
         settings.daemon_idle,
         engine_factory(settings.device, paths.clone()),
     );

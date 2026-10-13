@@ -391,8 +391,10 @@ fn spawn_self_with(
     use std::os::unix::process::CommandExt;
     use std::process::{Command, Stdio};
 
-    let mut child = Command::new(std::env::current_exe()?)
-        .args(args)
+    let mut command = Command::new(std::env::current_exe()?);
+    command.args(args);
+    crate::config::pass_to(&mut command);
+    let mut child = command
         .stdin(Stdio::piped())
         .stdout(stdout)
         // the helper outlives us, so an inherited stderr keeps our pipe open and
