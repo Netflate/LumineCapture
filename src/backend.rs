@@ -149,8 +149,5 @@ pub trait Notifier {
 }
 
 pub fn initialize_notifier() -> Box<dyn Notifier> {
-    let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
-    Box::new(notify::freedesktop::FreedesktopNotifier {
-        kde: desktop == "KDE",
-    })
+    Box::new(notify::freedesktop::FreedesktopNotifier)
 }

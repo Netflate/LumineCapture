@@ -665,8 +665,9 @@ async fn deliver(png: Vec<u8>, scale: f32, outputs: Outputs, dir: Option<&Path>)
         None
     };
     if outputs.copy {
+        let preview = saved.is_none().then(|| png.clone());
         match initialize_clipboard().copy_image_to_clipboard(png) {
-            Ok(()) => notify::send(Notice::Copied(saved)).await,
+            Ok(()) => notify::send(Notice::Copied(saved, preview)).await,
             Err(e) => {
                 log::error!("copy failed: {e}");
                 notify::send(Notice::CopyFailed(e.to_string())).await

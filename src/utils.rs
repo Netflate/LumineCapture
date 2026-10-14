@@ -114,11 +114,19 @@ pub fn save_to_file(
     std::fs::create_dir_all(&dir)?;
 
     let stem = now.format(&save.filename_format).to_string();
-    Ok(write_unique(&dir, &stem, png_data)?)
+    Ok(write_unique(&dir, &stem, png_data, 0o666)?)
 }
 
 /// Writes `<stem>.png`, or `<stem>_N.png` if taken, never overwriting a file.
-fn write_unique(dir: &std::path::Path, stem: &str, data: &[u8]) -> std::io::Result<PathBuf> {
+/// used for usual saving screenshots, and temp file for notif preview
+pub fn write_unique(
+    dir: &std::path::Path,
+    stem: &str,
+    data: &[u8],
+    mode: u32,
+) -> std::io::Result<PathBuf> {
+    use std::os::unix::fs::OpenOptionsExt;
+
     let mut n = 0;
     loop {
         let filename = match n {
@@ -126,7 +134,12 @@ fn write_unique(dir: &std::path::Path, stem: &str, data: &[u8]) -> std::io::Resu
             n => format!("{stem}_{n}.png"),
         };
         let path = dir.join(filename);
-        match std::fs::File::create_new(&path) {
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(mode)
+            .open(&path);
+        match file {
             Ok(mut file) => {
                 std::io::Write::write_all(&mut file, data)?;
                 return Ok(path);
@@ -486,13 +499,27 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("lumine-save-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
 
-        let first = write_unique(&dir, "shot", b"one").unwrap();
-        let second = write_unique(&dir, "shot", b"two").unwrap();
+        let first = write_unique(&dir, "shot", b"one", 0o666).unwrap();
+        let second = write_unique(&dir, "shot", b"two", 0o666).unwrap();
 
         assert_eq!(first.file_name().unwrap(), "shot.png");
         assert_eq!(second.file_name().unwrap(), "shot_1.png");
         assert_eq!(std::fs::read(&first).unwrap(), b"one");
         assert_eq!(std::fs::read(&second).unwrap(), b"two");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn written_file_gets_the_given_mode() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = std::env::temp_dir().join(format!("lumine-mode-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let path = write_unique(&dir, "shot", b"png", 0o400).unwrap();
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+
+        assert_eq!(mode & 0o777, 0o400);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

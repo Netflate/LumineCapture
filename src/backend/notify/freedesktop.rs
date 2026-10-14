@@ -1,13 +1,15 @@
+// Sends notifications through org.freedesktop.Notifications via D-Bus
 use std::collections::HashMap;
 use std::error::Error;
 use std::path::Path;
 
 use async_trait::async_trait;
+use log::warn;
 use zbus::zvariant::Value;
 use zbus::{Connection, proxy};
 
 use crate::backend::Notifier;
-use crate::backend::notify::Notification;
+use crate::backend::notify::{Notification, temp};
 
 const APP_NAME: &str = "LumineCapture";
 
@@ -32,8 +34,25 @@ trait Notifications {
     ) -> zbus::Result<u32>;
 }
 
-pub struct FreedesktopNotifier {
-    pub kde: bool,
+pub struct FreedesktopNotifier;
+
+/// Pnv previw in the notification
+enum Preview {
+    /// with png in the icon slot, it gets squiched on kde and looks terrible
+    /// so we have to use `x-kde-urls` that gives a full preview with actions
+    /// (it works with files)
+    KdeUrls,
+    Icon,
+}
+
+impl Preview {
+    fn pick(caps: &[String]) -> Self {
+        if caps.iter().any(|c| c == "x-kde-urls") {
+            Preview::KdeUrls
+        } else {
+            Preview::Icon
+        }
+    }
 }
 
 #[async_trait]
@@ -49,12 +68,9 @@ impl Notifier for FreedesktopNotifier {
         }
         let proxy = NotificationsProxy::new(&conn).await?;
 
+        let caps = proxy.get_capabilities().await?;
         // Escape markup special characters (like `&`) if the daemon supports `body-markup` to prevent parsing errors.
-        let markup = proxy
-            .get_capabilities()
-            .await?
-            .iter()
-            .any(|c| c == "body-markup");
+        let markup = caps.iter().any(|c| c == "body-markup");
         let body = if markup {
             escape_markup(&n.body)
         } else {
@@ -63,12 +79,16 @@ impl Notifier for FreedesktopNotifier {
 
         let mut hints: HashMap<&str, Value> = HashMap::new();
         hints.insert("urgency", Value::U8(1));
-        if let Some(file) = &n.file {
-            let url = file_url(file);
-            if self.kde {
-                hints.insert("x-kde-urls", Value::from(vec![url]));
-            } else {
-                hints.insert("image-path", Value::from(url));
+        match Preview::pick(&caps) {
+            Preview::KdeUrls => {
+                if let Some(url) = shot_url(n) {
+                    hints.insert("x-kde-urls", Value::from(vec![url]));
+                }
+            }
+            Preview::Icon => {
+                if let Some(file) = &n.file {
+                    hints.insert("image-path", Value::from(file_url(file)));
+                }
             }
         }
 
@@ -86,6 +106,17 @@ impl Notifier for FreedesktopNotifier {
             .await?;
         Ok(())
     }
+}
+
+fn shot_url(n: &Notification) -> Option<String> {
+    let path = match (&n.file, &n.png) {
+        (Some(file), _) => file.clone(),
+        (None, Some(png)) => temp::write(png)
+            .inspect_err(|e| warn!("can't write the preview: {e}"))
+            .ok()?,
+        (None, None) => return None,
+    };
+    Some(file_url(&path))
 }
 
 fn escape_markup(text: &str) -> String {

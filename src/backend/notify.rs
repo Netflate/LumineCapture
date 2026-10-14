@@ -1,4 +1,5 @@
 pub mod freedesktop;
+mod temp;
 
 use log::warn;
 use std::error::Error;
@@ -19,13 +20,15 @@ pub struct Notification {
     pub body: String,
     pub error: bool,
     pub file: Option<PathBuf>,
+    pub png: Option<Vec<u8>>,
 }
 
 pub enum Notice {
     Saved(PathBuf),
     /// Contains `Some(PathBuf)`
-    /// if the copied image was also auto-saved to disk.
-    Copied(Option<PathBuf>),
+    /// if the copied image was also saved to disk,
+    /// otherwise the PNG itself, previewed if notif daemon can show it.
+    Copied(Option<PathBuf>, Option<Vec<u8>>),
     SaveFailed(String),
     CopyFailed(String),
     PinFailed(String),
@@ -40,6 +43,7 @@ pub enum Notice {
 
 impl Notice {
     pub fn spec(self) -> Notification {
+        let mut png = None;
         let (summary, body, error, file) = match self {
             Notice::Saved(path) => (
                 "Screenshot saved",
@@ -47,13 +51,16 @@ impl Notice {
                 false,
                 Some(path),
             ),
-            Notice::Copied(Some(path)) => (
+            Notice::Copied(Some(path), _) => (
                 "Screenshot copied",
                 format!("Also saved to {}", path.display()),
                 false,
                 Some(path),
             ),
-            Notice::Copied(None) => ("Screenshot copied", String::new(), false, None),
+            Notice::Copied(None, shot) => {
+                png = shot;
+                ("Screenshot copied", String::new(), false, None)
+            }
             Notice::SaveFailed(e) => ("Couldn't save the screenshot", e, true, None),
             Notice::CopyFailed(e) => ("Couldn't copy the screenshot", e, true, None),
             Notice::PinFailed(e) => ("Couldn't pin the screenshot", e, true, None),
@@ -75,6 +82,7 @@ impl Notice {
             body,
             error,
             file,
+            png,
         }
     }
 }
