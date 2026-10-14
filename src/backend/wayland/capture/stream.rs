@@ -155,7 +155,7 @@ fn run_stream(node_id: u32, fd: OwnedFd, tx: SyncSender<FrameResult>) -> Result<
                     };
 
                     let mut pixels = pixels.to_vec();
-                    to_rgba(&mut pixels, bgr);
+                    to_rgba(&mut pixels, bgr, false);
 
                     let frame_data = PipewireFrame {
                         pixels,

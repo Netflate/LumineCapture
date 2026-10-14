@@ -15,7 +15,7 @@ use zbus::{Connection, proxy};
 
 use crate::backend::CaptureMethod;
 use crate::types::{Capture, CaptureResult, MonitorFrame, Output, StreamInfo};
-use crate::utils::to_rgba;
+use crate::utils::{premultiply, to_rgba};
 
 // async_trait requires the whole future graph to be Send; std::error::Error
 // alone isn't Send, so all internal helpers use this bound instead and only
@@ -99,6 +99,23 @@ fn is_bgr(format: Option<u32>) -> Option<bool> {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Alpha {
+    Opaque,
+    Straight,
+    Premultiplied,
+}
+
+// QImage::Format: 4 RGB32, 5 ARGB32, 6 ARGB32_Premultiplied,
+// 16 RGBX8888, 17 RGBA8888, 18 RGBA8888_Premultiplied
+fn alpha_of(format: Option<u32>) -> Alpha {
+    match format {
+        Some(5 | 17) => Alpha::Straight,
+        Some(6 | 18) => Alpha::Premultiplied,
+        _ => Alpha::Opaque,
+    }
+}
+
 // captures one output or the active window; returns tight (unpadded) pixels
 async fn capture_one(
     proxy: &ScreenShot2Proxy<'_>,
@@ -107,7 +124,7 @@ async fn capture_one(
 ) -> Result<Shot, BoxErr> {
     let label = target.label();
     let (read_fd, write_fd): (OwnedFd, OwnedFd) = nix::unistd::pipe()?;
-    let (bgr_tx, bgr_rx) = std::sync::mpsc::channel::<bool>();
+    let (layout_tx, layout_rx) = std::sync::mpsc::channel::<(bool, bool)>();
 
     let read_task = tokio::task::spawn_blocking(move || -> std::io::Result<Vec<u8>> {
         use std::io::Read;
@@ -122,14 +139,14 @@ async fn capture_one(
         let mut order = None;
         let mut converted = 0;
         while (&file).take(READ_CHUNK).read_to_end(&mut buf)? > 0 {
-            let bgr = match order {
-                Some(bgr) => bgr,
-                None => *order.insert(bgr_rx.recv().map_err(|_| {
+            let (bgr, keep_alpha) = match order {
+                Some(layout) => layout,
+                None => *order.insert(layout_rx.recv().map_err(|_| {
                     std::io::Error::other("KWin didn't report the screenshot format")
                 })?),
             };
             let ready = buf.len() - buf.len() % 4;
-            to_rgba(&mut buf[converted..ready], bgr);
+            to_rgba(&mut buf[converted..ready], bgr, keep_alpha);
             converted = ready;
         }
         Ok(buf)
@@ -163,8 +180,18 @@ async fn capture_one(
     let bgr = is_bgr(format).ok_or(format!(
         "KWin sent the screenshot of {label} in QImage format {format:?}, which isn't supported"
     ))?;
-    let _ = bgr_tx.send(bgr);
+    // probably useless, but a small safery check won't hurt
+    let alpha = match target {
+        Target::Screen(_) => Alpha::Opaque,
+        Target::ActiveWindow => alpha_of(format),
+    };
+    let _ = layout_tx.send((bgr, alpha != Alpha::Opaque));
     let mut raw = read_task.await??;
+    // pixmap worrks with premultiplied colors, kwin 6.7 already sends them,
+    // so this is just in case
+    if alpha == Alpha::Straight {
+        premultiply(&mut raw);
+    }
 
     let width = metadata
         .get("width")
@@ -184,10 +211,15 @@ async fn capture_one(
 
     let row_bytes = (width * 4) as usize;
     let needed = stride as usize * height as usize;
+
+    // I have no idea how to replicate "missing pixels bug" btw
+    // besides World of Tanks, only there screenshots end up without
+    // 1024 in the last sequence, initially I thought its my fault
+    // but spectacle had the same result
     if raw.len() < needed {
         let missing = needed - raw.len();
         warn!("warning: short read for {label}: padding {missing} missing bytes with transparent");
-        raw.resize(needed, 0); // zero-pad remaining tail with black pixels
+        raw.resize(needed, 0); // zero-pad remaining tail with transparent pixels
     }
 
     // if there is no padding, there is no point in allocations and copying
@@ -324,16 +356,17 @@ mod tests {
     }
 
     #[test]
+    /// yo is this https://files.catbox.moe/kx68bc
     fn kwin_6_7_bytes_become_rgba() {
         let mut px = vec![0x30, 0x20, 0x10, 0xFF];
-        to_rgba(&mut px, is_bgr(Some(6)).unwrap());
+        to_rgba(&mut px, is_bgr(Some(6)).unwrap(), false);
         assert_eq!(px, [0x10, 0x20, 0x30, 0xFF]);
     }
 
     #[test]
     fn rgbx_bytes_become_opaque_rgba() {
         let mut px = vec![0x10, 0x20, 0x30, 0x00];
-        to_rgba(&mut px, is_bgr(Some(16)).unwrap());
+        to_rgba(&mut px, is_bgr(Some(16)).unwrap(), false);
         assert_eq!(px, [0x10, 0x20, 0x30, 0xFF]);
     }
 }

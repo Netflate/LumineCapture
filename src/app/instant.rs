@@ -3,7 +3,7 @@
 use crate::backend::{initialize_capture, initialize_overlay};
 use crate::profiler::Profiler;
 use crate::renderer;
-use crate::utils::{encode_png, get_full_workspace_rect};
+use crate::utils::{encode_png, encode_png_with_alpha, get_full_workspace_rect};
 
 use super::{Launch, delay, deliver, init};
 
@@ -64,7 +64,7 @@ pub async fn window(conn: wayland_client::Connection, launch: Launch) -> Result 
     delay::wait(launch.shot_at, &*method, &mut prof).await?;
     let capture = method.capture_active_window().await?;
     prof.mark("capture");
-    let png = encode_png(&capture.pixmap);
+    let png = encode_png_with_alpha(capture.pixmap);
     prof.mark("png encoded");
 
     deliver(

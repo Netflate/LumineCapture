@@ -39,12 +39,36 @@ pub fn global_point_to_local(
 }
 
 pub fn encode_png(pixmap: &Pixmap) -> Vec<u8> {
+    encode_rgba(pixmap.data(), pixmap.width(), pixmap.height())
+}
+
+/// used for windows screenshots with some kind of transparency
+/// like the same rounded corners.
+/// Pixmap premultiplied, while png is not
+///
+/// alpha encoding is around 1.5 ms slower than direct encoding
+pub fn encode_png_with_alpha(mut pixmap: Pixmap) -> Vec<u8> {
+    let mut recip = [0u32; 256];
+    for a in 1..256 {
+        recip[a as usize] = ((255 << 16) + a / 2) / a;
+    }
+    for px in pixmap.data_mut().as_chunks_mut::<4>().0 {
+        let a = px[3];
+        if a != 255 {
+            let k = recip[a as usize];
+            for c in &mut px[..3] {
+                *c = ((*c as u32 * k + (1 << 15)) >> 16).min(255) as u8;
+            }
+        }
+    }
+    encode_rgba(pixmap.data(), pixmap.width(), pixmap.height())
+}
+
+fn encode_rgba(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
     use image::ImageEncoder;
     use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 
     let mut png_bytes = Vec::new();
-
-    let rgba = pixmap.data();
 
     let encoder =
         PngEncoder::new_with_quality(&mut png_bytes, CompressionType::Fast, FilterType::Paeth);
@@ -65,12 +89,7 @@ pub fn encode_png(pixmap: &Pixmap) -> Vec<u8> {
     //  Paeth           |       39.43       | 2.21 MB
 
     encoder
-        .write_image(
-            rgba,
-            pixmap.width(),
-            pixmap.height(),
-            image::ExtendedColorType::Rgba8,
-        )
+        .write_image(rgba, width, height, image::ExtendedColorType::Rgba8)
         .unwrap();
 
     png_bytes
@@ -316,14 +335,29 @@ pub fn get_full_workspace_rect(placements: &[Placement]) -> Option<Rect> {
     Rect::from_ltrb(min_x as f32, min_y as f32, max_x as f32, max_y as f32)
 }
 
-// pixels swap
+/// pixels swap
+/// drops or keeps alhpa, for now only kde may
+/// send a proper screenshot of a transparent window
 #[inline]
-pub fn to_rgba(pixels: &mut [u8], bgr: bool) {
+pub fn to_rgba(pixels: &mut [u8], bgr: bool, keep_alpha: bool) {
     for chunk in pixels.as_chunks_mut::<4>().0 {
         if bgr {
             chunk.swap(0, 2);
         }
-        chunk[3] = 255;
+        if !keep_alpha {
+            chunk[3] = 255;
+        }
+    }
+}
+
+pub fn premultiply(rgba: &mut [u8]) {
+    for px in rgba.as_chunks_mut::<4>().0 {
+        let a = px[3] as u16;
+        if a != 255 {
+            for c in &mut px[..3] {
+                *c = ((*c as u16 * a + 127) / 255) as u8;
+            }
+        }
     }
 }
 
@@ -445,7 +479,7 @@ pub fn paste_from_clipboard() -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::write_unique;
+    use super::{encode_png_with_alpha, write_unique};
 
     #[test]
     fn saving_twice_with_the_same_name_keeps_both_files() {
@@ -460,5 +494,20 @@ mod tests {
         assert_eq!(std::fs::read(&first).unwrap(), b"one");
         assert_eq!(std::fs::read(&second).unwrap(), b"two");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn png_with_alpha_stores_straight_colors() {
+        let size = tiny_skia::IntSize::from_wh(3, 1).unwrap();
+        let data = vec![0, 0, 0, 0, 64, 32, 16, 128, 10, 20, 30, 255];
+        let pixmap = tiny_skia::Pixmap::from_vec(data, size).unwrap();
+
+        let png = encode_png_with_alpha(pixmap);
+        let decoded = image::load_from_memory(&png).unwrap().into_rgba8();
+
+        assert_eq!(
+            decoded.into_raw(),
+            [0, 0, 0, 0, 128, 64, 32, 128, 10, 20, 30, 255]
+        );
     }
 }

@@ -139,7 +139,7 @@ fn capture_all<P: Protocol>(
 
         let mut pixels = read_rows(pool.mmap(), w, h, slot.stride, slot.y_invert);
         buffer.destroy();
-        to_rgba(&mut pixels, bgr);
+        to_rgba(&mut pixels, bgr, false);
         let transform = slot.transform.unwrap_or(target.transform);
         let (pixels, w, h) = untransform(pixels, w, h, transform);
 

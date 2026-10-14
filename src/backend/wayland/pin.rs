@@ -41,7 +41,7 @@ use crate::keys::{self, Action, Mods};
 use crate::renderer::paths::{draw_panel_border, rounded_rect_path};
 use crate::theme::radius;
 use crate::types::Finish;
-use crate::utils::copy_swizzled;
+use crate::utils::{copy_swizzled, premultiply};
 
 const BTN_LEFT: u32 = 0x110;
 const APP_ID: &str = "lumine-pin";
@@ -172,14 +172,7 @@ fn render_pin(image: &[u8], scale: f32) -> Result<Pixmap, Box<dyn std::error::Er
     let rgba = image::load_from_memory(image)?.into_rgba8();
     let (w, h) = rgba.dimensions();
     let mut data = rgba.into_raw();
-    for px in data.as_chunks_mut::<4>().0 {
-        let a = px[3] as u16;
-        if a != 255 {
-            for c in &mut px[..3] {
-                *c = ((*c as u16 * a + 127) / 255) as u8;
-            }
-        }
-    }
+    premultiply(&mut data);
     let (data, w, h) = pad_to_whole_pixels(data, w, h, scale);
     let size = IntSize::from_wh(w, h).ok_or("empty image")?;
     let mut pin = Pixmap::from_vec(data, size).ok_or("invalid image")?;
