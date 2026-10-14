@@ -61,7 +61,8 @@ impl PaddleBackend {
         providers.push(OrtExecutionProvider::CPU);
         let mut ort = OrtSessionConfig::new()
             .with_intra_threads(threads)
-            .with_execution_providers(providers);
+            .with_execution_providers(providers)
+            .add_config_entry("session.intra_op.allow_spinning", "0");
         if gpu {
             // WebGPU keeps buffers sized for the largest image
             // Without cache it stays under +-130 MB, with only a +-5% slowdown on scans.
