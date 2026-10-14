@@ -171,6 +171,11 @@ or build it yourself from the [PKGBUILD](packaging/arch/PKGBUILD):
 git clone https://github.com/Netflate/LumineCapture && cd LumineCapture/packaging/arch && makepkg -si
 ```
 
+**aerynOS**
+```sh
+sudo moss it lumine-capture
+```
+
 ## License
 
 Licensed under either of
