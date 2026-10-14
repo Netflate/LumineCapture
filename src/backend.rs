@@ -144,7 +144,7 @@ pub fn initialize_clipboard() -> Box<dyn ClipboardProvider> {
 pub trait Notifier {
     async fn notify(
         &self,
-        n: &notify::Notification,
+        n: &notify::Notification<'_>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
 }
 

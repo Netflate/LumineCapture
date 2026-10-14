@@ -57,7 +57,7 @@ impl Preview {
 
 #[async_trait]
 impl Notifier for FreedesktopNotifier {
-    async fn notify(&self, n: &Notification) -> Result<(), Box<dyn Error + Send + Sync>> {
+    async fn notify(&self, n: &Notification<'_>) -> Result<(), Box<dyn Error + Send + Sync>> {
         let conn = Connection::session().await?;
         let dbus = zbus::fdo::DBusProxy::new(&conn).await?;
         if !dbus
@@ -108,7 +108,7 @@ impl Notifier for FreedesktopNotifier {
     }
 }
 
-fn shot_url(n: &Notification) -> Option<String> {
+fn shot_url(n: &Notification<'_>) -> Option<String> {
     let path = match (&n.file, &n.png) {
         (Some(file), _) => file.clone(),
         (None, Some(png)) => temp::write(png)

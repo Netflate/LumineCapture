@@ -15,20 +15,20 @@ const TIMEOUT: Duration = Duration::from_millis(500);
 
 pub const NO_NOTIFY_ARG: &str = "--nonotify";
 
-pub struct Notification {
+pub struct Notification<'a> {
     pub summary: &'static str,
     pub body: String,
     pub error: bool,
     pub file: Option<PathBuf>,
-    pub png: Option<Vec<u8>>,
+    pub png: Option<&'a [u8]>,
 }
 
-pub enum Notice {
+pub enum Notice<'a> {
     Saved(PathBuf),
     /// Contains `Some(PathBuf)`
     /// if the copied image was also saved to disk,
     /// otherwise the PNG itself, previewed if notif daemon can show it.
-    Copied(Option<PathBuf>, Option<Vec<u8>>),
+    Copied(Option<PathBuf>, Option<&'a [u8]>),
     SaveFailed(String),
     CopyFailed(String),
     PinFailed(String),
@@ -41,8 +41,8 @@ pub enum Notice {
     TextCopyFailed(String),
 }
 
-impl Notice {
-    pub fn spec(self) -> Notification {
+impl<'a> Notice<'a> {
+    pub fn spec(self) -> Notification<'a> {
         let mut png = None;
         let (summary, body, error, file) = match self {
             Notice::Saved(path) => (
@@ -99,13 +99,13 @@ pub struct StderrNotifier;
 
 #[async_trait]
 impl Notifier for StderrNotifier {
-    async fn notify(&self, n: &Notification) -> Result<(), Box<dyn Error + Send + Sync>> {
+    async fn notify(&self, n: &Notification<'_>) -> Result<(), Box<dyn Error + Send + Sync>> {
         eprintln!("{}: {}", n.summary, n.body);
         Ok(())
     }
 }
 
-pub async fn send(notice: Notice) {
+pub async fn send(notice: Notice<'_>) {
     if !crate::config::get().notifications.enabled {
         return;
     }
@@ -123,7 +123,7 @@ pub async fn send(notice: Notice) {
 /// Dispatches notifications synchronously for non Tokio worker processes
 /// Panics if invoked inside an active Tokio context. Avoids `zbus::block_on` to prevent
 /// spawning per-core threads.
-pub fn send_blocking(notice: Notice) {
+pub fn send_blocking(notice: Notice<'_>) {
     if !crate::config::get().notifications.enabled {
         return;
     }
