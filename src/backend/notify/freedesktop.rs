@@ -1,7 +1,7 @@
 // Sends notifications through org.freedesktop.Notifications via D-Bus
 use std::collections::HashMap;
 use std::error::Error;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use image::{DynamicImage, RgbaImage};
@@ -46,6 +46,8 @@ enum Preview {
     /// so we have to use `x-kde-urls` that gives a full preview with actions
     /// (it works with files)
     KdeUrls,
+    /// for now only required and used in swaync
+    BodyImage,
     Icon {
         square: bool,
     },
@@ -56,6 +58,8 @@ impl Preview {
     fn pick(caps: &[String], daemon: &str) -> Self {
         if caps.iter().any(|c| c == "x-kde-urls") {
             Preview::KdeUrls
+        } else if daemon == "SwayNotificationCenter" && caps.iter().any(|c| c == "body-images") {
+            Preview::BodyImage
         } else if daemon == "cosmic-notifications" {
             // todo: add preview when cosmic add proper image to notifications
             Preview::Skip
@@ -85,7 +89,7 @@ impl Notifier for FreedesktopNotifier {
         let caps = proxy.get_capabilities().await?;
         // Escape markup special characters (like `&`) if the daemon supports `body-markup` to prevent parsing errors.
         let markup = caps.iter().any(|c| c == "body-markup");
-        let body = if markup {
+        let mut body = if markup {
             escape_markup(&n.body)
         } else {
             n.body.clone()
@@ -101,8 +105,16 @@ impl Notifier for FreedesktopNotifier {
                 .unwrap_or_default();
             match Preview::pick(&caps, &daemon) {
                 Preview::KdeUrls => {
-                    if let Some(url) = shot_url(n) {
-                        hints.insert("x-kde-urls", Value::from(vec![url]));
+                    if let Some(file) = shot_file(n) {
+                        hints.insert("x-kde-urls", Value::from(vec![file_url(&file)]));
+                    }
+                }
+                Preview::BodyImage => {
+                    if let Some(file) = shot_file(n)
+                        && let Some(path) = file.to_str()
+                        && !path.contains('"')
+                    {
+                        body.push_str(&format!("<img src=\"{path}\" alt=\"\"/>"));
                     }
                 }
                 Preview::Icon { square } => {
@@ -134,15 +146,14 @@ impl Notifier for FreedesktopNotifier {
     }
 }
 
-fn shot_url(n: &Notification<'_>) -> Option<String> {
-    let path = match (&n.file, &n.png) {
-        (Some(file), _) => file.clone(),
+fn shot_file(n: &Notification<'_>) -> Option<PathBuf> {
+    match (&n.file, &n.png) {
+        (Some(file), _) => Some(file.clone()),
         (None, Some(png)) => temp::write(png)
             .inspect_err(|e| warn!("can't write the preview: {e}"))
-            .ok()?,
-        (None, None) => return None,
-    };
-    Some(file_url(&path))
+            .ok(),
+        (None, None) => None,
+    }
 }
 
 fn image_data(png: &[u8], square: bool) -> Option<Value<'static>> {
