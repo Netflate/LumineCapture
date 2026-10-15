@@ -9,7 +9,7 @@ use crate::ui::panel::{emit_panel_damage, sync_panel_hover, sync_panel_rect};
 use crate::ui::settings_panel::{
     OCR_AWAITING_WIDGETS, OCR_DOWNLOADING_WIDGETS, OCR_NO_MODEL_WIDGETS, OCR_SCANNING_WIDGETS,
     OCR_WIDGETS, OCR_WIDGETS_DOWNLOADING, SettingsAction, SettingsSource, SettingsWidget,
-    StepperArrow, ToggleField, compute_settings_placement, widgets_for_annotation,
+    StepperArrow, StepperRange, ToggleField, compute_settings_placement, widgets_for_annotation,
     widgets_for_tool,
 };
 use std::time::{Duration, Instant};
@@ -67,17 +67,8 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
     let widgets = editor_state.settings_panel.widgets;
     for (idx, widget) in widgets.iter().enumerate() {
         match widget {
-            SettingsWidget::Stepper { .. } => {
-                let value = match selected_ann {
-                    Some(ann) => match &ann.shape {
-                        AnnotationShape::Text { font_size, .. } => *font_size,
-                        _ => ann.stroke_width,
-                    },
-                    None => match editor_state.selected_tool {
-                        Tool::Text => editor_state.tool_settings.font_size,
-                        _ => editor_state.tool_settings.stroke_width,
-                    },
-                };
+            SettingsWidget::Stepper { range, .. } => {
+                let value = stepper_value(editor_state, *range);
                 editor_state
                     .settings_panel
                     .sync_value(idx, format_stepper_number(value));
@@ -397,6 +388,7 @@ fn try_apply_stepper_text(
     else {
         return false;
     };
+    let range = *range;
     let (min, max, _) = range.get();
 
     let Ok(parsed) = text.parse::<f32>() else {
@@ -404,6 +396,7 @@ fn try_apply_stepper_text(
     };
     apply_stepper_field(
         editor_state,
+        range,
         parsed.clamp(min, max),
         record_undo,
         dirty_mask,
@@ -432,43 +425,22 @@ fn live_apply_stepper_field(
 
 fn apply_stepper_field(
     editor_state: &mut EditorState,
+    range: StepperRange,
     new_value: f32,
     record_undo: bool,
     dirty_mask: &mut u32,
 ) {
-    let ann_idx = active_annotation_idx(editor_state);
-
-    let is_text = match ann_idx.and_then(|i| editor_state.annotations.get(i)) {
-        Some(ann) => matches!(ann.shape, AnnotationShape::Text { .. }),
-        None => editor_state.selected_tool == Tool::Text,
-    };
-
-    let current = match ann_idx.and_then(|i| editor_state.annotations.get(i)) {
-        Some(ann) => match &ann.shape {
-            AnnotationShape::Text { font_size, .. } => *font_size,
-            _ => ann.stroke_width,
-        },
-        None => {
-            if is_text {
-                editor_state.tool_settings.font_size
-            } else {
-                editor_state.tool_settings.stroke_width
-            }
-        }
-    };
-
+    let current = stepper_value(editor_state, range);
     let changed = (current - new_value).abs() > f32::EPSILON;
 
     commit_settings_change(
         editor_state,
         changed,
         record_undo,
-        move |ts| {
-            if is_text {
-                ts.font_size = new_value;
-            } else {
-                ts.stroke_width = new_value;
-            }
+        move |ts| match range {
+            StepperRange::Stroke => ts.stroke_width = new_value,
+            StepperRange::Font => ts.font_size = new_value,
+            StepperRange::Blur => ts.blur = new_value,
         },
         move |ann| match &mut ann.shape {
             AnnotationShape::Text { font_size, .. } => *font_size = new_value,
@@ -521,19 +493,9 @@ pub fn apply_stepper_arrow_step(
     else {
         return;
     };
+    let range = *range;
     let (min, max, step) = range.get();
-
-    let ann_idx = active_annotation_idx(editor_state);
-    let current = match ann_idx.and_then(|i| editor_state.annotations.get(i)) {
-        Some(ann) => match &ann.shape {
-            AnnotationShape::Text { font_size, .. } => *font_size,
-            _ => ann.stroke_width,
-        },
-        None => match editor_state.selected_tool {
-            Tool::Text => editor_state.tool_settings.font_size,
-            _ => editor_state.tool_settings.stroke_width,
-        },
-    };
+    let current = stepper_value(editor_state, range);
 
     let delta = if arrow == StepperArrow::Up {
         step
@@ -542,7 +504,7 @@ pub fn apply_stepper_arrow_step(
     };
     let new_value = (current + delta).clamp(min, max);
 
-    apply_stepper_field(editor_state, new_value, false, dirty_mask);
+    apply_stepper_field(editor_state, range, new_value, false, dirty_mask);
 }
 
 pub fn sync_stepper_edit_text(editor_state: &mut EditorState, widget_idx: usize) {
@@ -556,17 +518,12 @@ pub fn sync_stepper_edit_text(editor_state: &mut EditorState, widget_idx: usize)
         return;
     }
 
-    let ann_idx = active_annotation_idx(editor_state);
-    let value = match ann_idx.and_then(|i| editor_state.annotations.get(i)) {
-        Some(ann) => match &ann.shape {
-            AnnotationShape::Text { font_size, .. } => *font_size,
-            _ => ann.stroke_width,
-        },
-        None => match editor_state.selected_tool {
-            Tool::Text => editor_state.tool_settings.font_size,
-            _ => editor_state.tool_settings.stroke_width,
-        },
+    let Some(SettingsWidget::Stepper { range, .. }) =
+        editor_state.settings_panel.widgets.get(widget_idx)
+    else {
+        return;
     };
+    let value = stepper_value(editor_state, *range);
 
     editor_state
         .settings_panel
@@ -613,6 +570,22 @@ pub fn handle_stepper_scroll(
     update_settings_panel(editor_state, dirty_mask);
 
     sync_stepper_edit_text(editor_state, widget_idx);
+}
+
+/// the number a stepper edits, on the selected annotation or in the tool settings
+fn stepper_value(editor_state: &EditorState, range: StepperRange) -> f32 {
+    let ts = &editor_state.tool_settings;
+    match active_annotation_idx(editor_state).and_then(|i| editor_state.annotations.get(i)) {
+        Some(ann) => match &ann.shape {
+            AnnotationShape::Text { font_size, .. } => *font_size,
+            _ => ann.stroke_width,
+        },
+        None => match range {
+            StepperRange::Stroke => ts.stroke_width,
+            StepperRange::Font => ts.font_size,
+            StepperRange::Blur => ts.blur,
+        },
+    }
 }
 
 fn format_stepper_number(v: f32) -> String {

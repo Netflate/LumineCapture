@@ -66,6 +66,7 @@ impl SettingsAction {
 pub enum StepperRange {
     Stroke,
     Font,
+    Blur,
 }
 
 impl StepperRange {
@@ -74,6 +75,7 @@ impl StepperRange {
         match self {
             StepperRange::Stroke => (tools.stroke.min, tools.stroke.max, tools.stroke.step),
             StepperRange::Font => (tools.font.min, tools.font.max, tools.font.step),
+            StepperRange::Blur => (tools.blur.min, tools.blur.max, tools.blur.step),
         }
     }
 }
@@ -181,6 +183,11 @@ pub fn widgets_for_tool(tool: Tool) -> &'static [SettingsWidget] {
                 field: ToggleField::Fill,
             },
         ],
+        Tool::Blur => &[SettingsWidget::Stepper {
+            label: "",
+            range: StepperRange::Blur,
+            unit: "px",
+        }],
         Tool::Eyedropper => EYEDROPPER_WIDGETS,
         Tool::Ocr => OCR_WIDGETS,
         _ => &[],

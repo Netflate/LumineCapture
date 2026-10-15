@@ -12,6 +12,7 @@ pub fn default_color() -> Rgba {
 pub struct ToolSettings {
     pub stroke_width: f32,
     pub font_size: f32,
+    pub blur: f32,
     pub bold: bool,
     pub italic: bool,
     pub fill: bool,
@@ -31,6 +32,10 @@ impl Default for ToolSettings {
                 .font_size
                 .unwrap_or(tools.font.size)
                 .clamp(tools.font.min, tools.font.max),
+            blur: saved
+                .blur
+                .unwrap_or(tools.blur.size)
+                .clamp(tools.blur.min, tools.blur.max),
             bold: saved.bold.unwrap_or(tools.font.bold),
             italic: saved.italic.unwrap_or(tools.font.italic),
             fill: saved.fill.unwrap_or(tools.fill),

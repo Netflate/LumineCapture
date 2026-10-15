@@ -17,7 +17,7 @@ use crate::tools::selection::SelectionTool;
 use crate::tools::simple_shapes::SimpleShapeTool;
 use crate::tools::text::TextTool;
 use crate::types::annotations::AnnotationShape;
-use crate::types::{CursorIcon, MouseButton, SpecialKey};
+use crate::types::{CursorIcon, MouseButton, SpecialKey, ToolSettings};
 // ==========================================
 // 1. Available Tools
 // ==========================================
@@ -63,6 +63,27 @@ pub trait ToolBehavior {
 // ==========================================
 // 3. Static dispatching
 // ==========================================
+fn simple_shape(tool: Tool, settings: &ToolSettings) -> SimpleShapeTool {
+    let (stroke_width, fill) = match tool {
+        Tool::Blur => (settings.blur, false),
+        _ => (settings.stroke_width, settings.fill),
+    };
+    SimpleShapeTool {
+        make_shape: match tool {
+            Tool::Rectangle => {
+                |start, end, filled| AnnotationShape::Rectangle { start, end, filled }
+            }
+            Tool::Arrow => |start, end, _| AnnotationShape::Arrow { start, end },
+            Tool::Circle => |start, end, filled| AnnotationShape::Circle { start, end, filled },
+            Tool::Blur => |start, end, _| AnnotationShape::Blur { start, end },
+            _ => |start, end, _| AnnotationShape::Line { start, end },
+        },
+        color: settings.color,
+        stroke_width,
+        fill,
+    }
+}
+
 pub fn dispatch_move(
     tool: Tool,
     state: &mut EditorState,
@@ -79,28 +100,7 @@ pub fn dispatch_move(
         Tool::Ocr => OcrTool.on_move(state, global, dirty_mask),
 
         Tool::Rectangle | Tool::Arrow | Tool::Circle | Tool::Line | Tool::Blur => {
-            let color = state.tool_settings.color;
-            let stroke_width = state.tool_settings.stroke_width;
-            let fill = state.tool_settings.fill;
-
-            let tool_impl = SimpleShapeTool {
-                make_shape: match tool {
-                    Tool::Rectangle => {
-                        |start, end, filled| AnnotationShape::Rectangle { start, end, filled }
-                    }
-                    Tool::Arrow => |start, end, _| AnnotationShape::Arrow { start, end },
-                    Tool::Circle => {
-                        |start, end, filled| AnnotationShape::Circle { start, end, filled }
-                    }
-                    Tool::Blur => |start, end, _| AnnotationShape::Blur { start, end },
-                    _ => |start, end, _| AnnotationShape::Line { start, end },
-                },
-                color,
-                stroke_width,
-                fill,
-            };
-
-            tool_impl.on_move(state, global, dirty_mask);
+            simple_shape(tool, &state.tool_settings).on_move(state, global, dirty_mask);
         }
     }
 }
@@ -122,28 +122,7 @@ pub fn dispatch_button(
         Tool::Ocr => OcrTool.on_button(state, button, pressed, dirty_mask),
 
         Tool::Rectangle | Tool::Arrow | Tool::Circle | Tool::Line | Tool::Blur => {
-            let color = state.tool_settings.color;
-            let stroke_width = state.tool_settings.stroke_width;
-            let fill = state.tool_settings.fill;
-
-            let tool_impl = SimpleShapeTool {
-                make_shape: match tool {
-                    Tool::Rectangle => {
-                        |start, end, filled| AnnotationShape::Rectangle { start, end, filled }
-                    }
-                    Tool::Arrow => |start, end, _| AnnotationShape::Arrow { start, end },
-                    Tool::Circle => {
-                        |start, end, filled| AnnotationShape::Circle { start, end, filled }
-                    }
-                    Tool::Blur => |start, end, _| AnnotationShape::Blur { start, end },
-                    _ => |start, end, _| AnnotationShape::Line { start, end },
-                },
-                color,
-                stroke_width,
-                fill,
-            };
-
-            tool_impl.on_button(state, button, pressed, dirty_mask);
+            simple_shape(tool, &state.tool_settings).on_button(state, button, pressed, dirty_mask);
         }
     }
 }

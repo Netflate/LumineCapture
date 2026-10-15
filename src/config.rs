@@ -523,6 +523,13 @@ section!(Font {
     italic: bool = false,
 });
 
+section!(Blur {
+    size: f32 = 20.0,
+    min: f32 = 4.0,
+    max: f32 = 80.0,
+    step: f32 = 2.0,
+});
+
 section!(Pen {
     smoothing: f32 = 0.7,
     min_distance: f32 = 1.0,
@@ -533,6 +540,7 @@ section!(Tools {
     fill: bool = false,
     stroke: Stroke = Stroke::default(),
     font: Font = Font::default(),
+    blur: Blur = Blur::default(),
     pen: Pen = Pen::default(),
 });
 
@@ -1012,6 +1020,13 @@ step = 1.0
 bold = true
 italic = false
 
+[tools.blur]
+# blur radius
+size = 20.0
+min = 4.0
+max = 80.0
+step = 2.0
+
 [tools.pen]
 # 0 draws the raw pointer path, closer to 1 is smoother (and lags more)
 smoothing = 0.7
@@ -1272,6 +1287,14 @@ fn validate(config: &mut Config) {
                 .to_string(),
         );
         *font = Font::default();
+    }
+    let blur = &mut config.tools.blur;
+    if blur.min > blur.max || blur.step <= 0.0 {
+        complain(
+            "config: tools.blur needs min <= max and a positive step, using the defaults"
+                .to_string(),
+        );
+        *blur = Blur::default();
     }
     let text = &mut config.annotations.text;
     if text.resize_min > text.resize_max {
