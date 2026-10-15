@@ -4,6 +4,7 @@ use std::error::Error;
 use std::path::Path;
 
 use async_trait::async_trait;
+use image::{DynamicImage, RgbaImage};
 use log::warn;
 use zbus::zvariant::Value;
 use zbus::{Connection, proxy};
@@ -12,6 +13,7 @@ use crate::backend::Notifier;
 use crate::backend::notify::{Notification, temp};
 
 const APP_NAME: &str = "LumineCapture";
+const THUMB: u32 = 256;
 
 #[proxy(
     interface = "org.freedesktop.Notifications",
@@ -20,6 +22,8 @@ const APP_NAME: &str = "LumineCapture";
 )]
 trait Notifications {
     async fn get_capabilities(&self) -> zbus::Result<Vec<String>>;
+
+    async fn get_server_information(&self) -> zbus::Result<(String, String, String, String)>;
 
     async fn notify(
         &self,
@@ -42,15 +46,25 @@ enum Preview {
     /// so we have to use `x-kde-urls` that gives a full preview with actions
     /// (it works with files)
     KdeUrls,
-    Icon,
+    Icon {
+        square: bool,
+    },
+    Skip,
 }
 
 impl Preview {
-    fn pick(caps: &[String]) -> Self {
+    fn pick(caps: &[String], daemon: &str) -> Self {
         if caps.iter().any(|c| c == "x-kde-urls") {
             Preview::KdeUrls
+        } else if daemon == "cosmic-notifications" {
+            // todo: add preview when cosmic add proper image to notifications
+            Preview::Skip
         } else {
-            Preview::Icon
+            Preview::Icon {
+                // square is required to prevent daemons from stretching the image, like plasma does
+                // mako & dunst keep proportions on their own, square onlly adds empty space and doesn't help
+                square: !matches!(daemon, "mako" | "dunst"),
+            }
         }
     }
 }
@@ -79,16 +93,28 @@ impl Notifier for FreedesktopNotifier {
 
         let mut hints: HashMap<&str, Value> = HashMap::new();
         hints.insert("urgency", Value::U8(1));
-        match Preview::pick(&caps) {
-            Preview::KdeUrls => {
-                if let Some(url) = shot_url(n) {
-                    hints.insert("x-kde-urls", Value::from(vec![url]));
+        if n.file.is_some() || n.png.is_some() {
+            let daemon = proxy
+                .get_server_information()
+                .await
+                .map(|(name, ..)| name)
+                .unwrap_or_default();
+            match Preview::pick(&caps, &daemon) {
+                Preview::KdeUrls => {
+                    if let Some(url) = shot_url(n) {
+                        hints.insert("x-kde-urls", Value::from(vec![url]));
+                    }
                 }
-            }
-            Preview::Icon => {
-                if let Some(file) = &n.file {
-                    hints.insert("image-path", Value::from(file_url(file)));
+                Preview::Icon { square } => {
+                    if let Some(file) = &n.file {
+                        hints.insert("image-path", Value::from(file_url(file)));
+                    } else if let Some(png) = n.png
+                        && let Some(image) = image_data(png, square)
+                    {
+                        hints.insert("image-data", image);
+                    }
                 }
+                Preview::Skip => {}
             }
         }
 
@@ -117,6 +143,38 @@ fn shot_url(n: &Notification<'_>) -> Option<String> {
         (None, None) => return None,
     };
     Some(file_url(&path))
+}
+
+fn image_data(png: &[u8], square: bool) -> Option<Value<'static>> {
+    let shot = image::load_from_memory(png)
+        .inspect_err(|e| warn!("can't decode the preview: {e}"))
+        .ok()?;
+    let thumb = thumbnail(shot, square);
+    let (w, h) = (thumb.width() as i32, thumb.height() as i32);
+    // (width, height, rowstride, has_alpha, bits_per_sample, channels, data)
+    Some(Value::from((w, h, w * 4, true, 8, 4, thumb.into_raw())))
+}
+
+fn thumbnail(shot: DynamicImage, square: bool) -> RgbaImage {
+    let shot = if shot.width() > THUMB || shot.height() > THUMB {
+        shot.thumbnail(THUMB, THUMB)
+    } else {
+        shot
+    }
+    .into_rgba8();
+    if !square {
+        return shot;
+    }
+    let (w, h) = shot.dimensions();
+    let side = w.max(h);
+    let mut square = RgbaImage::new(side, side);
+    image::imageops::replace(
+        &mut square,
+        &shot,
+        ((side - w) / 2).into(),
+        ((side - h) / 2).into(),
+    );
+    square
 }
 
 fn escape_markup(text: &str) -> String {
