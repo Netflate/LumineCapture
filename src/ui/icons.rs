@@ -11,6 +11,7 @@ pub const LINE: &str = include_str!("../../assets/icons/line.svg");
 pub const PICK: &str = include_str!("../../assets/icons/cursor.svg");
 pub const EYEDROPPER: &str = include_str!("../../assets/icons/eyedropper.svg");
 pub const NUMERATED_ARROW: &str = include_str!("../../assets/icons/numerated_arrow.svg");
+pub const BLUR: &str = include_str!("../../assets/icons/blur_pixelate.svg");
 pub const OCR: &str = include_str!("../../assets/icons/ocr.svg");
 pub const ITALIC: &str = include_str!("../../assets/icons/italic.svg");
 pub const BOLD: &str = include_str!("../../assets/icons/bold.svg");
@@ -38,6 +39,7 @@ pub fn get_svg_for_tool(tool: Tool) -> (&'static str, f32) {
         Tool::Rectangle => (RECTANGLE, size.rectangle),
         Tool::Circle => (CIRCLE, size.circle),
         Tool::NumeratedArrow => (NUMERATED_ARROW, size.numerated_arrow),
+        Tool::Blur => (BLUR, size.blur),
         Tool::Ocr => (OCR, size.ocr),
     }
 }

@@ -257,6 +257,7 @@ const OCR_COPY_ALL: SettingsWidget = SettingsWidget::Action {
 pub fn widgets_for_annotation(ann: &Annotation) -> &'static [SettingsWidget] {
     match &ann.shape {
         AnnotationShape::Text { .. } => widgets_for_tool(Tool::Text),
+        AnnotationShape::Blur { .. } => widgets_for_tool(Tool::Blur),
         AnnotationShape::Rectangle { .. } | AnnotationShape::Circle { .. } => {
             widgets_for_tool(Tool::Rectangle)
         }

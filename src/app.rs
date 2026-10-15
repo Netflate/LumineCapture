@@ -497,6 +497,7 @@ fn render_dirty_monitors(
         current_color: panels::settings::current_color(editor_state),
         annotations_hidden,
     };
+    editor_state.cache_pending_blur();
 
     for i in 0..editor_state.captures.len() {
         if !is_dirty(dirty_mask, i) {
@@ -541,6 +542,7 @@ fn render_monitor(editor_state: &mut EditorState, i: usize, frame: &Frame) -> Op
             &mut editor_state.text.font_system,
             &mut editor_state.text.swash_cache,
             &mut editor_state.text.editors,
+            &editor_state.blur.cache,
             frame.active_text_id,
             layer_dirty,
         );
@@ -593,6 +595,7 @@ fn render_monitor(editor_state: &mut EditorState, i: usize, frame: &Frame) -> Op
         is_pending_selected: editor_state.ann_drag.is_some(),
         selected_annotation: editor_state.selected_annotation.filter(|_| !hidden),
         annotations: &editor_state.annotations,
+        blurs: &editor_state.blur.cache,
         text: Some(renderer::TextContext {
             font_system: &mut editor_state.text.font_system,
             swash_cache: &mut editor_state.text.swash_cache,
@@ -753,6 +756,8 @@ fn render_final(editor_state: &mut EditorState) -> Option<(Vec<u8>, (i32, i32), 
 
     let offset = (origin.0 as f32 * scale, origin.1 as f32 * scale);
     let mut scaled_editors = HashMap::new();
+    // empty on purpose: `out` already has the screenshot and annotations below
+    let in_place = HashMap::new();
     for ann in &editor_state.annotations {
         let scaled;
         let (ann, editors) = if scale == 1.0 {
@@ -769,6 +774,7 @@ fn render_final(editor_state: &mut EditorState) -> Option<(Vec<u8>, (i32, i32), 
             &mut editor_state.text.font_system,
             &mut editor_state.text.swash_cache,
             editors,
+            &in_place,
             None,
         );
     }

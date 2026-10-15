@@ -3,6 +3,7 @@
 // OCR overlay rendering lives in ocr/draw.rs alongside its state
 
 mod annotations;
+pub mod blur;
 pub mod paths;
 pub mod text;
 
@@ -58,6 +59,7 @@ pub struct RenderRequest<'a> {
     pub is_pending_selected: bool,
     pub selected_annotation: Option<usize>,
     pub annotations: &'a [Annotation],
+    pub blurs: &'a HashMap<u64, Pixmap>,
     /// Everything needed to lay out and draw text. The first paint runs on
     /// several threads with nothing textual on screen, so it has none of this.
     pub text: Option<TextContext<'a>>,
@@ -200,6 +202,7 @@ pub fn render_frame(req: &mut RenderRequest) {
                     text.font_system,
                     text.swash_cache,
                     text.editors,
+                    req.blurs,
                     req.active_text_id,
                 );
             }
@@ -568,6 +571,7 @@ pub fn rebuild_annotations_layer(
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
     text_editors: &mut HashMap<u64, Editor<'static>>,
+    blurs: &HashMap<u64, Pixmap>,
     active_text_id: Option<u64>,
     dirty_rect: Option<Rect>,
 ) {
@@ -588,6 +592,7 @@ pub fn rebuild_annotations_layer(
                 font_system,
                 swash_cache,
                 text_editors,
+                blurs,
                 active_text_id,
             );
         }
@@ -635,6 +640,7 @@ pub fn rebuild_annotations_layer(
                 font_system,
                 swash_cache,
                 text_editors,
+                blurs,
                 active_text_id,
             );
         }

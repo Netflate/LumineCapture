@@ -35,6 +35,7 @@ pub enum Tool {
     Eyedropper,
     NumeratedArrow,
     Ocr,
+    Blur,
 }
 
 // ==========================================
@@ -77,7 +78,7 @@ pub fn dispatch_move(
         Tool::NumeratedArrow => NumeratedArrowTool.on_move(state, global, dirty_mask),
         Tool::Ocr => OcrTool.on_move(state, global, dirty_mask),
 
-        Tool::Rectangle | Tool::Arrow | Tool::Circle | Tool::Line => {
+        Tool::Rectangle | Tool::Arrow | Tool::Circle | Tool::Line | Tool::Blur => {
             let color = state.tool_settings.color;
             let stroke_width = state.tool_settings.stroke_width;
             let fill = state.tool_settings.fill;
@@ -91,6 +92,7 @@ pub fn dispatch_move(
                     Tool::Circle => {
                         |start, end, filled| AnnotationShape::Circle { start, end, filled }
                     }
+                    Tool::Blur => |start, end, _| AnnotationShape::Blur { start, end },
                     _ => |start, end, _| AnnotationShape::Line { start, end },
                 },
                 color,
@@ -119,7 +121,7 @@ pub fn dispatch_button(
         Tool::NumeratedArrow => NumeratedArrowTool.on_button(state, button, pressed, dirty_mask),
         Tool::Ocr => OcrTool.on_button(state, button, pressed, dirty_mask),
 
-        Tool::Rectangle | Tool::Arrow | Tool::Circle | Tool::Line => {
+        Tool::Rectangle | Tool::Arrow | Tool::Circle | Tool::Line | Tool::Blur => {
             let color = state.tool_settings.color;
             let stroke_width = state.tool_settings.stroke_width;
             let fill = state.tool_settings.fill;
@@ -133,6 +135,7 @@ pub fn dispatch_button(
                     Tool::Circle => {
                         |start, end, filled| AnnotationShape::Circle { start, end, filled }
                     }
+                    Tool::Blur => |start, end, _| AnnotationShape::Blur { start, end },
                     _ => |start, end, _| AnnotationShape::Line { start, end },
                 },
                 color,
@@ -194,6 +197,7 @@ pub fn dispatch_cursor(tool: Tool, state: &EditorState) -> CursorIcon {
         | Tool::Rectangle
         | Tool::Arrow
         | Tool::Circle
-        | Tool::Line => CursorIcon::Crosshair,
+        | Tool::Line
+        | Tool::Blur => CursorIcon::Crosshair,
     }
 }

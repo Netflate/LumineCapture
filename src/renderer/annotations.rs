@@ -100,6 +100,7 @@ pub fn draw_annotation(
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
     text_editors: &mut HashMap<u64, Editor<'static>>,
+    blurs: &HashMap<u64, Pixmap>,
     active_text_id: Option<u64>,
 ) {
     match &ann.shape {
@@ -180,6 +181,11 @@ pub fn draw_annotation(
                 offset,
                 ann.shadow_color,
             );
+        }
+        AnnotationShape::Blur { start, end } => {
+            if let Some(rect) = normalized_rect(*start, *end) {
+                super::blur::draw(canvas, rect, ann.stroke_width, blurs.get(&ann.id), offset);
+            }
         }
         AnnotationShape::Text { .. } => {
             let is_editing = active_text_id == Some(ann.id);

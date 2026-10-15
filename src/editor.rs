@@ -1,3 +1,4 @@
+pub mod blur;
 pub mod dirty;
 pub mod edits;
 pub mod history;
@@ -9,6 +10,7 @@ use std::time::Instant;
 use tiny_skia::{Color, PathBuilder, Pixmap, Rect};
 use usvg::Tree;
 
+use crate::editor::blur::BlurState;
 use crate::interaction::{ClickTarget, DoubleClickTracker};
 use crate::tools::Tool;
 use crate::types::{
@@ -116,6 +118,7 @@ pub struct EditorState {
 
     pub annotations_layer: Vec<Pixmap>,
     pub annotations_dirty: bool,
+    pub blur: BlurState,
 
     // Regions of the persistent annotation layers that must be cleared
     // and rebuilt. Separate from `damage_rects`, since layer damage
@@ -199,6 +202,7 @@ impl EditorState {
             selected_annotation: None,
             ann_drag: None,
             annotations_dirty: false,
+            blur: BlurState::default(),
             // Number of points of the current pending Pen already baked into persistent layer
             pending_pen_baked: 0,
 
@@ -233,6 +237,7 @@ impl EditorState {
     // instead commited annotations are `baked`, so pending new annotations are separate from them
     // so there will be absolutely no lags while drawing something on top of 10000th circles
     pub fn bake_annotation(&mut self, ann: &Annotation) {
+        self.cache_blur(ann, self.annotations.len());
         for (i, placement) in self.placements.iter().enumerate() {
             let offset = placement.offset();
             let pad = crate::renderer::visual_pad(ann.stroke_width);
@@ -253,6 +258,7 @@ impl EditorState {
                     &mut self.text.font_system,
                     &mut self.text.swash_cache,
                     &mut self.text.editors,
+                    &self.blur.cache,
                     None,
                 );
             }

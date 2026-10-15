@@ -226,7 +226,7 @@ impl EditorState {
     }
 }
 
-fn expand_rect(rect: &Rect, pad: f32) -> Option<Rect> {
+pub fn expand_rect(rect: &Rect, pad: f32) -> Option<Rect> {
     Rect::from_ltrb(
         rect.left() - pad,
         rect.top() - pad,

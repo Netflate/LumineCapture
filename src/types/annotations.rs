@@ -40,6 +40,10 @@ pub enum AnnotationShape {
         start: (f32, f32),
         end: (f32, f32),
     },
+    Blur {
+        start: (f32, f32),
+        end: (f32, f32),
+    },
     Pen {
         points: Vec<(f32, f32)>,
     },
@@ -70,6 +74,7 @@ impl AnnotationShape {
             AnnotationShape::Rectangle { start, .. } => *start,
             AnnotationShape::Circle { start, .. } => *start,
             AnnotationShape::Line { start, .. } => *start,
+            AnnotationShape::Blur { start, .. } => *start,
             AnnotationShape::Pen { points } => points.first().copied().unwrap_or((0.0, 0.0)),
             AnnotationShape::Text { start, .. } => *start,
         }
@@ -112,6 +117,10 @@ impl Annotation {
                 filled: *filled,
             },
             AnnotationShape::Line { start, end } => AnnotationShape::Line {
+                start: p(*start),
+                end: p(*end),
+            },
+            AnnotationShape::Blur { start, end } => AnnotationShape::Blur {
                 start: p(*start),
                 end: p(*end),
             },
@@ -207,6 +216,10 @@ impl Annotation {
                 .unwrap();
             }
 
+            AnnotationShape::Blur { start, end } => {
+                self.bbox = crate::renderer::paths::normalized_rect(*start, *end).unwrap();
+            }
+
             AnnotationShape::Pen { points } => {
                 let min_x = points.iter().map(|p| p.0).fold(f32::INFINITY, f32::min);
                 let min_y = points.iter().map(|p| p.1).fold(f32::INFINITY, f32::min);
@@ -260,7 +273,8 @@ impl Annotation {
             | AnnotationShape::Arrow { start, end }
             | AnnotationShape::Rectangle { start, end, .. }
             | AnnotationShape::Circle { start, end, .. }
-            | AnnotationShape::Line { start, end } => {
+            | AnnotationShape::Line { start, end }
+            | AnnotationShape::Blur { start, end } => {
                 start.0 += dx;
                 start.1 += dy;
                 end.0 += dx;
@@ -338,6 +352,10 @@ impl Annotation {
                 filled: *filled,
             },
             AnnotationShape::Line { start, end } => AnnotationShape::Line {
+                start: remap(*start),
+                end: remap(*end),
+            },
+            AnnotationShape::Blur { start, end } => AnnotationShape::Blur {
                 start: remap(*start),
                 end: remap(*end),
             },
