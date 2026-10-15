@@ -97,7 +97,7 @@ impl Notifier for FreedesktopNotifier {
 
         let mut hints: HashMap<&str, Value> = HashMap::new();
         hints.insert("urgency", Value::U8(1));
-        if n.file.is_some() || n.png.is_some() {
+        if crate::config::get().notifications.preview && (n.file.is_some() || n.png.is_some()) {
             let daemon = proxy
                 .get_server_information()
                 .await

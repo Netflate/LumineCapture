@@ -250,6 +250,7 @@ section!(Save {
 
 section!(Notifications {
     enabled: bool = true,
+    preview: bool = true,
 });
 
 section!(Animation {
@@ -703,6 +704,8 @@ filename_format = "%Y-%m-%d_%H-%M"
 
 [notifications]
 enabled = true
+# show the screenshot in the notification
+preview = true
 
 # Shared by every panel, popover, toast and the magnifier label.
 [theme]
