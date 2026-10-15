@@ -57,17 +57,16 @@ impl Blurred {
     pub fn new(src: &Pixmap, rect: IntRect, radius: f32, phase: (i32, i32)) -> Option<Self> {
         let (k, r) = factor(radius);
         let m = reach(k, r);
-        let align = |v: i32, p: i32| (v + p).div_euclid(k) * k - p;
-        let ax = align(rect.x() - m, phase.0).max(0);
-        let ay = align(rect.y() - m, phase.1).max(0);
-        let aw = (rect.right() + m).min(src.width() as i32) - ax;
-        let ah = (rect.bottom() + m).min(src.height() as i32) - ay;
-        if aw <= 0 || ah <= 0 {
+        let align = |v: i32, p: i32| (v.max(0) + p).div_euclid(k) * k - p;
+        let ax = align(rect.x() - m, phase.0);
+        let ay = align(rect.y() - m, phase.1);
+        let right = (rect.right() + m).min(src.width() as i32);
+        let bottom = (rect.bottom() + m).min(src.height() as i32);
+        if right <= ax.max(0) || bottom <= ay.max(0) {
             return None;
         }
 
-        let area = (ax as usize, ay as usize, aw as usize, ah as usize);
-        let mut low = downsample(src, area, k as usize)?;
+        let mut low = downsample(src, (ax, ay, right, bottom), k)?;
         let (lw, lh) = (low.width() as usize, low.height() as usize);
         smooth(low.data_mut(), lw, lh, r);
         Some(Self {
@@ -90,7 +89,7 @@ impl Blurred {
 
 // since pixels are opaque, there is no need in blending
 // and copying rows is much faster than draw_pixmap
-fn paste(canvas: &mut Pixmap, pixmap: &Pixmap, x: i32, y: i32) {
+pub fn paste(canvas: &mut Pixmap, pixmap: &Pixmap, x: i32, y: i32) {
     let (cw, ch) = (canvas.width() as i32, canvas.height() as i32);
     let (x0, x1) = (x.max(0), (x + pixmap.width() as i32).min(cw));
     if x1 <= x0 {
@@ -108,22 +107,28 @@ fn paste(canvas: &mut Pixmap, pixmap: &Pixmap, x: i32, y: i32) {
 
 fn downsample(
     src: &Pixmap,
-    (ax, ay, aw, ah): (usize, usize, usize, usize),
-    k: usize,
+    (ax, ay, right, bottom): (i32, i32, i32, i32),
+    k: i32,
 ) -> Option<Pixmap> {
-    let (lw, lh) = (aw.div_ceil(k), ah.div_ceil(k));
+    let lw = ((right - ax) as usize).div_ceil(k as usize);
+    let lh = ((bottom - ay) as usize).div_ceil(k as usize);
     let mut low = Pixmap::new(lw as u32, lh as u32)?;
     let stride = src.width() as usize;
     let pixels = src.data().as_chunks::<4>().0;
     let out = low.data_mut().as_chunks_mut::<4>().0;
+    let x0 = ax.max(0);
+    let first = (ax + k - x0) as usize;
     let mut acc = vec![[0u32; 4]; lw];
     for (ly, out_row) in out.chunks_exact_mut(lw).enumerate() {
         acc.fill([0; 4]);
-        let rows = (ay + ly * k)..(ay + (ly + 1) * k).min(ay + ah);
-        let count = rows.len();
+        let top = ay + ly as i32 * k;
+        let rows = top.max(0)..(top + k).min(bottom);
+        let count = rows.len() as i32;
         for y in rows {
-            let row = &pixels[y * stride + ax..][..aw];
-            for (a, block) in acc.iter_mut().zip(row.chunks(k)) {
+            let row = &pixels[y as usize * stride + x0 as usize..][..(right - x0) as usize];
+            let (head, tail) = row.split_at(first.min(row.len()));
+            let blocks = std::iter::once(head).chain(tail.chunks(k as usize));
+            for (a, block) in acc.iter_mut().zip(blocks) {
                 for p in block {
                     for (s, v) in a.iter_mut().zip(p) {
                         *s += *v as u32;
@@ -132,7 +137,8 @@ fn downsample(
             }
         }
         for (lx, (o, a)) in out_row.iter_mut().zip(&acc).enumerate() {
-            let n = (k.min(aw - lx * k) * count) as u32;
+            let left = ax + lx as i32 * k;
+            let n = (((left + k).min(right) - left.max(0)) * count) as u32;
             *o = a.map(|s| ((s + n / 2) / n) as u8);
         }
     }
@@ -260,4 +266,50 @@ fn upscale(low: &Pixmap, k: i32, offset: (i32, i32), w: u32, h: u32) -> Option<P
         }
     }
     Some(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn noise(w: u32, h: u32) -> Pixmap {
+        let mut pixmap = Pixmap::new(w, h).unwrap();
+        let mut seed = 0x2545_f491_u32;
+        for px in pixmap.data_mut().chunks_exact_mut(4) {
+            for c in &mut px[..3] {
+                seed ^= seed << 13;
+                seed ^= seed >> 17;
+                seed ^= seed << 5;
+                *c = seed as u8;
+            }
+            px[3] = 255;
+        }
+        pixmap
+    }
+
+    /// we need this test since every cache relies on this: piece blurred on a small source must
+    /// exactly match the same piece of the whole image, otherwise pieces show visible seams where they meet
+    #[test]
+    fn piece_matches_whole() {
+        let image = noise(320, 200);
+        let whole = IntRect::from_xywh(0, 0, 320, 200).unwrap();
+        let phase = (7, 3);
+        for radius in [1.0, 4.0, 12.0, 40.0] {
+            let full = Blurred::new(&image, whole, radius, phase).unwrap();
+            for (x, y, w, h) in [(70, 40, 90, 60), (0, 0, 50, 50), (270, 150, 50, 50)] {
+                let rect = IntRect::from_xywh(x, y, w, h).unwrap();
+                let margin = margin(radius) as i32;
+                let region = rect.make_outset(margin, margin).unwrap();
+                let region = region.intersect(&whole).unwrap();
+                let src = image.clone_rect(region).unwrap();
+                let local = rect.translate(-region.x(), -region.y()).unwrap();
+                let part_phase = (phase.0 + region.x(), phase.1 + region.y());
+                let part = Blurred::new(&src, local, radius, part_phase).unwrap();
+                assert!(
+                    full.crop(rect).unwrap().data() == part.crop(local).unwrap().data(),
+                    "radius {radius}, rect {rect:?}"
+                );
+            }
+        }
+    }
 }

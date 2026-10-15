@@ -25,7 +25,7 @@ use cosmic_text::SwashCache;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
-use tiny_skia::Rect;
+use tiny_skia::{IntRect, Rect};
 
 /// download progress updates each tick, but if there is no animation
 /// then manually after each 50ms
@@ -498,7 +498,6 @@ fn render_dirty_monitors(
         annotations_hidden,
     };
     editor_state.refresh_blurs(&mut dirty_mask);
-    editor_state.cache_pending_blur();
 
     for i in 0..editor_state.captures.len() {
         if !is_dirty(dirty_mask, i) {
@@ -752,8 +751,14 @@ fn render_final(editor_state: &mut EditorState) -> Option<(Vec<u8>, (i32, i32), 
         None => get_full_workspace_rect(&editor_state.placements)?,
     };
 
-    let (mut out, origin, scale) =
-        renderer::composite(&editor_state.captures, &editor_state.placements, sel, None)?;
+    let scale = renderer::capture_scale(&editor_state.captures, &editor_state.placements, sel);
+    let area = editor_state.blur_area(sel, scale);
+    let (mut out, mut origin, _) = renderer::composite(
+        &editor_state.captures,
+        &editor_state.placements,
+        area,
+        Some(scale),
+    )?;
 
     let offset = (origin.0 as f32 * scale, origin.1 as f32 * scale);
     let mut scaled_editors = HashMap::new();
@@ -778,6 +783,19 @@ fn render_final(editor_state: &mut EditorState) -> Option<(Vec<u8>, (i32, i32), 
             &in_place,
             None,
         );
+    }
+
+    if area != sel
+        && let Some(px) = sel.round_out()
+        && let Some(cut) = IntRect::from_xywh(
+            ((px.x() - origin.0) as f32 * scale).round() as i32,
+            ((px.y() - origin.1) as f32 * scale).round() as i32,
+            (px.width() as f32 * scale).round() as u32,
+            (px.height() as f32 * scale).round() as u32,
+        )
+    {
+        out = out.clone_rect(cut)?;
+        origin = (px.x(), px.y());
     }
 
     Some((encode_png(&out), origin, scale))

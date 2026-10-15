@@ -73,6 +73,29 @@ pub struct RenderRequest<'a> {
     pub toasts: &'a crate::ui::toast::Toasts,
 }
 
+/// the highest scale among monitors the region touches
+pub fn capture_scale(
+    captures: &[crate::types::Capture],
+    placements: &[crate::types::Placement],
+    region: Rect,
+) -> f32 {
+    let max = placements
+        .iter()
+        .zip(captures)
+        .filter(|(p, _)| {
+            Rect::from_xywh(
+                p.position.0 as f32,
+                p.position.1 as f32,
+                p.size.0 as f32,
+                p.size.1 as f32,
+            )
+            .is_some_and(|r| crate::utils::rects_overlap(&r, &region))
+        })
+        .map(|(_, c)| c.scale)
+        .fold(0.0_f32, f32::max);
+    if max > 0.0 { max } else { 1.0 }
+}
+
 pub fn composite(
     captures: &[crate::types::Capture],
     placements: &[crate::types::Placement],
@@ -88,23 +111,7 @@ pub fn composite(
     }
     let area = Rect::from_xywh(left as f32, top as f32, width as f32, height as f32)?;
 
-    let scale = scale.unwrap_or_else(|| {
-        let max = placements
-            .iter()
-            .zip(captures)
-            .filter(|(p, _)| {
-                Rect::from_xywh(
-                    p.position.0 as f32,
-                    p.position.1 as f32,
-                    p.size.0 as f32,
-                    p.size.1 as f32,
-                )
-                .is_some_and(|r| crate::utils::rects_overlap(&r, &area))
-            })
-            .map(|(_, c)| c.scale)
-            .fold(0.0_f32, f32::max);
-        if max > 0.0 { max } else { 1.0 }
-    });
+    let scale = scale.unwrap_or_else(|| capture_scale(captures, placements, area));
 
     let out_w = (width as f32 * scale).round() as u32;
     let out_h = (height as f32 * scale).round() as u32;
