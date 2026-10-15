@@ -467,7 +467,8 @@ pub fn commit_drag_if_changed(state: &mut EditorState) {
             state.redo_stack.clear();
         }
 
-        state.bake_annotation(&ann);
+        // not baked
+        state.layer_damage_rects.push(ann.damage_bbox(false));
         state
             .damage_rects
             .push(DamageZone::Global(ann.damage_bbox(true)));

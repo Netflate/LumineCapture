@@ -46,7 +46,6 @@ impl EditorState {
                     &mut self.layer_damage_rects,
                     &drag.orig,
                 );
-                self.bake_annotation(&drag.orig);
                 self.annotations.insert(insert_idx, drag.orig);
                 self.selected_annotation = Some(insert_idx);
             }

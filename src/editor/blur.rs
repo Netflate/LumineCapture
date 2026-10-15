@@ -2,11 +2,11 @@ use std::collections::HashMap;
 use tiny_skia::{IntRect, Pixmap, Rect};
 
 use crate::editor::EditorState;
-use crate::editor::dirty::expand_rect;
+use crate::editor::dirty::{damage_annotation, expand_rect};
 use crate::renderer::blur::{self, Blurred};
 use crate::renderer::paths::normalized_rect;
 use crate::types::{Annotation, AnnotationShape};
-use crate::utils::{get_full_workspace_rect, rects_overlap};
+use crate::utils::{get_full_workspace_rect, get_overlapping_monitors, rects_overlap};
 
 // Approach is largely taken from Spectacle (KQuickImageEditor, `Blur::image`)
 // everything below is blurred, older annotations included, once per gesture,
@@ -28,6 +28,35 @@ struct Base {
 }
 
 impl EditorState {
+    // bottom to top, so a recomputed blur also damages blurs above it; the margin counts too,
+    // since pixels outside the rect still bleed into it
+    pub fn refresh_blurs(&mut self, dirty_mask: &mut u32) {
+        self.blur
+            .cache
+            .retain(|id, _| self.annotations.iter().any(|ann| ann.id == *id));
+
+        for i in 0..self.annotations.len() {
+            let ann = &self.annotations[i];
+            let Some(region) = blur_rect(ann)
+                .and_then(|at| expand_rect(&at.to_rect(), blur::margin(ann.stroke_width)))
+            else {
+                continue;
+            };
+            if self.blur.cache.contains_key(&ann.id)
+                && !self
+                    .layer_damage_rects
+                    .iter()
+                    .any(|rect| rects_overlap(rect, &region))
+            {
+                continue;
+            }
+            let ann = ann.clone();
+            self.cache_blur(&ann, i);
+            damage_annotation(&mut self.damage_rects, &mut self.layer_damage_rects, &ann);
+            *dirty_mask |= get_overlapping_monitors(&ann.damage_bbox(true), &self.placements);
+        }
+    }
+
     pub fn cache_pending_blur(&mut self) {
         let Some(ann) = self
             .pending

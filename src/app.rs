@@ -482,7 +482,7 @@ struct Frame {
 fn render_dirty_monitors(
     editor_state: &mut EditorState,
     overlay: &mut dyn ScreenOverlay,
-    dirty_mask: u32,
+    mut dirty_mask: u32,
     annotations_hidden: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let frame = Frame {
@@ -497,6 +497,7 @@ fn render_dirty_monitors(
         current_color: panels::settings::current_color(editor_state),
         annotations_hidden,
     };
+    editor_state.refresh_blurs(&mut dirty_mask);
     editor_state.cache_pending_blur();
 
     for i in 0..editor_state.captures.len() {
