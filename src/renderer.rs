@@ -57,6 +57,8 @@ pub struct RenderRequest<'a> {
     pub annotations_layer_empty: bool,
     pub pending: Option<&'a Annotation>,
     pub is_pending_selected: bool,
+    /// index of dragged annotation in `annotations`
+    pub dragged_index: Option<usize>,
     pub selected_annotation: Option<usize>,
     pub annotations: &'a [Annotation],
     pub blurs: &'a HashMap<u64, Pixmap>,
@@ -212,6 +214,37 @@ pub fn render_frame(req: &mut RenderRequest) {
                     req.blurs,
                     req.active_text_id,
                 );
+            }
+
+            // blurs above the dragged annotation are opaque, so redrawing them
+            // with whatever lies on them puts it back under
+            if let Some(at) = req.dragged_index {
+                let (w, h) = (req.canvas.width() as f32, req.canvas.height() as f32);
+                let area = dirty_rect.copied().or(Rect::from_xywh(0.0, 0.0, w, h));
+                for (i, ann) in req.annotations.iter().enumerate().skip(at) {
+                    if let crate::types::AnnotationShape::Blur { start, end } = &ann.shape
+                        && let Some(rect) = paths::normalized_rect(*start, *end)
+                        && let Some(local) = Rect::from_xywh(
+                            rect.x() - req.offset.0,
+                            rect.y() - req.offset.1,
+                            rect.width(),
+                            rect.height(),
+                        )
+                        && let Some(region) = area.and_then(|area| local.intersect(&area))
+                    {
+                        rebuild_annotations_layer(
+                            req.canvas,
+                            &req.annotations[i..],
+                            req.offset,
+                            text.font_system,
+                            text.swash_cache,
+                            text.editors,
+                            req.blurs,
+                            req.active_text_id,
+                            Some(region),
+                        );
+                    }
+                }
             }
         }
         if req.is_pending_selected {
@@ -548,6 +581,24 @@ fn blit_annotations(src: &Pixmap, dst: &mut Pixmap, rect: &Rect) {
     }
 }
 
+// since pixels are opaque, there is no need in blending
+// and copying rows is much faster than draw_pixmap
+pub fn paste(canvas: &mut Pixmap, pixmap: &Pixmap, x: i32, y: i32) {
+    let (cw, ch) = (canvas.width() as i32, canvas.height() as i32);
+    let (x0, x1) = (x.max(0), (x + pixmap.width() as i32).min(cw));
+    if x1 <= x0 {
+        return;
+    }
+    let len = (x1 - x0) as usize * 4;
+    let src_len = pixmap.width() as usize * 4;
+    let skip = (x0 - x) as usize * 4;
+    for row in y.max(0)..(y + pixmap.height() as i32).min(ch) {
+        let src = &pixmap.data()[(row - y) as usize * src_len + skip..][..len];
+        let at = (row * cw + x0) as usize * 4;
+        canvas.data_mut()[at..at + len].copy_from_slice(src);
+    }
+}
+
 /// Clears a rectangle to transparent in the persistent layer without anti-aliasing
 /// by writing zeroes directly to the slice.
 fn clear_rect_transparent(layer: &mut Pixmap, rect: &Rect) {
@@ -622,7 +673,7 @@ pub fn rebuild_annotations_layer(
     // Annotations are drawn into it with an offset that maps global
     // coordinates into temp-pixmap-local space, keeping shadow blending
     // identical to a full-rebuild (always transparent background).
-    let Some(mut tmp) = Pixmap::new(tw.max(1), th.max(1)) else {
+    let Some(mut tmp) = Pixmap::new(tw, th) else {
         return;
     };
     let tmp_offset = (offset.0 + x0 as f32, offset.1 + y0 as f32);
@@ -654,12 +705,5 @@ pub fn rebuild_annotations_layer(
     }
 
     // Composite the temp pixmap back into the real layer at the correct position.
-    layer.draw_pixmap(
-        x0 as i32,
-        y0 as i32,
-        tmp.as_ref(),
-        &tiny_skia::PixmapPaint::default(),
-        tiny_skia::Transform::identity(),
-        None,
-    );
+    paste(layer, &tmp, x0 as i32, y0 as i32);
 }

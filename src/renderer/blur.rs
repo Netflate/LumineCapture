@@ -1,5 +1,7 @@
 use tiny_skia::{IntRect, Pixmap, Rect};
 
+use super::paste;
+
 const PASSES: usize = 2;
 
 // the stronger the blur, the more we can downscale
@@ -84,24 +86,6 @@ impl Blurred {
             rect.width(),
             rect.height(),
         )
-    }
-}
-
-// since pixels are opaque, there is no need in blending
-// and copying rows is much faster than draw_pixmap
-pub fn paste(canvas: &mut Pixmap, pixmap: &Pixmap, x: i32, y: i32) {
-    let (cw, ch) = (canvas.width() as i32, canvas.height() as i32);
-    let (x0, x1) = (x.max(0), (x + pixmap.width() as i32).min(cw));
-    if x1 <= x0 {
-        return;
-    }
-    let len = (x1 - x0) as usize * 4;
-    let src_len = pixmap.width() as usize * 4;
-    let skip = (x0 - x) as usize * 4;
-    for row in y.max(0)..(y + pixmap.height() as i32).min(ch) {
-        let src = &pixmap.data()[(row - y) as usize * src_len + skip..][..len];
-        let at = (row * cw + x0) as usize * 4;
-        canvas.data_mut()[at..at + len].copy_from_slice(src);
     }
 }
 

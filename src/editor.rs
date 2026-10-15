@@ -265,6 +265,14 @@ impl EditorState {
         }
     }
 
+    /// where the dragged annotation is drawn, it's out of `annotations` while dragged
+    pub fn dragged_index(&self) -> Option<usize> {
+        self.ann_drag
+            .as_ref()
+            .filter(|_| self.pending.is_some())
+            .map(|drag| drag.orig_index.min(self.annotations.len()))
+    }
+
     pub fn bake_pen_segment(
         &mut self,
         start: (f32, f32),

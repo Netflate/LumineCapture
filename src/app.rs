@@ -556,6 +556,7 @@ fn render_monitor(editor_state: &mut EditorState, i: usize, frame: &Frame) -> Op
         )
     });
 
+    let dragged_index = editor_state.dragged_index();
     let dirty = dirty_rect.as_ref();
     let toolbar = panel_to_draw(&mut editor_state.toolbar, i, dirty);
     let settings_panel = panel_to_draw(&mut editor_state.settings_panel, i, dirty);
@@ -593,6 +594,7 @@ fn render_monitor(editor_state: &mut EditorState, i: usize, frame: &Frame) -> Op
             || (editor_state.annotations.is_empty() && editor_state.pending_pen_baked == 0),
         pending: editor_state.pending.as_ref().filter(|_| !hidden),
         is_pending_selected: editor_state.ann_drag.is_some(),
+        dragged_index,
         selected_annotation: editor_state.selected_annotation.filter(|_| !hidden),
         annotations: &editor_state.annotations,
         blurs: &editor_state.blur.cache,
