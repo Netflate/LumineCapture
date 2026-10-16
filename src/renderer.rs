@@ -202,6 +202,17 @@ pub fn render_frame(req: &mut RenderRequest) {
                     p.stroke_width,
                     req.offset,
                 );
+            } else if !req.is_pending_selected
+                && let crate::types::AnnotationShape::Highlighter { points } = &p.shape
+            {
+                annotations::draw_highlighter_live(
+                    req.canvas,
+                    points,
+                    p.color,
+                    p.stroke_width,
+                    req.offset,
+                    dirty_rect,
+                );
             } else {
                 annotations::draw_annotation(
                     req.canvas,

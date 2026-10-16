@@ -88,6 +88,7 @@ pub const ACTIONS: &[(&str, Action, &[&str])] = &[
     ("tool_eyedropper", Action::Tool(Tool::Eyedropper), &["G"]),
     ("tool_text", Action::Tool(Tool::Text), &["T"]),
     ("tool_pen", Action::Tool(Tool::Pen), &["P"]),
+    ("tool_highlighter", Action::Tool(Tool::Highlighter), &["H"]),
     ("tool_line", Action::Tool(Tool::Line), &["D"]),
     ("tool_arrow", Action::Tool(Tool::Arrow), &["A"]),
     ("tool_rectangle", Action::Tool(Tool::Rectangle), &["R"]),

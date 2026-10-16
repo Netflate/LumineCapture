@@ -50,6 +50,9 @@ pub enum AnnotationShape {
     Pen {
         points: Vec<(f32, f32)>,
     },
+    Highlighter {
+        points: Vec<(f32, f32)>,
+    },
     Text {
         start: (f32, f32),
         content: String,
@@ -78,7 +81,9 @@ impl AnnotationShape {
             AnnotationShape::Circle { start, .. } => *start,
             AnnotationShape::Line { start, .. } => *start,
             AnnotationShape::Redact { start, .. } => *start,
-            AnnotationShape::Pen { points } => points.first().copied().unwrap_or((0.0, 0.0)),
+            AnnotationShape::Pen { points } | AnnotationShape::Highlighter { points } => {
+                points.first().copied().unwrap_or((0.0, 0.0))
+            }
             AnnotationShape::Text { start, .. } => *start,
         }
     }
@@ -135,6 +140,9 @@ impl Annotation {
                 pixelate: *pixelate,
             },
             AnnotationShape::Pen { points } => AnnotationShape::Pen {
+                points: points.iter().map(|&q| p(q)).collect(),
+            },
+            AnnotationShape::Highlighter { points } => AnnotationShape::Highlighter {
                 points: points.iter().map(|&q| p(q)).collect(),
             },
             AnnotationShape::Text {
@@ -230,7 +238,7 @@ impl Annotation {
                 self.bbox = crate::renderer::paths::normalized_rect(*start, *end).unwrap();
             }
 
-            AnnotationShape::Pen { points } => {
+            AnnotationShape::Pen { points } | AnnotationShape::Highlighter { points } => {
                 let min_x = points.iter().map(|p| p.0).fold(f32::INFINITY, f32::min);
                 let min_y = points.iter().map(|p| p.1).fold(f32::INFINITY, f32::min);
                 let max_x = points.iter().map(|p| p.0).fold(f32::NEG_INFINITY, f32::max);
@@ -246,7 +254,9 @@ impl Annotation {
     pub fn pen_active_tail_bbox(&self) -> Rect {
         let pad = crate::renderer::visual_pad(self.stroke_width);
         match &self.shape {
-            AnnotationShape::Pen { points } if points.len() >= 3 => {
+            AnnotationShape::Pen { points } | AnnotationShape::Highlighter { points }
+                if points.len() >= 3 =>
+            {
                 let p_prev = points[points.len() - 2];
                 let p_last = points[points.len() - 1];
                 let mid = ((p_prev.0 + p_last.0) / 2.0, (p_prev.1 + p_last.1) / 2.0);
@@ -258,7 +268,9 @@ impl Annotation {
                 )
                 .unwrap_or(self.bbox)
             }
-            AnnotationShape::Pen { points } if points.len() == 2 => {
+            AnnotationShape::Pen { points } | AnnotationShape::Highlighter { points }
+                if points.len() == 2 =>
+            {
                 let p0 = points[0];
                 let p1 = points[1];
                 Rect::from_ltrb(
@@ -269,7 +281,9 @@ impl Annotation {
                 )
                 .unwrap_or(self.bbox)
             }
-            AnnotationShape::Pen { points } if points.len() == 1 => {
+            AnnotationShape::Pen { points } | AnnotationShape::Highlighter { points }
+                if points.len() == 1 =>
+            {
                 let p0 = points[0];
                 Rect::from_ltrb(p0.0 - pad, p0.1 - pad, p0.0 + pad, p0.1 + pad).unwrap_or(self.bbox)
             }
@@ -290,7 +304,7 @@ impl Annotation {
                 end.0 += dx;
                 end.1 += dy;
             }
-            AnnotationShape::Pen { points } => {
+            AnnotationShape::Pen { points } | AnnotationShape::Highlighter { points } => {
                 for p in points.iter_mut() {
                     p.0 += dx;
                     p.1 += dy;
@@ -377,6 +391,9 @@ impl Annotation {
                 pixelate: *pixelate,
             },
             AnnotationShape::Pen { points } => AnnotationShape::Pen {
+                points: points.iter().map(|p| remap(*p)).collect(),
+            },
+            AnnotationShape::Highlighter { points } => AnnotationShape::Highlighter {
                 points: points.iter().map(|p| remap(*p)).collect(),
             },
             AnnotationShape::Text {

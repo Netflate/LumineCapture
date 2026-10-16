@@ -154,7 +154,7 @@ impl ToggleField {
 
 pub fn widgets_for_tool(tool: Tool) -> &'static [SettingsWidget] {
     match tool {
-        Tool::Pen | Tool::Line | Tool::Arrow | Tool::NumeratedArrow => &[
+        Tool::Pen | Tool::Highlighter | Tool::Line | Tool::Arrow | Tool::NumeratedArrow => &[
             SettingsWidget::ColorSwatch,
             SettingsWidget::Separator,
             SettingsWidget::Stepper {
@@ -300,6 +300,7 @@ pub fn widgets_for_annotation(ann: &Annotation) -> &'static [SettingsWidget] {
             widgets_for_tool(Tool::Rectangle)
         }
         AnnotationShape::Pen { .. }
+        | AnnotationShape::Highlighter { .. }
         | AnnotationShape::Line { .. }
         | AnnotationShape::Arrow { .. }
         | AnnotationShape::NumeratedArrow { .. } => widgets_for_tool(Tool::Pen),

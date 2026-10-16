@@ -301,6 +301,7 @@ section!(ToolbarIcons {
     eyedropper: f32 = 28.0,
     text: f32 = 22.0,
     pen: f32 = 20.0,
+    highlighter: f32 = 27.0,
     line: f32 = 28.0,
     arrow: f32 = 24.0,
     rectangle: f32 = 31.0,
@@ -534,6 +535,12 @@ section!(Pen {
     min_distance: f32 = 1.0,
 });
 
+section!(Highlighter {
+    smoothing: f32 = 0.7,
+    min_distance: f32 = 1.0,
+    opacity: f32 = 0.4,
+});
+
 section!(Tools {
     color: Rgba = rgb(255, 255, 255),
     fill: bool = false,
@@ -541,6 +548,7 @@ section!(Tools {
     font: Font = Font::default(),
     redact: Redact = Redact::default(),
     pen: Pen = Pen::default(),
+    highlighter: Highlighter = Highlighter::default(),
 });
 
 section!(Toasts {
@@ -773,6 +781,7 @@ tool_ocr = "O"
 tool_eyedropper = "G"
 tool_text = "T"
 tool_pen = "P"
+tool_highlighter = "H"
 tool_line = "D"
 tool_arrow = "A"
 tool_rectangle = "R"
@@ -819,6 +828,7 @@ ocr = 29.5
 eyedropper = 28.0
 text = 22.0
 pen = 20.0
+highlighter = 27.0
 line = 28.0
 arrow = 24.0
 rectangle = 31.0
@@ -1030,6 +1040,13 @@ pixelate = false
 # 0 draws the raw pointer path, closer to 1 is smoother (and lags more)
 smoothing = 0.7
 min_distance = 1.0
+
+[tools.highlighter]
+# 0 draws the raw pointer path, closer to 1 is smoother (and lags more)
+smoothing = 0.7
+min_distance = 1.0
+# multiplied by the color's own alpha
+opacity = 0.4
 
 [toasts]
 height = 38.0
@@ -1268,6 +1285,14 @@ fn validate(config: &mut Config) {
                 .to_string(),
         );
         pen.smoothing = Pen::default().smoothing;
+    }
+    let highlighter = &mut config.tools.highlighter;
+    if !(0.0..1.0).contains(&highlighter.smoothing) {
+        complain(
+            "config: tools.highlighter.smoothing must be at least 0 and below 1, using the default"
+                .to_string(),
+        );
+        highlighter.smoothing = Highlighter::default().smoothing;
     }
 
     // clamp() panics when min > max, so a flipped range falls back as a whole

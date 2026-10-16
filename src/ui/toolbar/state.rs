@@ -20,6 +20,7 @@ pub const ITEMS: &[ToolbarItem] = &[
     ToolbarItem::Seperator,
     ToolbarItem::Button(ToolbarButton::Tool(Tool::Text)),
     ToolbarItem::Button(ToolbarButton::Tool(Tool::Pen)),
+    ToolbarItem::Button(ToolbarButton::Tool(Tool::Highlighter)),
     ToolbarItem::Button(ToolbarButton::Tool(Tool::Line)),
     ToolbarItem::Button(ToolbarButton::Tool(Tool::Arrow)),
     ToolbarItem::Button(ToolbarButton::Tool(Tool::Rectangle)),

@@ -1,4 +1,5 @@
 pub mod eyedropper;
+pub mod highlighter;
 pub mod numerated_arrow;
 pub mod ocr;
 pub mod pen;
@@ -9,6 +10,7 @@ pub mod text;
 
 use crate::editor::EditorState;
 use crate::tools::eyedropper::EyedropperTool;
+use crate::tools::highlighter::HighlighterTool;
 use crate::tools::numerated_arrow::NumeratedArrowTool;
 use crate::tools::ocr::OcrTool;
 use crate::tools::pen::PenTool;
@@ -29,6 +31,7 @@ pub enum Tool {
     Arrow,
     Circle,
     Pen,
+    Highlighter,
     Line,
     Text,
     Pick,
@@ -105,6 +108,7 @@ pub fn dispatch_move(
         Tool::Eyedropper => EyedropperTool.on_move(state, global, dirty_mask),
         Tool::Text => TextTool.on_move(state, global, dirty_mask),
         Tool::Pen => PenTool.on_move(state, global, dirty_mask),
+        Tool::Highlighter => HighlighterTool.on_move(state, global, dirty_mask),
         Tool::NumeratedArrow => NumeratedArrowTool.on_move(state, global, dirty_mask),
         Tool::Ocr => OcrTool.on_move(state, global, dirty_mask),
 
@@ -127,6 +131,7 @@ pub fn dispatch_button(
         Tool::Eyedropper => EyedropperTool.on_button(state, button, pressed, dirty_mask),
         Tool::Text => TextTool.on_button(state, button, pressed, dirty_mask),
         Tool::Pen => PenTool.on_button(state, button, pressed, dirty_mask),
+        Tool::Highlighter => HighlighterTool.on_button(state, button, pressed, dirty_mask),
         Tool::NumeratedArrow => NumeratedArrowTool.on_button(state, button, pressed, dirty_mask),
         Tool::Ocr => OcrTool.on_button(state, button, pressed, dirty_mask),
 
@@ -181,6 +186,7 @@ pub fn dispatch_cursor(tool: Tool, state: &EditorState) -> CursorIcon {
         Tool::Ocr => OcrTool.cursor(state),
         Tool::Eyedropper => EyedropperTool.cursor(state),
         Tool::Pen
+        | Tool::Highlighter
         | Tool::NumeratedArrow
         | Tool::Rectangle
         | Tool::Arrow

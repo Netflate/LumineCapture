@@ -7,6 +7,7 @@ pub const RECTANGLE: &str = include_str!("../../assets/icons/rectangle.svg");
 pub const CIRCLE: &str = include_str!("../../assets/icons/circle.svg");
 pub const TEXT: &str = include_str!("../../assets/icons/text.svg");
 pub const PEN: &str = include_str!("../../assets/icons/pen.svg");
+pub const HIGHLIGHTER: &str = include_str!("../../assets/icons/highlight.svg");
 pub const LINE: &str = include_str!("../../assets/icons/line.svg");
 pub const PICK: &str = include_str!("../../assets/icons/cursor.svg");
 pub const EYEDROPPER: &str = include_str!("../../assets/icons/eyedropper.svg");
@@ -36,6 +37,7 @@ pub fn get_svg_for_tool(tool: Tool) -> (&'static str, f32) {
         Tool::Eyedropper => (EYEDROPPER, size.eyedropper),
         Tool::Text => (TEXT, size.text),
         Tool::Pen => (PEN, size.pen),
+        Tool::Highlighter => (HIGHLIGHTER, size.highlighter),
         Tool::Line => (LINE, size.line),
         Tool::Arrow => (ARROW, size.arrow),
         Tool::Rectangle => (RECTANGLE, size.rectangle),

@@ -114,8 +114,10 @@ impl EditorState {
             Rect::from_ltrb(ix1, iy1, ix2, iy2)
         }
 
-        let is_pen_drawing =
-            self.selected_tool == crate::tools::Tool::Pen && self.ann_drag.is_none();
+        let is_pen_drawing = matches!(
+            self.selected_tool,
+            crate::tools::Tool::Pen | crate::tools::Tool::Highlighter
+        ) && self.ann_drag.is_none();
 
         if !is_pen_drawing {
             if let Some(ann) = &self.pending {
@@ -274,8 +276,10 @@ pub fn is_dirty(mask: u32, idx: usize) -> bool {
 }
 
 pub fn apply_damage_rects(editor_state: &mut EditorState, dirty_mask: &mut u32) {
-    let is_pen_drawing =
-        editor_state.selected_tool == crate::tools::Tool::Pen && editor_state.ann_drag.is_none();
+    let is_pen_drawing = matches!(
+        editor_state.selected_tool,
+        crate::tools::Tool::Pen | crate::tools::Tool::Highlighter
+    ) && editor_state.ann_drag.is_none();
 
     if !is_pen_drawing {
         if let Some(ann) = &editor_state.pending {

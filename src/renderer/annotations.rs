@@ -1,4 +1,4 @@
-use super::paths::{luminance, normalized_rect, oval_path};
+use super::paths::{luminance, normalized_rect, oval_path, rect_bounds};
 use super::text::{draw_text_buffer, shape_single_line};
 use crate::renderer::paths::KAPPA;
 use crate::tools::text::render_text_annotation;
@@ -7,7 +7,8 @@ use crate::types::annotations::{Annotation, AnnotationShape, arrow_head};
 use cosmic_text::{Editor, FontSystem, SwashCache};
 use std::collections::HashMap;
 use tiny_skia::{
-    Color, FillRule, LineCap, LineJoin, Paint, PathBuilder, Pixmap, Rect, Stroke, Transform,
+    Color, FillRule, LineCap, LineJoin, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke,
+    Transform,
 };
 
 /// Scales the shadow's own fixed alpha by the annotation color's alpha,
@@ -195,6 +196,9 @@ pub fn draw_annotation(
                 };
                 super::blur::draw(canvas, rect, style, blurs.get(&ann.id), offset);
             }
+        }
+        AnnotationShape::Highlighter { points } => {
+            draw_highlighter(canvas, points, ann.color, ann.stroke_width, offset);
         }
         AnnotationShape::Text { .. } => {
             let is_editing = active_text_id == Some(ann.id);
@@ -502,6 +506,62 @@ fn draw_line(
     }
 }
 
+fn freehand_path(points: &[(f32, f32)], clip: Option<Rect>) -> Option<tiny_skia::Path> {
+    let mid = |a: (f32, f32), b: (f32, f32)| ((a.0 + b.0) / 2.0, (a.1 + b.1) / 2.0);
+    let mut pb = PathBuilder::new();
+
+    match points {
+        [] => return None,
+        [p] => {
+            pb.move_to(p.0, p.1);
+            pb.line_to(p.0, p.1);
+        }
+        [a, b] => {
+            pb.move_to(a.0, a.1);
+            pb.line_to(b.0, b.1);
+        }
+        _ => {
+            let n = points.len();
+            let mut open = false;
+            for i in 1..n {
+                let start = if i == 1 {
+                    points[0]
+                } else {
+                    mid(points[i - 1], points[i])
+                };
+                let (ctrl, end) = if i < n - 1 {
+                    (Some(points[i]), mid(points[i], points[i + 1]))
+                } else {
+                    (None, points[i])
+                };
+
+                let visible = clip.is_none_or(|c| {
+                    let c_pt = ctrl.unwrap_or(start);
+                    start.0.min(end.0).min(c_pt.0) <= c.right()
+                        && start.0.max(end.0).max(c_pt.0) >= c.left()
+                        && start.1.min(end.1).min(c_pt.1) <= c.bottom()
+                        && start.1.max(end.1).max(c_pt.1) >= c.top()
+                });
+                if !visible {
+                    open = false;
+                    continue;
+                }
+
+                if !open {
+                    pb.move_to(start.0, start.1);
+                    open = true;
+                }
+                match ctrl {
+                    Some(c) => pb.quad_to(c.0, c.1, end.0, end.1),
+                    None => pb.line_to(end.0, end.1),
+                }
+            }
+        }
+    }
+
+    pb.finish()
+}
+
 fn draw_pen(
     canvas: &mut Pixmap,
     points: &[(f32, f32)],
@@ -510,9 +570,9 @@ fn draw_pen(
     offset: (f32, f32),
     shadow_color: Color,
 ) {
-    if points.is_empty() {
+    let Some(path) = freehand_path(points, None) else {
         return;
-    }
+    };
 
     let transform = Transform::from_translate(-offset.0, -offset.1);
     // 1. drawing a halo around the full path
@@ -533,42 +593,82 @@ fn draw_pen(
     stroke.line_cap = LineCap::Round;
     stroke.line_join = LineJoin::Round;
 
-    if points.len() == 1 {
-        let p = points[0];
-        let mut pb = PathBuilder::new();
-        pb.move_to(p.0, p.1);
-        pb.line_to(p.0, p.1);
-        if let Some(path) = pb.finish() {
-            // draw halo first
-            canvas.stroke_path(&path, &halo_paint, &halo_stroke, transform, None);
-            // then normal stroke
-            canvas.stroke_path(&path, &paint, &stroke, transform, None);
-        }
+    // draw halo first
+    canvas.stroke_path(&path, &halo_paint, &halo_stroke, transform, None);
+    // then normal stroke
+    canvas.stroke_path(&path, &paint, &stroke, transform, None);
+}
+
+fn highlighter_color(mut color: Color) -> Color {
+    color.apply_opacity(crate::config::get().tools.highlighter.opacity);
+    color
+}
+
+fn draw_highlighter(
+    canvas: &mut Pixmap,
+    points: &[(f32, f32)],
+    color: Color,
+    stroke_width: f32,
+    offset: (f32, f32),
+) {
+    if let Some(path) = freehand_path(points, None) {
+        stroke_pen_segment(
+            canvas,
+            &path,
+            highlighter_color(color),
+            stroke_width,
+            offset,
+        );
+    }
+}
+
+pub fn draw_highlighter_live(
+    canvas: &mut Pixmap,
+    points: &[(f32, f32)],
+    color: Color,
+    stroke_width: f32,
+    offset: (f32, f32),
+    dirty: Option<&Rect>,
+) {
+    let (cw, ch) = (canvas.width(), canvas.height());
+    let Some((x, y, w, h)) = dirty
+        .copied()
+        .or_else(|| Rect::from_xywh(0.0, 0.0, cw as f32, ch as f32))
+        .and_then(|r| rect_bounds(&r, cw, ch))
+    else {
         return;
-    }
+    };
+    let Some(mut tmp) = Pixmap::new(w, h) else {
+        return;
+    };
 
-    let mut pb = PathBuilder::new();
-    pb.move_to(points[0].0, points[0].1);
+    let origin = (offset.0 + x as f32, offset.1 + y as f32);
+    let pad = stroke_width / 2.0 + 1.0;
+    let clip = Rect::from_xywh(
+        origin.0 - pad,
+        origin.1 - pad,
+        w as f32 + pad * 2.0,
+        h as f32 + pad * 2.0,
+    );
+    let Some(path) = freehand_path(points, clip) else {
+        return;
+    };
+    stroke_pen_segment(
+        &mut tmp,
+        &path,
+        highlighter_color(color),
+        stroke_width,
+        origin,
+    );
 
-    if points.len() == 2 {
-        pb.line_to(points[1].0, points[1].1);
-    } else {
-        for i in 1..points.len() - 1 {
-            let curr = points[i];
-            let next = points[i + 1];
-            let mid = ((curr.0 + next.0) / 2.0, (curr.1 + next.1) / 2.0);
-            pb.quad_to(curr.0, curr.1, mid.0, mid.1);
-        }
-        let last = points[points.len() - 1];
-        pb.line_to(last.0, last.1);
-    }
-
-    if let Some(path) = pb.finish() {
-        // draw halo first
-        canvas.stroke_path(&path, &halo_paint, &halo_stroke, transform, None);
-        // then normal stroke
-        canvas.stroke_path(&path, &paint, &stroke, transform, None);
-    }
+    canvas.draw_pixmap(
+        x as i32,
+        y as i32,
+        tmp.as_ref(),
+        &PixmapPaint::default(),
+        Transform::identity(),
+        None,
+    );
 }
 
 pub fn stroke_pen_segment(

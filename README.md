@@ -136,6 +136,7 @@ These shortcuts are available in the editor. All of them can be changed in the `
 | <kbd>G</kbd>                                                                  | Set the Eyedropper as the tool (pick a color from the screen)                  |
 | <kbd>T</kbd>                                                                  | Set the Text as the tool                                                       |
 | <kbd>P</kbd>                                                                  | Set the Pen as the tool                                                        |
+| <kbd>H</kbd>                                                                  | Set the Highlighter as the tool                                                |
 | <kbd>D</kbd>                                                                  | Set the Line as the tool                                                       |
 | <kbd>A</kbd>                                                                  | Set the Arrow as the tool                                                      |
 | <kbd>R</kbd>                                                                  | Set the Rectangle as the tool                                                  |
