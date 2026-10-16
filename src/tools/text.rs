@@ -17,7 +17,10 @@ use cosmic_text::{
     SwashCache,
 };
 use log::warn;
-use tiny_skia::{LineJoin, Paint, PathBuilder, PixmapMut, Rect, Stroke, Transform};
+use tiny_skia::{
+    BlendMode, FillRule, LineJoin, Paint, Path, PathBuilder, Pixmap, PixmapMut, PixmapPaint, Rect,
+    Stroke, Transform,
+};
 
 pub struct TextTool;
 
@@ -810,16 +813,15 @@ pub fn render_text_annotation(
     let outline_stroke_width = text_outline_stroke_width(*font_size);
     if let Some(outline_color) = outline
         && outline_stroke_width > 0.0
-    {
         // same snap as text uses
+        && let Some(letters) = letters_path(editor, font_system, swash_cache, (text_x, text_y))
+    {
         draw_text_outline(
-            editor,
-            font_system,
-            swash_cache,
             pixmap,
-            (text_x, text_y),
+            &letters,
             outline_stroke_width,
             *outline_color,
+            ann.color,
         );
     }
 
@@ -893,16 +895,12 @@ pub fn render_text_annotation(
     );
 }
 
-// must be done before the text itself
-fn draw_text_outline(
+fn letters_path(
     editor: &Editor<'static>,
     font_system: &mut cosmic_text::FontSystem,
     swash_cache: &mut SwashCache,
-    pixmap: &mut PixmapMut<'_>,
     text_pos: (f32, f32),
-    stroke_width: f32,
-    color: tiny_skia::Color,
-) {
+) -> Option<Path> {
     let mut path_builder = PathBuilder::new();
     editor.with_buffer(|buf| {
         for run in buf.layout_runs() {
@@ -941,10 +939,18 @@ fn draw_text_outline(
             }
         }
     });
-    let Some(path) = path_builder.finish() else {
-        return;
-    };
+    path_builder.finish()
+}
 
+// must be done before the text itself
+fn draw_text_outline(
+    pixmap: &mut PixmapMut<'_>,
+    letters: &Path,
+    stroke_width: f32,
+    mut color: tiny_skia::Color,
+    text_color: tiny_skia::Color,
+) {
+    color.apply_opacity(text_color.alpha());
     let mut paint = Paint::default();
     paint.set_color(color);
     paint.anti_alias = true;
@@ -954,7 +960,40 @@ fn draw_text_outline(
         line_join: LineJoin::Round,
         ..Stroke::default()
     };
-    pixmap.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+
+    if text_color.alpha() >= 1.0 {
+        pixmap.stroke_path(letters, &paint, &stroke, Transform::identity(), None);
+        return;
+    }
+
+    let pad = stroke_width / 2.0 + 1.0;
+    let bounds = letters.bounds();
+    let left = ((bounds.left() - pad).floor() as i32).max(0);
+    let top = ((bounds.top() - pad).floor() as i32).max(0);
+    let right = ((bounds.right() + pad).ceil() as i32).min(pixmap.width() as i32);
+    let bottom = ((bounds.bottom() + pad).ceil() as i32).min(pixmap.height() as i32);
+    if right <= left || bottom <= top {
+        return;
+    }
+    let Some(mut layer) = Pixmap::new((right - left) as u32, (bottom - top) as u32) else {
+        return;
+    };
+    let shift = Transform::from_translate(-left as f32, -top as f32);
+    layer.stroke_path(letters, &paint, &stroke, shift, None);
+
+    let mut eraser = Paint::default();
+    eraser.anti_alias = true;
+    eraser.blend_mode = BlendMode::DestinationOut;
+    layer.fill_path(letters, &eraser, FillRule::Winding, shift, None);
+
+    pixmap.draw_pixmap(
+        left,
+        top,
+        layer.as_ref(),
+        &PixmapPaint::default(),
+        Transform::identity(),
+        None,
+    );
 }
 
 fn extract_selected_text(editor: &Editor<'static>) -> Option<String> {

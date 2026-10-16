@@ -452,7 +452,11 @@ impl Annotation {
             } => crate::tools::text::text_outline_stroke_width(*font_size),
             _ => self.stroke_width,
         };
-        crate::renderer::visual_pad(stroke_width)
+        let letters_overhang = match &self.shape {
+            AnnotationShape::Text { font_size, .. } => font_size * 0.25,
+            _ => 0.0,
+        };
+        crate::renderer::visual_pad(stroke_width) + letters_overhang
     }
 
     pub fn damage_bbox(&self, is_selected: bool) -> Rect {
