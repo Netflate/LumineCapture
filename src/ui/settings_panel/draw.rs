@@ -177,7 +177,7 @@ fn draw_settings_content(
                     swash_cache,
                 );
             }
-            SettingsWidget::Toggle { visual, .. } => {
+            SettingsWidget::Toggle { visual, field } => {
                 let is_on = panel.is_toggled(index);
                 draw_toggle(
                     canvas,
@@ -186,6 +186,7 @@ fn draw_settings_content(
                     item_w,
                     item_h,
                     visual,
+                    field.icon_size(),
                     is_on,
                     is_hovered,
                     icons_cache,
@@ -596,6 +597,7 @@ fn draw_toggle(
     w: f32,
     h: f32,
     visual: &ToggleVisual,
+    icon_size: f32,
     is_on: bool,
     is_hovered: bool,
     icons_cache: &HashMap<&'static str, Tree>,
@@ -625,7 +627,6 @@ fn draw_toggle(
                 cfg.icon.get()
             };
 
-            let icon_size = cfg.icon_size;
             let icon_x = x + (w - icon_size) / 2.0;
             let icon_y = y + (h - icon_size) / 2.0;
             draw_svg_icon(canvas, icons_cache, svg, icon_size, icon_x, icon_y, tint);

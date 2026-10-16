@@ -1,15 +1,16 @@
 use crate::editor::{DamageZone, EditorState};
 use crate::renderer::shadow_color_for;
 use crate::tools::ToolBehavior;
-use crate::types::MouseButton;
 use crate::types::annotations::{Annotation, AnnotationShape};
-use tiny_skia::{Color, Rect};
+use crate::types::{MouseButton, ToolSettings};
+use tiny_skia::Rect;
+
+pub type MakeShape = fn((f32, f32), (f32, f32), &ToolSettings) -> AnnotationShape;
 
 pub struct SimpleShapeTool {
-    pub make_shape: fn((f32, f32), (f32, f32), bool) -> AnnotationShape,
-    pub color: Color,
+    pub make_shape: MakeShape,
+    pub settings: ToolSettings,
     pub stroke_width: f32,
-    pub fill: bool,
 }
 
 impl ToolBehavior for SimpleShapeTool {
@@ -25,10 +26,10 @@ impl ToolBehavior for SimpleShapeTool {
             state.input.pointer.global.1 as f32,
         );
         if pressed {
-            let color = self.color;
+            let color = self.settings.color;
             let mut ann = Annotation {
                 id: state.next_id,
-                shape: (self.make_shape)(pos, pos, self.fill),
+                shape: (self.make_shape)(pos, pos, &self.settings),
                 color,
                 shadow_color: shadow_color_for(color),
                 stroke_width: self.stroke_width,
@@ -60,7 +61,7 @@ impl ToolBehavior for SimpleShapeTool {
                 state.input.pointer.global.1 as f32,
             );
             let start = ann.shape.start_point();
-            ann.shape = (self.make_shape)(start, pos, self.fill);
+            ann.shape = (self.make_shape)(start, pos, &self.settings);
             ann.update_bbox();
 
             state.damage_rects.push(DamageZone::Global(ann.bbox));

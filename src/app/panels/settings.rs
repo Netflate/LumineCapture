@@ -83,12 +83,16 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
                             | AnnotationShape::Circle { filled, .. },
                             ToggleField::Fill,
                         ) => *filled,
+                        (AnnotationShape::Redact { pixelate, .. }, ToggleField::Pixelate(on)) => {
+                            pixelate == on
+                        }
                         _ => false,
                     },
                     None => match field {
                         ToggleField::Bold => editor_state.tool_settings.bold,
                         ToggleField::Italic => editor_state.tool_settings.italic,
                         ToggleField::Fill => editor_state.tool_settings.fill,
+                        ToggleField::Pixelate(on) => editor_state.tool_settings.pixelate == *on,
                     },
                 };
                 editor_state.settings_panel.set_toggled(idx, value);
@@ -440,10 +444,11 @@ fn apply_stepper_field(
         move |ts| match range {
             StepperRange::Stroke => ts.stroke_width = new_value,
             StepperRange::Font => ts.font_size = new_value,
-            StepperRange::Blur => ts.blur = new_value,
+            StepperRange::Strength => ts.strength = new_value,
         },
         move |ann| match &mut ann.shape {
             AnnotationShape::Text { font_size, .. } => *font_size = new_value,
+            AnnotationShape::Redact { strength, .. } => *strength = new_value,
             _ => ann.stroke_width = new_value,
         },
         dirty_mask,
@@ -456,14 +461,16 @@ pub fn apply_toggle_field(
     new_value: bool,
     dirty_mask: &mut u32,
 ) {
+    let changed = new_value || !matches!(field, ToggleField::Pixelate(_));
     commit_settings_change(
         editor_state,
-        true,
+        changed,
         true,
         move |ts| match field {
             ToggleField::Bold => ts.bold = new_value,
             ToggleField::Italic => ts.italic = new_value,
             ToggleField::Fill => ts.fill = new_value,
+            ToggleField::Pixelate(on) => ts.pixelate = on,
         },
         move |ann| match (&mut ann.shape, field) {
             (AnnotationShape::Text { bold, .. }, ToggleField::Bold) => *bold = new_value,
@@ -472,10 +479,13 @@ pub fn apply_toggle_field(
                 AnnotationShape::Rectangle { filled, .. } | AnnotationShape::Circle { filled, .. },
                 ToggleField::Fill,
             ) => *filled = new_value,
+            (AnnotationShape::Redact { pixelate, .. }, ToggleField::Pixelate(on)) => *pixelate = on,
             _ => {}
         },
         dirty_mask,
     );
+    // the other mode button changes too
+    update_settings_panel(editor_state, dirty_mask);
 }
 
 pub fn apply_stepper_arrow_step(
@@ -578,12 +588,13 @@ fn stepper_value(editor_state: &EditorState, range: StepperRange) -> f32 {
     match active_annotation_idx(editor_state).and_then(|i| editor_state.annotations.get(i)) {
         Some(ann) => match &ann.shape {
             AnnotationShape::Text { font_size, .. } => *font_size,
+            AnnotationShape::Redact { strength, .. } => *strength,
             _ => ann.stroke_width,
         },
         None => match range {
             StepperRange::Stroke => ts.stroke_width,
             StepperRange::Font => ts.font_size,
-            StepperRange::Blur => ts.blur,
+            StepperRange::Strength => ts.strength,
         },
     }
 }

@@ -2,12 +2,22 @@ use tiny_skia::{IntRect, Pixmap, Rect};
 
 use super::paste;
 
-const PASSES: usize = 2;
+const PASSES: usize = 3;
+
+/// blur radius or size of pixelated cell
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Style {
+    pub size: f32,
+    pub pixelate: bool,
+}
 
 // the stronger the blur, the more we can downscale
-fn factor(radius: f32) -> (i32, usize) {
-    let k = ((radius / 3.0).round() as i32).max(2);
-    (k, (radius / k as f32).round() as usize)
+fn factor(style: Style) -> (i32, usize) {
+    if style.pixelate {
+        return ((style.size.round() as i32).max(2), 0);
+    }
+    let k = ((style.size / 3.0).round() as i32).max(2);
+    (k, (style.size / k as f32).round() as usize)
 }
 
 fn reach(k: i32, r: usize) -> i32 {
@@ -15,15 +25,15 @@ fn reach(k: i32, r: usize) -> i32 {
 }
 
 // pixels outside the rect affect the result too, `+ k` is room for the grid alignment
-pub fn margin(radius: f32) -> f32 {
-    let (k, r) = factor(radius);
+pub fn margin(style: Style) -> f32 {
+    let (k, r) = factor(style);
     (reach(k, r) + k) as f32
 }
 
 pub fn draw(
     canvas: &mut Pixmap,
     rect: Rect,
-    radius: f32,
+    style: Style,
     cached: Option<&Pixmap>,
     offset: (f32, f32),
 ) {
@@ -41,7 +51,7 @@ pub fn draw(
         None => {
             let phase = (offset.0 as i32, offset.1 as i32);
             if let Some(pixmap) =
-                Blurred::new(canvas, local, radius, phase).and_then(|b| b.crop(local))
+                Blurred::new(canvas, local, style, phase).and_then(|b| b.crop(local))
             {
                 paste(canvas, &pixmap, local.x(), local.y());
             }
@@ -53,11 +63,12 @@ pub struct Blurred {
     low: Pixmap,
     k: i32,
     at: (i32, i32),
+    pixelate: bool,
 }
 
 impl Blurred {
-    pub fn new(src: &Pixmap, rect: IntRect, radius: f32, phase: (i32, i32)) -> Option<Self> {
-        let (k, r) = factor(radius);
+    pub fn new(src: &Pixmap, rect: IntRect, style: Style, phase: (i32, i32)) -> Option<Self> {
+        let (k, r) = factor(style);
         let m = reach(k, r);
         let align = |v: i32, p: i32| (v.max(0) + p).div_euclid(k) * k - p;
         let ax = align(rect.x() - m, phase.0);
@@ -75,6 +86,7 @@ impl Blurred {
             low,
             k,
             at: (ax, ay),
+            pixelate: style.pixelate,
         })
     }
 
@@ -85,6 +97,7 @@ impl Blurred {
             (self.at.0 - rect.x(), self.at.1 - rect.y()),
             rect.width(),
             rect.height(),
+            self.pixelate,
         )
     }
 }
@@ -196,11 +209,15 @@ fn vertical(src: &[u8], dst: &mut [u8], w: usize, h: usize, r: usize) {
 }
 
 // maps a pixel center to the center of a downscaled cell
-fn taps(len: u32, k: i32, offset: i32, n: u32) -> Vec<(usize, usize, u32)> {
+fn taps(len: u32, k: i32, offset: i32, n: u32, nearest: bool) -> Vec<(usize, usize, u32)> {
     let last = n as i32 - 1;
     (0..len as i32)
         .map(|p| {
-            let u = ((2 * (p - offset) + 1 - k) * 256).div_euclid(2 * k);
+            let u = if nearest {
+                (p - offset).div_euclid(k) * 256
+            } else {
+                ((2 * (p - offset) + 1 - k) * 256).div_euclid(2 * k)
+            };
             let i = u.div_euclid(256);
             (
                 i.clamp(0, last) as usize,
@@ -211,12 +228,19 @@ fn taps(len: u32, k: i32, offset: i32, n: u32) -> Vec<(usize, usize, u32)> {
         .collect()
 }
 
-fn upscale(low: &Pixmap, k: i32, offset: (i32, i32), w: u32, h: u32) -> Option<Pixmap> {
+fn upscale(
+    low: &Pixmap,
+    k: i32,
+    offset: (i32, i32),
+    w: u32,
+    h: u32,
+    nearest: bool,
+) -> Option<Pixmap> {
     let mut out = Pixmap::new(w, h)?;
     let src = low.data();
     let src_len = low.width() as usize * 4;
-    let xs = taps(w, k, offset.0, low.width());
-    let ys = taps(h, k, offset.1, low.height());
+    let xs = taps(w, k, offset.0, low.width(), nearest);
+    let ys = taps(h, k, offset.1, low.height(), nearest);
     let stretch = |j: usize, row: &mut Vec<u16>| {
         row.clear();
         let line = &src[j * src_len..][..src_len];
@@ -278,20 +302,23 @@ mod tests {
         let image = noise(320, 200);
         let whole = IntRect::from_xywh(0, 0, 320, 200).unwrap();
         let phase = (7, 3);
-        for radius in [1.0, 4.0, 12.0, 40.0] {
-            let full = Blurred::new(&image, whole, radius, phase).unwrap();
+        let styles = [1.0, 4.0, 12.0, 40.0]
+            .into_iter()
+            .flat_map(|size| [false, true].map(|pixelate| Style { size, pixelate }));
+        for style in styles {
+            let full = Blurred::new(&image, whole, style, phase).unwrap();
             for (x, y, w, h) in [(70, 40, 90, 60), (0, 0, 50, 50), (270, 150, 50, 50)] {
                 let rect = IntRect::from_xywh(x, y, w, h).unwrap();
-                let margin = margin(radius) as i32;
+                let margin = margin(style) as i32;
                 let region = rect.make_outset(margin, margin).unwrap();
                 let region = region.intersect(&whole).unwrap();
                 let src = image.clone_rect(region).unwrap();
                 let local = rect.translate(-region.x(), -region.y()).unwrap();
                 let part_phase = (phase.0 + region.x(), phase.1 + region.y());
-                let part = Blurred::new(&src, local, radius, part_phase).unwrap();
+                let part = Blurred::new(&src, local, style, part_phase).unwrap();
                 assert!(
                     full.crop(rect).unwrap().data() == part.crop(local).unwrap().data(),
-                    "radius {radius}, rect {rect:?}"
+                    "{style:?}, rect {rect:?}"
                 );
             }
         }

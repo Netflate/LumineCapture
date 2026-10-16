@@ -66,7 +66,7 @@ impl SettingsAction {
 pub enum StepperRange {
     Stroke,
     Font,
-    Blur,
+    Strength,
 }
 
 impl StepperRange {
@@ -75,7 +75,10 @@ impl StepperRange {
         match self {
             StepperRange::Stroke => (tools.stroke.min, tools.stroke.max, tools.stroke.step),
             StepperRange::Font => (tools.font.min, tools.font.max, tools.font.step),
-            StepperRange::Blur => (tools.blur.min, tools.blur.max, tools.blur.step),
+            StepperRange::Strength => {
+                let (min, max) = crate::types::tool_settings::STRENGTH;
+                (min, max, tools.redact.step)
+            }
         }
     }
 }
@@ -134,6 +137,19 @@ pub enum ToggleField {
     Bold,
     Italic,
     Fill,
+    /// one of the two mode buttons
+    Pixelate(bool),
+}
+
+impl ToggleField {
+    pub fn icon_size(self) -> f32 {
+        let cfg = crate::config::get();
+        match self {
+            // the mode icons are copies of the toolbar one, so the same size
+            ToggleField::Pixelate(_) => cfg.toolbar.icons.redact,
+            _ => cfg.settings_panel.icon_size,
+        }
+    }
 }
 
 pub fn widgets_for_tool(tool: Tool) -> &'static [SettingsWidget] {
@@ -183,11 +199,26 @@ pub fn widgets_for_tool(tool: Tool) -> &'static [SettingsWidget] {
                 field: ToggleField::Fill,
             },
         ],
-        Tool::Blur => &[SettingsWidget::Stepper {
-            label: "",
-            range: StepperRange::Blur,
-            unit: "px",
-        }],
+        Tool::Redact => &[
+            SettingsWidget::Stepper {
+                label: "",
+                range: StepperRange::Strength,
+                unit: "%",
+            },
+            SettingsWidget::Separator,
+            SettingsWidget::Toggle {
+                visual: ToggleVisual::Icon {
+                    svg: crate::ui::icons::BLURRED,
+                },
+                field: ToggleField::Pixelate(false),
+            },
+            SettingsWidget::Toggle {
+                visual: ToggleVisual::Icon {
+                    svg: crate::ui::icons::PIXELATED,
+                },
+                field: ToggleField::Pixelate(true),
+            },
+        ],
         Tool::Eyedropper => EYEDROPPER_WIDGETS,
         Tool::Ocr => OCR_WIDGETS,
         _ => &[],
@@ -264,7 +295,7 @@ const OCR_COPY_ALL: SettingsWidget = SettingsWidget::Action {
 pub fn widgets_for_annotation(ann: &Annotation) -> &'static [SettingsWidget] {
     match &ann.shape {
         AnnotationShape::Text { .. } => widgets_for_tool(Tool::Text),
-        AnnotationShape::Blur { .. } => widgets_for_tool(Tool::Blur),
+        AnnotationShape::Redact { .. } => widgets_for_tool(Tool::Redact),
         AnnotationShape::Rectangle { .. } | AnnotationShape::Circle { .. } => {
             widgets_for_tool(Tool::Rectangle)
         }

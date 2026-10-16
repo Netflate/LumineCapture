@@ -3,7 +3,7 @@ use tiny_skia::{IntRect, Pixmap, Rect};
 
 use crate::editor::dirty::expand_rect;
 use crate::editor::{DamageZone, EditorState};
-use crate::renderer::blur::{self, Blurred};
+use crate::renderer::blur::{self, Blurred, Style};
 use crate::renderer::paths::normalized_rect;
 use crate::types::{Annotation, AnnotationShape};
 use crate::utils::{get_full_workspace_rect, get_overlapping_monitors, rects_overlap};
@@ -25,7 +25,7 @@ pub struct BlurState {
 struct Base {
     id: u64,
     below: usize,
-    radius: f32,
+    style: Style,
     origin: (i32, i32),
     blurred: Blurred,
 }
@@ -55,7 +55,7 @@ impl EditorState {
             let Some(ann) = self.annotations.get(i) else {
                 break;
             };
-            let Some(at) = blur_rect(ann) else {
+            let Some((at, style)) = redact(ann) else {
                 continue;
             };
             let (below, moved) = if i < pending_at {
@@ -70,7 +70,7 @@ impl EditorState {
                     .and_then(|(now, prev)| now.damage_bbox(false).join(&prev.damage_bbox(false)));
                 (i + 1, moved)
             };
-            let margin = blur::margin(ann.stroke_width);
+            let margin = blur::margin(style);
             let parts: Vec<IntRect> = match self.blur.cache.get(&ann.id) {
                 Some(cached) if cached.width() == at.width() && cached.height() == at.height() => {
                     let (edits, refreshed) = self.layer_damage_rects.split_at(edits_end);
@@ -110,7 +110,7 @@ impl EditorState {
     }
 
     pub fn cache_blur(&mut self, ann: &Annotation, below: usize) {
-        if let Some(at) = blur_rect(ann) {
+        if let Some((at, _)) = redact(ann) {
             self.cache_blur_part(ann, below, at, at);
         }
     }
@@ -124,12 +124,16 @@ impl EditorState {
         while grown {
             grown = false;
             for ann in &self.annotations {
-                let Some(at) = blur_rect(ann).map(|at| at.to_rect()) else {
+                let Some((at, style)) = redact(ann) else {
                     continue;
                 };
-                let margin = blur::margin(ann.stroke_width * scale) / scale;
-                if rects_overlap(&at, &area)
-                    && let Some(next) = expand_rect(&at, margin)
+                let scaled = Style {
+                    size: style.size * scale,
+                    ..style
+                };
+                let margin = blur::margin(scaled) / scale;
+                if rects_overlap(&at.to_rect(), &area)
+                    && let Some(next) = expand_rect(&at.to_rect(), margin)
                         .and_then(|need| need.intersect(&workspace))
                         .and_then(|need| need.join(&area))
                     && next != area
@@ -143,28 +147,24 @@ impl EditorState {
     }
 
     fn cache_pending_blur(&mut self, below: usize) {
-        let Some(ann) = self
+        let Some((id, (at, style))) = self
             .pending
             .as_ref()
-            .filter(|ann| matches!(ann.shape, AnnotationShape::Blur { .. }))
+            .and_then(|ann| Some((ann.id, redact(ann)?)))
         else {
             self.blur.base = None;
             return;
         };
-        let (id, radius, at) = (ann.id, ann.stroke_width, blur_rect(ann));
         if self
             .blur
             .base
             .as_ref()
-            .is_none_or(|base| (base.id, base.below, base.radius) != (id, below, radius))
+            .is_none_or(|base| (base.id, base.below, base.style) != (id, below, style))
         {
-            self.blur.base = self.build_blur_base(id, below, radius);
+            self.blur.base = self.build_blur_base(id, below, style);
         }
 
-        if let Some(pixmap) = at
-            .zip(self.blur.base.as_ref())
-            .and_then(|(at, base)| base.crop(at))
-        {
+        if let Some(pixmap) = self.blur.base.as_ref().and_then(|base| base.crop(at)) {
             self.blur.cache.insert(id, pixmap);
         }
     }
@@ -185,38 +185,38 @@ impl EditorState {
         }
     }
 
-    fn build_blur_base(&mut self, id: u64, below: usize, radius: f32) -> Option<Base> {
+    fn build_blur_base(&mut self, id: u64, below: usize, style: Style) -> Option<Base> {
         let workspace = get_full_workspace_rect(&self.placements)?;
         let (src, origin) = self.blur_source(workspace, below)?;
         let whole = IntRect::from_xywh(0, 0, src.width(), src.height())?;
         Some(Base {
             id,
             below,
-            radius,
+            style,
             origin,
-            blurred: Blurred::new(&src, whole, radius, origin)?,
+            blurred: Blurred::new(&src, whole, style, origin)?,
         })
     }
 
     fn render_blur(&mut self, ann: &Annotation, below: usize, at: IntRect) -> Option<Pixmap> {
+        let (_, style) = redact(ann)?;
         // right after the gesture we have base, which is cheaper to crop than to recompute
         if let Some(base) = &self.blur.base
-            && (base.id, base.below, base.radius) == (ann.id, below, ann.stroke_width)
+            && (base.id, base.below, base.style) == (ann.id, below, style)
         {
             return base.crop(at);
         }
         let workspace = get_full_workspace_rect(&self.placements)?;
-        let region =
-            expand_rect(&at.to_rect(), blur::margin(ann.stroke_width))?.intersect(&workspace)?;
+        let region = expand_rect(&at.to_rect(), blur::margin(style))?.intersect(&workspace)?;
         let (src, origin) = self.blur_source(region, below)?;
         let local = at.translate(-origin.0, -origin.1)?;
-        Blurred::new(&src, local, ann.stroke_width, origin)?.crop(local)
+        Blurred::new(&src, local, style, origin)?.crop(local)
     }
 
     // the blur itself and whatever lies is under it (with marging of course)
     fn blur_inputs(&self, ann: &Annotation, below: usize) -> Vec<Annotation> {
-        let region = blur_rect(ann)
-            .and_then(|at| expand_rect(&at.to_rect(), blur::margin(ann.stroke_width)));
+        let region =
+            redact(ann).and_then(|(at, style)| expand_rect(&at.to_rect(), blur::margin(style)));
         let at = self.dragged_index().unwrap_or(self.annotations.len());
         stack(&self.annotations, &self.pending, at)
             .take(below)
@@ -260,9 +260,19 @@ fn stack<'a>(
     lower.iter().chain(pending).chain(upper)
 }
 
-fn blur_rect(ann: &Annotation) -> Option<IntRect> {
-    let AnnotationShape::Blur { start, end } = &ann.shape else {
+fn redact(ann: &Annotation) -> Option<(IntRect, Style)> {
+    let AnnotationShape::Redact {
+        start,
+        end,
+        strength,
+        pixelate,
+    } = &ann.shape
+    else {
         return None;
     };
-    normalized_rect(*start, *end)?.round_out()
+    let style = Style {
+        size: *strength,
+        pixelate: *pixelate,
+    };
+    Some((normalized_rect(*start, *end)?.round_out()?, style))
 }

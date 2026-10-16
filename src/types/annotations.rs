@@ -40,9 +40,12 @@ pub enum AnnotationShape {
         start: (f32, f32),
         end: (f32, f32),
     },
-    Blur {
+    Redact {
         start: (f32, f32),
         end: (f32, f32),
+        /// percent in the panel, 1% is a pixel of blur radius or of a pixelated cell
+        strength: f32,
+        pixelate: bool,
     },
     Pen {
         points: Vec<(f32, f32)>,
@@ -74,7 +77,7 @@ impl AnnotationShape {
             AnnotationShape::Rectangle { start, .. } => *start,
             AnnotationShape::Circle { start, .. } => *start,
             AnnotationShape::Line { start, .. } => *start,
-            AnnotationShape::Blur { start, .. } => *start,
+            AnnotationShape::Redact { start, .. } => *start,
             AnnotationShape::Pen { points } => points.first().copied().unwrap_or((0.0, 0.0)),
             AnnotationShape::Text { start, .. } => *start,
         }
@@ -120,9 +123,16 @@ impl Annotation {
                 start: p(*start),
                 end: p(*end),
             },
-            AnnotationShape::Blur { start, end } => AnnotationShape::Blur {
+            AnnotationShape::Redact {
+                start,
+                end,
+                strength,
+                pixelate,
+            } => AnnotationShape::Redact {
                 start: p(*start),
                 end: p(*end),
+                strength: strength * s,
+                pixelate: *pixelate,
             },
             AnnotationShape::Pen { points } => AnnotationShape::Pen {
                 points: points.iter().map(|&q| p(q)).collect(),
@@ -216,7 +226,7 @@ impl Annotation {
                 .unwrap();
             }
 
-            AnnotationShape::Blur { start, end } => {
+            AnnotationShape::Redact { start, end, .. } => {
                 self.bbox = crate::renderer::paths::normalized_rect(*start, *end).unwrap();
             }
 
@@ -274,7 +284,7 @@ impl Annotation {
             | AnnotationShape::Rectangle { start, end, .. }
             | AnnotationShape::Circle { start, end, .. }
             | AnnotationShape::Line { start, end }
-            | AnnotationShape::Blur { start, end } => {
+            | AnnotationShape::Redact { start, end, .. } => {
                 start.0 += dx;
                 start.1 += dy;
                 end.0 += dx;
@@ -355,9 +365,16 @@ impl Annotation {
                 start: remap(*start),
                 end: remap(*end),
             },
-            AnnotationShape::Blur { start, end } => AnnotationShape::Blur {
+            AnnotationShape::Redact {
+                start,
+                end,
+                strength,
+                pixelate,
+            } => AnnotationShape::Redact {
                 start: remap(*start),
                 end: remap(*end),
+                strength: *strength,
+                pixelate: *pixelate,
             },
             AnnotationShape::Pen { points } => AnnotationShape::Pen {
                 points: points.iter().map(|p| remap(*p)).collect(),

@@ -182,9 +182,18 @@ pub fn draw_annotation(
                 ann.shadow_color,
             );
         }
-        AnnotationShape::Blur { start, end } => {
+        AnnotationShape::Redact {
+            start,
+            end,
+            strength,
+            pixelate,
+        } => {
             if let Some(rect) = normalized_rect(*start, *end) {
-                super::blur::draw(canvas, rect, ann.stroke_width, blurs.get(&ann.id), offset);
+                let style = super::blur::Style {
+                    size: *strength,
+                    pixelate: *pixelate,
+                };
+                super::blur::draw(canvas, rect, style, blurs.get(&ann.id), offset);
             }
         }
         AnnotationShape::Text { .. } => {

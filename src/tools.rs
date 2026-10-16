@@ -35,7 +35,7 @@ pub enum Tool {
     Eyedropper,
     NumeratedArrow,
     Ocr,
-    Blur,
+    Redact,
 }
 
 // ==========================================
@@ -64,23 +64,32 @@ pub trait ToolBehavior {
 // 3. Static dispatching
 // ==========================================
 fn simple_shape(tool: Tool, settings: &ToolSettings) -> SimpleShapeTool {
-    let (stroke_width, fill) = match tool {
-        Tool::Blur => (settings.blur, false),
-        _ => (settings.stroke_width, settings.fill),
-    };
     SimpleShapeTool {
         make_shape: match tool {
-            Tool::Rectangle => {
-                |start, end, filled| AnnotationShape::Rectangle { start, end, filled }
-            }
+            Tool::Rectangle => |start, end, ts| AnnotationShape::Rectangle {
+                start,
+                end,
+                filled: ts.fill,
+            },
             Tool::Arrow => |start, end, _| AnnotationShape::Arrow { start, end },
-            Tool::Circle => |start, end, filled| AnnotationShape::Circle { start, end, filled },
-            Tool::Blur => |start, end, _| AnnotationShape::Blur { start, end },
+            Tool::Circle => |start, end, ts| AnnotationShape::Circle {
+                start,
+                end,
+                filled: ts.fill,
+            },
+            Tool::Redact => |start, end, ts| AnnotationShape::Redact {
+                start,
+                end,
+                strength: ts.strength,
+                pixelate: ts.pixelate,
+            },
             _ => |start, end, _| AnnotationShape::Line { start, end },
         },
-        color: settings.color,
-        stroke_width,
-        fill,
+        settings: settings.clone(),
+        stroke_width: match tool {
+            Tool::Redact => 0.0,
+            _ => settings.stroke_width,
+        },
     }
 }
 
@@ -99,7 +108,7 @@ pub fn dispatch_move(
         Tool::NumeratedArrow => NumeratedArrowTool.on_move(state, global, dirty_mask),
         Tool::Ocr => OcrTool.on_move(state, global, dirty_mask),
 
-        Tool::Rectangle | Tool::Arrow | Tool::Circle | Tool::Line | Tool::Blur => {
+        Tool::Rectangle | Tool::Arrow | Tool::Circle | Tool::Line | Tool::Redact => {
             simple_shape(tool, &state.tool_settings).on_move(state, global, dirty_mask);
         }
     }
@@ -121,7 +130,7 @@ pub fn dispatch_button(
         Tool::NumeratedArrow => NumeratedArrowTool.on_button(state, button, pressed, dirty_mask),
         Tool::Ocr => OcrTool.on_button(state, button, pressed, dirty_mask),
 
-        Tool::Rectangle | Tool::Arrow | Tool::Circle | Tool::Line | Tool::Blur => {
+        Tool::Rectangle | Tool::Arrow | Tool::Circle | Tool::Line | Tool::Redact => {
             simple_shape(tool, &state.tool_settings).on_button(state, button, pressed, dirty_mask);
         }
     }
@@ -177,6 +186,6 @@ pub fn dispatch_cursor(tool: Tool, state: &EditorState) -> CursorIcon {
         | Tool::Arrow
         | Tool::Circle
         | Tool::Line
-        | Tool::Blur => CursorIcon::Crosshair,
+        | Tool::Redact => CursorIcon::Crosshair,
     }
 }

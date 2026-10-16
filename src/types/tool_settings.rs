@@ -2,6 +2,9 @@ use tiny_skia::Color;
 
 use crate::theme::Rgba;
 
+/// redaction strength in percent
+pub const STRENGTH: (f32, f32) = (1.0, 100.0);
+
 pub fn default_color() -> Rgba {
     crate::editor::saved::get()
         .color
@@ -12,7 +15,8 @@ pub fn default_color() -> Rgba {
 pub struct ToolSettings {
     pub stroke_width: f32,
     pub font_size: f32,
-    pub blur: f32,
+    pub strength: f32,
+    pub pixelate: bool,
     pub bold: bool,
     pub italic: bool,
     pub fill: bool,
@@ -32,10 +36,11 @@ impl Default for ToolSettings {
                 .font_size
                 .unwrap_or(tools.font.size)
                 .clamp(tools.font.min, tools.font.max),
-            blur: saved
-                .blur
-                .unwrap_or(tools.blur.size)
-                .clamp(tools.blur.min, tools.blur.max),
+            strength: saved
+                .strength
+                .unwrap_or(tools.redact.strength)
+                .clamp(STRENGTH.0, STRENGTH.1),
+            pixelate: saved.pixelate.unwrap_or(tools.redact.pixelate),
             bold: saved.bold.unwrap_or(tools.font.bold),
             italic: saved.italic.unwrap_or(tools.font.italic),
             fill: saved.fill.unwrap_or(tools.fill),

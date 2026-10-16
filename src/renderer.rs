@@ -222,7 +222,7 @@ pub fn render_frame(req: &mut RenderRequest) {
                 let (w, h) = (req.canvas.width() as f32, req.canvas.height() as f32);
                 let area = dirty_rect.copied().or(Rect::from_xywh(0.0, 0.0, w, h));
                 for (i, ann) in req.annotations.iter().enumerate().skip(at) {
-                    if let crate::types::AnnotationShape::Blur { start, end } = &ann.shape
+                    if let crate::types::AnnotationShape::Redact { start, end, .. } = &ann.shape
                         && let Some(rect) = paths::normalized_rect(*start, *end)
                         && let Some(local) = Rect::from_xywh(
                             rect.x() - req.offset.0,

@@ -25,7 +25,7 @@ pub const ITEMS: &[ToolbarItem] = &[
     ToolbarItem::Button(ToolbarButton::Tool(Tool::Rectangle)),
     ToolbarItem::Button(ToolbarButton::Tool(Tool::Circle)),
     ToolbarItem::Button(ToolbarButton::Tool(Tool::NumeratedArrow)),
-    ToolbarItem::Button(ToolbarButton::Tool(Tool::Blur)),
+    ToolbarItem::Button(ToolbarButton::Tool(Tool::Redact)),
     ToolbarItem::Seperator,
     ToolbarItem::Button(ToolbarButton::Finish(Finish::Pin)),
     ToolbarItem::Button(ToolbarButton::Finish(Finish::Copy)),

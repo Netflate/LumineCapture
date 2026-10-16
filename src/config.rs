@@ -306,7 +306,7 @@ section!(ToolbarIcons {
     rectangle: f32 = 31.0,
     circle: f32 = 25.0,
     numerated_arrow: f32 = 25.0,
-    blur: f32 = 26.0,
+    redact: f32 = 26.0,
     pin: f32 = 21.0,
     copy: f32 = 20.0,
     save: f32 = 20.0,
@@ -523,11 +523,10 @@ section!(Font {
     italic: bool = false,
 });
 
-section!(Blur {
-    size: f32 = 20.0,
-    min: f32 = 4.0,
-    max: f32 = 80.0,
-    step: f32 = 2.0,
+section!(Redact {
+    strength: f32 = 20.0,
+    step: f32 = 5.0,
+    pixelate: bool = false,
 });
 
 section!(Pen {
@@ -540,7 +539,7 @@ section!(Tools {
     fill: bool = false,
     stroke: Stroke = Stroke::default(),
     font: Font = Font::default(),
-    blur: Blur = Blur::default(),
+    redact: Redact = Redact::default(),
     pen: Pen = Pen::default(),
 });
 
@@ -824,7 +823,7 @@ arrow = 24.0
 rectangle = 31.0
 circle = 25.0
 numerated_arrow = 25.0
-blur = 26.0
+redact = 26.0
 pin = 21.0
 copy = 20.0
 save = 20.0
@@ -1020,12 +1019,11 @@ step = 1.0
 bold = true
 italic = false
 
-[tools.blur]
-# blur radius
-size = 20.0
-min = 4.0
-max = 80.0
-step = 2.0
+[tools.redact]
+# percent, 1% is a pixel of blur radius or of a pixelated cell
+strength = 20.0
+step = 5.0
+pixelate = false
 
 [tools.pen]
 # 0 draws the raw pointer path, closer to 1 is smoother (and lags more)
@@ -1288,13 +1286,10 @@ fn validate(config: &mut Config) {
         );
         *font = Font::default();
     }
-    let blur = &mut config.tools.blur;
-    if blur.min > blur.max || blur.step <= 0.0 {
-        complain(
-            "config: tools.blur needs min <= max and a positive step, using the defaults"
-                .to_string(),
-        );
-        *blur = Blur::default();
+    let redact = &mut config.tools.redact;
+    if redact.step <= 0.0 {
+        complain("config: tools.redact needs a positive step, using the default".to_string());
+        redact.step = Redact::default().step;
     }
     let text = &mut config.annotations.text;
     if text.resize_min > text.resize_max {
