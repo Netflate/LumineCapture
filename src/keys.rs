@@ -97,6 +97,7 @@ pub const ACTIONS: &[(&str, Action, &[&str])] = &[
         Action::Tool(Tool::NumeratedArrow),
         &["N"],
     ),
+    ("tool_redact", Action::Tool(Tool::Redact), &["X"]),
     (
         "move_left",
         Action::Move {

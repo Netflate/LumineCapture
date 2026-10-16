@@ -141,6 +141,7 @@ These shortcuts are available in the editor. All of them can be changed in the `
 | <kbd>R</kbd>                                                                  | Set the Rectangle as the tool                                                  |
 | <kbd>C</kbd>                                                                  | Set the Circle as the tool                                                     |
 | <kbd>N</kbd>                                                                  | Set the Numbered arrow as the tool                                             |
+| <kbd>X</kbd>                                                                  | Set the Redact as the tool (blur || pixelate)                                  |
 | <kbd>←</kbd>, <kbd>↓</kbd>, <kbd>↑</kbd>, <kbd>→</kbd>                        | Move the selection                                                             |
 | <kbd>Shift</kbd> + <kbd>←</kbd>, <kbd>↓</kbd>, <kbd>↑</kbd>, <kbd>→</kbd>     | Move the selection faster                                                      |
 | <kbd>Alt</kbd> + <kbd>←</kbd>, <kbd>↓</kbd>, <kbd>↑</kbd>, <kbd>→</kbd>       | Resize the selection                                                           |
