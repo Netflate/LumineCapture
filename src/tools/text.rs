@@ -846,7 +846,10 @@ pub fn render_text_annotation(
             let w_int = draw_w.round() as i32;
             let h_int = h as i32;
 
-            let src_a = color.a() as u32;
+            let mut src_a = color.a() as u32;
+            if w == 1 && h == 1 {
+                src_a = src_a * text_color.a() as u32 / 255;
+            }
             if src_a == 0 {
                 return;
             }
