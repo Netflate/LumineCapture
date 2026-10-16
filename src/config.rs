@@ -706,15 +706,19 @@ pub const TEMPLATE: &str = r##"# LumineCapture config.
 # Useful, important options will be moved to the GUI later on.
 
 [general]
-# What to do with the screenshot, the same letters as -t: c (copy), p (pin), s (save),
-# o (stdout), in any order.
-# r (primary selection, pasted with the middle click) works ONLY with text from -r ocr.
-# Screenshots ignore it, since apps mostly paste only text with the middle click.
-# -r ocr uses c, r and o for its text and ignores p and s.
+# What happens to every screenshot, on top of what you choose in the editor:
+# e.g. with to = "s" copying also saves the file.
+# Finishing without an explicit choice (Enter, a double click on the selection,
+# releasing the mouse in -r, -f and -w) does only this. Overridden by -t.
 #
-# In the editor it is added to whatever you choose, e.g. with to = "s" copying saves the file as well,
-# and finishing without an explicit choice (Enter, a double click) does just this.
-# Overridden by -t
+# The same letters as -t, in any order:
+#   c  copy to the clipboard
+#   p  pin to the screen
+#   s  save to the screenshots folder
+#   o  write the PNG to stdout
+#   r  copy the text to the primary selection (middle click), only with -r ocr
+#
+# -r ocr uses c, r and o for its text and ignores p and s.
 to = "cs"
 
 # How does the screenshot with editing gui appear :
@@ -1371,6 +1375,68 @@ fn write_template(path: &PathBuf) {
     }
 }
 
+const OLD_GENERAL_COMMENTS: &[&str] = &[
+    "# by default both pin and copy still saves screenshot in the folder",
+    "# what to do with screenshot after finishing capture without an explicit bind",
+    "# like pressing enter or double click on the selection zone",
+    "# c (copy), p (pin), s(save), in any order",
+];
+
+// honestly more of a temp solution
+// i want to make a better migration system, but i guess it will be implemented later
+fn migrate(text: &str) -> Option<String> {
+    let mut section = "";
+    let mut drop = Vec::new();
+    let mut accept = None;
+    let mut save_always = None;
+    for (i, line) in text.lines().enumerate() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            section = line.split('#').next().unwrap_or("").trim();
+            continue;
+        }
+        if section != "[general]" {
+            continue;
+        }
+        let key = line.split('=').next().unwrap_or("").trim();
+        match key {
+            "to" => return None,
+            "accept" | "save_always" => {
+                let value = line.parse::<toml::Table>().ok()?.remove(key)?;
+                if key == "accept" {
+                    accept = Some(Outputs::parse(value.as_str()?).ok()?);
+                } else {
+                    save_always = Some(value.as_bool()?);
+                }
+                drop.push(i);
+            }
+            _ if OLD_GENERAL_COMMENTS.contains(&line) => drop.push(i),
+            _ => {}
+        }
+    }
+    if accept.is_none() && save_always.is_none() {
+        return None;
+    }
+    let mut to = accept.unwrap_or(Outputs {
+        copy: true,
+        ..Outputs::default()
+    });
+    to.save |= save_always.unwrap_or(true);
+
+    let comments = TEMPLATE
+        .split_once("[general]\n")?
+        .1
+        .split_once("\nto = ")?
+        .0;
+    let block = format!("{comments}\nto = {}", toml::Value::try_from(to).ok()?);
+    let mut lines: Vec<&str> = text.lines().collect();
+    lines[drop[0]] = &block;
+    for &i in drop[1..].iter().rev() {
+        lines.remove(i);
+    }
+    Some(lines.join("\n") + "\n")
+}
+
 /// Config overide path set via `--config`. Only the first call takes effect
 pub fn init(override_path: Option<PathBuf>, overrides: impl FnOnce(&mut Config)) {
     if let Some(path) = &override_path {
@@ -1379,7 +1445,22 @@ pub fn init(override_path: Option<PathBuf>, overrides: impl FnOnce(&mut Config))
     let path = override_path.or_else(config_path);
     let mut config = match &path {
         Some(path) => match std::fs::read_to_string(path) {
-            Ok(text) => parse(&text, &path.display().to_string()),
+            Ok(mut text) => {
+                if let Some(migrated) = migrate(&text) {
+                    match std::fs::write(path, &migrated) {
+                        Ok(()) => complain(format!(
+                            "config: {}: general.accept and general.save_always were replaced with general.to",
+                            path.display()
+                        )),
+                        Err(e) => complain(format!(
+                            "config: cannot update {}: {e}, replace general.accept and general.save_always with general.to there",
+                            path.display()
+                        )),
+                    }
+                    text = migrated;
+                }
+                parse(&text, &path.display().to_string())
+            }
             Err(_) => {
                 write_template(path);
                 Config::default()
@@ -1512,6 +1593,23 @@ mod tests {
             read("[general]\nto = \"x\"\n").general.to,
             General::default().to
         );
+    }
+
+    #[test]
+    fn old_accept_and_save_always_become_to() {
+        let old = "[general]\n\
+            # by default both pin and copy still saves screenshot in the folder\n\
+            save_always = true\n\
+            # what to do with screenshot after finishing capture without an explicit bind\n\
+            # like pressing enter or double click on the selection zone\n\
+            # c (copy), p (pin), s(save), in any order\n\
+            accept = \"p\"\n\
+            \n\
+            [keys]\n\
+            accept = \"Space\"\n";
+        let config = read(&migrate(old).unwrap());
+        assert_eq!(config.general.to, Outputs::parse("ps").unwrap());
+        assert_eq!(config.keys.0["accept"].chords(), ["Space"]);
     }
 
     #[test]
