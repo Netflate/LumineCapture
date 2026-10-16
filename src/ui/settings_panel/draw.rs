@@ -3,6 +3,7 @@ use crate::renderer::paths::{
 };
 use crate::renderer::text::{HAlign, draw_aligned_text, draw_line_edit};
 use crate::theme::{color, font, radius, size, stroke};
+use crate::ui::color_popover::ColorTarget;
 use crate::ui::panel::{PanelItem, UiPanel};
 use crate::ui::settings_panel::{SettingsPanel, SettingsWidget, StepperArrow, ToggleVisual};
 use cosmic_text::{FontSystem, SwashCache};
@@ -17,6 +18,7 @@ pub fn draw_settings_panel(
     canvas: &mut Pixmap,
     panel: &mut SettingsPanel,
     current_color: Color,
+    outline_color: Color,
     icons_cache: &HashMap<&'static str, Tree>,
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
@@ -57,6 +59,7 @@ pub fn draw_settings_panel(
         &mut panel_pixmap,
         panel,
         current_color,
+        outline_color,
         icons_cache,
         font_system,
         swash_cache,
@@ -84,6 +87,7 @@ fn draw_settings_content(
     canvas: &mut Pixmap,
     panel: &SettingsPanel,
     current_color: Color,
+    outline_color: Color,
     icons_cache: &HashMap<&'static str, Tree>,
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
@@ -119,7 +123,11 @@ fn draw_settings_content(
         let is_selected = panel.selected == Some(index);
 
         match item {
-            SettingsWidget::ColorSwatch => {
+            SettingsWidget::ColorSwatch(target) => {
+                let color = match target {
+                    ColorTarget::Main => current_color,
+                    ColorTarget::Outline => outline_color,
+                };
                 draw_color_swatch(
                     canvas,
                     current_x,
@@ -128,7 +136,7 @@ fn draw_settings_content(
                     item_h,
                     is_hovered,
                     is_selected,
-                    current_color,
+                    color,
                 );
             }
             SettingsWidget::Action { action, svg } => {

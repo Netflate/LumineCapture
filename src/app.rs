@@ -476,6 +476,7 @@ struct Frame {
     active_text_id: Option<u64>,
     scan_badge: Option<(Rect, f32)>,
     current_color: tiny_skia::Color,
+    outline_color: tiny_skia::Color,
     annotations_hidden: bool,
 }
 
@@ -495,6 +496,7 @@ fn render_dirty_monitors(
             ))
         }),
         current_color: panels::settings::current_color(editor_state),
+        outline_color: panels::settings::current_outline_color(editor_state),
         annotations_hidden,
     };
     editor_state.refresh_blurs(&mut dirty_mask);
@@ -580,6 +582,7 @@ fn render_monitor(editor_state: &mut EditorState, i: usize, frame: &Frame) -> Op
         toolbar,
         settings_panel,
         current_color: frame.current_color,
+        outline_color: frame.outline_color,
         color_picker,
         model_popover: model_list,
         icons_cache: &editor_state.icons_cache,
@@ -712,10 +715,10 @@ fn refresh_panels_after_history(editor_state: &mut EditorState, dirty_mask: &mut
         return;
     }
 
-    if let Some(ann_idx) = crate::editor::edits::active_annotation_idx(editor_state)
-        && let Some(ann) = editor_state.annotations.get(ann_idx)
-    {
-        editor_state.color_popover.select_color(ann.color);
+    // checks is it for outline or text color
+    if crate::editor::edits::active_annotation_idx(editor_state).is_some() {
+        let color = panels::settings::swatch_color(editor_state, editor_state.color_popover.target);
+        editor_state.color_popover.select_color(color);
     }
     panels::color::update_color_popover(editor_state, dirty_mask);
     editor_state.color_popover.dirty = true;

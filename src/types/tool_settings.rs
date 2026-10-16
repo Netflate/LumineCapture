@@ -19,6 +19,8 @@ pub struct ToolSettings {
     pub pixelate: bool,
     pub bold: bool,
     pub italic: bool,
+    pub outline: bool,
+    pub outline_color: Color,
     pub fill: bool,
     pub color: Color,
 }
@@ -43,6 +45,11 @@ impl Default for ToolSettings {
             pixelate: saved.pixelate.unwrap_or(tools.redact.pixelate),
             bold: saved.bold.unwrap_or(tools.font.bold),
             italic: saved.italic.unwrap_or(tools.font.italic),
+            outline: saved.outline.unwrap_or(tools.font.outline),
+            outline_color: saved
+                .outline_color
+                .unwrap_or(tools.font.outline_color)
+                .color(),
             fill: saved.fill.unwrap_or(tools.fill),
             color: default_color().color(),
         }

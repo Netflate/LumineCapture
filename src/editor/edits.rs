@@ -8,8 +8,10 @@ use crate::editor::dirty::{apply_damage_rects, mark_dirty};
 use crate::editor::{DamageZone, EditorState};
 use crate::tools::Tool;
 use crate::types::annotations::rebuild_annotation;
-use crate::types::{Annotation, ToolSettings};
+use crate::types::{Annotation, AnnotationShape, ToolSettings};
+use crate::ui::color_popover::ColorTarget;
 use crate::ui::panel::{UiPanel, emit_panel_damage};
+use crate::ui::settings_panel::{SettingsWidget, ToggleField};
 
 pub fn active_annotation_idx(editor_state: &EditorState) -> Option<usize> {
     if editor_state.selected_tool == Tool::Pick || editor_state.selected_tool == Tool::Text {
@@ -90,12 +92,43 @@ pub fn apply_color_selection(
     record_undo: bool,
     dirty_mask: &mut u32,
 ) {
-    commit_settings_change(
-        editor_state,
-        true,
-        record_undo,
-        move |ts| ts.color = color,
-        move |ann| ann.color = color,
-        dirty_mask,
-    );
+    match editor_state.color_popover.target {
+        ColorTarget::Main => commit_settings_change(
+            editor_state,
+            true,
+            record_undo,
+            move |ts| ts.color = color,
+            move |ann| ann.color = color,
+            dirty_mask,
+        ),
+        // picking a color automatically enables outline
+        ColorTarget::Outline => {
+            if let Some(idx) = editor_state.settings_panel.widgets.iter().position(|w| {
+                matches!(
+                    w,
+                    SettingsWidget::Toggle {
+                        field: ToggleField::Outline,
+                        ..
+                    }
+                )
+            }) {
+                editor_state.settings_panel.set_toggled(idx, true);
+            }
+            commit_settings_change(
+                editor_state,
+                true,
+                record_undo,
+                move |ts| {
+                    ts.outline = true;
+                    ts.outline_color = color;
+                },
+                move |ann| {
+                    if let AnnotationShape::Text { outline, .. } = &mut ann.shape {
+                        *outline = Some(color);
+                    }
+                },
+                dirty_mask,
+            );
+        }
+    }
 }

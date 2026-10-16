@@ -76,6 +76,12 @@ fn rgba_field_index(field: ColorField) -> Option<usize> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColorTarget {
+    Main,
+    Outline,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColorPopoverElement {
     SvSquare,
     HueSlider,
@@ -418,7 +424,9 @@ pub struct ColorPickerPopover {
     pub hue_clip_mask: Option<Mask>,
 
     pub picking: bool,
+    pub target: ColorTarget,
     pub recent_colors: Vec<Color>,
+    pub outline_palette: Vec<Color>,
     pub history: Vec<Color>,
     pub initial_history: Vec<Color>,
     pub fields: TextFieldGroup<ColorField>,
@@ -462,7 +470,14 @@ impl ColorPickerPopover {
             sv_clip_mask: None,
             hue_clip_mask: None,
             picking: false,
+            target: ColorTarget::Main,
             recent_colors: palette_row(&history),
+            outline_palette: cfg()
+                .outline_palette
+                .iter()
+                .map(|c| c.color())
+                .take(cfg().max_recent)
+                .collect(),
             initial_history: history.clone(),
             history,
             fields: TextFieldGroup::new(),
@@ -529,10 +544,18 @@ impl ColorPickerPopover {
     }
 
     pub fn palette(&self) -> &[Color] {
-        &self.recent_colors
+        match self.target {
+            ColorTarget::Main => &self.recent_colors,
+            ColorTarget::Outline => &self.outline_palette,
+        }
     }
 
     pub fn record_used_color(&mut self, color: Color) {
+        // I kinda feel like adding recent colors for outlines colors is an overkill,
+        // since my guess would be that everyone uses the same set of colors
+        if self.target == ColorTarget::Outline {
+            return;
+        }
         let bytes = color_bytes(color);
         self.history.retain(|c| color_bytes(*c) != bytes);
         self.history.insert(0, color);

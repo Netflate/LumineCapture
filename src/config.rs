@@ -374,6 +374,14 @@ section!(ColorPicker {
         rgb(249, 226, 175),
         rgb(166, 227, 161),
     ],
+    outline_palette: Vec<Rgba> = vec![
+        rgb(0, 0, 0),
+        rgb(255, 255, 255),
+        rgb(243, 139, 168),
+        rgb(249, 226, 175),
+        rgb(137, 180, 250),
+        rgb(166, 227, 161),
+    ],
     padding: f32 = 15.0,
     sv_size: f32 = 170.0,
     sv_radius: f32 = 10.0,
@@ -497,6 +505,7 @@ section!(TextBox {
     min_width: f32 = 10.0,
     resize_min: f32 = 6.0,
     resize_max: f32 = 300.0,
+    outline_width: f32 = 0.04,
     selected_text: ThemeColor = ThemeColor::default(),
 });
 
@@ -522,6 +531,8 @@ section!(Font {
     step: f32 = 1.0,
     bold: bool = true,
     italic: bool = false,
+    outline: bool = false,
+    outline_color: Rgba = rgb(0, 0, 0),
 });
 
 section!(Redact {
@@ -881,6 +892,8 @@ checkmark_width = 2.0
 max_recent = 6
 # fills the recent colors until there is a history
 palette = ["#000000", "#FFFFFF", "#F38BA8", "#FAB387", "#F9E2AF", "#A6E3A1"]
+# Doesn't implement recent colors, i suppose outlines needs a fixed set of most used colors
+outline_palette = ["#000000", "#FFFFFF", "#F38BA8", "#F9E2AF", "#89B4FA", "#A6E3A1"]
 padding = 15.0
 sv_size = 170.0
 sv_radius = 10.0
@@ -1008,6 +1021,8 @@ min_width = 10.0
 # font size limits while resizing a text box with the mouse
 resize_min = 6.0
 resize_max = 300.0
+# fraction of the font size
+outline_width = 0.04
 # selected_text = "#CDD6F4"     # theme.foreground
 
 # What a new annotation starts with. The last used values are remembered in
@@ -1029,6 +1044,8 @@ max = 72.0
 step = 1.0
 bold = true
 italic = false
+outline = false
+outline_color = "#000000"
 
 [tools.redact]
 # percent, 1% is a pixel of blur radius or of a pixelated cell

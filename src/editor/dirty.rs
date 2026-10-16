@@ -121,14 +121,14 @@ impl EditorState {
 
         if !is_pen_drawing {
             if let Some(ann) = &self.pending {
-                let pad = crate::renderer::visual_pad(ann.stroke_width);
+                let pad = ann.visual_pad();
                 dirty = union_rect(
                     dirty,
                     global_to_local_padded(&ann.bbox, offset, pad, mw, mh),
                 );
             }
             if let Some(ann) = &self.prev_pending {
-                let pad = crate::renderer::visual_pad(ann.stroke_width);
+                let pad = ann.visual_pad();
                 dirty = union_rect(
                     dirty,
                     global_to_local_padded(&ann.bbox, offset, pad, mw, mh),
@@ -138,8 +138,7 @@ impl EditorState {
         if let Some(ann_idx) = self.selected_annotation
             && let Some(ann) = self.annotations.get(ann_idx)
         {
-            let pad = crate::renderer::selection_chrome_pad()
-                .max(crate::renderer::visual_pad(ann.stroke_width));
+            let pad = crate::renderer::selection_chrome_pad().max(ann.visual_pad());
             dirty = union_rect(
                 dirty,
                 global_to_local_padded(&ann.bbox, offset, pad, mw, mh),

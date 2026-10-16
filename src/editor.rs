@@ -240,7 +240,7 @@ impl EditorState {
         self.cache_blur(ann, self.annotations.len());
         for (i, placement) in self.placements.iter().enumerate() {
             let offset = placement.offset();
-            let pad = crate::renderer::visual_pad(ann.stroke_width);
+            let pad = ann.visual_pad();
             let visual = Rect::from_ltrb(
                 ann.bbox.left() - offset.0 - pad,
                 ann.bbox.top() - offset.1 - pad,

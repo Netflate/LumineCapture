@@ -13,10 +13,11 @@ use crate::types::{
 };
 use crate::utils::cursor_for_handle;
 use cosmic_text::{
-    Action, Attrs, Buffer, Edit, Editor, Family, Metrics, Motion, Selection, Shaping, SwashCache,
+    Action, Attrs, Buffer, Command, Edit, Editor, Family, Metrics, Motion, Selection, Shaping,
+    SwashCache,
 };
 use log::warn;
-use tiny_skia::{PixmapMut, Rect};
+use tiny_skia::{LineJoin, Paint, PathBuilder, PixmapMut, Rect, Stroke, Transform};
 
 pub struct TextTool;
 
@@ -357,6 +358,10 @@ impl ToolBehavior for TextTool {
                 font_size,
                 bold,
                 italic,
+                outline: state
+                    .tool_settings
+                    .outline
+                    .then_some(state.tool_settings.outline_color),
             },
             color: state.tool_settings.color,
             shadow_color: shadow_color_for(state.tool_settings.color),
@@ -698,6 +703,7 @@ pub fn update_text_bbox_inline(
         font_size,
         bold,
         italic,
+        ..
     } = &ann.shape
     else {
         return;
@@ -766,11 +772,19 @@ pub fn render_text_annotation(
     offset: (f32, f32),
     is_editing: bool,
 ) {
-    let AnnotationShape::Text { start, .. } = &ann.shape else {
+    let AnnotationShape::Text {
+        start,
+        font_size,
+        outline,
+        ..
+    } = &ann.shape
+    else {
         return;
     };
     let ann_x = start.0 - offset.0;
     let ann_y = start.1 - offset.1;
+    let text_x = (ann_x + 0.5).floor();
+    let text_y = (ann_y + 0.5).floor();
 
     let text_color = tiny_skia_to_cosmic(ann.color);
     let cursor_color = color::caret().cosmic();
@@ -793,6 +807,22 @@ pub fn render_text_annotation(
         shape_entire_buffer(buf, font_system, false);
     });
 
+    let outline_stroke_width = text_outline_stroke_width(*font_size);
+    if let Some(outline_color) = outline
+        && outline_stroke_width > 0.0
+    {
+        // same snap as text uses
+        draw_text_outline(
+            editor,
+            font_system,
+            swash_cache,
+            pixmap,
+            (text_x, text_y),
+            outline_stroke_width,
+            *outline_color,
+        );
+    }
+
     let p_width = pixmap.width() as i32;
     let p_height = pixmap.height() as i32;
     let pixels = pixmap.pixels_mut();
@@ -811,8 +841,8 @@ pub fn render_text_annotation(
                 draw_w = (ann.bbox.width() - x as f32).max(min_width());
             }
 
-            let start_x = (ann_x + x as f32).round() as i32;
-            let start_y = (ann_y + y as f32).round() as i32;
+            let start_x = text_x as i32 + x;
+            let start_y = text_y as i32 + y;
             let w_int = draw_w.round() as i32;
             let h_int = h as i32;
 
@@ -860,6 +890,70 @@ pub fn render_text_annotation(
     );
 }
 
+// must be done before the text itself
+fn draw_text_outline(
+    editor: &Editor<'static>,
+    font_system: &mut cosmic_text::FontSystem,
+    swash_cache: &mut SwashCache,
+    pixmap: &mut PixmapMut<'_>,
+    text_pos: (f32, f32),
+    stroke_width: f32,
+    color: tiny_skia::Color,
+) {
+    let mut path_builder = PathBuilder::new();
+    editor.with_buffer(|buf| {
+        for run in buf.layout_runs() {
+            for glyph in run.glyphs {
+                let pixel_glyph = glyph.physical((0.0, run.line_y), 1.0);
+                let Some(glyph_shape) =
+                    swash_cache.get_outline_commands(font_system, pixel_glyph.cache_key)
+                else {
+                    continue;
+                };
+                // cosmic-text works with whole pixels, and then adds whatever was left, we need to add that too
+                let glyph_x =
+                    text_pos.0 + pixel_glyph.x as f32 + pixel_glyph.cache_key.x_bin.as_float();
+                let glyph_y = text_pos.1 + pixel_glyph.y as f32;
+                for command in glyph_shape {
+                    match *command {
+                        Command::MoveTo(to) => path_builder.move_to(glyph_x + to.x, glyph_y - to.y),
+                        Command::LineTo(to) => path_builder.line_to(glyph_x + to.x, glyph_y - to.y),
+                        Command::QuadTo(ctrl, to) => path_builder.quad_to(
+                            glyph_x + ctrl.x,
+                            glyph_y - ctrl.y,
+                            glyph_x + to.x,
+                            glyph_y - to.y,
+                        ),
+                        Command::CurveTo(ctrl1, ctrl2, to) => path_builder.cubic_to(
+                            glyph_x + ctrl1.x,
+                            glyph_y - ctrl1.y,
+                            glyph_x + ctrl2.x,
+                            glyph_y - ctrl2.y,
+                            glyph_x + to.x,
+                            glyph_y - to.y,
+                        ),
+                        Command::Close => path_builder.close(),
+                    }
+                }
+            }
+        }
+    });
+    let Some(path) = path_builder.finish() else {
+        return;
+    };
+
+    let mut paint = Paint::default();
+    paint.set_color(color);
+    paint.anti_alias = true;
+    let stroke = Stroke {
+        width: stroke_width,
+        // to avoid sharp corners
+        line_join: LineJoin::Round,
+        ..Stroke::default()
+    };
+    pixmap.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+}
+
 fn extract_selected_text(editor: &Editor<'static>) -> Option<String> {
     let (start, end) = editor.selection_bounds()?;
 
@@ -896,6 +990,11 @@ fn extract_selected_text(editor: &Editor<'static>) -> Option<String> {
 
 fn text_line_height() -> f32 {
     crate::config::get().annotations.text.line_height
+}
+
+// I don't know, if its a tiny-skia thing, but the stroke runs in the middle of the letter edge, half outside, and half inside not visible
+pub fn text_outline_stroke_width(font_size: f32) -> f32 {
+    font_size * crate::config::get().annotations.text.outline_width.max(0.0) * 2.0
 }
 
 fn min_width() -> f32 {

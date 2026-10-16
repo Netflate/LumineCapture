@@ -59,6 +59,7 @@ pub enum AnnotationShape {
         font_size: f32,
         bold: bool,
         italic: bool,
+        outline: Option<Color>,
     },
 }
 
@@ -151,12 +152,14 @@ impl Annotation {
                 font_size,
                 bold,
                 italic,
+                outline,
             } => AnnotationShape::Text {
                 start: p(*start),
                 content: content.clone(),
                 font_size: font_size * s,
                 bold: *bold,
                 italic: *italic,
+                outline: *outline,
             },
         };
         let bbox = Rect::from_ltrb(
@@ -402,6 +405,7 @@ impl Annotation {
                 font_size,
                 bold,
                 italic,
+                outline,
             } => {
                 // NOTE: bbox after this is stale, must call update_text_bbox() afterwards
                 // because text dimensions require FontSystem
@@ -415,6 +419,7 @@ impl Annotation {
                     font_size: (*font_size * scale).clamp(text.resize_min, text.resize_max),
                     bold: *bold,
                     italic: *italic,
+                    outline: *outline,
                 }
             }
         };
@@ -438,12 +443,23 @@ impl Annotation {
             && y <= self.bbox.bottom() + pad
     }
 
+    pub fn visual_pad(&self) -> f32 {
+        let stroke_width = match &self.shape {
+            AnnotationShape::Text {
+                font_size,
+                outline: Some(_),
+                ..
+            } => crate::tools::text::text_outline_stroke_width(*font_size),
+            _ => self.stroke_width,
+        };
+        crate::renderer::visual_pad(stroke_width)
+    }
+
     pub fn damage_bbox(&self, is_selected: bool) -> Rect {
         let pad = if is_selected {
-            crate::renderer::selection_chrome_pad()
-                .max(crate::renderer::visual_pad(self.stroke_width))
+            crate::renderer::selection_chrome_pad().max(self.visual_pad())
         } else {
-            crate::renderer::visual_pad(self.stroke_width)
+            self.visual_pad()
         };
         Rect::from_ltrb(
             self.bbox.left() - pad,

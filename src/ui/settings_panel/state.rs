@@ -4,6 +4,7 @@ use crate::theme::size;
 use crate::tools::Tool;
 use crate::types::SpecialKey;
 use crate::types::annotations::{Annotation, AnnotationShape};
+use crate::ui::color_popover::ColorTarget;
 use crate::ui::panel::{HoverablePanel, PanelItem, UiPanel};
 use crate::ui::text_field::CursorInit;
 use crate::ui::text_field::{TextFieldGroup, is_stepper_char};
@@ -85,7 +86,7 @@ impl StepperRange {
 
 #[derive(Debug, Clone)]
 pub enum SettingsWidget {
-    ColorSwatch,
+    ColorSwatch(ColorTarget),
     Action {
         action: SettingsAction,
         svg: &'static str,
@@ -136,6 +137,7 @@ pub enum SettingsSource {
 pub enum ToggleField {
     Bold,
     Italic,
+    Outline,
     Fill,
     /// one of the two mode buttons
     Pixelate(bool),
@@ -155,7 +157,7 @@ impl ToggleField {
 pub fn widgets_for_tool(tool: Tool) -> &'static [SettingsWidget] {
     match tool {
         Tool::Pen | Tool::Highlighter | Tool::Line | Tool::Arrow | Tool::NumeratedArrow => &[
-            SettingsWidget::ColorSwatch,
+            SettingsWidget::ColorSwatch(ColorTarget::Main),
             SettingsWidget::Separator,
             SettingsWidget::Stepper {
                 label: "",
@@ -164,7 +166,7 @@ pub fn widgets_for_tool(tool: Tool) -> &'static [SettingsWidget] {
             },
         ],
         Tool::Text => &[
-            SettingsWidget::ColorSwatch,
+            SettingsWidget::ColorSwatch(ColorTarget::Main),
             SettingsWidget::Separator,
             SettingsWidget::Stepper {
                 label: "",
@@ -184,9 +186,15 @@ pub fn widgets_for_tool(tool: Tool) -> &'static [SettingsWidget] {
                 },
                 field: ToggleField::Italic,
             },
+            SettingsWidget::Separator,
+            SettingsWidget::Toggle {
+                visual: ToggleVisual::Checkbox { label: "Outline" },
+                field: ToggleField::Outline,
+            },
+            SettingsWidget::ColorSwatch(ColorTarget::Outline),
         ],
         Tool::Rectangle | Tool::Circle => &[
-            SettingsWidget::ColorSwatch,
+            SettingsWidget::ColorSwatch(ColorTarget::Main),
             SettingsWidget::Separator,
             SettingsWidget::Stepper {
                 label: "",
@@ -311,7 +319,7 @@ impl PanelItem for SettingsWidget {
     fn size(&self) -> f32 {
         let cfg = &crate::config::get().settings_panel;
         match self {
-            SettingsWidget::ColorSwatch => cfg.swatch_size,
+            SettingsWidget::ColorSwatch(_) => cfg.swatch_size,
             SettingsWidget::Action { .. } => cfg.icon_button_size,
             SettingsWidget::Stepper { .. } => cfg.stepper_width,
             SettingsWidget::Toggle { visual, .. } => match visual {
@@ -339,7 +347,7 @@ impl PanelItem for SettingsWidget {
     fn is_button(&self) -> bool {
         matches!(
             self,
-            SettingsWidget::ColorSwatch
+            SettingsWidget::ColorSwatch(_)
                 | SettingsWidget::Action { .. }
                 | SettingsWidget::Stepper { .. }
                 | SettingsWidget::Toggle { .. }

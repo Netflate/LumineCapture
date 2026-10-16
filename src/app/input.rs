@@ -30,7 +30,7 @@ use super::panels::color::{
     close_color_popover, commit_color_field_edit, handle_color_field_key_press,
     handle_color_field_scroll, handle_color_field_text_input, handle_color_popover_click,
     handle_color_popover_drag, handle_color_popover_release, step_color_field,
-    update_color_popover,
+    switch_color_popover_to, update_color_popover,
 };
 use super::panels::model::{close_model_popover, handle_model_popover_click, update_model_popover};
 use super::panels::settings::{
@@ -247,7 +247,7 @@ pub fn handle_pointer_button(
                 if editor_state.settings_panel.selected == Some(widget_idx)
                     && matches!(
                         editor_state.settings_panel.widgets[widget_idx],
-                        SettingsWidget::ColorSwatch
+                        SettingsWidget::ColorSwatch(_)
                     )
                 {
                     editor_state.color_popover.open = false;
@@ -321,8 +321,15 @@ pub fn handle_pointer_button(
                         let new_val = editor_state.settings_panel.toggle(widget_idx);
                         apply_toggle_field(editor_state, field, new_val, dirty_mask);
                     }
-                    SettingsWidget::ColorSwatch => {
-                        editor_state.color_popover.open = !editor_state.color_popover.open;
+                    SettingsWidget::ColorSwatch(target) => {
+                        // a click on the other swatch keeps the popover open and switches it
+                        // a click on the same swatch opens or closes it
+                        let other_swatch = editor_state.color_popover.target != target;
+                        if other_swatch {
+                            switch_color_popover_to(editor_state, target, dirty_mask);
+                        }
+                        editor_state.color_popover.open =
+                            other_swatch || !editor_state.color_popover.open;
                     }
                     SettingsWidget::Action { action, .. } => {
                         editor_state.settings_panel.selected = None;

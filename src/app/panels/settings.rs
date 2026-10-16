@@ -1,9 +1,10 @@
 // Settings panel animation and positioning logic.
 use crate::editor::EditorState;
 use crate::editor::dirty::apply_damage_rects;
-use crate::editor::edits::{active_annotation_idx, commit_settings_change};
+use crate::editor::edits::{active_annotation_idx, commit_settings_change, damage_color_popover};
 use crate::tools::Tool;
 use crate::types::{AnnotationShape, SpecialKey};
+use crate::ui::color_popover::ColorTarget;
 use crate::ui::panel::UiPanel;
 use crate::ui::panel::{emit_panel_damage, sync_panel_hover, sync_panel_rect};
 use crate::ui::settings_panel::{
@@ -18,6 +19,24 @@ pub fn current_color(editor_state: &EditorState) -> tiny_skia::Color {
     active_annotation_idx(editor_state)
         .and_then(|idx| editor_state.annotations.get(idx))
         .map_or(editor_state.tool_settings.color, |ann| ann.color)
+}
+
+pub fn current_outline_color(editor_state: &EditorState) -> tiny_skia::Color {
+    let ann = active_annotation_idx(editor_state).and_then(|idx| editor_state.annotations.get(idx));
+    match ann.map(|ann| &ann.shape) {
+        Some(AnnotationShape::Text {
+            outline: Some(color),
+            ..
+        }) => *color,
+        _ => editor_state.tool_settings.outline_color,
+    }
+}
+
+pub fn swatch_color(editor_state: &EditorState, target: ColorTarget) -> tiny_skia::Color {
+    match target {
+        ColorTarget::Main => current_color(editor_state),
+        ColorTarget::Outline => current_outline_color(editor_state),
+    }
 }
 
 pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u32) {
@@ -78,6 +97,9 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
                     Some(ann) => match (&ann.shape, field) {
                         (AnnotationShape::Text { bold, .. }, ToggleField::Bold) => *bold,
                         (AnnotationShape::Text { italic, .. }, ToggleField::Italic) => *italic,
+                        (AnnotationShape::Text { outline, .. }, ToggleField::Outline) => {
+                            outline.is_some()
+                        }
                         (
                             AnnotationShape::Rectangle { filled, .. }
                             | AnnotationShape::Circle { filled, .. },
@@ -91,6 +113,7 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
                     None => match field {
                         ToggleField::Bold => editor_state.tool_settings.bold,
                         ToggleField::Italic => editor_state.tool_settings.italic,
+                        ToggleField::Outline => editor_state.tool_settings.outline,
                         ToggleField::Fill => editor_state.tool_settings.fill,
                         ToggleField::Pixelate(on) => editor_state.tool_settings.pixelate == *on,
                     },
@@ -99,6 +122,19 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
             }
             _ => {}
         }
+    }
+
+    let has_outline_swatch = new_widgets
+        .iter()
+        .any(|w| matches!(w, SettingsWidget::ColorSwatch(ColorTarget::Outline)));
+    if source_changed
+        && !has_outline_swatch
+        && editor_state.color_popover.target == ColorTarget::Outline
+    {
+        editor_state.color_popover.target = ColorTarget::Main;
+        let color = current_color(editor_state);
+        editor_state.color_popover.select_color(color);
+        damage_color_popover(editor_state, dirty_mask);
     }
 
     let should_be_visible =
@@ -462,6 +498,7 @@ pub fn apply_toggle_field(
     dirty_mask: &mut u32,
 ) {
     let changed = new_value || !matches!(field, ToggleField::Pixelate(_));
+    let outline_color = editor_state.tool_settings.outline_color;
     commit_settings_change(
         editor_state,
         changed,
@@ -469,12 +506,16 @@ pub fn apply_toggle_field(
         move |ts| match field {
             ToggleField::Bold => ts.bold = new_value,
             ToggleField::Italic => ts.italic = new_value,
+            ToggleField::Outline => ts.outline = new_value,
             ToggleField::Fill => ts.fill = new_value,
             ToggleField::Pixelate(on) => ts.pixelate = on,
         },
         move |ann| match (&mut ann.shape, field) {
             (AnnotationShape::Text { bold, .. }, ToggleField::Bold) => *bold = new_value,
             (AnnotationShape::Text { italic, .. }, ToggleField::Italic) => *italic = new_value,
+            (AnnotationShape::Text { outline, .. }, ToggleField::Outline) => {
+                *outline = new_value.then_some(outline_color)
+            }
             (
                 AnnotationShape::Rectangle { filled, .. } | AnnotationShape::Circle { filled, .. },
                 ToggleField::Fill,

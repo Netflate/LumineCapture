@@ -48,6 +48,7 @@ pub struct RenderRequest<'a> {
     pub toolbar: Option<&'a mut Toolbar>,
     pub settings_panel: Option<&'a mut SettingsPanel>,
     pub current_color: Color,
+    pub outline_color: Color,
     pub color_picker: Option<&'a mut ColorPickerPopover>,
     pub model_popover: Option<&'a mut crate::ui::model_popover::ModelPopover>,
     pub icons_cache: &'a HashMap<&'static str, Tree>,
@@ -319,6 +320,7 @@ pub fn render_frame(req: &mut RenderRequest) {
                 req.canvas,
                 settings,
                 req.current_color,
+                req.outline_color,
                 req.icons_cache,
                 text.font_system,
                 text.swash_cache,
@@ -690,7 +692,7 @@ pub fn rebuild_annotations_layer(
     let tmp_offset = (offset.0 + x0 as f32, offset.1 + y0 as f32);
 
     for ann in annotations {
-        let pad = annotations::visual_pad(ann.stroke_width);
+        let pad = ann.visual_pad();
         let l = ann.bbox.left() - offset.0 - pad;
         let t = ann.bbox.top() - offset.1 - pad;
         let r = ann.bbox.right() - offset.0 + pad;

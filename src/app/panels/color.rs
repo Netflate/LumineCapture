@@ -1,10 +1,12 @@
-use super::settings::compute_popover_placement;
+use super::settings::{compute_popover_placement, swatch_color};
 use crate::editor::EditorState;
 use crate::editor::edits::{apply_color_selection, damage_color_popover, use_color};
 use crate::interaction::ClickTarget;
 use crate::types::SpecialKey;
 use crate::ui::color_popover;
-use crate::ui::color_popover::{ColorField, ColorPopoverElement, field_font_size, step_hex_text};
+use crate::ui::color_popover::{
+    ColorField, ColorPopoverElement, ColorTarget, field_font_size, step_hex_text,
+};
 use crate::ui::panel::{UiPanel, sync_panel_hover, sync_panel_rect};
 use crate::ui::settings_panel::char_index_for_x;
 use crate::ui::text_field::{CursorInit, is_hex_char, is_rgba_channel_char};
@@ -404,6 +406,21 @@ pub fn handle_color_popover_release(editor_state: &mut EditorState, dirty_mask: 
 
     let color = editor_state.color_popover.sv_square.color();
     editor_state.color_popover.record_used_color(color);
+    damage_color_popover(editor_state, dirty_mask);
+}
+
+pub fn switch_color_popover_to(
+    editor_state: &mut EditorState,
+    target: ColorTarget,
+    dirty_mask: &mut u32,
+) {
+    if editor_state.color_popover.fields.is_editing() {
+        commit_color_field_edit(editor_state, dirty_mask);
+    }
+    let color = swatch_color(editor_state, target);
+    editor_state.color_popover.target = target;
+    editor_state.color_popover.select_color(color);
+    editor_state.color_popover.sync_field_values();
     damage_color_popover(editor_state, dirty_mask);
 }
 
