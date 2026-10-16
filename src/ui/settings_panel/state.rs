@@ -391,6 +391,12 @@ impl Default for SettingsPanel {
 }
 
 impl SettingsPanel {
+    pub fn has_outline_swatch(&self) -> bool {
+        self.widgets
+            .iter()
+            .any(|w| matches!(w, SettingsWidget::ColorSwatch(ColorTarget::Outline)))
+    }
+
     pub fn new() -> Self {
         Self {
             widgets: &[],

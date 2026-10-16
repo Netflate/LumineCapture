@@ -19,7 +19,7 @@ use crate::tools::selection::SelectionTool;
 use crate::tools::simple_shapes::SimpleShapeTool;
 use crate::tools::text::TextTool;
 use crate::types::annotations::AnnotationShape;
-use crate::types::{CursorIcon, MouseButton, SpecialKey, ToolSettings};
+use crate::types::{CursorIcon, MouseButton, SpecialKey, StrokeGroup, ToolSettings};
 // ==========================================
 // 1. Available Tools
 // ==========================================
@@ -91,7 +91,7 @@ fn simple_shape(tool: Tool, settings: &ToolSettings) -> SimpleShapeTool {
         settings: settings.clone(),
         stroke_width: match tool {
             Tool::Redact => 0.0,
-            _ => settings.stroke_width,
+            _ => settings.stroke(StrokeGroup::of_tool(tool)),
         },
     }
 }

@@ -1,8 +1,8 @@
 use crate::editor::{DamageZone, EditorState};
 use crate::renderer::shadow_color_for;
 use crate::tools::ToolBehavior;
-use crate::types::MouseButton;
 use crate::types::annotations::{Annotation, AnnotationShape};
+use crate::types::{MouseButton, StrokeGroup};
 use tiny_skia::Rect;
 
 pub struct PenTool;
@@ -27,7 +27,7 @@ impl ToolBehavior for PenTool {
                 shape: AnnotationShape::Pen { points: vec![pos] },
                 color: state.tool_settings.color,
                 shadow_color: shadow_color_for(state.tool_settings.color),
-                stroke_width: state.tool_settings.stroke_width,
+                stroke_width: state.tool_settings.stroke(StrokeGroup::Freehand),
                 bbox: Rect::from_xywh(pos.0, pos.1, 1.0, 1.0).unwrap(),
             };
             ann.update_bbox();

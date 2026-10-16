@@ -1,6 +1,8 @@
 use tiny_skia::Color;
 
 use crate::theme::Rgba;
+use crate::tools::Tool;
+use crate::types::AnnotationShape;
 
 /// redaction strength in percent
 pub const STRENGTH: (f32, f32) = (1.0, 100.0);
@@ -11,9 +13,66 @@ pub fn default_color() -> Rgba {
         .unwrap_or(crate::config::get().tools.color)
 }
 
+/// Tools that share one stroke width.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StrokeGroup {
+    Rectangle,
+    Circle,
+    Arrow,
+    Line,
+    Numbered,
+    Freehand,
+}
+
+impl StrokeGroup {
+    pub const ALL: [Self; 6] = [
+        Self::Rectangle,
+        Self::Circle,
+        Self::Arrow,
+        Self::Line,
+        Self::Numbered,
+        Self::Freehand,
+    ];
+
+    /// name in the saved state file
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Rectangle => "rectangle",
+            Self::Circle => "circle",
+            Self::Arrow => "arrow",
+            Self::Line => "line",
+            Self::Numbered => "numbered",
+            Self::Freehand => "freehand",
+        }
+    }
+
+    /// tools without a stroke width never show the stepper, so the fallback is never read
+    pub fn of_tool(tool: Tool) -> Self {
+        match tool {
+            Tool::Circle => Self::Circle,
+            Tool::Arrow => Self::Arrow,
+            Tool::Line => Self::Line,
+            Tool::NumeratedArrow => Self::Numbered,
+            Tool::Pen | Tool::Highlighter => Self::Freehand,
+            _ => Self::Rectangle,
+        }
+    }
+
+    pub fn of_shape(shape: &AnnotationShape) -> Self {
+        match shape {
+            AnnotationShape::Circle { .. } => Self::Circle,
+            AnnotationShape::Arrow { .. } => Self::Arrow,
+            AnnotationShape::Line { .. } => Self::Line,
+            AnnotationShape::NumeratedArrow { .. } => Self::Numbered,
+            AnnotationShape::Pen { .. } | AnnotationShape::Highlighter { .. } => Self::Freehand,
+            _ => Self::Rectangle,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ToolSettings {
-    pub stroke_width: f32,
+    strokes: [f32; StrokeGroup::ALL.len()],
     pub font_size: f32,
     pub strength: f32,
     pub pixelate: bool,
@@ -25,15 +84,28 @@ pub struct ToolSettings {
     pub color: Color,
 }
 
+impl ToolSettings {
+    pub fn stroke(&self, group: StrokeGroup) -> f32 {
+        self.strokes[group as usize]
+    }
+
+    pub fn set_stroke(&mut self, group: StrokeGroup, width: f32) {
+        self.strokes[group as usize] = width;
+    }
+}
+
 impl Default for ToolSettings {
     fn default() -> Self {
         let tools = &crate::config::get().tools;
         let saved = crate::editor::saved::get();
-        Self {
-            stroke_width: saved
-                .stroke_width
+        let strokes = StrokeGroup::ALL.map(|group| {
+            saved
+                .stroke(group)
                 .unwrap_or(tools.stroke.width)
-                .clamp(tools.stroke.min, tools.stroke.max),
+                .clamp(tools.stroke.min, tools.stroke.max)
+        });
+        Self {
+            strokes,
             font_size: saved
                 .font_size
                 .unwrap_or(tools.font.size)

@@ -79,6 +79,9 @@ pub fn damage_color_popover(editor_state: &mut EditorState, dirty_mask: &mut u32
 /// common path for color selection, since we have two ways to use color selection
 /// swatch click and eyedropper pick
 pub fn use_color(editor_state: &mut EditorState, color: Color, dirty_mask: &mut u32) {
+    if !editor_state.settings_panel.has_outline_swatch() {
+        editor_state.color_popover.target = ColorTarget::Main;
+    }
     editor_state.color_popover.select_color(color);
     editor_state.color_popover.record_used_color(color);
     editor_state.color_popover.sync_field_values();

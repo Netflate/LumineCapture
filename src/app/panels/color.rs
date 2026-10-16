@@ -53,8 +53,7 @@ pub fn update_color_popover(editor_state: &mut EditorState, dirty_mask: &mut u32
             && !editor_state.color_popover.sv_square.dragging
             && !editor_state.color_popover.hue_dragging
         {
-            let snapshot = editor_state.color_popover.pre_edit_snapshot.take();
-            editor_state.commit_snapshot(snapshot);
+            finish_color_steps(editor_state);
         }
         sync_panel_hover(
             &mut editor_state.color_popover,
@@ -66,9 +65,17 @@ pub fn update_color_popover(editor_state: &mut EditorState, dirty_mask: &mut u32
         && !editor_state.color_popover.sv_square.dragging
         && !editor_state.color_popover.hue_dragging
     {
-        let snapshot = editor_state.color_popover.pre_edit_snapshot.take();
-        editor_state.commit_snapshot(snapshot);
+        finish_color_steps(editor_state);
     }
+}
+
+fn finish_color_steps(editor_state: &mut EditorState) {
+    let Some(snapshot) = editor_state.color_popover.pre_edit_snapshot.take() else {
+        return;
+    };
+    editor_state.commit_snapshot(Some(snapshot));
+    let color = editor_state.color_popover.sv_square.color();
+    editor_state.color_popover.record_used_color(color);
 }
 
 /// One hit-test for all clickable elements for hover
@@ -282,7 +289,7 @@ pub fn step_color_field(
         }
     };
 
-    if apply_color_field_text(editor_state, field, &new_text, true, false, dirty_mask) {
+    if apply_color_field_text(editor_state, field, &new_text, false, false, dirty_mask) {
         damage_color_popover(editor_state, dirty_mask);
 
         editor_state
@@ -428,12 +435,7 @@ pub fn close_color_popover(editor_state: &mut EditorState, dirty_mask: &mut u32)
     if editor_state.color_popover.fields.is_editing() {
         commit_color_field_edit(editor_state, dirty_mask);
     }
-    if let Some(snapshot) = editor_state.color_popover.pre_edit_snapshot.take()
-        && editor_state.annotations != snapshot
-    {
-        editor_state.undo_stack.push(snapshot);
-        editor_state.redo_stack.clear();
-    }
+    finish_color_steps(editor_state);
     editor_state.color_popover.open = false;
     update_color_popover(editor_state, dirty_mask);
 }

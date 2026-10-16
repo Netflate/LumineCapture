@@ -525,7 +525,7 @@ section!(Stroke {
 });
 
 section!(Font {
-    size: f32 = 24.0,
+    size: f32 = 32.0,
     min: f32 = 8.0,
     max: f32 = 72.0,
     step: f32 = 1.0,
@@ -1038,7 +1038,7 @@ max = 40.0
 step = 1.0
 
 [tools.font]
-size = 24.0
+size = 32.0
 min = 8.0
 max = 72.0
 step = 1.0

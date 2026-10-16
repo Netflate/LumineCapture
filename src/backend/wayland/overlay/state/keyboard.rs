@@ -31,8 +31,11 @@ impl KeyboardHandler for OverlayState {
         _: &QueueHandle<Self>,
         _: &wl_keyboard::WlKeyboard,
         _: u32,
-        event: KeyEvent,
+        mut event: KeyEvent,
     ) {
+        if event.utf8.is_none() {
+            event.utf8 = event.keysym.key_char().map(String::from);
+        }
         self.process_key(&event);
     }
 

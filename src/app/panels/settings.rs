@@ -1,9 +1,10 @@
 // Settings panel animation and positioning logic.
+use super::color::close_color_popover;
 use crate::editor::EditorState;
 use crate::editor::dirty::apply_damage_rects;
-use crate::editor::edits::{active_annotation_idx, commit_settings_change, damage_color_popover};
+use crate::editor::edits::{active_annotation_idx, commit_settings_change};
 use crate::tools::Tool;
-use crate::types::{AnnotationShape, SpecialKey};
+use crate::types::{AnnotationShape, SpecialKey, StrokeGroup};
 use crate::ui::color_popover::ColorTarget;
 use crate::ui::panel::UiPanel;
 use crate::ui::panel::{emit_panel_damage, sync_panel_hover, sync_panel_rect};
@@ -124,17 +125,12 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
         }
     }
 
-    let has_outline_swatch = new_widgets
-        .iter()
-        .any(|w| matches!(w, SettingsWidget::ColorSwatch(ColorTarget::Outline)));
     if source_changed
-        && !has_outline_swatch
+        && editor_state.color_popover.open
         && editor_state.color_popover.target == ColorTarget::Outline
+        && !editor_state.settings_panel.has_outline_swatch()
     {
-        editor_state.color_popover.target = ColorTarget::Main;
-        let color = current_color(editor_state);
-        editor_state.color_popover.select_color(color);
-        damage_color_popover(editor_state, dirty_mask);
+        close_color_popover(editor_state, dirty_mask);
     }
 
     let should_be_visible =
@@ -463,6 +459,14 @@ fn live_apply_stepper_field(
     try_apply_stepper_text(editor_state, widget_idx, &text, false, dirty_mask);
 }
 
+/// the stroke width the panel edits: the selected annotation's, else the current tool's
+fn stroke_group(editor_state: &EditorState) -> StrokeGroup {
+    match active_annotation_idx(editor_state).and_then(|i| editor_state.annotations.get(i)) {
+        Some(ann) => StrokeGroup::of_shape(&ann.shape),
+        None => StrokeGroup::of_tool(editor_state.selected_tool),
+    }
+}
+
 fn apply_stepper_field(
     editor_state: &mut EditorState,
     range: StepperRange,
@@ -471,6 +475,7 @@ fn apply_stepper_field(
     dirty_mask: &mut u32,
 ) {
     let current = stepper_value(editor_state, range);
+    let group = stroke_group(editor_state);
     let changed = (current - new_value).abs() > f32::EPSILON;
 
     commit_settings_change(
@@ -478,7 +483,7 @@ fn apply_stepper_field(
         changed,
         record_undo,
         move |ts| match range {
-            StepperRange::Stroke => ts.stroke_width = new_value,
+            StepperRange::Stroke => ts.set_stroke(group, new_value),
             StepperRange::Font => ts.font_size = new_value,
             StepperRange::Strength => ts.strength = new_value,
         },
@@ -633,7 +638,7 @@ fn stepper_value(editor_state: &EditorState, range: StepperRange) -> f32 {
             _ => ann.stroke_width,
         },
         None => match range {
-            StepperRange::Stroke => ts.stroke_width,
+            StepperRange::Stroke => ts.stroke(stroke_group(editor_state)),
             StepperRange::Font => ts.font_size,
             StepperRange::Strength => ts.strength,
         },

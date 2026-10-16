@@ -1,6 +1,7 @@
 // saved responsible for saving and reading user's options
 // such as font width, stroke width, color choice, and etc
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
@@ -9,13 +10,14 @@ use serde::{Deserialize, Serialize};
 use tiny_skia::Color;
 
 use crate::theme::Rgba;
-use crate::types::ToolSettings;
+use crate::types::{StrokeGroup, ToolSettings};
 use crate::ui::color_popover::color_to_hex_string;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 struct File {
     color: Option<String>,
+    /// one width for every tool, how it was stored before the per-tool ones, only read
     stroke_width: Option<f32>,
     font_size: Option<f32>,
     strength: Option<f32>,
@@ -27,12 +29,14 @@ struct File {
     fill: Option<bool>,
     magnifier: Option<bool>,
     recent_colors: Vec<String>,
+    stroke_widths: BTreeMap<String, f32>,
 }
 
 #[derive(Debug, Default)]
 pub struct Saved {
     pub color: Option<Rgba>,
-    pub stroke_width: Option<f32>,
+    stroke_width: Option<f32>,
+    stroke_widths: BTreeMap<String, f32>,
     pub font_size: Option<f32>,
     pub strength: Option<f32>,
     pub pixelate: Option<bool>,
@@ -86,6 +90,11 @@ fn load() -> Saved {
     Saved {
         color: file.color.as_deref().and_then(parse_color),
         stroke_width: file.stroke_width.filter(|w| w.is_finite()),
+        stroke_widths: file
+            .stroke_widths
+            .into_iter()
+            .filter(|(_, w)| w.is_finite())
+            .collect(),
         font_size: file.font_size.filter(|s| s.is_finite()),
         strength: file.strength.filter(|s| s.is_finite()),
         pixelate: file.pixelate,
@@ -96,6 +105,15 @@ fn load() -> Saved {
         fill: file.fill,
         magnifier: file.magnifier,
         recent_colors,
+    }
+}
+
+impl Saved {
+    pub fn stroke(&self, group: StrokeGroup) -> Option<f32> {
+        self.stroke_widths
+            .get(group.key())
+            .copied()
+            .or(self.stroke_width)
     }
 }
 
@@ -120,7 +138,11 @@ pub fn save(
 
     let file = File {
         color: Some(hex(settings.color)),
-        stroke_width: Some(settings.stroke_width),
+        stroke_width: None,
+        stroke_widths: StrokeGroup::ALL
+            .iter()
+            .map(|&g| (g.key().to_string(), settings.stroke(g)))
+            .collect(),
         font_size: Some(settings.font_size),
         strength: Some(settings.strength),
         pixelate: Some(settings.pixelate),

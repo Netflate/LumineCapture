@@ -409,6 +409,9 @@ pub fn select_tool(editor_state: &mut EditorState, tool: Tool, dirty_mask: &mut 
         return;
     };
     editor_state.settings_panel.selected = None;
+    if editor_state.color_popover.open {
+        close_color_popover(editor_state, dirty_mask);
+    }
 
     crate::tools::eyedropper::end_pick_once(editor_state, dirty_mask);
     // ocr falls back to the monitor under the cursor,
