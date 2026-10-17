@@ -1,4 +1,5 @@
 use crate::editor::{DamageZone, EditorState};
+use crate::interaction::snap_line;
 use crate::renderer::shadow_color_for;
 use crate::tools::ToolBehavior;
 use crate::types::annotations::{Annotation, AnnotationShape};
@@ -11,6 +12,7 @@ pub struct SimpleShapeTool {
     pub make_shape: MakeShape,
     pub settings: ToolSettings,
     pub stroke_width: f32,
+    pub snap: bool,
 }
 
 impl ToolBehavior for SimpleShapeTool {
@@ -61,7 +63,12 @@ impl ToolBehavior for SimpleShapeTool {
                 state.input.pointer.global.1 as f32,
             );
             let start = ann.shape.start_point();
-            ann.shape = (self.make_shape)(start, pos, &self.settings);
+            let end = if self.snap && state.input.shift {
+                snap_line(start, pos)
+            } else {
+                pos
+            };
+            ann.shape = (self.make_shape)(start, end, &self.settings);
             ann.update_bbox();
 
             state.damage_rects.push(DamageZone::Global(ann.bbox));

@@ -1,6 +1,7 @@
 use crate::editor::{DamageZone, EditorState};
 use crate::renderer::shadow_color_for;
 use crate::tools::ToolBehavior;
+use crate::tools::pen::{straighten, tail_damage};
 use crate::types::annotations::{Annotation, AnnotationShape};
 use crate::types::{MouseButton, StrokeGroup};
 use tiny_skia::Rect;
@@ -21,9 +22,13 @@ impl ToolBehavior for HighlighterTool {
         );
 
         if pressed {
+            state.input.straight = false;
             let mut ann = Annotation {
                 id: state.next_id,
-                shape: AnnotationShape::Highlighter { points: vec![pos] },
+                shape: AnnotationShape::Highlighter {
+                    points: vec![pos],
+                    flat_ends: [false; 2],
+                },
                 color: state.tool_settings.color,
                 shadow_color: shadow_color_for(state.tool_settings.color),
                 stroke_width: state.tool_settings.stroke(StrokeGroup::Freehand),
@@ -51,6 +56,11 @@ impl ToolBehavior for HighlighterTool {
     }
 
     fn on_move(&self, state: &mut EditorState, _global: (f64, f64), dirty_mask: &mut u32) {
+        if state.input.shift {
+            straighten(state);
+            return;
+        }
+
         let raw_pos = (
             state.input.pointer.global.0 as f32,
             state.input.pointer.global.1 as f32,
@@ -61,7 +71,7 @@ impl ToolBehavior for HighlighterTool {
         };
         let stroke_width = ann.stroke_width;
 
-        let AnnotationShape::Highlighter { points } = &mut ann.shape else {
+        let AnnotationShape::Highlighter { points, flat_ends } = &mut ann.shape else {
             return;
         };
 
@@ -85,15 +95,9 @@ impl ToolBehavior for HighlighterTool {
         }
 
         points.push(smoothed);
+        flat_ends[1] = false;
 
-        let tail = &points[points.len().saturating_sub(3)..];
-        let pad = crate::renderer::visual_pad(stroke_width);
-        let damage = Rect::from_ltrb(
-            tail.iter().map(|p| p.0).fold(f32::INFINITY, f32::min) - pad,
-            tail.iter().map(|p| p.1).fold(f32::INFINITY, f32::min) - pad,
-            tail.iter().map(|p| p.0).fold(f32::NEG_INFINITY, f32::max) + pad,
-            tail.iter().map(|p| p.1).fold(f32::NEG_INFINITY, f32::max) + pad,
-        );
+        let damage = tail_damage(points, crate::renderer::visual_pad(stroke_width));
         ann.update_bbox();
 
         if let Some(damage) = damage {

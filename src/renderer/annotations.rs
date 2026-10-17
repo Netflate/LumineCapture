@@ -7,8 +7,8 @@ use crate::types::annotations::{Annotation, AnnotationShape, arrow_head};
 use cosmic_text::{Editor, FontSystem, SwashCache};
 use std::collections::HashMap;
 use tiny_skia::{
-    Color, FillRule, LineCap, LineJoin, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke,
-    Transform,
+    Color, FillRule, LineCap, LineJoin, Mask, Paint, PathBuilder, Pixmap, PixmapPaint, Rect,
+    Stroke, Transform,
 };
 
 /// Scales the shadow's own fixed alpha by the annotation color's alpha,
@@ -197,8 +197,15 @@ pub fn draw_annotation(
                 super::blur::draw(canvas, rect, style, blurs.get(&ann.id), offset);
             }
         }
-        AnnotationShape::Highlighter { points } => {
-            draw_highlighter(canvas, points, ann.color, ann.stroke_width, offset);
+        AnnotationShape::Highlighter { points, flat_ends } => {
+            draw_highlighter(
+                canvas,
+                points,
+                *flat_ends,
+                ann.color,
+                ann.stroke_width,
+                offset,
+            );
         }
         AnnotationShape::Text { .. } => {
             let is_editing = active_text_id == Some(ann.id);
@@ -506,7 +513,11 @@ fn draw_line(
     }
 }
 
-fn freehand_path(points: &[(f32, f32)], clip: Option<Rect>) -> Option<tiny_skia::Path> {
+fn freehand_path(
+    points: &[(f32, f32)],
+    skip: usize,
+    clip: Option<Rect>,
+) -> Option<tiny_skia::Path> {
     let mid = |a: (f32, f32), b: (f32, f32)| ((a.0 + b.0) / 2.0, (a.1 + b.1) / 2.0);
     let mut pb = PathBuilder::new();
 
@@ -523,7 +534,7 @@ fn freehand_path(points: &[(f32, f32)], clip: Option<Rect>) -> Option<tiny_skia:
         _ => {
             let n = points.len();
             let mut open = false;
-            for i in 1..n {
+            for i in 1 + skip..n {
                 let start = if i == 1 {
                     points[0]
                 } else {
@@ -570,7 +581,7 @@ fn draw_pen(
     offset: (f32, f32),
     shadow_color: Color,
 ) {
-    let Some(path) = freehand_path(points, None) else {
+    let Some(path) = freehand_path(points, 0, None) else {
         return;
     };
 
@@ -607,24 +618,78 @@ fn highlighter_color(mut color: Color) -> Color {
 fn draw_highlighter(
     canvas: &mut Pixmap,
     points: &[(f32, f32)],
+    flat_ends: [bool; 2],
     color: Color,
     stroke_width: f32,
     offset: (f32, f32),
 ) {
-    if let Some(path) = freehand_path(points, None) {
-        stroke_pen_segment(
+    if let Some(path) = freehand_path(points, 0, None) {
+        stroke_highlighter(
             canvas,
             &path,
-            highlighter_color(color),
+            points,
+            flat_ends,
+            color,
             stroke_width,
             offset,
         );
     }
 }
 
+fn stroke_highlighter(
+    canvas: &mut Pixmap,
+    path: &tiny_skia::Path,
+    points: &[(f32, f32)],
+    flat_ends: [bool; 2],
+    color: Color,
+    stroke_width: f32,
+    offset: (f32, f32),
+) {
+    let flat_ends = if points.windows(2).all(|w| w[0] == w[1]) {
+        [false; 2]
+    } else {
+        flat_ends
+    };
+    let transform = Transform::from_translate(-offset.0, -offset.1);
+    let mut paint = Paint::default();
+    paint.set_color(highlighter_color(color));
+    paint.anti_alias = true;
+    let mut stroke = Stroke::default();
+    stroke.width = stroke_width;
+    stroke.line_cap = if flat_ends == [false; 2] {
+        LineCap::Round
+    } else {
+        LineCap::Butt
+    };
+    stroke.line_join = LineJoin::Round;
+
+    let round_end = match flat_ends {
+        [true, false] => points.last(),
+        [false, true] => points.first(),
+        _ => None,
+    };
+    let Some(&(x, y)) = round_end else {
+        canvas.stroke_path(path, &paint, &stroke, transform, None);
+        return;
+    };
+
+    let (Some(mut mask), Some(outline), Some(dot), Some(rect)) = (
+        Mask::new(canvas.width(), canvas.height()),
+        path.stroke(&stroke, 1.0),
+        PathBuilder::from_circle(x, y, stroke_width / 2.0),
+        Rect::from_xywh(0.0, 0.0, canvas.width() as f32, canvas.height() as f32),
+    ) else {
+        return;
+    };
+    mask.fill_path(&outline, FillRule::Winding, true, transform);
+    mask.fill_path(&dot, FillRule::Winding, true, transform);
+    canvas.fill_rect(rect, &paint, Transform::identity(), Some(&mask));
+}
+
 pub fn draw_highlighter_live(
     canvas: &mut Pixmap,
     points: &[(f32, f32)],
+    flat_ends: [bool; 2],
     color: Color,
     stroke_width: f32,
     offset: (f32, f32),
@@ -650,13 +715,15 @@ pub fn draw_highlighter_live(
         w as f32 + pad * 2.0,
         h as f32 + pad * 2.0,
     );
-    let Some(path) = freehand_path(points, clip) else {
+    let Some(path) = freehand_path(points, 0, clip) else {
         return;
     };
-    stroke_pen_segment(
+    stroke_highlighter(
         &mut tmp,
         &path,
-        highlighter_color(color),
+        points,
+        flat_ends,
+        color,
         stroke_width,
         origin,
     );
@@ -693,51 +760,13 @@ pub fn stroke_pen_segment(
 pub fn draw_pen_active_tail(
     canvas: &mut Pixmap,
     points: &[(f32, f32)],
+    baked: usize,
     color: Color,
     stroke_width: f32,
     offset: (f32, f32),
 ) {
-    if points.is_empty() {
-        return;
-    }
-    let transform = Transform::from_translate(-offset.0, -offset.1);
-    let mut paint = Paint::default();
-    paint.set_color(color);
-    paint.anti_alias = true;
-    let mut stroke = Stroke::default();
-    stroke.width = stroke_width;
-    stroke.line_cap = LineCap::Round;
-    stroke.line_join = LineJoin::Round;
-
-    if points.len() == 1 {
-        let p = points[0];
-        let mut pb = PathBuilder::new();
-        pb.move_to(p.0, p.1);
-        pb.line_to(p.0, p.1);
-        if let Some(path) = pb.finish() {
-            canvas.stroke_path(&path, &paint, &stroke, transform, None);
-        }
-        return;
-    }
-    if points.len() == 2 {
-        let mut pb = PathBuilder::new();
-        pb.move_to(points[0].0, points[0].1);
-        pb.line_to(points[1].0, points[1].1);
-        if let Some(path) = pb.finish() {
-            canvas.stroke_path(&path, &paint, &stroke, transform, None);
-        }
-        return;
-    }
-
-    let p_prev = points[points.len() - 2];
-    let p_last = points[points.len() - 1];
-    let mid = ((p_prev.0 + p_last.0) / 2.0, (p_prev.1 + p_last.1) / 2.0);
-
-    let mut pb = PathBuilder::new();
-    pb.move_to(mid.0, mid.1);
-    pb.line_to(p_last.0, p_last.1);
-    if let Some(path) = pb.finish() {
-        canvas.stroke_path(&path, &paint, &stroke, transform, None);
+    if let Some(path) = freehand_path(points, baked, None) {
+        stroke_pen_segment(canvas, &path, color, stroke_width, offset);
     }
 }
 

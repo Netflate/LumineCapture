@@ -93,6 +93,7 @@ fn simple_shape(tool: Tool, settings: &ToolSettings) -> SimpleShapeTool {
             Tool::Redact => 0.0,
             _ => settings.stroke(StrokeGroup::of_tool(tool)),
         },
+        snap: matches!(tool, Tool::Line | Tool::Arrow),
     }
 }
 

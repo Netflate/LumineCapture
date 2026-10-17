@@ -52,6 +52,22 @@ fn dist(a: (f32, f32), b: (f32, f32)) -> f32 {
     (dx * dx + dy * dy).sqrt()
 }
 
+// ==========================================
+// Straight lines
+// ==========================================
+
+pub fn snap_line(start: (f32, f32), end: (f32, f32)) -> (f32, f32) {
+    let max = crate::config::get().input.snap_angle.to_radians().tan();
+    let (dx, dy) = ((end.0 - start.0).abs(), (end.1 - start.1).abs());
+    if dy <= dx * max {
+        (end.0, start.1)
+    } else if dx <= dy * max {
+        (start.0, end.1)
+    } else {
+        end
+    }
+}
+
 /// Identifiers for interactive objects that support double-click tracking.
 ///
 /// This serves as the target type `T` for the `DoubleClickTracker`, allowing

@@ -586,6 +586,7 @@ section!(Input {
     hold_repeat_ms: u64 = 120,
     hold_fast_after: u32 = 8,
     hold_fast_repeat_ms: u64 = 40,
+    snap_angle: f32 = 3.0,
 });
 
 section!(OcrLook {
@@ -1096,6 +1097,8 @@ hold_delay_ms = 400
 hold_repeat_ms = 120
 hold_fast_after = 8
 hold_fast_repeat_ms = 40
+# when using Shift on few tools, it snaps to horizontal or venrtical line within this many degrees
+snap_angle = 3.0
 
 [animation]
 # multiplies every animation below; 0.1 at least

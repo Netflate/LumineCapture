@@ -397,8 +397,7 @@ fn handle_event(editor_state: &mut EditorState, ev: OverlayEvent, dirty_mask: &m
             input::handle_key(editor_state, chord, text, dirty_mask);
         }
         OverlayEvent::ModifiersChanged { ctrl, shift } => {
-            editor_state.input.ctrl = ctrl;
-            editor_state.input.shift = shift;
+            input::handle_modifiers(editor_state, ctrl, shift, dirty_mask);
         }
         OverlayEvent::Scroll { delta_x, delta_y } => {
             input::handle_scroll(editor_state, delta_x, delta_y, dirty_mask);
@@ -596,6 +595,7 @@ fn render_monitor(editor_state: &mut EditorState, i: usize, frame: &Frame) -> Op
         annotations_layer_empty: hidden
             || (editor_state.annotations.is_empty() && editor_state.pending_pen_baked == 0),
         pending: editor_state.pending.as_ref().filter(|_| !hidden),
+        pending_pen_baked: editor_state.pending_pen_baked,
         is_pending_selected: editor_state.ann_drag.is_some(),
         dragged_index,
         selected_annotation: editor_state.selected_annotation.filter(|_| !hidden),

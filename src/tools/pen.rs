@@ -1,4 +1,5 @@
 use crate::editor::{DamageZone, EditorState};
+use crate::interaction::snap_line;
 use crate::renderer::shadow_color_for;
 use crate::tools::ToolBehavior;
 use crate::types::annotations::{Annotation, AnnotationShape};
@@ -22,6 +23,7 @@ impl ToolBehavior for PenTool {
 
         if pressed {
             state.pending_pen_baked = 0;
+            state.input.straight = false;
             let mut ann = Annotation {
                 id: state.next_id,
                 shape: AnnotationShape::Pen { points: vec![pos] },
@@ -57,6 +59,11 @@ impl ToolBehavior for PenTool {
     }
 
     fn on_move(&self, state: &mut EditorState, _global: (f64, f64), dirty_mask: &mut u32) {
+        if state.input.shift {
+            straighten(state);
+            return;
+        }
+
         let raw_pos = (
             state.input.pointer.global.0 as f32,
             state.input.pointer.global.1 as f32,
@@ -145,4 +152,55 @@ impl ToolBehavior for PenTool {
             ann.update_bbox();
         }
     }
+}
+
+pub fn straighten(state: &mut EditorState) {
+    let Some(ann) = state.pending.as_mut() else {
+        return;
+    };
+    let pad = crate::renderer::visual_pad(ann.stroke_width);
+    let pos = (
+        state.input.pointer.global.0 as f32,
+        state.input.pointer.global.1 as f32,
+    );
+
+    let (points, flat_ends) = match &mut ann.shape {
+        AnnotationShape::Pen { points } => (points, None),
+        AnnotationShape::Highlighter { points, flat_ends } => (points, Some(flat_ends)),
+        _ => return,
+    };
+    let old = tail_damage(points, pad);
+    if state.input.straight {
+        points.pop();
+    } else if let Some(&last) = points.last() {
+        points.push(last);
+    }
+    let Some(&anchor) = points.last() else {
+        return;
+    };
+    points.push(snap_line(anchor, pos));
+    let new = tail_damage(points, pad);
+
+    if let Some(flat_ends) = flat_ends {
+        flat_ends[1] = true;
+        if points.len() == 3 {
+            flat_ends[0] = true;
+        }
+    }
+    ann.update_bbox();
+    state.input.straight = true;
+
+    for damage in [old, new].into_iter().flatten() {
+        state.damage_rects.push(DamageZone::Global(damage));
+    }
+}
+
+pub fn tail_damage(points: &[(f32, f32)], pad: f32) -> Option<Rect> {
+    let tail = &points[points.len().saturating_sub(3)..];
+    Rect::from_ltrb(
+        tail.iter().map(|p| p.0).fold(f32::INFINITY, f32::min) - pad,
+        tail.iter().map(|p| p.1).fold(f32::INFINITY, f32::min) - pad,
+        tail.iter().map(|p| p.0).fold(f32::NEG_INFINITY, f32::max) + pad,
+        tail.iter().map(|p| p.1).fold(f32::NEG_INFINITY, f32::max) + pad,
+    )
 }

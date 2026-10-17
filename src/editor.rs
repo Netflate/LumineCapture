@@ -30,6 +30,7 @@ pub struct InputState {
     pub mouse_down: bool,
     pub ctrl: bool,
     pub shift: bool,
+    pub straight: bool,
     pub clicks: DoubleClickTracker<ClickTarget>,
 }
 
@@ -41,6 +42,7 @@ impl Default for InputState {
             mouse_down: false,
             ctrl: false,
             shift: false,
+            straight: false,
             clicks: DoubleClickTracker::new(),
         }
     }

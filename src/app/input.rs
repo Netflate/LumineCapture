@@ -75,6 +75,25 @@ pub fn handle_pointer_move(
     apply_damage_rects(editor_state, dirty_mask);
 }
 
+pub fn handle_modifiers(
+    editor_state: &mut EditorState,
+    ctrl: bool,
+    shift: bool,
+    dirty_mask: &mut u32,
+) {
+    let shift_pressed = shift && !editor_state.input.shift;
+    editor_state.input.ctrl = ctrl;
+    editor_state.input.shift = shift;
+    if !shift {
+        editor_state.input.straight = false;
+    }
+    if shift_pressed && editor_state.pending.is_some() && editor_state.ann_drag.is_none() {
+        let global = editor_state.input.pointer.global;
+        dispatch_move(editor_state.selected_tool, editor_state, global, dirty_mask);
+        apply_damage_rects(editor_state, dirty_mask);
+    }
+}
+
 // ──── hit test with priority: color popover (if open) -> languages list (if open) -> toolbar -> settings ──────────────────
 
 enum UiHit {

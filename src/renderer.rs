@@ -57,6 +57,7 @@ pub struct RenderRequest<'a> {
     pub annotations_layer: &'a Pixmap,
     pub annotations_layer_empty: bool,
     pub pending: Option<&'a Annotation>,
+    pub pending_pen_baked: usize,
     pub is_pending_selected: bool,
     /// index of dragged annotation in `annotations`
     pub dragged_index: Option<usize>,
@@ -199,16 +200,18 @@ pub fn render_frame(req: &mut RenderRequest) {
                 annotations::draw_pen_active_tail(
                     req.canvas,
                     points,
+                    req.pending_pen_baked,
                     p.color,
                     p.stroke_width,
                     req.offset,
                 );
             } else if !req.is_pending_selected
-                && let crate::types::AnnotationShape::Highlighter { points } = &p.shape
+                && let crate::types::AnnotationShape::Highlighter { points, flat_ends } = &p.shape
             {
                 annotations::draw_highlighter_live(
                     req.canvas,
                     points,
+                    *flat_ends,
                     p.color,
                     p.stroke_width,
                     req.offset,

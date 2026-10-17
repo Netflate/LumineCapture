@@ -162,6 +162,7 @@ These shortcuts are available in the editor. All of them can be changed in the `
 | Double click on the selection                                                 | Finish with the default action, same as <kbd>Return</kbd>                      |
 | Right Click                                                                   | Clear the selection                                                            |
 | Mouse Wheel                                                                   | Change the tool's size (width or font)                                         |
+| Hold <kbd>Shift</kbd> while drawing                                           | Straight line, snaps to horizontal or vertical (Pen, Highlighter, Line, Arrow) |
 
 With the OCR tool active, <kbd>Return</kbd> and <kbd>Ctrl</kbd> + <kbd>C</kbd> copy the selected text, and <kbd>Ctrl</kbd> + <kbd>A</kbd> selects all recognized text. With the Eyedropper they copy the picked color.
 
