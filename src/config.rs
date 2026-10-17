@@ -727,7 +727,7 @@ to = "cs"
 # window  a fullscreen window: can be sent to another desktop or minimized (Recommended)
 # layer   drawn above everything else until the capture is finished, so to check something
 #         outside the screenshot you'd have to cancel the capture.
-# auto    layer on niri, where a window would open as a new column, window everywhere else
+# auto    layer on niri, where a window would open as a new column, and on COSMIC, window everywhere else
 overlay = "auto"
 
 [save]

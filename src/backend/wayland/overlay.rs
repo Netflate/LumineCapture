@@ -6,6 +6,7 @@
 //
 // by default, auto decides what to use, for everything a fullscreen window
 // for scrolling wm (for now only niri) layer, since creating a window there will start a clunky animation for a screenshot app
+// and for COSMIC, since force fullscreen window is unstable, at least for now (focus grabbing + gray cosmic ui)
 use rustix::{
     event::{PollFd, PollFlags, poll},
     time::Timespec,

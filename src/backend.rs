@@ -115,11 +115,15 @@ pub enum OverlayShell {
 /// Niri, and likely other scroll managers, places every new full-screen window on the side
 /// making the user experience clunky since every trigger plays an animation of opening a new app.
 /// Therefore, layer_shell is used there instead.
+///
+/// COSMIC gets layer_shell too since a full-screen window there flashes gray while it opens,
+/// and there is few focus grabbing issues.
+/// Make sense to return to Window if these issues get fixed
 pub fn initialize_overlay(
     conn: Connection,
 ) -> Result<Box<dyn ScreenOverlay>, Box<dyn std::error::Error>> {
     let layer = match crate::config::get().general.overlay {
-        OverlayShell::Auto => on_niri(),
+        OverlayShell::Auto => on_niri() || on_cosmic(),
         shell => shell == OverlayShell::Layer,
     };
     info!(
@@ -134,6 +138,11 @@ pub fn initialize_overlay(
 fn on_niri() -> bool {
     let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
     desktop.split(':').any(|d| d == "niri") || std::env::var_os("NIRI_SOCKET").is_some()
+}
+
+fn on_cosmic() -> bool {
+    let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
+    desktop.split(':').any(|d| d == "COSMIC")
 }
 
 pub fn initialize_clipboard() -> Box<dyn ClipboardProvider> {
