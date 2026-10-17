@@ -318,6 +318,7 @@ section!(Toolbar {
     button_gap: f32 = 4.0,
     separator_slot: f32 = 20.0,
     highlight_height: f32 = 0.8,
+    highlight_to: bool = false,
     background: ThemeColor = ThemeColor::default(),
     icon: ThemeColor = ThemeColor::default(),
     icon_hovered: ThemeColor = ThemeColor::default(),
@@ -827,6 +828,9 @@ button_gap = 4.0
 separator_slot = 20.0
 # height of the hover and selected fill, ratio of the toolbar height
 highlight_height = 0.8
+# highlight pin, copy, and save icons when their finishing action is pre-set (general.to, -t)
+# (icon_to color)
+highlight_to = false
 # background = "#1E1E2EFA"      # theme.background
 # icon = "#CDD6F4"              # theme.foreground
 # icon_hovered = "#1E1E2E"      # theme.on_accent
