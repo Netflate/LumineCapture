@@ -167,7 +167,7 @@ fn horizontal(src: &[u8], dst: &mut [u8], w: usize, r: usize) {
         for i in -(r as isize)..=r as isize {
             sum = slide(sum, at(i), [0; 4]);
         }
-        for (x, out) in dst_row.chunks_exact_mut(4).enumerate() {
+        for (x, out) in dst_row.as_chunks_mut::<4>().0.iter_mut().enumerate() {
             for (o, s) in out.iter_mut().zip(sum) {
                 *o = ((s * mul + 32768) >> 16) as u8;
             }
@@ -283,7 +283,7 @@ mod tests {
     fn noise(w: u32, h: u32) -> Pixmap {
         let mut pixmap = Pixmap::new(w, h).unwrap();
         let mut seed = 0x2545_f491_u32;
-        for px in pixmap.data_mut().chunks_exact_mut(4) {
+        for px in pixmap.data_mut().as_chunks_mut::<4>().0 {
             for c in &mut px[..3] {
                 seed ^= seed << 13;
                 seed ^= seed >> 17;
