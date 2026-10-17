@@ -179,23 +179,32 @@ Packages are on the [releases page](https://github.com/Netflate/LumineCapture/re
 > [!NOTE]
 > Tested only on **KDE Plasma**, **COSMIC** and **niri**. Other Wayland compositors may work but were never tried. **GNOME is not supported yet.**
 
+Packages are built for x86_64 & ARM64 (aarch64), except for Arch package, its x86_64 only.
+
 **Fedora 43+**
+
+From the [Copr repository](https://copr.fedorainfracloud.org/coprs/netflate/lumine-capture/)
 ```sh
-sudo dnf install https://github.com/Netflate/LumineCapture/releases/download/v0.2.0/lumine-capture-0.2.0-1.x86_64.rpm
+sudo dnf copr enable netflate/lumine-capture
+sudo dnf install lumine-capture
+```
+or a single package from the releases page:
+```sh
+sudo dnf install https://github.com/Netflate/LumineCapture/releases/download/v0.3.0/lumine-capture-0.3.0-1.$(uname -m).rpm
 ```
 
 **Ubuntu 24.04+ / Debian 13+**
 ```sh
-wget https://github.com/Netflate/LumineCapture/releases/download/v0.2.0/lumine-capture_0.2.0-1_amd64.deb
-sudo apt install ./lumine-capture_0.2.0-1_amd64.deb
+wget https://github.com/Netflate/LumineCapture/releases/download/v0.3.0/lumine-capture_0.3.0-1_$(dpkg --print-architecture).deb
+sudo apt install ./lumine-capture_0.3.0-1_$(dpkg --print-architecture).deb
 ```
 
 **Arch Linux**
 ```sh
-curl -LO https://github.com/Netflate/LumineCapture/releases/download/v0.2.0/lumine-capture-0.2.0-1-x86_64.pkg.tar.zst
-sudo pacman -U lumine-capture-0.2.0-1-x86_64.pkg.tar.zst
+curl -LO https://github.com/Netflate/LumineCapture/releases/download/v0.3.0/lumine-capture-0.3.0-1-x86_64.pkg.tar.zst
+sudo pacman -U lumine-capture-0.3.0-1-x86_64.pkg.tar.zst
 ```
-or build it yourself from the [PKGBUILD](packaging/arch/PKGBUILD):
+or build it yourself from the [PKGBUILD](packaging/arch/PKGBUILD) (the only way for ARM on arch):
 ```sh
 git clone https://github.com/Netflate/LumineCapture && cd LumineCapture/packaging/arch && makepkg -si
 ```

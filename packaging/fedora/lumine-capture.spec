@@ -1,7 +1,7 @@
 %global debug_package %{nil}
 
 Name:           lumine-capture
-Version:        0.2.0
+Version:        0.3.0
 Release:        1%{?dist}
 Summary:        Screenshot and annotation tool for Wayland with built-in OCR
 
@@ -65,5 +65,8 @@ cargo test --locked --profile dist
 %{_datadir}/icons/hicolor/*/apps/lumine-pin.*
 
 %changelog
+* Sat Oct 17 2026 Netflate <netflate@gmail.com> - 0.3.0-1
+- Update to 0.3.0
+
 * Fri Oct 16 2026 Netflate <netflate@gmail.com> - 0.2.0-1
 - Initial package
