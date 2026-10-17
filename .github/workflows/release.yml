@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Versions agree
+        env:
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: ./scripts/ci.sh versions "$TAG"
+      - name: Draft release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --draft --verify-tag \
+                 --title "LumineCapture ${GITHUB_REF_NAME#v}" --notes ""
+
+  packages:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build and verify packages
+        run: ./scripts/ci.sh compat
+      - name: Attach to the release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" --clobber \
+            target/compat-rpm/generate-rpm/*.rpm \
+            target/compat-deb/debian/*.deb \
+            $(find target/arch -name '*.pkg.tar.zst' 2>/dev/null)
+      - name: Keep as artifacts
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ runner.arch }}
+          if-no-files-found: error
+          path: |
+            target/compat-rpm/generate-rpm/*.rpm
+            target/compat-deb/debian/*.deb
+            target/arch/*.pkg.tar.zst

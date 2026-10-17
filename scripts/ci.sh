@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 # GitHub Actions (.github/workflows/ci.yml) runs `quick` on every push
+# release.yml runs `compat` on x86_64 and aarch64 for every v* tag
 # the rest is for running by hand before a release.
 #
-#   ./scripts/ci.sh quick   fmt + clippy + tests
+#   ./scripts/ci.sh quick   versions + fmt + clippy + tests
+#   ./scripts/ci.sh versions [TAG]  Cargo.toml, the Fedora spec and the PKGBUILD agree (and match TAG)
 #   ./scripts/ci.sh full    quick + ocr-gpu + machete + deny + assets
 #   ./scripts/ci.sh rpm     dist build -> RPM -> inspect the payload
 #   ./scripts/ci.sh clean   build RPM in a fresh Fedora container,
 #                           then test installation in a bare container.
 #   ./scripts/ci.sh compat  release packages: rpm and deb, then `arch`
-#   ./scripts/ci.sh arch    PKGBUILD 
+#   ./scripts/ci.sh arch    PKGBUILD
 #
 # Enable the pre-push hook once per clone (hooks are not cloned by git):
 #   git config core.hooksPath .githooks
@@ -27,7 +29,22 @@ die()  { printf '\033[1;31mFAILED: %s\033[0m\n' "$*" >&2; exit 1; }
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# versions [TAG]
+versions() {
+    local cargo spec pkgbuild
+    cargo=$(sed -n '/^version = /{s/^version = "\(.*\)"$/\1/p;q}' Cargo.toml)
+    spec=$(sed -n 's/^Version:[[:space:]]*//p' packaging/fedora/lumine-capture.spec)
+    pkgbuild=$(sed -n 's/^pkgver=//p' packaging/arch/PKGBUILD)
+
+    [ "$spec" = "$cargo" ] || die "packaging/fedora/lumine-capture.spec has Version: $spec, Cargo.toml has $cargo"
+    [ "$pkgbuild" = "$cargo" ] || die "packaging/arch/PKGBUILD has pkgver=$pkgbuild, Cargo.toml has $cargo"
+    [ -z "${1:-}" ] || [ "$1" = "v$cargo" ] || die "tag $1 does not match version $cargo"
+}
+
 quick() {
+    step "versions"
+    versions
+
     step "rustfmt"
     cargo fmt --check
 
@@ -224,9 +241,13 @@ compat() {
     verify_pkg docker.io/library/ubuntu:24.04 "$deb"
     verify_pkg docker.io/library/debian:13 "$deb"
 
-    package_arch
+    if [ "$(uname -m)" = x86_64 ]; then
+        package_arch
+    else
+        skip "Arch package: archlinux has no $(uname -m) image"
+    fi
 
-    printf '\n\033[1;32mcompat: %s, %s and the Arch package install and start everywhere\033[0m\n' \
+    printf '\n\033[1;32mcompat: %s and %s install and start everywhere\033[0m\n' \
         "$(basename "$rpm")" "$(basename "$deb")"
 }
 
@@ -277,6 +298,7 @@ package_arch() {
 
 case "${1:-}" in
     quick)  quick ;;
+    versions) versions "${2:-}" ;;
     full)   full ;;
     rpm)    package_rpm ;;
     clean)  clean ;;
