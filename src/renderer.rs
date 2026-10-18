@@ -172,10 +172,6 @@ pub fn render_frame(req: &mut RenderRequest) {
         req.canvas.data_mut().copy_from_slice(req.dimmed.data());
     }
 
-    if let Some(sel) = req.selection {
-        draw_selection_border(req.canvas, sel, req.selection_edges);
-    }
-
     if !req.annotations_layer_empty {
         if let Some(dirty) = dirty_rect {
             blit_annotations(req.annotations_layer, req.canvas, dirty);
@@ -192,79 +188,86 @@ pub fn render_frame(req: &mut RenderRequest) {
     }
 
     // Dynamic annotations: pending (in-progress drawing or dragging)
-    if let Some(p) = req.pending {
-        if let Some(text) = req.text.as_mut() {
-            if !req.is_pending_selected
-                && let crate::types::AnnotationShape::Pen { points } = &p.shape
-            {
-                annotations::draw_pen_active_tail(
-                    req.canvas,
-                    points,
-                    req.pending_pen_baked,
-                    p.color,
-                    p.stroke_width,
-                    req.offset,
-                );
-            } else if !req.is_pending_selected
-                && let crate::types::AnnotationShape::Highlighter { points, flat_ends } = &p.shape
-            {
-                annotations::draw_highlighter_live(
-                    req.canvas,
-                    points,
-                    *flat_ends,
-                    p.color,
-                    p.stroke_width,
-                    req.offset,
-                    dirty_rect,
-                );
-            } else {
-                annotations::draw_annotation(
-                    req.canvas,
-                    p,
-                    req.offset,
-                    false,
-                    text.font_system,
-                    text.swash_cache,
-                    text.editors,
-                    req.blurs,
-                    req.active_text_id,
-                );
-            }
+    if let Some(p) = req.pending
+        && let Some(text) = req.text.as_mut()
+    {
+        if !req.is_pending_selected
+            && let crate::types::AnnotationShape::Pen { points } = &p.shape
+        {
+            annotations::draw_pen_active_tail(
+                req.canvas,
+                points,
+                req.pending_pen_baked,
+                p.color,
+                p.stroke_width,
+                req.offset,
+            );
+        } else if !req.is_pending_selected
+            && let crate::types::AnnotationShape::Highlighter { points, flat_ends } = &p.shape
+        {
+            annotations::draw_highlighter_live(
+                req.canvas,
+                points,
+                *flat_ends,
+                p.color,
+                p.stroke_width,
+                req.offset,
+                dirty_rect,
+            );
+        } else {
+            annotations::draw_annotation(
+                req.canvas,
+                p,
+                req.offset,
+                false,
+                text.font_system,
+                text.swash_cache,
+                text.editors,
+                req.blurs,
+                req.active_text_id,
+            );
+        }
 
-            // blurs above the dragged annotation are opaque, so redrawing them
-            // with whatever lies on them puts it back under
-            if let Some(at) = req.dragged_index {
-                let (w, h) = (req.canvas.width() as f32, req.canvas.height() as f32);
-                let area = dirty_rect.copied().or(Rect::from_xywh(0.0, 0.0, w, h));
-                for (i, ann) in req.annotations.iter().enumerate().skip(at) {
-                    if let crate::types::AnnotationShape::Redact { start, end, .. } = &ann.shape
-                        && let Some(rect) = paths::normalized_rect(*start, *end)
-                        && let Some(local) = Rect::from_xywh(
-                            rect.x() - req.offset.0,
-                            rect.y() - req.offset.1,
-                            rect.width(),
-                            rect.height(),
-                        )
-                        && let Some(region) = area.and_then(|area| local.intersect(&area))
-                    {
-                        rebuild_annotations_layer(
-                            req.canvas,
-                            &req.annotations[i..],
-                            req.offset,
-                            text.font_system,
-                            text.swash_cache,
-                            text.editors,
-                            req.blurs,
-                            req.active_text_id,
-                            Some(region),
-                        );
-                    }
+        // blurs above the dragged annotation are opaque, so redrawing them
+        // with whatever lies on them puts it back under
+        if let Some(at) = req.dragged_index {
+            let (w, h) = (req.canvas.width() as f32, req.canvas.height() as f32);
+            let area = dirty_rect.copied().or(Rect::from_xywh(0.0, 0.0, w, h));
+            for (i, ann) in req.annotations.iter().enumerate().skip(at) {
+                if let crate::types::AnnotationShape::Redact { start, end, .. } = &ann.shape
+                    && let Some(rect) = paths::normalized_rect(*start, *end)
+                    && let Some(local) = Rect::from_xywh(
+                        rect.x() - req.offset.0,
+                        rect.y() - req.offset.1,
+                        rect.width(),
+                        rect.height(),
+                    )
+                    && let Some(region) = area.and_then(|area| local.intersect(&area))
+                {
+                    rebuild_annotations_layer(
+                        req.canvas,
+                        &req.annotations[i..],
+                        req.offset,
+                        text.font_system,
+                        text.swash_cache,
+                        text.editors,
+                        req.blurs,
+                        req.active_text_id,
+                        Some(region),
+                    );
                 }
             }
         }
-        if req.is_pending_selected {
-            annotations::draw_annotation_handles_only(req.canvas, p, req.offset);
-        }
+    }
+
+    if let Some(sel) = req.selection {
+        draw_selection_border(req.canvas, sel, req.selection_edges);
+    }
+
+    if let Some(p) = req.pending
+        && req.is_pending_selected
+    {
+        annotations::draw_annotation_handles_only(req.canvas, p, req.offset);
     }
 
     // Dynamic selection chrome: handles for the currently selected annotation
