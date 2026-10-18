@@ -1,0 +1,32 @@
+name: Bug report
+description: Report a bug
+labels: [bug]
+body:
+  - type: dropdown
+    id: compositor
+    attributes:
+      label: Compositor
+      options: [KDE Plasma, COSMIC, niri, Hyprland, GNOME, Other]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: LumineCapture version and distro
+      placeholder: 0.3.0, Fedora 44
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: |
+        Optional, helps when the cause isn't obvious: `~/.local/state/LumineCapture/lumine.log`. For more detail, reproduce the bug with `LUMINE_LOG=debug lumine-capture`.
+      render: text
