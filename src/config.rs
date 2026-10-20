@@ -619,6 +619,7 @@ section!(OcrLayout {
 
 section!(OcrDetect {
     max_side: u32 = 1920,
+    pad: u32 = 16,
     score_threshold: f32 = 0.3,
     box_threshold: f32 = 0.6,
     unclip_ratio: f32 = 1.5,
@@ -1167,6 +1168,9 @@ column_gutter = 6.0
 [ocr.detect]
 # larger screenshots are scaled down to this before detection
 max_side = 1920
+# padding in small selections so text at the edge isn't ignored; 0 = off
+# left here mostly only for testing
+pad = 16
 score_threshold = 0.3
 box_threshold = 0.6
 unclip_ratio = 1.5

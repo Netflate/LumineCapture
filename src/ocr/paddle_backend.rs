@@ -139,6 +139,12 @@ impl OcrBackend for PaddleBackend {
         // By value, so the full-screen buffer isn't copied.
         let img = image::RgbImage::from_raw(width, height, image.rgb)
             .ok_or("ocr: RGB buffer does not match its dimensions")?;
+        let area = Rect::from_xywh(ox, oy, width as f32, height as f32);
+        // adding pad for image otherwise on small images where text is close to border
+        // some text will be missing, if not all
+        let (img, (left, top)) = pad_for_detection(img);
+        // real positinos of text, since image could be changed
+        let (ox, oy) = (ox - left as f32, oy - top as f32);
         let decode_ms = ms(stage);
 
         let stage = Instant::now();
@@ -249,6 +255,12 @@ impl OcrBackend for PaddleBackend {
                     char_x,
                 }
             })
+            // recognizer's positions are fractions of the unclipped crop
+            // this is why its on purpose after char_boundaries
+            .filter_map(|line| match area {
+                Some(area) => clip_line(line, area),
+                None => Some(line),
+            })
             .collect();
         lines.sort_by(|a, b| {
             a.bounds
@@ -282,6 +294,63 @@ impl OcrBackend for PaddleBackend {
 
         Ok(OcrText { lines })
     }
+}
+
+/// adds padding around text
+/// since oar-ocr rounds each side to the nearest multiple of 32 on its own, so
+/// small crops get squashed or stretched, causing the detector to lose text closer
+/// to edge.
+///
+/// Big regions are skipped
+fn pad_for_detection(img: image::RgbImage) -> (image::RgbImage, (u32, u32)) {
+    // not sure if it needs to be configurable
+    // but i will leave it as it is at least for testing (with or without pad (pad=0))
+    let detect = &crate::config::get().ocr.detect;
+    let (w, h) = img.dimensions();
+    let grow = |n: u32| (u64::from(n) + 2 * u64::from(detect.pad)).div_ceil(32) * 32;
+    let (pw, ph) = (grow(w), grow(h));
+    if detect.pad == 0 || w == 0 || h == 0 || pw.max(ph) > u64::from(detect.max_side) {
+        return (img, (0, 0));
+    }
+    let (pw, ph) = (pw as u32, ph as u32);
+    let (left, top) = ((pw - w) / 2, (ph - h) / 2);
+    let mut out = image::RgbImage::from_pixel(pw, ph, border_median(&img));
+    image::imageops::replace(&mut out, &img, left.into(), top.into());
+    (out, (left, top))
+}
+
+/// Practically a copy of oar-ocr's `calculate_smart_padding_color`,
+/// but without its +-16 away from black and white
+fn border_median(img: &image::RgbImage) -> image::Rgb<u8> {
+    let (w, h) = img.dimensions();
+    let ring = (0..w)
+        .flat_map(|x| [(x, 0), (x, h - 1)])
+        .chain((1..h.saturating_sub(1)).flat_map(|y| [(0, y), (w - 1, y)]));
+    let mut channels: [Vec<u8>; 3] = Default::default();
+    for (x, y) in ring {
+        for (values, &c) in channels.iter_mut().zip(&img.get_pixel(x, y).0) {
+            values.push(c);
+        }
+    }
+    image::Rgb(channels.map(|mut values| {
+        let mid = values.len() / 2;
+        *values.select_nth_unstable(mid).1
+    }))
+}
+
+/// Detector boxes are wider than the text, so near the selection's edge
+/// they stick out into the padding. Cut them back to the selection.
+///
+/// A line with nothing left inside is dropped
+fn clip_line(mut line: OcrLine, area: Rect) -> Option<OcrLine> {
+    line.bounds = line
+        .bounds
+        .intersect(&area)
+        .filter(|b| b.width() > 0.0 && b.height() > 0.0)?;
+    for x in &mut line.char_x {
+        *x = x.clamp(line.bounds.left(), line.bounds.right());
+    }
+    Some(line)
 }
 
 /// One crop's recognition result.
@@ -585,5 +654,41 @@ mod tests {
         assert_eq!(xs.len(), 7);
         assert_eq!((xs[0], xs[6]), (100.0, 610.0));
         assert!(xs.windows(2).all(|w| w[0] <= w[1]));
+    }
+
+    #[test]
+    fn small_images_are_padded_to_multiples_of_32() {
+        let mut img = image::RgbImage::from_pixel(100, 20, image::Rgb([200, 210, 220]));
+        // this pixel is used to check the image lands at (left, top) unchanged
+        // since even with pads change it stay the same
+        img.put_pixel(50, 10, image::Rgb([0, 0, 0]));
+        let (out, (left, top)) = pad_for_detection(img);
+        assert_eq!((out.width() % 32, out.height() % 32), (0, 0));
+        assert!(left >= 16 && top >= 16);
+        assert_eq!(out.get_pixel(left + 50, top + 10).0, [0, 0, 0]);
+        assert_eq!(out.get_pixel(0, 0).0, [200, 210, 220]);
+    }
+
+    #[test]
+    fn images_near_max_side_are_not_padded() {
+        let (out, offset) = pad_for_detection(image::RgbImage::new(1900, 100));
+        assert_eq!((out.dimensions(), offset), ((1900, 100), (0, 0)));
+    }
+
+    #[test]
+    fn lines_are_cut_to_the_scanned_area() {
+        let line = OcrLine {
+            text: "ab".into(),
+            bounds: Rect::from_ltrb(-3.0, 5.0, 40.0, 30.0).unwrap(),
+            char_x: vec![-3.0, 20.0, 40.0],
+        };
+        let area = Rect::from_ltrb(0.0, 0.0, 30.0, 25.0).unwrap();
+        let cut = clip_line(line.clone(), area).unwrap();
+        assert_eq!(cut.bounds, Rect::from_ltrb(0.0, 5.0, 30.0, 25.0).unwrap());
+        assert_eq!(cut.char_x, vec![0.0, 20.0, 30.0]);
+        let beside = Rect::from_ltrb(50.0, 0.0, 60.0, 10.0).unwrap();
+        let touching = Rect::from_ltrb(0.0, 0.0, 30.0, 5.0).unwrap();
+        assert!(clip_line(line.clone(), beside).is_none());
+        assert!(clip_line(line, touching).is_none());
     }
 }

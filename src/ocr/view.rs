@@ -185,8 +185,8 @@ impl OcrView {
         })
     }
 
-    /// Everything the overlay covers: the shaded region plus any text that
-    /// spilled outside it. Used when the whole overlay has to be repainted -
+    /// Everything the overlay covers: the shaded region plus any line a
+    /// backend left outside it. Used when the whole overlay has to be repainted -
     /// results arriving, the tool being left.
     pub fn bounds(&self) -> Option<Rect> {
         self.blocks

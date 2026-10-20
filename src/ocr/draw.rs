@@ -51,18 +51,20 @@ pub fn draw_ocr_overlay(
     // reads as a box around the text rather than a tight box on it.
     let plates = view
         .block_bounds()
-        .filter_map(|bounds| pad(bounds, look.plate_pad_x, look.plate_pad_y));
+        .filter_map(|bounds| pad(bounds, look.plate_pad_x, look.plate_pad_y))
+        .filter_map(|plate| inside(plate, view.region()));
     painter.fill_union(plates, look.plate_radius, look.plate);
 
     // At least a hairline wide, so an empty span still reads as a caret.
     let spans = (0..view.lines.len()).filter_map(|i| {
         let sel = view.line_selection(i)?;
-        Rect::from_ltrb(
-            sel.x.0,
-            sel.y.0 - look.plate_pad_y,
-            sel.x.1.max(sel.x.0 + 1.0),
-            sel.y.1 + look.plate_pad_y,
-        )
+        let (mut top, mut bottom) = (sel.y.0 - look.plate_pad_y, sel.y.1 + look.plate_pad_y);
+        // (cutting the sides sometimes causes cutting a letter, and there is no need in that really)
+        if let Some(region) = view.region() {
+            top = top.max(region.top());
+            bottom = bottom.min(region.bottom());
+        }
+        Rect::from_ltrb(sel.x.0, top, sel.x.1.max(sel.x.0 + 1.0), bottom)
     });
     painter.fill_union(spans, look.selection_radius, color::text_selection());
 
@@ -267,6 +269,13 @@ impl Painter {
             Transform::identity(),
             None,
         );
+    }
+}
+
+fn inside(rect: Rect, region: Option<Rect>) -> Option<Rect> {
+    match region {
+        Some(region) => rect.intersect(&region),
+        None => Some(rect),
     }
 }
 
