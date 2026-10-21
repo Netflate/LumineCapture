@@ -645,6 +645,7 @@ section!(Ocr {
     hit_slack: f32 = 3.0,
     vertical_slack: f32 = 10.0,
     min_region: f32 = 16.0,
+    lookalikes: bool = true,
     look: OcrLook = OcrLook::default(),
     layout: OcrLayout = OcrLayout::default(),
     detect: OcrDetect = OcrDetect::default(),
@@ -1135,6 +1136,9 @@ hit_slack = 3.0
 vertical_slack = 10.0
 # a smaller drag counts as a click, not a new region
 min_region = 16.0
+# handle visually identical Cyrillic/Greek letters in Latin words
+# not sure why would it be disabled, aside from testing of course
+lookalikes = true
 
 [ocr.look]
 region_shade = "#11111B60"
