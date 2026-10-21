@@ -1,27 +1,17 @@
-use crate::renderer::paths::{
-    draw_item_border, draw_panel_border, draw_progress_bar, draw_svg_icon, rounded_rect_path,
-};
-use crate::renderer::text::{HAlign, draw_aligned_text, draw_line_edit};
+use crate::renderer::Painter;
+use crate::renderer::text::TextStyle;
 use crate::theme::{color, font, radius, size, stroke};
 use crate::ui::color_popover::ColorTarget;
 use crate::ui::panel::{PanelItem, UiPanel};
 use crate::ui::settings_panel::{SettingsPanel, SettingsWidget, StepperArrow, ToggleVisual};
-use cosmic_text::{FontSystem, SwashCache};
-use std::collections::HashMap;
-use tiny_skia::{
-    BlendMode, Color, FilterQuality, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke,
-    Transform,
-};
-use usvg::Tree;
+use cosmic_text::FontSystem;
+use tiny_skia::{Color, PathBuilder, Rect, Stroke};
 
 pub fn draw_settings_panel(
-    canvas: &mut Pixmap,
+    p: &mut Painter,
     panel: &mut SettingsPanel,
     current_color: Color,
     outline_color: Color,
-    icons_cache: &HashMap<&'static str, Tree>,
-    font_system: &mut FontSystem,
-    swash_cache: &mut SwashCache,
 ) {
     if !panel.visible {
         return;
@@ -31,66 +21,22 @@ pub fn draw_settings_panel(
         return;
     };
 
-    let x = panel_rect.left().round();
-    let y = panel_rect.top().round();
-    let (w, h) = panel.size;
-    let pw = w.ceil() as u32;
-    let ph = h.ceil() as u32;
-
-    if pw == 0 || ph == 0 {
-        return;
-    }
-
-    let needs_resize = panel
-        .panel_pixmap
-        .as_ref()
-        .is_none_or(|p| p.width() != pw || p.height() != ph);
-
-    if needs_resize {
-        panel.panel_pixmap = Pixmap::new(pw, ph);
-    }
-
-    let Some(mut panel_pixmap) = panel.panel_pixmap.take() else {
-        return;
-    };
-
-    panel_pixmap.fill(Color::TRANSPARENT);
-    draw_settings_content(
-        &mut panel_pixmap,
-        panel,
-        current_color,
-        outline_color,
-        icons_cache,
-        font_system,
-        swash_cache,
+    let mut cache = panel.panel_pixmap.take();
+    p.panel(
+        &mut cache,
+        (panel_rect.left(), panel_rect.top()),
+        panel.size,
+        panel.opacity,
+        |p| draw_settings_content(p, panel, current_color, outline_color),
     );
-
-    canvas.draw_pixmap(
-        x as i32,
-        y as i32,
-        panel_pixmap.as_ref(),
-        &PixmapPaint {
-            opacity: panel.opacity,
-            blend_mode: BlendMode::SourceOver,
-            quality: FilterQuality::Nearest,
-        },
-        Transform::identity(),
-        None,
-    );
-
-    draw_panel_border(canvas, x, y, w, h, radius::panel(), panel.opacity);
-
-    panel.panel_pixmap = Some(panel_pixmap);
+    panel.panel_pixmap = cache;
 }
 
 fn draw_settings_content(
-    canvas: &mut Pixmap,
+    p: &mut Painter,
     panel: &SettingsPanel,
     current_color: Color,
     outline_color: Color,
-    icons_cache: &HashMap<&'static str, Tree>,
-    font_system: &mut FontSystem,
-    swash_cache: &mut SwashCache,
 ) {
     let cfg = &crate::config::get().settings_panel;
     let theme = &crate::config::get().theme;
@@ -99,18 +45,7 @@ fn draw_settings_content(
         return;
     };
 
-    if let Some(path) = rounded_rect_path(&rect, radius::panel(), true, true, true, true) {
-        let mut paint = Paint::default();
-        paint.set_color(cfg.background.get().color());
-        paint.anti_alias = true;
-        canvas.fill_path(
-            &path,
-            &paint,
-            tiny_skia::FillRule::Winding,
-            Transform::identity(),
-            None,
-        );
-    }
+    p.fill_rounded(rect, radius::panel(), cfg.background.get());
 
     let item_h = panel.item_height();
     let item_y = rect.top() + (h - item_h) / 2.0;
@@ -129,7 +64,7 @@ fn draw_settings_content(
                     ColorTarget::Outline => outline_color,
                 };
                 draw_color_swatch(
-                    canvas,
+                    p,
                     current_x,
                     item_y,
                     item_w,
@@ -140,8 +75,7 @@ fn draw_settings_content(
                 );
             }
             SettingsWidget::Action { action, svg } => {
-                draw_item_border(
-                    canvas,
+                p.item_border(
                     current_x,
                     item_y,
                     item_w,
@@ -157,9 +91,7 @@ fn draw_settings_content(
                     cfg.icon.get()
                 };
                 let icon_size = action.icon_size();
-                draw_svg_icon(
-                    canvas,
-                    icons_cache,
+                p.icon(
                     svg,
                     icon_size,
                     current_x + (item_w - icon_size) / 2.0,
@@ -170,7 +102,7 @@ fn draw_settings_content(
             SettingsWidget::Stepper { label, unit, .. } => {
                 let display_text = stepper_display_text(panel, index, label, unit);
                 draw_stepper(
-                    canvas,
+                    p,
                     current_x,
                     item_y,
                     item_w,
@@ -181,14 +113,12 @@ fn draw_settings_content(
                     is_hovered,
                     is_selected,
                     text_color,
-                    font_system,
-                    swash_cache,
                 );
             }
             SettingsWidget::Toggle { visual, field } => {
                 let is_on = panel.is_toggled(index);
                 draw_toggle(
-                    canvas,
+                    p,
                     current_x,
                     item_y,
                     item_w,
@@ -197,53 +127,32 @@ fn draw_settings_content(
                     field.icon_size(),
                     is_on,
                     is_hovered,
-                    icons_cache,
                     text_color,
-                    font_system,
-                    swash_cache,
                 );
             }
             SettingsWidget::Label(text) => {
                 if let Some(label_rect) = Rect::from_xywh(current_x, item_y, item_w, item_h) {
-                    draw_aligned_text(
-                        canvas,
-                        text,
-                        font_system,
-                        swash_cache,
+                    p.text(
                         label_rect,
-                        font::label(),
-                        text_color,
-                        HAlign::Center,
-                        (0.0, 0.0),
-                        cosmic_text::Weight::NORMAL,
-                        cosmic_text::Style::Normal,
+                        text,
+                        TextStyle::new(font::label(), text_color).center(),
                     );
                 }
             }
             SettingsWidget::Value { field } => {
                 if let Some(rect) = Rect::from_xywh(current_x, item_y, item_w, item_h) {
-                    draw_value_field(
-                        canvas,
-                        rect,
-                        &field.text(current_color),
-                        is_hovered,
-                        text_color,
-                        font_system,
-                        swash_cache,
-                    );
+                    draw_value_field(p, rect, &field.text(current_color), is_hovered, text_color);
                 }
             }
             SettingsWidget::Download => {
                 draw_download(
-                    canvas,
+                    p,
                     current_x,
                     item_y,
                     item_w,
                     item_h,
                     panel.download.unwrap_or(0),
                     text_color,
-                    font_system,
-                    swash_cache,
                 );
             }
             SettingsWidget::Separator => {
@@ -252,20 +161,8 @@ fn draw_settings_content(
                 let sep_x = current_x + (item_w - sep_w) / 2.0;
                 let sep_y = rect.top() + (h - sep_h) / 2.0;
 
-                if let Some(sep_rect) = Rect::from_xywh(sep_x, sep_y, sep_w, sep_h)
-                    && let Some(sep_path) =
-                        rounded_rect_path(&sep_rect, radius::separator(), true, true, true, true)
-                {
-                    let mut sep_paint = Paint::default();
-                    sep_paint.set_color(cfg.separator.get().color());
-                    sep_paint.anti_alias = true;
-                    canvas.fill_path(
-                        &sep_path,
-                        &sep_paint,
-                        tiny_skia::FillRule::Winding,
-                        Transform::identity(),
-                        None,
-                    );
+                if let Some(sep_rect) = Rect::from_xywh(sep_x, sep_y, sep_w, sep_h) {
+                    p.fill_rounded(sep_rect, radius::separator(), cfg.separator.get());
                 }
             }
         }
@@ -275,29 +172,9 @@ fn draw_settings_content(
 }
 
 /// looks like the input field, but on click just copies the value to clipboard
-fn draw_value_field(
-    canvas: &mut Pixmap,
-    rect: Rect,
-    text: &str,
-    is_hovered: bool,
-    text_color: Color,
-    font_system: &mut FontSystem,
-    swash_cache: &mut SwashCache,
-) {
-    if let Some(path) = rounded_rect_path(&rect, radius::item(), true, true, true, true) {
-        let mut paint = Paint::default();
-        paint.set_color(color::field().color());
-        paint.anti_alias = true;
-        canvas.fill_path(
-            &path,
-            &paint,
-            tiny_skia::FillRule::Winding,
-            Transform::identity(),
-            None,
-        );
-    }
-    draw_item_border(
-        canvas,
+fn draw_value_field(p: &mut Painter, rect: Rect, text: &str, is_hovered: bool, text_color: Color) {
+    p.fill_rounded(rect, radius::item(), color::field());
+    p.item_border(
         rect.left(),
         rect.top(),
         rect.width(),
@@ -308,53 +185,26 @@ fn draw_value_field(
         false,
     );
 
-    draw_aligned_text(
-        canvas,
-        text,
-        font_system,
-        swash_cache,
+    p.text(
         rect,
-        font::label(),
-        text_color,
-        HAlign::Center,
-        (0.0, 0.0),
-        cosmic_text::Weight::NORMAL,
-        cosmic_text::Style::Normal,
+        text,
+        TextStyle::new(font::label(), text_color).center(),
     );
 }
 
-fn draw_download(
-    canvas: &mut Pixmap,
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-    percent: u8,
-    text_color: Color,
-    font_system: &mut FontSystem,
-    swash_cache: &mut SwashCache,
-) {
+fn draw_download(p: &mut Painter, x: f32, y: f32, w: f32, h: f32, percent: u8, text_color: Color) {
     let cfg = &crate::config::get().settings_panel;
     let (label_w, percent_w) = (cfg.download_label_width, cfg.download_percent_width);
     if let Some(label) = Rect::from_xywh(x, y, label_w, h) {
-        draw_aligned_text(
-            canvas,
-            "Downloading",
-            font_system,
-            swash_cache,
+        p.text(
             label,
-            font::label(),
-            text_color,
-            HAlign::Left,
-            (0.0, 0.0),
-            cosmic_text::Weight::NORMAL,
-            cosmic_text::Style::Normal,
+            "Downloading",
+            TextStyle::new(font::label(), text_color),
         );
     }
 
     let bar_w = (w - label_w - percent_w).max(0.0);
-    draw_progress_bar(
-        canvas,
+    p.progress_bar(
         x + label_w,
         y + (h - stroke::progress()) / 2.0,
         bar_w,
@@ -362,24 +212,16 @@ fn draw_download(
     );
 
     if let Some(label) = Rect::from_xywh(x + w - percent_w, y, percent_w, h) {
-        draw_aligned_text(
-            canvas,
-            &format!("{percent}%"),
-            font_system,
-            swash_cache,
+        p.text(
             label,
-            font::label(),
-            text_color,
-            HAlign::Center,
-            (0.0, 0.0),
-            cosmic_text::Weight::NORMAL,
-            cosmic_text::Style::Normal,
+            &format!("{percent}%"),
+            TextStyle::new(font::label(), text_color).center(),
         );
     }
 }
 
 fn draw_color_swatch(
-    canvas: &mut Pixmap,
+    p: &mut Painter,
     x: f32,
     y: f32,
     w: f32,
@@ -388,8 +230,7 @@ fn draw_color_swatch(
     is_selected: bool,
     color: Color,
 ) {
-    draw_item_border(
-        canvas,
+    p.item_border(
         x,
         y,
         w,
@@ -404,24 +245,11 @@ fn draw_color_swatch(
     let cx = x + w / 2.0;
     let cy = y + h / 2.0;
 
-    let mut pb = PathBuilder::new();
-    pb.push_circle(cx, cy, circle_r);
-    if let Some(circle_path) = pb.finish() {
-        let mut swatch_paint = Paint::default();
-        swatch_paint.set_color(color);
-        swatch_paint.anti_alias = true;
-        canvas.fill_path(
-            &circle_path,
-            &swatch_paint,
-            tiny_skia::FillRule::Winding,
-            Transform::identity(),
-            None,
-        );
-    }
+    p.fill_circle(cx, cy, circle_r, color);
 }
 
 fn draw_stepper(
-    canvas: &mut Pixmap,
+    p: &mut Painter,
     x: f32,
     y: f32,
     w: f32,
@@ -432,12 +260,9 @@ fn draw_stepper(
     is_hovered: bool,
     is_selected: bool,
     text_color: Color,
-    font_system: &mut FontSystem,
-    swash_cache: &mut SwashCache,
 ) {
     let cfg = &crate::config::get().settings_panel;
-    draw_item_border(
-        canvas,
+    p.item_border(
         x,
         y,
         w,
@@ -458,7 +283,7 @@ fn draw_stepper(
             .hovered_arrow
             .filter(|(idx, _)| *idx == index)
             .map(|(_, arrow)| arrow);
-        draw_stepper_arrows(canvas, x, y, w, h, hovered_arrow);
+        draw_stepper_arrows(p, x, y, w, h, hovered_arrow);
         return;
     };
 
@@ -469,13 +294,10 @@ fn draw_stepper(
         .filter(|e| e.key == index)
         .map(|e| &e.field);
 
-    draw_line_edit(
-        canvas,
+    p.line_edit(
         label_rect,
         text,
         editing,
-        font_system,
-        swash_cache,
         font::label(),
         text_color,
         if cfg.stepper_bold {
@@ -489,11 +311,11 @@ fn draw_stepper(
         .hovered_arrow
         .filter(|(idx, _)| *idx == index)
         .map(|(_, arrow)| arrow);
-    draw_stepper_arrows(canvas, x, y, w, h, hovered_arrow);
+    draw_stepper_arrows(p, x, y, w, h, hovered_arrow);
 }
 
 fn draw_stepper_arrows(
-    canvas: &mut Pixmap,
+    p: &mut Painter,
     x: f32,
     y: f32,
     w: f32,
@@ -510,38 +332,33 @@ fn draw_stepper_arrows(
 
     let arrow_color = |arrow| {
         if hovered == Some(arrow) {
-            cfg.icon_hovered.get().color()
+            cfg.icon_hovered.get()
         } else {
-            cfg.icon.get().color()
+            cfg.icon.get()
         }
     };
     let up_color = arrow_color(StepperArrow::Up);
     let down_color = arrow_color(StepperArrow::Down);
-
-    let mut paint = Paint::default();
-    paint.anti_alias = true;
 
     let mut stroke = Stroke::default();
     stroke.width = cfg.stepper_arrow_stroke;
     stroke.line_cap = tiny_skia::LineCap::Round;
     stroke.line_join = tiny_skia::LineJoin::Round;
 
-    paint.set_color(up_color);
     let mut pb = PathBuilder::new();
     pb.move_to(cx - arrow_w / 2.0, up_cy + arrow_h / 2.0);
     pb.line_to(cx, up_cy - arrow_h / 2.0);
     pb.line_to(cx + arrow_w / 2.0, up_cy + arrow_h / 2.0);
     if let Some(path) = pb.finish() {
-        canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+        p.stroke_path(&path, up_color, &stroke);
     }
 
-    paint.set_color(down_color);
     let mut pb = PathBuilder::new();
     pb.move_to(cx - arrow_w / 2.0, down_cy - arrow_h / 2.0);
     pb.line_to(cx, down_cy + arrow_h / 2.0);
     pb.line_to(cx + arrow_w / 2.0, down_cy - arrow_h / 2.0);
     if let Some(path) = pb.finish() {
-        canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+        p.stroke_path(&path, down_color, &stroke);
     }
 }
 
@@ -599,7 +416,7 @@ fn byte_to_char_index(text: &str, byte_idx: usize) -> usize {
 }
 
 fn draw_toggle(
-    canvas: &mut Pixmap,
+    p: &mut Painter,
     x: f32,
     y: f32,
     w: f32,
@@ -608,16 +425,12 @@ fn draw_toggle(
     icon_size: f32,
     is_on: bool,
     is_hovered: bool,
-    icons_cache: &HashMap<&'static str, Tree>,
     text_color: Color,
-    font_system: &mut FontSystem,
-    swash_cache: &mut SwashCache,
 ) {
     let cfg = &crate::config::get().settings_panel;
     match visual {
         ToggleVisual::Icon { svg } => {
-            draw_item_border(
-                canvas,
+            p.item_border(
                 x,
                 y,
                 w,
@@ -637,7 +450,7 @@ fn draw_toggle(
 
             let icon_x = x + (w - icon_size) / 2.0;
             let icon_y = y + (h - icon_size) / 2.0;
-            draw_svg_icon(canvas, icons_cache, svg, icon_size, icon_x, icon_y, tint);
+            p.icon(svg, icon_size, icon_x, icon_y, tint);
         }
         ToggleVisual::Checkbox { label } => {
             let box_size = cfg.checkbox_size;
@@ -647,23 +460,10 @@ fn draw_toggle(
             if let Some(label_rect) =
                 Rect::from_xywh(x, y, (w - box_size - cfg.checkbox_gap).max(0.0), h)
             {
-                draw_aligned_text(
-                    canvas,
-                    label,
-                    font_system,
-                    swash_cache,
-                    label_rect,
-                    font::label(),
-                    text_color,
-                    HAlign::Left,
-                    (0.0, 0.0),
-                    cosmic_text::Weight::NORMAL,
-                    cosmic_text::Style::Normal,
-                );
+                p.text(label_rect, label, TextStyle::new(font::label(), text_color));
             }
 
-            draw_item_border(
-                canvas,
+            p.item_border(
                 box_x,
                 box_y,
                 box_size,
@@ -675,22 +475,18 @@ fn draw_toggle(
             );
 
             if is_on {
-                draw_checkmark(canvas, box_x, box_y, box_size, text_color);
+                draw_checkmark(p, box_x, box_y, box_size, text_color);
             }
         }
     }
 }
 
-fn draw_checkmark(canvas: &mut Pixmap, x: f32, y: f32, size: f32, color: Color) {
+fn draw_checkmark(p: &mut Painter, x: f32, y: f32, size: f32, color: Color) {
     let mut pb = PathBuilder::new();
     pb.move_to(x + size * 0.22, y + size * 0.55);
     pb.line_to(x + size * 0.42, y + size * 0.75);
     pb.line_to(x + size * 0.80, y + size * 0.28);
     let Some(path) = pb.finish() else { return };
-
-    let mut paint = Paint::default();
-    paint.set_color(color);
-    paint.anti_alias = true;
 
     let stroke = Stroke {
         width: crate::config::get().settings_panel.checkmark_width,
@@ -698,5 +494,5 @@ fn draw_checkmark(canvas: &mut Pixmap, x: f32, y: f32, size: f32, color: Color) 
         line_join: tiny_skia::LineJoin::Round,
         ..Default::default()
     };
-    canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+    p.stroke_path(&path, color, &stroke);
 }

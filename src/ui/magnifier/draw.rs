@@ -1,14 +1,11 @@
-use cosmic_text::{FontSystem, Style, SwashCache, Weight};
-
 use crate::config::Magnifier;
+use crate::renderer::Painter;
 use crate::renderer::paths::rounded_rect_path;
-use crate::renderer::text::{HAlign, draw_aligned_text};
+use crate::renderer::text::TextStyle;
 use crate::theme::{font, radius};
 use crate::types::Capture;
 use crate::ui::magnifier::{cells, offset, sample_pixel, size, zoom};
-use tiny_skia::{
-    Color, FillRule, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform,
-};
+use tiny_skia::{Color, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform};
 
 fn cfg() -> &'static Magnifier {
     &crate::config::get().magnifier
@@ -34,15 +31,10 @@ fn box_height(with_label: bool) -> f32 {
     }
 }
 
-/// `label` is the text machinery the eyedropper needs; without it only the loupe is drawn.
-pub fn draw_magnifier(
-    canvas: &mut Pixmap,
-    capture: &Capture,
-    cursor: (f32, f32),
-    label: Option<(&mut FontSystem, &mut SwashCache)>,
-) {
-    let screen_w = canvas.width() as f32;
-    let screen_h = canvas.height() as f32;
+/// `label` is the colour plate the eyedropper needs; without it only the loupe is drawn.
+pub fn draw_magnifier(p: &mut Painter, capture: &Capture, cursor: (f32, f32), label: bool) {
+    let screen_w = p.canvas().width() as f32;
+    let screen_h = p.canvas().height() as f32;
     let source = &capture.pixmap;
     let native = capture.to_native((cursor.0 as f64, cursor.1 as f64));
 
@@ -66,11 +58,8 @@ pub fn draw_magnifier(
         None,
     );
 
-    let (mag_x, mag_y) = magnifier_position(
-        cursor,
-        (0.0, 0.0, screen_w, screen_h),
-        box_height(label.is_some()),
-    );
+    let (mag_x, mag_y) =
+        magnifier_position(cursor, (0.0, 0.0, screen_w, screen_h), box_height(label));
     let radius = size() as f32 / 2.0;
     let cx = mag_x + radius;
     let cy = mag_y + radius;
@@ -99,61 +88,30 @@ pub fn draw_magnifier(
     }
     zoomed.apply_mask(&mask);
 
-    canvas.draw_pixmap(
-        mag_x as i32,
-        mag_y as i32,
-        zoomed.as_ref(),
-        &PixmapPaint::default(),
-        Transform::identity(),
-        None,
-    );
+    p.draw_pixmap(mag_x as i32, mag_y as i32, &zoomed);
 
-    let mut paint = Paint::default();
-    paint.set_color(cfg().outline.get().color());
-    paint.anti_alias = true;
     let mut stroke = Stroke::default();
     stroke.width = cfg().outline_width;
     if let Some(circle_path) = PathBuilder::from_circle(cx, cy, radius) {
-        canvas.stroke_path(&circle_path, &paint, &stroke, Transform::identity(), None);
+        p.stroke_path(&circle_path, cfg().outline.get(), &stroke);
     }
 
-    if let Some((font_system, swash_cache)) = label
-        && let Some(color) = sample_pixel(source, native)
-    {
-        draw_color_label(
-            canvas,
-            mag_x,
-            mag_y + size() as f32 + cfg().label_gap,
-            color,
-            font_system,
-            swash_cache,
-        );
+    if label && let Some(color) = sample_pixel(source, native) {
+        draw_color_label(p, mag_x, mag_y + size() as f32 + cfg().label_gap, color);
     }
 }
 
-fn draw_color_label(
-    canvas: &mut Pixmap,
-    x: f32,
-    y: f32,
-    color: Color,
-    font_system: &mut FontSystem,
-    swash_cache: &mut SwashCache,
-) {
+fn draw_color_label(p: &mut Painter, x: f32, y: f32, color: Color) {
     let cfg = cfg();
     let width = size() as f32;
     let Some(plate) = Rect::from_xywh(x, y, width, cfg.label_height) else {
         return;
     };
-    fill(
-        canvas,
-        plate,
-        radius::panel(),
-        cfg.label_background.get().color(),
-    );
-    stroke_outline(canvas, plate, radius::panel());
+    p.fill_rounded(plate, radius::panel(), cfg.label_background.get());
+    stroke_outline(p, plate, radius::panel());
 
     let text = crate::ui::settings_panel::ValueField::Hex.text(color);
-    let text_width = crate::renderer::measure_line_width(&text, font::label(), font_system);
+    let text_width = p.measure(&text, font::label());
     let (swatch_size, swatch_gap) = (cfg.swatch_size, cfg.swatch_gap);
     let group = swatch_size + swatch_gap + text_width;
     let swatch_x = x + ((width - group) / 2.0).max(swatch_gap);
@@ -164,8 +122,8 @@ fn draw_color_label(
         swatch_size,
         swatch_size,
     ) {
-        fill(canvas, swatch, cfg.swatch_radius, color);
-        stroke_outline(canvas, swatch, cfg.swatch_radius);
+        p.fill_rounded(swatch, cfg.swatch_radius, color);
+        stroke_outline(p, swatch, cfg.swatch_radius);
     }
 
     if let Some(text_rect) = Rect::from_xywh(
@@ -174,23 +132,15 @@ fn draw_color_label(
         (width - (swatch_x - x) - swatch_size - swatch_gap).max(0.0),
         cfg.label_height,
     ) {
-        draw_aligned_text(
-            canvas,
-            &text,
-            font_system,
-            swash_cache,
+        p.text(
             text_rect,
-            font::label(),
-            cfg.label_text.get().color(),
-            HAlign::Left,
-            (0.0, 0.0),
-            Weight::NORMAL,
-            Style::Normal,
+            &text,
+            TextStyle::new(font::label(), cfg.label_text.get().color()),
         );
     }
 }
 
-fn stroke_outline(canvas: &mut Pixmap, rect: Rect, radius: f32) {
+fn stroke_outline(p: &mut Painter, rect: Rect, radius: f32) {
     let outline = cfg().outline_width;
     let inset = outline / 2.0;
     let Some(inner) = Rect::from_xywh(
@@ -205,30 +155,11 @@ fn stroke_outline(canvas: &mut Pixmap, rect: Rect, radius: f32) {
     else {
         return;
     };
-    let mut paint = Paint::default();
-    paint.set_color(cfg().outline.get().color());
-    paint.anti_alias = true;
     let stroke = Stroke {
         width: outline,
         ..Stroke::default()
     };
-    canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
-}
-
-fn fill(canvas: &mut Pixmap, rect: Rect, radius: f32, color: Color) {
-    let Some(path) = rounded_rect_path(&rect, radius, true, true, true, true) else {
-        return;
-    };
-    let mut paint = Paint::default();
-    paint.set_color(color);
-    paint.anti_alias = true;
-    canvas.fill_path(
-        &path,
-        &paint,
-        FillRule::Winding,
-        Transform::identity(),
-        None,
-    );
+    p.stroke_path(&path, cfg().outline.get(), &stroke);
 }
 
 fn magnifier_position(

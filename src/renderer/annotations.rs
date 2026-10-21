@@ -1,14 +1,14 @@
+use super::Painter;
 use super::paths::{luminance, normalized_rect, oval_path, rect_bounds};
-use super::text::{draw_text_buffer, shape_single_line};
+use super::text::shape_single_line;
 use crate::renderer::paths::KAPPA;
 use crate::tools::text::render_text_annotation;
 use crate::types::annotations::{Annotation, AnnotationShape, arrow_head};
 
-use cosmic_text::{Editor, FontSystem, SwashCache};
+use cosmic_text::Editor;
 use std::collections::HashMap;
 use tiny_skia::{
-    Color, FillRule, LineCap, LineJoin, Mask, Paint, PathBuilder, Pixmap, PixmapPaint, Rect,
-    Stroke, Transform,
+    Color, FillRule, LineCap, LineJoin, Mask, Paint, PathBuilder, Pixmap, Rect, Stroke, Transform,
 };
 
 /// Scales the shadow's own fixed alpha by the annotation color's alpha,
@@ -24,13 +24,11 @@ pub fn shadow_color_for(color: Color) -> Color {
 }
 
 /// Builds the "real" transform plus the same transform shifted by
-/// `annotations.shadow.offset`, from a single viewport `offset`. Keeps every shape's
+/// `annotations.shadow.offset`, from the painter's viewport. Keeps every shape's
 /// shadow offset in sync without repeating the translate math.
-fn transforms_for(offset: (f32, f32)) -> (Transform, Transform) {
+fn transforms_for(p: &Painter) -> (Transform, Transform) {
     let [dx, dy] = crate::config::get().annotations.shadow.offset;
-    let transform = Transform::from_translate(-offset.0, -offset.1);
-    let shadow_transform = Transform::from_translate(-offset.0 + dx, -offset.1 + dy);
-    (transform, shadow_transform)
+    (p.transform(), p.transform_shifted(dx, dy))
 }
 
 // Only matters for the offset-shadow path (stroke_with_shadow), not halo
@@ -58,7 +56,7 @@ pub fn selection_chrome_pad() -> f32 {
 }
 
 fn stroke_segment_with_shadow(
-    canvas: &mut Pixmap,
+    p: &mut Painter,
     path: &tiny_skia::Path,
     paint: &Paint,
     stroke: &Stroke,
@@ -86,20 +84,18 @@ fn stroke_segment_with_shadow(
             layer_paint.set_color(layer_color);
             layer_paint.anti_alias = true;
 
-            canvas.stroke_path(path, &layer_paint, &layer_stroke, shadow_transform, None);
+            p.canvas
+                .stroke_path(path, &layer_paint, &layer_stroke, shadow_transform, None);
         }
     }
 
-    canvas.stroke_path(path, paint, stroke, transform, None);
+    p.canvas.stroke_path(path, paint, stroke, transform, None);
 }
 
 pub fn draw_annotation(
-    canvas: &mut Pixmap,
+    p: &mut Painter,
     ann: &Annotation,
-    offset: (f32, f32),
     selected: bool,
-    font_system: &mut FontSystem,
-    swash_cache: &mut SwashCache,
     text_editors: &mut HashMap<u64, Editor<'static>>,
     blurs: &HashMap<u64, Pixmap>,
     active_text_id: Option<u64>,
@@ -107,81 +103,44 @@ pub fn draw_annotation(
     match &ann.shape {
         AnnotationShape::Arrow { start, end } => {
             draw_arrow(
-                canvas,
+                p,
                 *start,
                 *end,
                 ann.color,
                 ann.stroke_width,
-                offset,
                 ann.shadow_color,
             );
         }
         AnnotationShape::Rectangle { start, end, filled } => {
             if let Some(rect) = normalized_rect(*start, *end) {
                 if *filled {
-                    fill_rect(
-                        canvas,
-                        &rect,
-                        ann.color,
-                        ann.stroke_width,
-                        offset,
-                        ann.shadow_color,
-                    );
+                    fill_rect(p, &rect, ann.color, ann.stroke_width, ann.shadow_color);
                 } else {
-                    draw_rect(
-                        canvas,
-                        &rect,
-                        ann.color,
-                        ann.stroke_width,
-                        offset,
-                        ann.shadow_color,
-                    );
+                    draw_rect(p, &rect, ann.color, ann.stroke_width, ann.shadow_color);
                 }
             }
         }
         AnnotationShape::Circle { start, end, filled } => {
             if let Some(rect) = normalized_rect(*start, *end) {
                 if *filled {
-                    fill_circle(
-                        canvas,
-                        &rect,
-                        ann.color,
-                        ann.stroke_width,
-                        offset,
-                        ann.shadow_color,
-                    );
+                    fill_circle(p, &rect, ann.color, ann.stroke_width, ann.shadow_color);
                 } else {
-                    draw_circle(
-                        canvas,
-                        &rect,
-                        ann.color,
-                        ann.stroke_width,
-                        offset,
-                        ann.shadow_color,
-                    );
+                    draw_circle(p, &rect, ann.color, ann.stroke_width, ann.shadow_color);
                 }
             }
         }
         AnnotationShape::Line { start, end } => {
             draw_line(
-                canvas,
+                p,
                 *start,
                 *end,
                 ann.color,
                 ann.stroke_width,
-                offset,
                 ann.shadow_color,
             );
         }
         AnnotationShape::Pen { points } => {
-            draw_pen(
-                canvas,
-                points,
-                ann.color,
-                ann.stroke_width,
-                offset,
-                ann.shadow_color,
-            );
+            draw_pen(p, points, ann.color, ann.stroke_width, ann.shadow_color);
         }
         AnnotationShape::Redact {
             start,
@@ -194,62 +153,55 @@ pub fn draw_annotation(
                     size: *strength,
                     pixelate: *pixelate,
                 };
-                super::blur::draw(canvas, rect, style, blurs.get(&ann.id), offset);
+                super::blur::draw(p.canvas, rect, style, blurs.get(&ann.id), p.origin);
             }
         }
         AnnotationShape::Highlighter { points, flat_ends } => {
-            draw_highlighter(
-                canvas,
-                points,
-                *flat_ends,
-                ann.color,
-                ann.stroke_width,
-                offset,
-            );
+            draw_highlighter(p, points, *flat_ends, ann.color, ann.stroke_width);
         }
         AnnotationShape::Text { .. } => {
             let is_editing = active_text_id == Some(ann.id);
-            let editor = crate::tools::text::ensure_text_editor(ann, text_editors, font_system);
-            let mut pixmap_mut = canvas.as_mut();
-            render_text_annotation(
-                ann,
-                editor,
-                font_system,
-                swash_cache,
-                &mut pixmap_mut,
-                offset,
-                is_editing,
-            );
+            if let Some(fonts) = p.fonts.as_mut() {
+                let editor =
+                    crate::tools::text::ensure_text_editor(ann, text_editors, fonts.system);
+                let mut pixmap_mut = p.canvas.as_mut();
+                render_text_annotation(
+                    ann,
+                    editor,
+                    fonts.system,
+                    fonts.cache,
+                    &mut pixmap_mut,
+                    p.origin,
+                    is_editing,
+                );
+            }
         }
         AnnotationShape::NumeratedArrow { start, end, number } => {
             draw_numerated_arrow(
-                canvas,
+                p,
                 *start,
                 *end,
                 *number,
                 ann.color,
                 ann.stroke_width,
-                offset,
                 ann.shadow_color,
-                font_system,
-                swash_cache,
             );
         }
     }
     if selected {
-        draw_annotation_handles_only(canvas, ann, offset);
+        draw_annotation_handles_only(p, ann);
     }
 }
 
-pub fn draw_annotation_handles_only(canvas: &mut Pixmap, ann: &Annotation, offset: (f32, f32)) {
+pub fn draw_annotation_handles_only(p: &mut Painter, ann: &Annotation) {
     if matches!(ann.shape, AnnotationShape::Text { .. }) {
-        draw_text_box(canvas, &ann.bbox, offset);
+        draw_text_box(p, &ann.bbox);
     } else {
-        draw_annotation_handles(canvas, &ann.bbox, offset);
+        draw_annotation_handles(p, &ann.bbox);
     }
 }
 
-fn draw_text_box(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32)) {
+fn draw_text_box(p: &mut Painter, bbox: &Rect) {
     let cfg = crate::config::get();
     let handles = &cfg.annotations.handles;
     let mut paint = Paint::default();
@@ -264,7 +216,7 @@ fn draw_text_box(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32)) {
 
     // Selection chrome, not the annotation itself — halo (no offset) reads
     // better than a drop shadow on a rounded-rect outline.
-    let transform = Transform::from_translate(-offset.0, -offset.1);
+    let transform = p.transform();
     let shadow_transform = transform;
     let pad = cfg.input.handle_hit_width / 2.0;
     let (l, t, ri, b) = (
@@ -300,7 +252,7 @@ fn draw_text_box(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32)) {
 
     if let Some(path) = pb.finish() {
         stroke_segment_with_shadow(
-            canvas,
+            p,
             &path,
             &paint,
             &stroke,
@@ -312,12 +264,11 @@ fn draw_text_box(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32)) {
 }
 
 fn draw_arrow(
-    canvas: &mut Pixmap,
+    p: &mut Painter,
     start: (f32, f32),
     end: (f32, f32),
     color: Color,
     stroke_width: f32,
-    offset: (f32, f32),
     shadow_color: Color,
 ) {
     let dx = end.0 - start.0;
@@ -356,47 +307,31 @@ fn draw_arrow(
 
     if let Some(path) = pb.finish() {
         stroke_with_shadow(
-            canvas,
+            p,
             &path,
             color,
             stroke_width,
             LineCap::Round,
             LineJoin::Round,
-            offset,
             shadow_color,
         );
     }
 }
 
-fn draw_rect(
-    canvas: &mut Pixmap,
-    rect: &Rect,
-    color: Color,
-    stroke_width: f32,
-    offset: (f32, f32),
-    shadow_color: Color,
-) {
+fn draw_rect(p: &mut Painter, rect: &Rect, color: Color, stroke_width: f32, shadow_color: Color) {
     let path = PathBuilder::from_rect(*rect);
     stroke_with_shadow(
-        canvas,
+        p,
         &path,
         color,
         stroke_width,
         LineCap::Butt,
         LineJoin::Miter,
-        offset,
         shadow_color,
     );
 }
 
-fn draw_circle(
-    canvas: &mut Pixmap,
-    rect: &Rect,
-    color: Color,
-    stroke_width: f32,
-    offset: (f32, f32),
-    shadow_color: Color,
-) {
+fn draw_circle(p: &mut Painter, rect: &Rect, color: Color, stroke_width: f32, shadow_color: Color) {
     let cx = (rect.left() + rect.right()) / 2.0;
     let cy = (rect.top() + rect.bottom()) / 2.0;
     let rx = rect.width() / 2.0;
@@ -404,26 +339,18 @@ fn draw_circle(
 
     if let Some(path) = oval_path(cx, cy, rx, ry) {
         stroke_with_shadow(
-            canvas,
+            p,
             &path,
             color,
             stroke_width,
             LineCap::Butt,
             LineJoin::Round,
-            offset,
             shadow_color,
         );
     }
 }
 
-fn fill_rect(
-    canvas: &mut Pixmap,
-    rect: &Rect,
-    color: Color,
-    stroke_width: f32,
-    offset: (f32, f32),
-    shadow_color: Color,
-) {
+fn fill_rect(p: &mut Painter, rect: &Rect, color: Color, stroke_width: f32, shadow_color: Color) {
     let half = stroke_width / 2.0;
     let Some(outer) = Rect::from_ltrb(
         rect.left() - half,
@@ -433,46 +360,27 @@ fn fill_rect(
     ) else {
         return;
     };
-    fill_with_shadow(
-        canvas,
-        &PathBuilder::from_rect(outer),
-        color,
-        offset,
-        shadow_color,
-    );
+    fill_with_shadow(p, &PathBuilder::from_rect(outer), color, shadow_color);
 }
 
-fn fill_circle(
-    canvas: &mut Pixmap,
-    rect: &Rect,
-    color: Color,
-    stroke_width: f32,
-    offset: (f32, f32),
-    shadow_color: Color,
-) {
+fn fill_circle(p: &mut Painter, rect: &Rect, color: Color, stroke_width: f32, shadow_color: Color) {
     let cx = (rect.left() + rect.right()) / 2.0;
     let cy = (rect.top() + rect.bottom()) / 2.0;
     let rx = rect.width() / 2.0 + stroke_width / 2.0;
     let ry = rect.height() / 2.0 + stroke_width / 2.0;
 
     if let Some(path) = oval_path(cx, cy, rx, ry) {
-        fill_with_shadow(canvas, &path, color, offset, shadow_color);
+        fill_with_shadow(p, &path, color, shadow_color);
     }
 }
 
-fn fill_with_shadow(
-    canvas: &mut Pixmap,
-    path: &tiny_skia::Path,
-    color: Color,
-    offset: (f32, f32),
-    shadow_color: Color,
-) {
-    let (transform, shadow_transform) = transforms_for(offset);
+fn fill_with_shadow(p: &mut Painter, path: &tiny_skia::Path, color: Color, shadow_color: Color) {
+    let (transform, shadow_transform) = transforms_for(p);
 
     let mut shadow_paint = Paint::default();
     shadow_paint.set_color(shadow_color);
     shadow_paint.anti_alias = true;
-    canvas.fill_path(
+    p.canvas.fill_path(
         path,
         &shadow_paint,
         FillRule::Winding,
@@ -483,16 +391,16 @@ fn fill_with_shadow(
     let mut paint = Paint::default();
     paint.set_color(color);
     paint.anti_alias = true;
-    canvas.fill_path(path, &paint, FillRule::Winding, transform, None);
+    p.canvas
+        .fill_path(path, &paint, FillRule::Winding, transform, None);
 }
 
 fn draw_line(
-    canvas: &mut Pixmap,
+    p: &mut Painter,
     start: (f32, f32),
     end: (f32, f32),
     color: Color,
     stroke_width: f32,
-    offset: (f32, f32),
     shadow_color: Color,
 ) {
     let mut pb = PathBuilder::new();
@@ -501,13 +409,12 @@ fn draw_line(
 
     if let Some(path) = pb.finish() {
         stroke_with_shadow(
-            canvas,
+            p,
             &path,
             color,
             stroke_width,
             LineCap::Round,
             LineJoin::Round,
-            offset,
             shadow_color,
         );
     }
@@ -574,18 +481,17 @@ fn freehand_path(
 }
 
 fn draw_pen(
-    canvas: &mut Pixmap,
+    p: &mut Painter,
     points: &[(f32, f32)],
     color: Color,
     stroke_width: f32,
-    offset: (f32, f32),
     shadow_color: Color,
 ) {
     let Some(path) = freehand_path(points, 0, None) else {
         return;
     };
 
-    let transform = Transform::from_translate(-offset.0, -offset.1);
+    let transform = p.transform();
     // 1. drawing a halo around the full path
     let mut halo_paint = Paint::default();
     halo_paint.set_color(shadow_color);
@@ -605,9 +511,11 @@ fn draw_pen(
     stroke.line_join = LineJoin::Round;
 
     // draw halo first
-    canvas.stroke_path(&path, &halo_paint, &halo_stroke, transform, None);
+    p.canvas
+        .stroke_path(&path, &halo_paint, &halo_stroke, transform, None);
     // then normal stroke
-    canvas.stroke_path(&path, &paint, &stroke, transform, None);
+    p.canvas
+        .stroke_path(&path, &paint, &stroke, transform, None);
 }
 
 fn highlighter_color(mut color: Color) -> Color {
@@ -616,41 +524,31 @@ fn highlighter_color(mut color: Color) -> Color {
 }
 
 fn draw_highlighter(
-    canvas: &mut Pixmap,
+    p: &mut Painter,
     points: &[(f32, f32)],
     flat_ends: [bool; 2],
     color: Color,
     stroke_width: f32,
-    offset: (f32, f32),
 ) {
     if let Some(path) = freehand_path(points, 0, None) {
-        stroke_highlighter(
-            canvas,
-            &path,
-            points,
-            flat_ends,
-            color,
-            stroke_width,
-            offset,
-        );
+        stroke_highlighter(p, &path, points, flat_ends, color, stroke_width);
     }
 }
 
 fn stroke_highlighter(
-    canvas: &mut Pixmap,
+    p: &mut Painter,
     path: &tiny_skia::Path,
     points: &[(f32, f32)],
     flat_ends: [bool; 2],
     color: Color,
     stroke_width: f32,
-    offset: (f32, f32),
 ) {
     let flat_ends = if points.windows(2).all(|w| w[0] == w[1]) {
         [false; 2]
     } else {
         flat_ends
     };
-    let transform = Transform::from_translate(-offset.0, -offset.1);
+    let transform = p.transform();
     let mut paint = Paint::default();
     paint.set_color(highlighter_color(color));
     paint.anti_alias = true;
@@ -669,33 +567,34 @@ fn stroke_highlighter(
         _ => None,
     };
     let Some(&(x, y)) = round_end else {
-        canvas.stroke_path(path, &paint, &stroke, transform, None);
+        p.canvas.stroke_path(path, &paint, &stroke, transform, None);
         return;
     };
 
+    let (cw, ch) = (p.canvas.width(), p.canvas.height());
     let (Some(mut mask), Some(outline), Some(dot), Some(rect)) = (
-        Mask::new(canvas.width(), canvas.height()),
+        Mask::new(cw, ch),
         path.stroke(&stroke, 1.0),
         PathBuilder::from_circle(x, y, stroke_width / 2.0),
-        Rect::from_xywh(0.0, 0.0, canvas.width() as f32, canvas.height() as f32),
+        Rect::from_xywh(0.0, 0.0, cw as f32, ch as f32),
     ) else {
         return;
     };
     mask.fill_path(&outline, FillRule::Winding, true, transform);
     mask.fill_path(&dot, FillRule::Winding, true, transform);
-    canvas.fill_rect(rect, &paint, Transform::identity(), Some(&mask));
+    p.canvas
+        .fill_rect(rect, &paint, Transform::identity(), Some(&mask));
 }
 
 pub fn draw_highlighter_live(
-    canvas: &mut Pixmap,
+    p: &mut Painter,
     points: &[(f32, f32)],
     flat_ends: [bool; 2],
     color: Color,
     stroke_width: f32,
-    offset: (f32, f32),
     dirty: Option<&Rect>,
 ) {
-    let (cw, ch) = (canvas.width(), canvas.height());
+    let (cw, ch) = (p.canvas.width(), p.canvas.height());
     let Some((x, y, w, h)) = dirty
         .copied()
         .or_else(|| Rect::from_xywh(0.0, 0.0, cw as f32, ch as f32))
@@ -707,7 +606,7 @@ pub fn draw_highlighter_live(
         return;
     };
 
-    let origin = (offset.0 + x as f32, offset.1 + y as f32);
+    let origin = (p.origin.0 + x as f32, p.origin.1 + y as f32);
     let pad = stroke_width / 2.0 + 1.0;
     let clip = Rect::from_xywh(
         origin.0 - pad,
@@ -719,33 +618,24 @@ pub fn draw_highlighter_live(
         return;
     };
     stroke_highlighter(
-        &mut tmp,
+        &mut p.sub(&mut tmp).with_origin(origin),
         &path,
         points,
         flat_ends,
         color,
         stroke_width,
-        origin,
     );
 
-    canvas.draw_pixmap(
-        x as i32,
-        y as i32,
-        tmp.as_ref(),
-        &PixmapPaint::default(),
-        Transform::identity(),
-        None,
-    );
+    p.draw_pixmap(x as i32, y as i32, &tmp);
 }
 
 pub fn stroke_pen_segment(
-    canvas: &mut Pixmap,
+    p: &mut Painter,
     path: &tiny_skia::Path,
     color: Color,
     stroke_width: f32,
-    offset: (f32, f32),
 ) {
-    let transform = Transform::from_translate(-offset.0, -offset.1);
+    let transform = p.transform();
     let mut paint = Paint::default();
     paint.set_color(color);
     paint.anti_alias = true;
@@ -754,23 +644,22 @@ pub fn stroke_pen_segment(
     stroke.line_cap = LineCap::Round;
     stroke.line_join = LineJoin::Round;
 
-    canvas.stroke_path(path, &paint, &stroke, transform, None);
+    p.canvas.stroke_path(path, &paint, &stroke, transform, None);
 }
 
 pub fn draw_pen_active_tail(
-    canvas: &mut Pixmap,
+    p: &mut Painter,
     points: &[(f32, f32)],
     baked: usize,
     color: Color,
     stroke_width: f32,
-    offset: (f32, f32),
 ) {
     if let Some(path) = freehand_path(points, baked, None) {
-        stroke_pen_segment(canvas, &path, color, stroke_width, offset);
+        stroke_pen_segment(p, &path, color, stroke_width);
     }
 }
 
-fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32)) {
+fn draw_annotation_handles(p: &mut Painter, bbox: &Rect) {
     let cfg = crate::config::get();
     let handles = &cfg.annotations.handles;
     let mut paint = Paint::default();
@@ -785,7 +674,7 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
     let base_shadow_color = cfg.annotations.shadow.color.color();
 
     // Eight small, disjoint segments — halo (no offset) instead of a drop shadow.
-    let transform = Transform::from_translate(-offset.0, -offset.1);
+    let transform = p.transform();
     let shadow_transform = transform;
 
     let out_pad = cfg.input.handle_hit_width / 2.0;
@@ -854,7 +743,7 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
 
     if let Some(path) = pb.finish() {
         stroke_segment_with_shadow(
-            canvas,
+            p,
             &path,
             &paint,
             &stroke,
@@ -866,16 +755,15 @@ fn draw_annotation_handles(canvas: &mut Pixmap, bbox: &Rect, offset: (f32, f32))
 }
 
 fn stroke_with_shadow(
-    canvas: &mut Pixmap,
+    p: &mut Painter,
     path: &tiny_skia::Path,
     color: Color,
     stroke_width: f32,
     line_cap: LineCap,
     line_join: LineJoin,
-    offset: (f32, f32),
     shadow_color: Color,
 ) {
-    let (transform, shadow_transform) = transforms_for(offset);
+    let (transform, shadow_transform) = transforms_for(p);
 
     let mut paint = Paint::default();
     paint.set_color(color);
@@ -889,7 +777,7 @@ fn stroke_with_shadow(
     let base_shadow_color = shadow_color;
 
     stroke_segment_with_shadow(
-        canvas,
+        p,
         path,
         &paint,
         &stroke,
@@ -909,19 +797,16 @@ fn contrasting_text_color(circle_color: Color) -> Color {
 }
 
 fn draw_numerated_arrow(
-    canvas: &mut Pixmap,
+    p: &mut Painter,
     start: (f32, f32),
     end: (f32, f32),
     number: u32,
     color: Color,
     stroke_width: f32,
-    offset: (f32, f32),
     shadow_color: Color,
-    font_system: &mut FontSystem,
-    swash_cache: &mut SwashCache,
 ) {
     let numbered = &crate::config::get().annotations.numbered;
-    let (transform, shadow_transform) = transforms_for(offset);
+    let (transform, shadow_transform) = transforms_for(p);
 
     let circle_radius = stroke_width * numbered.circle;
 
@@ -962,26 +847,28 @@ fn draw_numerated_arrow(
         pb.close();
 
         if let Some(path) = pb.finish() {
-            canvas.fill_path(
+            p.canvas.fill_path(
                 &path,
                 &shadow_paint,
                 FillRule::Winding,
                 shadow_transform,
                 None,
             );
-            canvas.fill_path(&path, &fill_paint, FillRule::Winding, transform, None);
+            p.canvas
+                .fill_path(&path, &fill_paint, FillRule::Winding, transform, None);
         }
     }
 
     if let Some(circle) = oval_path(start.0, start.1, circle_radius, circle_radius) {
-        canvas.fill_path(
+        p.canvas.fill_path(
             &circle,
             &shadow_paint,
             FillRule::Winding,
             shadow_transform,
             None,
         );
-        canvas.fill_path(&circle, &fill_paint, FillRule::Winding, transform, None);
+        p.canvas
+            .fill_path(&circle, &fill_paint, FillRule::Winding, transform, None);
     }
 
     let digits = number.to_string().len();
@@ -993,8 +880,11 @@ fn draw_numerated_arrow(
         cosmic_text::Weight::NORMAL
     };
 
+    let Some(fonts) = p.fonts.as_mut() else {
+        return;
+    };
     let (buffer, text_width, text_height) = shape_single_line(
-        font_system,
+        fonts.system,
         &number.to_string(),
         font_size,
         weight,
@@ -1005,13 +895,5 @@ fn draw_numerated_arrow(
 
     let text_color = contrasting_text_color(color);
 
-    draw_text_buffer(
-        canvas,
-        &buffer,
-        font_system,
-        swash_cache,
-        text_pos,
-        text_color,
-        offset,
-    );
+    p.text_buffer(&buffer, text_pos, text_color);
 }

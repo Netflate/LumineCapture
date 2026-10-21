@@ -1,71 +1,14 @@
-use cosmic_text::{Attrs, Buffer, FontSystem, Metrics, Shaping, SwashCache, SwashContent};
+use cosmic_text::{Attrs, Buffer, FontSystem, Metrics, Shaping, Style, SwashContent, Weight};
 use tiny_skia::{Color, Paint, Pixmap, PixmapPaint, PremultipliedColorU8, Rect, Transform};
 
-use super::paths::rounded_rect_path;
+use super::Painter;
 use crate::theme::{color, font};
 use crate::ui::text_field::LineEditState;
 
+#[derive(Clone, Copy)]
 pub enum HAlign {
     Left,
     Center,
-}
-
-pub fn draw_text_buffer(
-    canvas: &mut Pixmap,
-    buffer: &Buffer,
-    font_system: &mut FontSystem,
-    swash_cache: &mut SwashCache,
-    pos: (f32, f32),
-    color: Color,
-    offset: (f32, f32),
-) {
-    let (x_start, y_start) = pos;
-
-    for run in buffer.layout_runs() {
-        for glyph in run.glyphs.iter() {
-            let physical = glyph.physical((0., 0.), 1.0);
-
-            if let Some(image) = swash_cache.get_image(font_system, physical.cache_key) {
-                let width = image.placement.width;
-                let height = image.placement.height;
-
-                if width == 0 || height == 0 {
-                    continue;
-                }
-
-                let draw_x =
-                    (x_start + physical.x as f32 + image.placement.left as f32 - offset.0) as i32;
-                let draw_y = (y_start + run.line_y - image.placement.top as f32 - offset.1) as i32;
-
-                if image.content == SwashContent::Mask
-                    && let Some(mut glyph_pixmap) = Pixmap::new(width, height)
-                {
-                    let pixels = glyph_pixmap.pixels_mut();
-
-                    for (i, mask_alpha) in image.data.iter().enumerate() {
-                        let a_f32 = (*mask_alpha as f32 / 255.0) * color.alpha();
-                        let a_u8 = (a_f32 * 255.0) as u8;
-
-                        let pr = (color.red() * a_f32 * 255.0) as u8;
-                        let pg = (color.green() * a_f32 * 255.0) as u8;
-                        let pb = (color.blue() * a_f32 * 255.0) as u8;
-
-                        pixels[i] = PremultipliedColorU8::from_rgba(pr, pg, pb, a_u8)
-                            .unwrap_or(PremultipliedColorU8::TRANSPARENT);
-                    }
-
-                    canvas.draw_pixmap(
-                        draw_x,
-                        draw_y,
-                        glyph_pixmap.as_ref(),
-                        &PixmapPaint::default(),
-                        Transform::identity(),
-                        None,
-                    );
-                }
-            }
-        }
-    }
 }
 
 pub fn shape_single_line(
@@ -108,58 +51,40 @@ pub fn measure_line_width(text: &str, font_size: f32, font_system: &mut FontSyst
     .1
 }
 
-pub fn draw_aligned_text(
-    canvas: &mut Pixmap,
-    text: &str,
-    font_system: &mut FontSystem,
-    swash_cache: &mut SwashCache,
-    rect: Rect,
-    font_size: f32,
-    color: Color,
-    align: HAlign,
-    offset: (f32, f32),
-    weight: cosmic_text::Weight,
-    style: cosmic_text::Style,
-) {
-    if text.is_empty() {
-        return;
-    }
-
-    let (buffer, text_w, text_h) = shape_single_line(font_system, text, font_size, weight, style);
-
-    let px = match align {
-        HAlign::Left => rect.left(),
-        HAlign::Center => rect.left() + (rect.width() - text_w) / 2.0,
-    };
-    let py = rect.top() + (rect.height() - text_h) / 2.0;
-
-    draw_text_buffer(
-        canvas,
-        &buffer,
-        font_system,
-        swash_cache,
-        (px, py),
-        color,
-        offset,
-    );
+#[derive(Clone, Copy)]
+pub struct TextStyle {
+    pub size: f32,
+    pub color: Color,
+    pub align: HAlign,
+    pub weight: Weight,
+    pub style: Style,
 }
 
-// ── common input field stuff ─────────────────────────────────────
-pub fn draw_input_box(canvas: &mut Pixmap, rect: Rect, radius: f32) {
-    let Some(path) = rounded_rect_path(&rect, radius, true, true, true, true) else {
-        return;
-    };
+impl TextStyle {
+    pub fn new(size: f32, color: impl Into<Color>) -> Self {
+        Self {
+            size,
+            color: color.into(),
+            align: HAlign::Left,
+            weight: Weight::NORMAL,
+            style: Style::Normal,
+        }
+    }
 
-    let mut fill_paint = Paint::default();
-    fill_paint.set_color(color::field().color());
-    fill_paint.anti_alias = true;
-    canvas.fill_path(
-        &path,
-        &fill_paint,
-        tiny_skia::FillRule::Winding,
-        Transform::identity(),
-        None,
-    );
+    pub fn center(self) -> Self {
+        Self {
+            align: HAlign::Center,
+            ..self
+        }
+    }
+
+    pub fn weight(self, weight: Weight) -> Self {
+        Self { weight, ..self }
+    }
+
+    pub fn style(self, style: Style) -> Self {
+        Self { style, ..self }
+    }
 }
 
 pub fn measure_text_prefix_width(
@@ -194,80 +119,166 @@ pub fn measure_text_prefix_width(
     0.0
 }
 
-pub fn draw_text_selection(canvas: &mut Pixmap, rect: Rect, start_x: f32, end_x: f32) {
-    let sel_h = rect.height() * crate::config::get().theme.field_text_height;
-    let sel_y = rect.top() + (rect.height() - sel_h) / 2.0;
-    let Some(sel_rect) = Rect::from_xywh(
-        rect.left() + start_x,
-        sel_y,
-        (end_x - start_x).max(1.0),
-        sel_h,
-    ) else {
-        return;
-    };
+impl Painter<'_> {
+    pub fn text_buffer(&mut self, buffer: &Buffer, pos: (f32, f32), color: Color) {
+        let Some(fonts) = self.fonts.as_mut() else {
+            return;
+        };
+        let (x_start, y_start) = pos;
+        let offset = self.origin;
 
-    let mut paint = Paint::default();
-    paint.set_color(color::text_selection().color());
-    paint.anti_alias = true;
-    canvas.fill_rect(sel_rect, &paint, Transform::identity(), None);
-}
+        for run in buffer.layout_runs() {
+            for glyph in run.glyphs.iter() {
+                let physical = glyph.physical((0., 0.), 1.0);
 
-pub fn draw_text_caret(canvas: &mut Pixmap, rect: Rect, cursor_x: f32) {
-    let theme = &crate::config::get().theme;
-    let cur_h = rect.height() * theme.field_text_height;
-    let cur_y = rect.top() + (rect.height() - cur_h) / 2.0;
-    let Some(cur_rect) = Rect::from_xywh(
-        (rect.left() + cursor_x).round(),
-        cur_y,
-        theme.caret_width,
-        cur_h,
-    ) else {
-        return;
-    };
+                if let Some(image) = fonts.cache.get_image(fonts.system, physical.cache_key) {
+                    let width = image.placement.width;
+                    let height = image.placement.height;
 
-    let mut paint = Paint::default();
-    paint.set_color(color::caret().color());
-    paint.anti_alias = false;
-    canvas.fill_rect(cur_rect, &paint, Transform::identity(), None);
-}
+                    if width == 0 || height == 0 {
+                        continue;
+                    }
 
-pub fn draw_line_edit(
-    canvas: &mut Pixmap,
-    rect: Rect,
-    display_text: &str,
-    editing: Option<&LineEditState>,
-    font_system: &mut FontSystem,
-    swash_cache: &mut SwashCache,
-    font_size: f32,
-    text_color: Color,
-    weight: cosmic_text::Weight,
-) {
-    if let Some(field) = editing {
-        let raw_text = &field.text;
+                    let draw_x = (x_start + physical.x as f32 + image.placement.left as f32
+                        - offset.0) as i32;
+                    let draw_y =
+                        (y_start + run.line_y - image.placement.top as f32 - offset.1) as i32;
 
-        if let Some((start_byte, end_byte)) = field.selection_byte_range() {
-            let sx = measure_text_prefix_width(raw_text, start_byte, font_size, font_system);
-            let ex = measure_text_prefix_width(raw_text, end_byte, font_size, font_system);
-            draw_text_selection(canvas, rect, sx, ex);
+                    if image.content == SwashContent::Mask
+                        && let Some(mut glyph_pixmap) = Pixmap::new(width, height)
+                    {
+                        let pixels = glyph_pixmap.pixels_mut();
+
+                        for (i, mask_alpha) in image.data.iter().enumerate() {
+                            let a_f32 = (*mask_alpha as f32 / 255.0) * color.alpha();
+                            let a_u8 = (a_f32 * 255.0) as u8;
+
+                            let pr = (color.red() * a_f32 * 255.0) as u8;
+                            let pg = (color.green() * a_f32 * 255.0) as u8;
+                            let pb = (color.blue() * a_f32 * 255.0) as u8;
+
+                            pixels[i] = PremultipliedColorU8::from_rgba(pr, pg, pb, a_u8)
+                                .unwrap_or(PremultipliedColorU8::TRANSPARENT);
+                        }
+
+                        self.canvas.draw_pixmap(
+                            draw_x,
+                            draw_y,
+                            glyph_pixmap.as_ref(),
+                            &PixmapPaint::default(),
+                            Transform::identity(),
+                            None,
+                        );
+                    }
+                }
+            }
         }
-
-        let cx = measure_text_prefix_width(raw_text, field.cursor_byte(), font_size, font_system);
-        draw_text_caret(canvas, rect, cx);
     }
 
-    if !display_text.is_empty() {
-        draw_aligned_text(
-            canvas,
-            display_text,
-            font_system,
-            swash_cache,
-            rect,
-            font_size,
-            text_color,
-            HAlign::Left,
-            (0.0, 0.0),
-            weight,
-            cosmic_text::Style::Normal,
-        );
+    pub fn text(&mut self, rect: Rect, text: &str, style: TextStyle) {
+        if text.is_empty() {
+            return;
+        }
+        let Some(fonts) = self.fonts.as_mut() else {
+            return;
+        };
+
+        let (buffer, text_w, text_h) =
+            shape_single_line(fonts.system, text, style.size, style.weight, style.style);
+
+        let px = match style.align {
+            HAlign::Left => rect.left(),
+            HAlign::Center => rect.left() + (rect.width() - text_w) / 2.0,
+        };
+        let py = rect.top() + (rect.height() - text_h) / 2.0;
+
+        self.text_buffer(&buffer, (px, py), style.color);
+    }
+
+    pub fn measure(&mut self, text: &str, font_size: f32) -> f32 {
+        self.fonts.as_mut().map_or(0.0, |fonts| {
+            measure_line_width(text, font_size, fonts.system)
+        })
+    }
+
+    // ── common input field stuff ─────────────────────────────────────
+    pub fn input_box(&mut self, rect: Rect, radius: f32) {
+        self.fill_rounded(rect, radius, color::field());
+    }
+
+    fn text_selection(&mut self, rect: Rect, start_x: f32, end_x: f32) {
+        let sel_h = rect.height() * crate::config::get().theme.field_text_height;
+        let sel_y = rect.top() + (rect.height() - sel_h) / 2.0;
+        let Some(sel_rect) = Rect::from_xywh(
+            rect.left() + start_x,
+            sel_y,
+            (end_x - start_x).max(1.0),
+            sel_h,
+        ) else {
+            return;
+        };
+
+        let mut paint = Paint::default();
+        paint.set_color(color::text_selection().color());
+        paint.anti_alias = true;
+        let transform = self.transform();
+        self.canvas.fill_rect(sel_rect, &paint, transform, None);
+    }
+
+    fn text_caret(&mut self, rect: Rect, cursor_x: f32) {
+        let theme = &crate::config::get().theme;
+        let cur_h = rect.height() * theme.field_text_height;
+        let cur_y = rect.top() + (rect.height() - cur_h) / 2.0;
+        let Some(cur_rect) = Rect::from_xywh(
+            (rect.left() + cursor_x).round(),
+            cur_y,
+            theme.caret_width,
+            cur_h,
+        ) else {
+            return;
+        };
+
+        let mut paint = Paint::default();
+        paint.set_color(color::caret().color());
+        paint.anti_alias = false;
+        let transform = self.transform();
+        self.canvas.fill_rect(cur_rect, &paint, transform, None);
+    }
+
+    pub fn line_edit(
+        &mut self,
+        rect: Rect,
+        display_text: &str,
+        editing: Option<&LineEditState>,
+        font_size: f32,
+        text_color: Color,
+        weight: Weight,
+    ) {
+        if let Some(field) = editing
+            && let Some(fonts) = self.fonts.as_mut()
+        {
+            let raw_text = &field.text;
+
+            let selection = field.selection_byte_range().map(|(start_byte, end_byte)| {
+                let sx = measure_text_prefix_width(raw_text, start_byte, font_size, fonts.system);
+                let ex = measure_text_prefix_width(raw_text, end_byte, font_size, fonts.system);
+                (sx, ex)
+            });
+            let cx =
+                measure_text_prefix_width(raw_text, field.cursor_byte(), font_size, fonts.system);
+
+            if let Some((sx, ex)) = selection {
+                self.text_selection(rect, sx, ex);
+            }
+            self.text_caret(rect, cx);
+        }
+
+        if !display_text.is_empty() {
+            self.text(
+                rect,
+                display_text,
+                TextStyle::new(font_size, text_color).weight(weight),
+            );
+        }
     }
 }

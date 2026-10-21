@@ -537,11 +537,13 @@ fn render_monitor(editor_state: &mut EditorState, i: usize, frame: &Frame) -> Op
 
     if layer_dirty.is_some() || editor_state.annotations_dirty {
         renderer::rebuild_annotations_layer(
-            &mut editor_state.annotations_layer[i],
+            &mut renderer::Painter::new(&mut editor_state.annotations_layer[i])
+                .with_text(
+                    &mut editor_state.text.font_system,
+                    &mut editor_state.text.swash_cache,
+                )
+                .with_origin(offset),
             &editor_state.annotations,
-            offset,
-            &mut editor_state.text.font_system,
-            &mut editor_state.text.swash_cache,
             &mut editor_state.text.editors,
             &editor_state.blur.cache,
             frame.active_text_id,
@@ -778,12 +780,14 @@ fn render_final(editor_state: &mut EditorState) -> Option<(Vec<u8>, (i32, i32), 
             (&scaled, &mut scaled_editors)
         };
         renderer::draw_annotation(
-            &mut out,
+            &mut renderer::Painter::new(&mut out)
+                .with_text(
+                    &mut editor_state.text.font_system,
+                    &mut editor_state.text.swash_cache,
+                )
+                .with_origin(offset),
             ann,
-            offset,
             false,
-            &mut editor_state.text.font_system,
-            &mut editor_state.text.swash_cache,
             editors,
             &in_place,
             None,

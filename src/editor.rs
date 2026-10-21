@@ -253,12 +253,11 @@ impl EditorState {
                 && rects_overlap(&vis, &mon)
             {
                 crate::renderer::draw_annotation(
-                    &mut self.annotations_layer[i],
+                    &mut crate::renderer::Painter::new(&mut self.annotations_layer[i])
+                        .with_text(&mut self.text.font_system, &mut self.text.swash_cache)
+                        .with_origin(offset),
                     ann,
-                    offset,
                     false,
-                    &mut self.text.font_system,
-                    &mut self.text.swash_cache,
                     &mut self.text.editors,
                     &self.blur.cache,
                     None,
@@ -329,11 +328,11 @@ impl EditorState {
                     && rects_overlap(&vis, &mon)
                 {
                     crate::renderer::stroke_pen_segment(
-                        &mut self.annotations_layer[i],
+                        &mut crate::renderer::Painter::new(&mut self.annotations_layer[i])
+                            .with_origin(offset),
                         &path,
                         color,
                         stroke_width,
-                        offset,
                     );
                 }
             }
