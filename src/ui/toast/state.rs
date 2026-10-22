@@ -21,6 +21,7 @@ pub enum ToastKind {
     CopyFailed,
     ColorCopied,
     PickColor,
+    ScrollNeedsRegion,
 }
 
 #[derive(Clone, Copy)]
@@ -106,6 +107,13 @@ impl ToastKind {
             ToastKind::CopyFailed => ToastSpec {
                 text: "Couldn't copy to the clipboard",
                 anchor: ToastAnchor::SelectionCenter,
+                life: timed(cfg.lifetime),
+                fade_in,
+                fade_out,
+            },
+            ToastKind::ScrollNeedsRegion => ToastSpec {
+                text: "Select the area to scroll-capture first",
+                anchor: ToastAnchor::CursorMonitorCenter,
                 life: timed(cfg.lifetime),
                 fade_in,
                 fade_out,
