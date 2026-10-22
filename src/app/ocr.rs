@@ -15,7 +15,7 @@ use crate::types::Outputs;
 use crate::utils::{copy_to_clipboard, copy_to_primary};
 use log::{error, info};
 
-use super::to_stdout;
+use super::finish::to_stdout;
 
 type Result = std::result::Result<(), Box<dyn std::error::Error>>;
 

@@ -1,14 +1,15 @@
 mod actions;
 mod delay;
+mod finish;
 mod init;
 mod input;
 mod instant;
 mod ocr;
 mod panels;
+mod scroll;
 
 use crate::backend::ScreenOverlay;
-use crate::backend::notify::{self, Notice};
-use crate::backend::{initialize_capture, initialize_clipboard, initialize_overlay};
+use crate::backend::{initialize_capture, initialize_overlay};
 use crate::editor::dirty::{apply_damage_rects, is_dirty, mark_all_dirty, mark_dirty};
 use crate::editor::{EditorState, Layers, OcrState, TextState};
 use crate::profiler::Profiler;
@@ -19,11 +20,11 @@ use crate::tools::selection::{global_selection_to_local, selection_edges_for_mon
 use crate::types::{DamageRect, Mode, Outputs, OverlayEvent, Placement, SelectionEdges};
 use crate::ui::panel::UiPanel;
 use crate::ui::panel::{AnimatedPanel, panel_to_draw, tick_panel_animation};
-use crate::utils::{encode_png, get_full_workspace_rect, save_to_file, write_to_stdout};
+use crate::utils::{encode_png, get_full_workspace_rect};
 
 use cosmic_text::SwashCache;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use tiny_skia::{IntRect, Rect};
 
@@ -92,7 +93,9 @@ pub async fn run(
         );
     }
     match launch.mode {
-        Mode::Editor | Mode::Region | Mode::Ocr => make_screenshot(conn, launch).await,
+        Mode::Editor | Mode::Region | Mode::Ocr | Mode::Scroll => {
+            make_screenshot(conn, launch).await
+        }
         Mode::Full => instant::full(conn, launch).await,
         Mode::Window => instant::window(conn, launch).await,
     }
@@ -104,6 +107,8 @@ async fn make_screenshot(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut prof = Profiler::new(launch.speed);
 
+    // scrolling capture needs its own connection to grab frames
+    let scroll_conn = conn.clone();
     let (mut editor_state, mut overlay) = start_capture(conn, &launch, &mut prof).await?;
     editor_state.to = launch.outputs();
     editor_state.toolbar.to = editor_state.to;
@@ -112,6 +117,13 @@ async fn make_screenshot(
     if editor_state.region() {
         editor_state.ui_hidden = true;
         editor_state.toolbar.start_hidden();
+    }
+    // when launched with -S, let the user select a region first; scrolling takes over once ready
+    if launch.mode == Mode::Scroll {
+        editor_state.toasts.show(
+            crate::ui::toast::ToastKind::ScrollNeedsRegion,
+            &mut editor_state.text.font_system,
+        );
     }
     if launch.mode == Mode::Ocr {
         // preparing the ocr engine immediately after launch,
@@ -122,7 +134,7 @@ async fn make_screenshot(
     init::initial_paint(&mut editor_state, &mut overlay, &mut prof)?;
     prof.dump();
 
-    run_overlay(&mut editor_state, overlay)?;
+    let scroll_mode = run_overlay(&mut editor_state, &mut overlay)?;
     // (saving what user chose)
     crate::editor::saved::save(
         &editor_state.tool_settings,
@@ -134,8 +146,10 @@ async fn make_screenshot(
     editor_state.ocr.models.shutdown();
     if launch.mode == Mode::Ocr {
         ocr::finish(&mut editor_state).await
+    } else if scroll_mode {
+        finish::finish_scroll(&scroll_conn, &mut editor_state, &mut overlay, &launch).await
     } else {
-        finish_capture(&mut editor_state).await
+        finish::finish_capture(&mut editor_state).await
     }
 }
 
@@ -282,8 +296,8 @@ fn build_ocr_state() -> OcrState {
 /// By the time this returns, the overlay is already closed and capture is complete.
 fn run_overlay(
     editor_state: &mut EditorState,
-    mut overlay: Box<dyn ScreenOverlay>,
-) -> Result<(), Box<dyn std::error::Error>> {
+    overlay: &mut Box<dyn ScreenOverlay>,
+) -> Result<bool, Box<dyn std::error::Error>> {
     let mut dirty_mask: u32 = 0;
     let mut annotations_were_hidden = false;
     // wayland on COSMIC unlike KDE doesn't immediately send pointer event
@@ -326,6 +340,14 @@ fn run_overlay(
             break;
         }
 
+        // hand off to the scrolling session once a region is selected and mouse is released
+        if editor_state.mode == Mode::Scroll
+            && editor_state.selection.zone.is_some()
+            && !editor_state.input.mouse_down
+        {
+            return Ok(true);
+        }
+
         overlay.set_cursor(input::compute_cursor(editor_state));
         tick_panels(editor_state, &mut dirty_mask);
 
@@ -346,9 +368,8 @@ fn run_overlay(
         }
     }
 
-    Ok(())
+    Ok(false)
 }
-
 /// system can't sleep waiting only for events, since we have animation and
 /// download beat and etc
 fn poll_timeout(editor_state: &EditorState) -> Option<Duration> {
@@ -632,71 +653,6 @@ fn clear_frame_state(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     *dirty_mask = 0;
 }
 
-async fn finish_capture(editor_state: &mut EditorState) -> Result<(), Box<dyn std::error::Error>> {
-    let Some(outputs) = editor_state.finish else {
-        return Ok(());
-    };
-    let Some((png, _, scale)) = render_final(editor_state) else {
-        return Ok(());
-    };
-    deliver(
-        png,
-        scale,
-        outputs | editor_state.to,
-        editor_state.output.as_deref(),
-    )
-    .await;
-    Ok(())
-}
-
-/// Pins, saves and copies the finished shot, then tells the user about it.
-async fn deliver(png: Vec<u8>, scale: f32, outputs: Outputs, dir: Option<&Path>) {
-    if outputs.pin
-        && let Err(e) = crate::backend::wayland::pin::spawn(&png, scale)
-    {
-        log::error!("pin failed: {e}");
-        notify::send(Notice::PinFailed(e.to_string())).await;
-    }
-    if outputs.stdout {
-        to_stdout(&png, true).await;
-    }
-    let saved = if outputs.save {
-        match save_to_file(&png, dir) {
-            Ok(path) => Some(path),
-            Err(e) => {
-                log::error!("save failed: {e}");
-                notify::send(Notice::SaveFailed(e.to_string())).await;
-                None
-            }
-        }
-    } else {
-        None
-    };
-    if outputs.copy {
-        match initialize_clipboard().copy_image_to_clipboard(&png) {
-            Ok(()) => {
-                let preview = saved.is_none().then_some(png.as_slice());
-                notify::send(Notice::Copied(saved, preview)).await
-            }
-            Err(e) => {
-                log::error!("copy failed: {e}");
-                notify::send(Notice::CopyFailed(e.to_string())).await
-            }
-        }
-    } else if outputs.save
-        && let Some(path) = saved
-    {
-        notify::send(Notice::Saved(path)).await;
-    }
-}
-
-async fn to_stdout(data: &[u8], binary: bool) {
-    if let Err(e) = write_to_stdout(data, binary) {
-        log::error!("can't write to stdout: {e}");
-        notify::send(Notice::StdoutFailed(e.to_string())).await;
-    }
-}
-
 // ************************* //
 //      RENDER HELPERS       //
 // ************************* //
@@ -750,7 +706,7 @@ pub fn selection_render_info(
 
 /// Returns the final PNG and the global position of its top-left corner.
 /// position is required for the pin feature ^^^
-fn render_final(editor_state: &mut EditorState) -> Option<(Vec<u8>, (i32, i32), f32)> {
+pub(crate) fn render_final(editor_state: &mut EditorState) -> Option<(Vec<u8>, (i32, i32), f32)> {
     let sel = match editor_state.selection.zone {
         Some(s) => s,
         None => get_full_workspace_rect(&editor_state.placements)?,

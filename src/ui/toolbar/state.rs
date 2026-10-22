@@ -27,6 +27,7 @@ pub const ITEMS: &[ToolbarItem] = &[
     ToolbarItem::Button(ToolbarButton::Tool(Tool::Circle)),
     ToolbarItem::Button(ToolbarButton::Tool(Tool::NumeratedArrow)),
     ToolbarItem::Button(ToolbarButton::Tool(Tool::Redact)),
+    ToolbarItem::Button(ToolbarButton::Scroll),
     ToolbarItem::Seperator,
     ToolbarItem::Button(ToolbarButton::Finish(Finish::Pin)),
     ToolbarItem::Button(ToolbarButton::Finish(Finish::Copy)),
@@ -280,6 +281,8 @@ impl Toolbar {
 pub enum ToolbarButton {
     Tool(Tool),
     Finish(Finish),
+    /// Starts scrolling capture directly rather than acting as a drawing tool.
+    Scroll,
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -60,6 +60,7 @@ pub fn run(editor_state: &mut EditorState, action: Action, dirty_mask: &mut u32)
         Action::ToggleUi | Action::Tool(_) if editor_state.region() => {}
         Action::ToggleUi => toggle_ui(editor_state, dirty_mask),
         Action::ToggleMagnifier => toggle_magnifier(editor_state, dirty_mask),
+        Action::ScrollCapture => begin_scroll_capture(editor_state, dirty_mask),
         Action::SizeUp => step_size(editor_state, StepperArrow::Up, dirty_mask),
         Action::SizeDown => step_size(editor_state, StepperArrow::Down, dirty_mask),
         Action::Tool(tool) if !busy => select_tool(editor_state, tool, dirty_mask),
@@ -164,6 +165,22 @@ fn toggle_ui(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     }
     editor_state.toolbar.dirty = true;
     refresh_panels(editor_state, dirty_mask);
+}
+
+/// Switch to scrolling capture if a region is selected, or toast otherwise.
+fn begin_scroll_capture(editor_state: &mut EditorState, dirty_mask: &mut u32) {
+    if editor_state.selection.zone.is_none() {
+        editor_state.toasts.show(
+            crate::ui::toast::ToastKind::ScrollNeedsRegion,
+            &mut editor_state.text.font_system,
+        );
+        mark_dirty(dirty_mask, editor_state.input.pointer.monitor_idx);
+        return;
+    }
+    editor_state.mode = Mode::Scroll;
+    editor_state.cancel = false;
+    editor_state.finish = None;
+    editor_state.tool_active = false;
 }
 
 fn toggle_magnifier(editor_state: &mut EditorState, dirty_mask: &mut u32) {

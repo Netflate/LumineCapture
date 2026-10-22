@@ -128,6 +128,7 @@ fn draw_toolbar_content(
                 let (svg_str, icon_size) = match button {
                     ToolbarButton::Tool(tool) => get_svg_for_tool(*tool),
                     ToolbarButton::Finish(finish) => get_svg_for_finish(*finish),
+                    ToolbarButton::Scroll => (crate::ui::icons::SCROLL, cfg.button_size * 0.62),
                 };
 
                 let icon_x = current_x + (cell_size - icon_size) / 2.0;

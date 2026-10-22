@@ -250,6 +250,28 @@ pub fn handle_pointer_button(
                             editor_state.finish = Some((*finish).into());
                             return;
                         }
+                        ToolbarButton::Scroll => {
+                            // scrolling capture requires a region; prompt if not yet selected
+                            if editor_state.selection.zone.is_none() {
+                                let mut fs = std::mem::replace(
+                                    &mut editor_state.text.font_system,
+                                    cosmic_text::FontSystem::new(),
+                                );
+                                editor_state
+                                    .toasts
+                                    .show(crate::ui::toast::ToastKind::ScrollNeedsRegion, &mut fs);
+                                editor_state.text.font_system = fs;
+                                crate::editor::dirty::mark_dirty(
+                                    dirty_mask,
+                                    editor_state.input.pointer.monitor_idx,
+                                );
+                                return;
+                            }
+                            editor_state.mode = crate::types::Mode::Scroll;
+                            editor_state.cancel = false;
+                            editor_state.finish = None;
+                            return;
+                        }
                     }
                 }
                 return;
