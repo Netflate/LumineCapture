@@ -417,10 +417,7 @@ impl ScreenOverlay for WaylandOverlay {
         self.runtime.state.apply_cursor(icon);
     }
 
-    fn clear_background(
-        &mut self,
-        monitor_idx: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    fn clear_background(&mut self, monitor_idx: usize) -> Result<(), Box<dyn std::error::Error>> {
         let rt = &mut self.runtime;
         let Some(sd) = rt.state.surfaces.get_mut(&monitor_idx) else {
             return Err("surface not found".into());

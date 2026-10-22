@@ -53,12 +53,7 @@ pub fn layout(
         .map(|(_, h)| (h as f32).min(PREVIEW_MAX_HEIGHT))
         .unwrap_or(0.0);
     let preview_gap = if preview_h > 0.0 { gap } else { 0.0 };
-    let height = padding * 2.0
-        + preview_h
-        + preview_gap
-        + LINE_HEIGHT * 2.0
-        + gap
-        + BUTTON_SIZE;
+    let height = padding * 2.0 + preview_h + preview_gap + LINE_HEIGHT * 2.0 + gap + BUTTON_SIZE;
 
     // prefer placing panel on the right side of the selection; flip to left if space is tight
     let (mon_w, mon_h) = monitor_size;

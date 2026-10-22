@@ -11,7 +11,11 @@ const ARTIFACT_COLORS: [(u32, u32, u32); 2] = [(45, 212, 191), (250, 204, 21)];
 fn is_artifact_pixel(pixel: u32) -> bool {
     let (r, g, b) = ((pixel >> 16) & 255, (pixel >> 8) & 255, pixel & 255);
     ARTIFACT_COLORS.iter().any(|&(cr, cg, cb)| {
-        let (dr, dg, db) = (r as i32 - cr as i32, g as i32 - cg as i32, b as i32 - cb as i32);
+        let (dr, dg, db) = (
+            r as i32 - cr as i32,
+            g as i32 - cg as i32,
+            b as i32 - cb as i32,
+        );
         (dr * dr + dg * dg + db * db) as u32 <= COLOR_DISTANCE * COLOR_DISTANCE
     })
 }

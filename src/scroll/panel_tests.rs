@@ -49,7 +49,12 @@ fn status_and_length_use_separate_rows() {
         layout.length,
         layout.status
     );
-    assert!(layout.buttons.iter().all(|(_, r)| r.top() >= layout.length.bottom()));
+    assert!(
+        layout
+            .buttons
+            .iter()
+            .all(|(_, r)| r.top() >= layout.length.bottom())
+    );
     // both rows stay within panel bounds
     assert!(layout.status.right() <= layout.rect.right());
     assert!(layout.length.right() <= layout.rect.right());
@@ -90,8 +95,20 @@ fn toggle_axis_availability_before_and_after_growth() {
     use crate::scroll::session::ScrollSession;
 
     let session = ScrollSession::new(region(40.0, 160.0), 0).unwrap();
-    assert!(panel::is_button_enabled(panel::PanelButton::ToggleAxis, &session));
-    assert!(panel::is_button_enabled(panel::PanelButton::TogglePause, &session));
-    assert!(panel::is_button_enabled(panel::PanelButton::Finish, &session));
-    assert!(panel::is_button_enabled(panel::PanelButton::Cancel, &session));
+    assert!(panel::is_button_enabled(
+        panel::PanelButton::ToggleAxis,
+        &session
+    ));
+    assert!(panel::is_button_enabled(
+        panel::PanelButton::TogglePause,
+        &session
+    ));
+    assert!(panel::is_button_enabled(
+        panel::PanelButton::Finish,
+        &session
+    ));
+    assert!(panel::is_button_enabled(
+        panel::PanelButton::Cancel,
+        &session
+    ));
 }

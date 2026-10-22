@@ -97,7 +97,10 @@ fn idle_slows_capture_down_but_never_stops_it() {
     assert!(session.should_idle(std::time::Instant::now()));
 
     let idle = session.capture_interval();
-    assert!(idle > active, "idle {idle:?} should be slower than {active:?}");
+    assert!(
+        idle > active,
+        "idle {idle:?} should be slower than {active:?}"
+    );
     let later = std::time::Instant::now() + idle;
     assert!(session.wants_capture(later), "capture must keep running");
 

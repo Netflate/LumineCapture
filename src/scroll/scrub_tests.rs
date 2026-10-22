@@ -4,7 +4,9 @@ const ARTIFACT: u32 = 0xff2d_d4bf;
 
 fn canvas(width: usize, height: usize) -> Vec<u32> {
     (0..height)
-        .flat_map(|y| (0..width).map(move |x| 0xff00_0000 | ((y as u32 & 0xff) << 8) | (x as u32 & 0xff)))
+        .flat_map(|y| {
+            (0..width).map(move |x| 0xff00_0000 | ((y as u32 & 0xff) << 8) | (x as u32 & 0xff))
+        })
         .collect()
 }
 
@@ -47,7 +49,11 @@ fn left_artifact_column_is_replaced_by_content_to_the_right() {
     assert_eq!(scrub::apply(&mut pixels, w as i32, h as i32), 1);
     for (y, want) in expected.iter().enumerate() {
         assert_eq!(pixels[y * w], *want, "left column not replaced at y={y}");
-        assert_eq!(pixels[y * w + 1], *want, "second column not replaced at y={y}");
+        assert_eq!(
+            pixels[y * w + 1],
+            *want,
+            "second column not replaced at y={y}"
+        );
     }
 }
 
