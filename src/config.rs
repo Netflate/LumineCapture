@@ -308,6 +308,7 @@ section!(ToolbarIcons {
     circle: f32 = 25.0,
     numerated_arrow: f32 = 25.0,
     redact: f32 = 26.0,
+    scroll: f32 = 26.0,
     pin: f32 = 21.0,
     copy: f32 = 20.0,
     save: f32 = 20.0,
@@ -856,6 +857,7 @@ rectangle = 31.0
 circle = 25.0
 numerated_arrow = 25.0
 redact = 26.0
+scroll = 26.0
 pin = 21.0
 copy = 20.0
 save = 20.0

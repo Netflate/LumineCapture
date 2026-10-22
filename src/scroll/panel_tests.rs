@@ -66,3 +66,21 @@ fn hit_test_finds_buttons_and_nothing_outside() {
     assert_eq!(panel::hit_test(&layout, center), Some(*button));
     assert_eq!(panel::hit_test(&layout, (0.0, 0.0)), None);
 }
+
+#[test]
+fn toggle_axis_icon_switches_between_vertical_and_horizontal() {
+    use crate::scroll::session::ScrollSession;
+    use crate::ui::icons;
+
+    let mut session = ScrollSession::new(region(40.0, 160.0), 0).unwrap();
+    assert_eq!(
+        panel::button_icon(panel::PanelButton::ToggleAxis, &session),
+        icons::SCROLL
+    );
+
+    assert!(session.toggle_axis());
+    assert_eq!(
+        panel::button_icon(panel::PanelButton::ToggleAxis, &session),
+        icons::SCROLL_HORIZONTAL
+    );
+}

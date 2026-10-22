@@ -10,6 +10,7 @@ use crate::renderer::text::{HAlign, draw_aligned_text};
 use crate::scroll::session::ScrollSession;
 use crate::theme::{color, font, radius, size};
 use crate::ui::icons;
+use shot_stitch::Axis;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PanelButton {
@@ -222,13 +223,8 @@ pub fn draw(
             );
         }
 
-        let (svg, tint) = match button {
-            PanelButton::TogglePause if session.paused => (icons::SCROLL_RESUME, cfg.icon.get()),
-            PanelButton::TogglePause => (icons::SCROLL_PAUSE, cfg.icon.get()),
-            PanelButton::ToggleAxis => (icons::SCROLL_AXIS, cfg.icon.get()),
-            PanelButton::Finish => (icons::CHECK, cfg.icon.get()),
-            PanelButton::Cancel => (icons::CLOSE, cfg.icon.get()),
-        };
+        let svg = button_icon(*button, session);
+        let tint = cfg.icon.get();
         let icon_size = (rect.width() * 0.62).round();
         let x = rect.left() + (rect.width() - icon_size) / 2.0;
         let y = rect.top() + (rect.height() - icon_size) / 2.0;
@@ -319,4 +315,18 @@ fn draw_preview(canvas: &mut Pixmap, session: &mut ScrollSession, rect: Rect) {
 /// Returns panel damage rectangle.
 pub fn damage_rect(layout: &PanelLayout) -> Rect {
     layout.rect
+}
+
+/// Returns the icon SVG string corresponding to a panel button and session state.
+pub fn button_icon(button: PanelButton, session: &ScrollSession) -> &'static str {
+    match button {
+        PanelButton::TogglePause if session.paused => icons::SCROLL_RESUME,
+        PanelButton::TogglePause => icons::SCROLL_PAUSE,
+        PanelButton::ToggleAxis => match session.axis() {
+            Axis::Vertical => icons::SCROLL,
+            Axis::Horizontal => icons::SCROLL_HORIZONTAL,
+        },
+        PanelButton::Finish => icons::CHECK,
+        PanelButton::Cancel => icons::CLOSE,
+    }
 }
