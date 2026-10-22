@@ -230,24 +230,25 @@ fn draw_text_box(p: &mut Painter, bbox: &Rect) {
     let corner_w = (w * handles.corner_length).clamp(handles.min_length.min(w * 0.5), w * 0.5);
     let corner_h = (h * handles.corner_length).clamp(handles.min_length.min(h * 0.5), h * 0.5);
     let r = handles.radius.min(corner_w * 0.5).min(corner_h * 0.5);
+    let k = 1.0 - KAPPA;
 
     let mut pb = PathBuilder::new();
 
     pb.move_to(l, t + corner_h);
     pb.line_to(l, t + r);
-    pb.cubic_to(l, t + r * KAPPA, l + r * KAPPA, t, l + r, t);
+    pb.cubic_to(l, t + r * k, l + r * k, t, l + r, t);
     pb.line_to(l + corner_w, t);
     pb.move_to(ri - corner_w, t);
     pb.line_to(ri - r, t);
-    pb.cubic_to(ri - r * KAPPA, t, ri, t + r * KAPPA, ri, t + r);
+    pb.cubic_to(ri - r * k, t, ri, t + r * k, ri, t + r);
     pb.line_to(ri, t + corner_h);
     pb.move_to(ri, b - corner_h);
     pb.line_to(ri, b - r);
-    pb.cubic_to(ri, b - r * KAPPA, ri - r * KAPPA, b, ri - r, b);
+    pb.cubic_to(ri, b - r * k, ri - r * k, b, ri - r, b);
     pb.line_to(ri - corner_w, b);
     pb.move_to(l + corner_w, b);
     pb.line_to(l + r, b);
-    pb.cubic_to(l + r * KAPPA, b, l, b - r * KAPPA, l, b - r);
+    pb.cubic_to(l + r * k, b, l, b - r * k, l, b - r);
     pb.line_to(l, b - corner_h);
 
     if let Some(path) = pb.finish() {
@@ -698,31 +699,32 @@ fn draw_annotation_handles(p: &mut Painter, bbox: &Rect) {
     let corner_h = (h * handles.corner_length).clamp(handles.min_length.min(h * 0.5), h * 0.5);
 
     let r = handles.radius.min(corner_w * 0.5).min(corner_h * 0.5);
+    let k = 1.0 - KAPPA;
 
     let mut pb = PathBuilder::new();
 
     // Top-Left
     pb.move_to(l, t + corner_h);
     pb.line_to(l, t + r);
-    pb.cubic_to(l, t + r * KAPPA, l + r * KAPPA, t, l + r, t);
+    pb.cubic_to(l, t + r * k, l + r * k, t, l + r, t);
     pb.line_to(l + corner_w, t);
 
     // Top-Right
     pb.move_to(ri - corner_w, t);
     pb.line_to(ri - r, t);
-    pb.cubic_to(ri - r * KAPPA, t, ri, t + r * KAPPA, ri, t + r);
+    pb.cubic_to(ri - r * k, t, ri, t + r * k, ri, t + r);
     pb.line_to(ri, t + corner_h);
 
     // Bottom-Right
     pb.move_to(ri, b - corner_h);
     pb.line_to(ri, b - r);
-    pb.cubic_to(ri, b - r * KAPPA, ri - r * KAPPA, b, ri - r, b);
+    pb.cubic_to(ri, b - r * k, ri - r * k, b, ri - r, b);
     pb.line_to(ri - corner_w, b);
 
     // Bottom-Left
     pb.move_to(l + corner_w, b);
     pb.line_to(l + r, b);
-    pb.cubic_to(l + r * KAPPA, b, l, b - r * KAPPA, l, b - r);
+    pb.cubic_to(l + r * k, b, l, b - r * k, l, b - r);
     pb.line_to(l, b - corner_h);
 
     // Top middle
