@@ -6,7 +6,9 @@
 // sub-orchestrator ('overlay.rs'), keeping protocol handlers free of state management
 // reminder: each output has its own surface
 
+use crate::backend::wayland::utils::input;
 use crate::backend::wayland::utils::shm::ShmBuffer;
+use smithay_client_toolkit::compositor::CompositorState;
 use wayland_client::protocol::{wl_subsurface, wl_surface};
 use wayland_protocols::wp::viewporter::client::wp_viewport;
 
@@ -18,6 +20,9 @@ pub struct Background {
     pub surface: wl_surface::WlSurface,
     pub viewport: Option<wp_viewport::WpViewport>,
     pub buffer: ShmBuffer,
+    /// Buffer dimensions in pixels; required to damage full buffer upon restore.
+    pub buffer_width: u32,
+    pub buffer_height: u32,
 }
 
 impl Drop for Background {
@@ -37,13 +42,41 @@ pub enum Role {
     Layer(smithay_client_toolkit::shell::wlr_layer::LayerSurface),
 }
 
+/// Scope of pointer events accepted by the overlay surface.
+/// Kept on the surface state rather than immediately applied because unmapped
+/// layer surfaces reject state commits with invalid_size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InputRegion {
+    #[default]
+    Full,
+    Rect(i32, i32, i32, i32),
+    Nothing,
+}
+
 pub struct SurfaceData {
     pub background: Option<Background>,
     pub role: Role,
     pub surface: wl_surface::WlSurface,
 
     pub shm_buffer: Option<ShmBuffer>,
+    /// Whether the surface currently has a buffer attached.
+    pub mapped: bool,
+    /// Pending input region applied upon configure/commit.
+    pub input: InputRegion,
 
     pub width: u32,
     pub height: u32,
+}
+
+impl SurfaceData {
+    /// Sets the pending input region on the surface without committing.
+    pub fn apply_input(&self, compositor: &CompositorState) {
+        match self.input {
+            InputRegion::Full => self.surface.set_input_region(None),
+            InputRegion::Rect(x, y, w, h) => {
+                input::apply_input_region(compositor, &self.surface, Some((x, y, w, h)))
+            }
+            InputRegion::Nothing => input::apply_input_region(compositor, &self.surface, None),
+        }
+    }
 }

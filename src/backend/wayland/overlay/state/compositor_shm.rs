@@ -100,6 +100,9 @@ impl OverlayState {
             }
         };
 
+        // apply configured input region with the first frame after mapping
+        sd.mapped = true;
+        sd.apply_input(&self.compositor_state);
         sd.surface.attach(Some(shm_buffer.wl_buffer()), 0, 0);
         sd.surface.damage_buffer(0, 0, w as i32, h as i32);
         sd.surface.commit();

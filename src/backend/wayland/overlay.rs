@@ -20,7 +20,7 @@ pub mod state;
 
 use crate::backend::ScreenOverlay;
 use crate::backend::wayland::utils::shm::create_shm_buffer;
-use crate::backend::wayland::utils::surface::{Background, Role, SurfaceData};
+use crate::backend::wayland::utils::surface::{Background, InputRegion, Role, SurfaceData};
 use crate::types::{CursorIcon, DamageRect, Output, OverlayEvent};
 use log::warn;
 use smithay_client_toolkit::compositor::Region;
@@ -149,6 +149,8 @@ impl ScreenOverlay for WaylandOverlay {
                     surface,
                     role,
                     shm_buffer: None,
+                    mapped: false,
+                    input: InputRegion::Full,
                     width: w,
                     height: h,
                 },
@@ -405,12 +407,51 @@ impl ScreenOverlay for WaylandOverlay {
             surface,
             viewport,
             buffer,
+            buffer_width: width,
+            buffer_height: height,
         });
         Ok(())
     }
 
     fn set_cursor(&mut self, icon: CursorIcon) {
         self.runtime.state.apply_cursor(icon);
+    }
+
+    fn clear_background(
+        &mut self,
+        monitor_idx: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let rt = &mut self.runtime;
+        let Some(sd) = rt.state.surfaces.get_mut(&monitor_idx) else {
+            return Err("surface not found".into());
+        };
+        // detach buffer from background subsurface so live content reveals
+        if let Some(background) = sd.background.take() {
+            background.surface.attach(None, 0, 0);
+            background.surface.commit();
+        }
+        rt.event_queue.flush()?;
+        Ok(())
+    }
+
+    fn set_input_rect(&mut self, monitor_idx: usize, rect: Option<(i32, i32, i32, i32)>) {
+        let rt = &mut self.runtime;
+        let Some(sd) = rt.state.surfaces.get_mut(&monitor_idx) else {
+            return;
+        };
+        // empty input region lets clicks and wheel pass through to the window below
+        sd.input = match rect {
+            Some((x, y, w, h)) => InputRegion::Rect(x, y, w, h),
+            None => InputRegion::Nothing,
+        };
+
+        // unmapped surfaces cannot commit state; defer until configure
+        if !sd.mapped {
+            return;
+        }
+        sd.apply_input(&rt.state.compositor_state);
+        sd.surface.commit();
+        let _ = rt.event_queue.flush();
     }
 }
 
