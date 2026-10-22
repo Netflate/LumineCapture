@@ -9,6 +9,7 @@ pub mod logging;
 pub mod ocr;
 pub mod profiler;
 pub mod renderer;
+pub mod scroll;
 pub mod theme;
 pub mod tools;
 pub mod types;
