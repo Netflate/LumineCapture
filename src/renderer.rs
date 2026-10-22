@@ -66,9 +66,8 @@ pub struct RenderRequest<'a> {
     pub selected_annotation: Option<usize>,
     pub annotations: &'a [Annotation],
     pub blurs: &'a HashMap<u64, Pixmap>,
-    /// Everything needed to lay out and draw text. The first paint runs on
-    /// several threads with nothing textual on screen, so it has none of this.
-    pub text: Option<TextContext<'a>>,
+    /// Everything needed to lay out and draw text.
+    pub text: TextContext<'a>,
     pub active_text_id: Option<u64>,
     // OCR tool: recognized lines + selection overlay
     pub ocr_view: Option<&'a crate::ocr::OcrView>,
@@ -190,9 +189,8 @@ pub fn render_frame(req: &mut RenderRequest) {
     }
 
     // Dynamic annotations: pending (in-progress drawing or dragging)
-    if let Some(pending) = req.pending
-        && let Some(text) = req.text.as_mut()
-    {
+    if let Some(pending) = req.pending {
+        let text = &mut req.text;
         let mut p = Painter::new(req.canvas)
             .with_text(text.font_system, text.swash_cache)
             .with_origin(req.offset);
@@ -298,11 +296,9 @@ pub fn render_frame(req: &mut RenderRequest) {
         );
     }
 
-    let mut p = Painter::new(req.canvas).with_icons(req.icons_cache);
-    let has_text = req.text.is_some();
-    if let Some(text) = req.text.as_mut() {
-        p = p.with_text(text.font_system, text.swash_cache);
-    }
+    let mut p = Painter::new(req.canvas)
+        .with_icons(req.icons_cache)
+        .with_text(req.text.font_system, req.text.swash_cache);
 
     if req.is_mag_monitor
         && let Some(mag) = req.magnifier
@@ -311,7 +307,7 @@ pub fn render_frame(req: &mut RenderRequest) {
             &mut p,
             req.capture,
             (mag.pos.0 as f32, mag.pos.1 as f32),
-            req.mag_label && has_text,
+            req.mag_label,
         );
     }
 
@@ -321,9 +317,6 @@ pub fn render_frame(req: &mut RenderRequest) {
         crate::ui::toolbar::draw_toolbar(&mut p, tb);
     }
 
-    if !has_text {
-        return;
-    }
     if let Some(settings) = req.settings_panel.as_deref_mut()
         && settings.dirty
     {

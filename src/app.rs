@@ -603,11 +603,11 @@ fn render_monitor(editor_state: &mut EditorState, i: usize, frame: &Frame) -> Op
         selected_annotation: editor_state.selected_annotation.filter(|_| !hidden),
         annotations: &editor_state.annotations,
         blurs: &editor_state.blur.cache,
-        text: Some(renderer::TextContext {
+        text: renderer::TextContext {
             font_system: &mut editor_state.text.font_system,
             swash_cache: &mut editor_state.text.swash_cache,
             editors: &mut editor_state.text.editors,
-        }),
+        },
         active_text_id: frame.active_text_id,
 
         ocr_view: (editor_state.selected_tool == Tool::Ocr && editor_state.ocr.view.is_active())
