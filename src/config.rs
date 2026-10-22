@@ -790,6 +790,7 @@ select_all = "Ctrl+A"
 delete = ["Delete", "Backspace"]
 toggle_ui = "Space"
 toggle_magnifier = "M"
+scroll_capture = "Ctrl+Shift+S"
 size_up = "]"
 size_down = "["
 tool_selection = "S"

@@ -23,6 +23,7 @@
 - Doesn't need a background daemon for best performance (except for GPU OCR, but that's optional).
 - In-app screenshot editing.
 - OCR.
+- Scrolling capture: stitch a page you scroll into one long image.
 - Pin.
   
 ## Speed Comparison (LumineCapture vs Flameshot vs Spectacle)
