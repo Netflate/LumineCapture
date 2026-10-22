@@ -39,14 +39,18 @@ const CROP: (u32, u32, u32, u32) = (0, 0, 40, 160);
 #[test]
 fn scrolling_frames_stitch_into_one_tall_image() {
     let mut session = ScrollSession::new(region(), 0).unwrap();
+    assert!(session.can_toggle_axis());
 
     let first = frame::crop(&page_frame(0, 40, 160), CROP).unwrap();
     session.push(first);
     assert_eq!(session.length_label(), "160 px");
+    assert!(session.can_toggle_axis());
 
     let second = frame::crop(&page_frame(40, 40, 160), CROP).unwrap();
     session.push(second);
     assert_eq!(session.length_label(), "200 px");
+    assert!(!session.can_toggle_axis());
+    assert!(!session.toggle_axis());
 
     let image = session.result().unwrap();
     assert_eq!((image.width(), image.height()), (40, 200));

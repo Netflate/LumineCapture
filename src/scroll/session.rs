@@ -124,6 +124,10 @@ impl ScrollSession {
         self.stitcher.axis()
     }
 
+    pub fn can_toggle_axis(&self) -> bool {
+        !self.stitcher.axis_locked()
+    }
+
     pub fn toggle_axis(&mut self) -> bool {
         let next = match self.stitcher.axis() {
             Axis::Vertical => Axis::Horizontal,

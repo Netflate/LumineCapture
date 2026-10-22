@@ -118,6 +118,9 @@ pub async fn run(
             }
             OverlayEvent::PointerButton { pressed: true, .. } => {
                 let Some(button) = run.hovered else { continue };
+                if !panel::is_button_enabled(button, &run.session) {
+                    continue;
+                }
                 match button {
                     PanelButton::TogglePause => {
                         run.session.paused = !run.session.paused;

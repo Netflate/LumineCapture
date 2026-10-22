@@ -84,3 +84,14 @@ fn toggle_axis_icon_switches_between_vertical_and_horizontal() {
         icons::SCROLL_HORIZONTAL
     );
 }
+
+#[test]
+fn toggle_axis_availability_before_and_after_growth() {
+    use crate::scroll::session::ScrollSession;
+
+    let session = ScrollSession::new(region(40.0, 160.0), 0).unwrap();
+    assert!(panel::is_button_enabled(panel::PanelButton::ToggleAxis, &session));
+    assert!(panel::is_button_enabled(panel::PanelButton::TogglePause, &session));
+    assert!(panel::is_button_enabled(panel::PanelButton::Finish, &session));
+    assert!(panel::is_button_enabled(panel::PanelButton::Cancel, &session));
+}

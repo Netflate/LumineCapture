@@ -208,7 +208,9 @@ pub fn draw(
 
     // buttons with hover highlight
     for (button, rect) in &layout.buttons {
-        if hovered == Some(*button)
+        let enabled = is_button_enabled(*button, session);
+        if enabled
+            && hovered == Some(*button)
             && let Some(path) = rounded_rect_path(rect, radius::item(), true, true, true, true)
         {
             let mut paint = Paint::default();
@@ -224,7 +226,11 @@ pub fn draw(
         }
 
         let svg = button_icon(*button, session);
-        let tint = cfg.icon.get();
+        let tint = if enabled {
+            cfg.icon.get()
+        } else {
+            color::muted().with_alpha(90)
+        };
         let icon_size = (rect.width() * 0.62).round();
         let x = rect.left() + (rect.width() - icon_size) / 2.0;
         let y = rect.top() + (rect.height() - icon_size) / 2.0;
@@ -315,6 +321,14 @@ fn draw_preview(canvas: &mut Pixmap, session: &mut ScrollSession, rect: Rect) {
 /// Returns panel damage rectangle.
 pub fn damage_rect(layout: &PanelLayout) -> Rect {
     layout.rect
+}
+
+/// Returns whether a panel button is currently interactable.
+pub fn is_button_enabled(button: PanelButton, session: &ScrollSession) -> bool {
+    match button {
+        PanelButton::ToggleAxis => session.can_toggle_axis(),
+        PanelButton::TogglePause | PanelButton::Finish | PanelButton::Cancel => true,
+    }
 }
 
 /// Returns the icon SVG string corresponding to a panel button and session state.
