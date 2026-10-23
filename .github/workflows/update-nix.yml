@@ -27,6 +27,9 @@ jobs:
           TAG: ${{ github.event.release.tag_name }}
         run: ./scripts/update-nix.sh "$TAG"
 
+      - name: Update flake.lock
+        run: nix flake update
+
       - name: Build
         run: nix build .#lumine-capture --print-build-logs
 
