@@ -1,0 +1,44 @@
+name: Update Nix package
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Bump version and hash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: ./scripts/update-nix.sh "$TAG"
+
+      - name: Build
+        run: nix build .#lumine-capture --print-build-logs
+
+      - name: Commit and push
+        run: |
+          if git diff --quiet; then
+            echo "nothing to commit"
+            exit 0
+          fi
+          version=$(grep -oP '^\s*version = "\K[^"]+' packaging/nix/package.nix)
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "nix: update to $version"
+          git pull --rebase
+          git push
