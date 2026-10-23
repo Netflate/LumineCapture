@@ -153,6 +153,7 @@ async fn start_capture(
     prof.mark("overlay init");
 
     let all = overlay.discovered_outputs().to_vec();
+    let hidpi = overlay.hidpi();
     let delayed = launch.shot_at.is_some();
     // with a delay the shot can't happen before the deadline anyway, so the backend is
     // created and prepared in advance (on KDE that's connecting to the session bus).
@@ -180,7 +181,7 @@ async fn start_capture(
         prof.mark("active output probed");
     }
     let layers_handle = {
-        let placements = init::build_placements(&outputs);
+        let placements = init::build_placements(&outputs, hidpi);
         std::thread::spawn(move || init::build_layers(&placements))
     };
     // with delay window is created only after the shot, since at least
@@ -210,7 +211,7 @@ async fn start_capture(
     let outputs: Vec<_> = kept.iter().map(|&i| outputs[i].clone()).collect();
 
     let captures = init::build_captures(screenshots.frames)?;
-    let placements = init::build_placements(&outputs);
+    let placements = init::build_placements(&outputs, hidpi);
     let layers = layers_handle.join().expect("Failed to join layers thread");
     let (canvas, dimmed, annotations) = if kept.iter().copied().eq(0..kept.len()) && !shrunk {
         layers
@@ -534,10 +535,12 @@ fn render_monitor(editor_state: &mut EditorState, i: usize, frame: &Frame) -> Op
     let dirty_rect = editor_state.monitor_dirty_rect(i);
     let layer_dirty = editor_state.monitor_layer_dirty_rect(i);
     let offset = editor_state.placements[i].offset();
+    let scale = editor_state.placements[i].scale;
 
     if layer_dirty.is_some() || editor_state.annotations_dirty {
         renderer::rebuild_annotations_layer(
             &mut renderer::Painter::new(&mut editor_state.annotations_layer[i])
+                .with_scale(scale)
                 .with_text(
                     &mut editor_state.text.font_system,
                     &mut editor_state.text.swash_cache,
@@ -553,7 +556,7 @@ fn render_monitor(editor_state: &mut EditorState, i: usize, frame: &Frame) -> Op
 
     let damage = dirty_rect.as_ref().and_then(|r| {
         renderer::rect_bounds(
-            r,
+            &renderer::scale_rect(r, scale)?,
             editor_state.canvas[i].width(),
             editor_state.canvas[i].height(),
         )
@@ -615,6 +618,11 @@ fn render_monitor(editor_state: &mut EditorState, i: usize, frame: &Frame) -> Op
         ocr_scan: frame.scan_badge,
         monitor_idx: i,
         toasts: &editor_state.toasts,
+        size: (
+            editor_state.placements[i].size.0 as f32,
+            editor_state.placements[i].size.1 as f32,
+        ),
+        scale,
     });
 
     damage

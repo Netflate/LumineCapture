@@ -32,9 +32,14 @@ fn box_height(with_label: bool) -> f32 {
 }
 
 /// `label` is the colour plate the eyedropper needs; without it only the loupe is drawn.
-pub fn draw_magnifier(p: &mut Painter, capture: &Capture, cursor: (f32, f32), label: bool) {
-    let screen_w = p.canvas().width() as f32;
-    let screen_h = p.canvas().height() as f32;
+pub fn draw_magnifier(
+    p: &mut Painter,
+    capture: &Capture,
+    cursor: (f32, f32),
+    (screen_w, screen_h): (f32, f32),
+    label: bool,
+) {
+    let scale = p.scale();
     let source = &capture.pixmap;
     let native = capture.to_native((cursor.0 as f64, cursor.1 as f64));
 
@@ -64,8 +69,10 @@ pub fn draw_magnifier(p: &mut Painter, capture: &Capture, cursor: (f32, f32), la
     let cx = mag_x + radius;
     let cy = mag_y + radius;
 
-    let mut zoomed = Pixmap::new(size(), size()).unwrap();
-    let magnifier_transform = Transform::from_row(zoom(), 0.0, 0.0, zoom(), 0.0, 0.0);
+    let side = ((size() as f32 * scale).round() as u32).max(1);
+    let mut zoomed = Pixmap::new(side, side).unwrap();
+    let cell = zoom() * scale;
+    let magnifier_transform = Transform::from_row(cell, 0.0, 0.0, cell, 0.0, 0.0);
     zoomed.draw_pixmap(
         0,
         0,
@@ -75,10 +82,11 @@ pub fn draw_magnifier(p: &mut Painter, capture: &Capture, cursor: (f32, f32), la
         None,
     );
 
-    overlay_crosshair(&mut zoomed);
+    overlay_crosshair(&mut zoomed, scale);
 
-    let mut mask = tiny_skia::Mask::new(size(), size()).unwrap();
-    if let Some(circle_path) = PathBuilder::from_circle(radius, radius, radius) {
+    let mut mask = tiny_skia::Mask::new(side, side).unwrap();
+    let half = side as f32 / 2.0;
+    if let Some(circle_path) = PathBuilder::from_circle(half, half, half) {
         mask.fill_path(
             &circle_path,
             tiny_skia::FillRule::Winding,
@@ -88,7 +96,8 @@ pub fn draw_magnifier(p: &mut Painter, capture: &Capture, cursor: (f32, f32), la
     }
     zoomed.apply_mask(&mask);
 
-    p.draw_pixmap(mag_x as i32, mag_y as i32, &zoomed);
+    let (px, py) = p.to_px(mag_x, mag_y);
+    p.draw_pixmap(px as i32, py as i32, &zoomed);
 
     let mut stroke = Stroke::default();
     stroke.width = cfg().outline_width;
@@ -186,10 +195,10 @@ fn magnifier_position(
     (x, y)
 }
 
-fn overlay_crosshair(zoomed: &mut Pixmap) {
+fn overlay_crosshair(zoomed: &mut Pixmap, scale: f32) {
     let cfg = cfg();
-    let line = cfg.grid_width;
-    let cell = zoom();
+    let line = cfg.grid_width * scale;
+    let cell = zoom() * scale;
     let w = zoomed.width() as f32;
     let h = zoomed.height() as f32;
     let mut paint = Paint::default();

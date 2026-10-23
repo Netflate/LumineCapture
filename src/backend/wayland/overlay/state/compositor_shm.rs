@@ -91,8 +91,9 @@ impl OverlayState {
         }
         // creating buffers and attaching
         let pool = &mut self.pool;
+        let (bw, bh) = crate::types::px_size((w, h), sd.scale);
 
-        let shm_buffer = match create_shm_buffer(pool, w, h) {
+        let shm_buffer = match create_shm_buffer(pool, bw, bh) {
             Ok(buffer) => buffer,
             Err(e) => {
                 self.configure_error = Some(e.to_string());
@@ -100,8 +101,12 @@ impl OverlayState {
             }
         };
 
+        // viewport maps buffer, which is is in physical pixels, back to the logical size
+        if let Some(viewport) = &sd.viewport {
+            viewport.set_destination(w as i32, h as i32);
+        }
         sd.surface.attach(Some(shm_buffer.wl_buffer()), 0, 0);
-        sd.surface.damage_buffer(0, 0, w as i32, h as i32);
+        sd.surface.damage_buffer(0, 0, bw as i32, bh as i32);
         sd.surface.commit();
 
         sd.shm_buffer = Some(shm_buffer);

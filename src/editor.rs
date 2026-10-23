@@ -254,6 +254,7 @@ impl EditorState {
             {
                 crate::renderer::draw_annotation(
                     &mut crate::renderer::Painter::new(&mut self.annotations_layer[i])
+                        .with_scale(placement.scale)
                         .with_text(&mut self.text.font_system, &mut self.text.swash_cache)
                         .with_origin(offset),
                     ann,
@@ -329,6 +330,7 @@ impl EditorState {
                 {
                     crate::renderer::stroke_pen_segment(
                         &mut crate::renderer::Painter::new(&mut self.annotations_layer[i])
+                            .with_scale(placement.scale)
                             .with_origin(offset),
                         &path,
                         color,

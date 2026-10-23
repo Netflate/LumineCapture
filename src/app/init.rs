@@ -79,11 +79,10 @@ pub fn build_layers(placements: &[Placement]) -> (Vec<Pixmap>, Vec<Pixmap>, Vec<
     let mut annotation_layers = Vec::with_capacity(len);
 
     for p in placements {
-        let w = p.size.0.max(1) as u32;
-        let h = p.size.1.max(1) as u32;
+        let (w, h) = p.px_size();
 
         let mut dimmed = Pixmap::new(w, h).expect("Failed to create dimmed");
-        renderer::init_dimming(&mut dimmed, None, None);
+        renderer::init_dimming(&mut dimmed, None, None, p.scale);
         canvases.push(dimmed.clone());
         dimmed_layers.push(dimmed);
         annotation_layers.push(Pixmap::new(w, h).expect("Failed to create annotations"));
@@ -92,7 +91,7 @@ pub fn build_layers(placements: &[Placement]) -> (Vec<Pixmap>, Vec<Pixmap>, Vec<
     (canvases, dimmed_layers, annotation_layers)
 }
 
-pub fn build_placements(outputs: &[Output]) -> Vec<Placement> {
+pub fn build_placements(outputs: &[Output], hidpi: bool) -> Vec<Placement> {
     outputs
         .iter()
         .map(|o| Placement {
@@ -105,6 +104,7 @@ pub fn build_placements(outputs: &[Output]) -> Vec<Placement> {
                     .map(|m| m.dimensions)
                     .unwrap_or((0, 0))
             }),
+            scale: if hidpi { o.scale() } else { 1.0 },
         })
         .collect()
 }

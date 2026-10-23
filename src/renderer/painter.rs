@@ -58,8 +58,31 @@ impl<'a> Painter<'a> {
         self
     }
 
+    pub fn with_scale(mut self, scale: f32) -> Self {
+        self.scale = scale;
+        self
+    }
+
     pub fn canvas(&mut self) -> &mut Pixmap {
         self.canvas
+    }
+
+    pub fn scale(&self) -> f32 {
+        self.scale
+    }
+
+    pub fn size(&self) -> (f32, f32) {
+        (
+            self.canvas.width() as f32 / self.scale,
+            self.canvas.height() as f32 / self.scale,
+        )
+    }
+
+    pub fn to_px(&self, x: f32, y: f32) -> (f32, f32) {
+        (
+            (x - self.origin.0) * self.scale,
+            (y - self.origin.1) * self.scale,
+        )
     }
 
     pub fn transform(&self) -> Transform {
@@ -142,11 +165,13 @@ impl<'a> Painter<'a> {
         opacity: f32,
         content: impl FnOnce(&mut Painter),
     ) {
+        let s = self.scale;
+        let (px, py) = self.to_px(pos.0, pos.1);
         // rounding is obligatory to avoid desync and visual glitches
-        let x = pos.0.round();
-        let y = pos.1.round();
+        let x = px.round();
+        let y = py.round();
         let (w, h) = size;
-        let (pw, ph) = (w.ceil() as u32, h.ceil() as u32);
+        let (pw, ph) = ((w * s).ceil() as u32, (h * s).ceil() as u32);
 
         if cache
             .as_ref()
@@ -174,6 +199,8 @@ impl<'a> Painter<'a> {
             None,
         );
 
-        self.panel_border(x, y, w, h, radius::panel(), opacity);
+        // (border follows where the pixmap went after rounding)
+        let (bx, by) = (x / s + self.origin.0, y / s + self.origin.1);
+        self.panel_border(bx, by, w, h, radius::panel(), opacity);
     }
 }

@@ -3,9 +3,7 @@ use crate::theme::{Rgba, color, stroke};
 /// 4/3*(sqrt(2)-1).
 pub const KAPPA: f32 = 0.552_284_8;
 
-use std::collections::HashMap;
 use tiny_skia::{Color, PathBuilder, Pixmap, Rect, Stroke, Transform};
-use usvg::Tree;
 
 use super::Painter;
 
@@ -111,6 +109,15 @@ pub fn normalized_rect(start: (f32, f32), end: (f32, f32)) -> Option<Rect> {
         start.1.min(end.1),
         start.0.max(end.0),
         start.1.max(end.1),
+    )
+}
+
+pub fn scale_rect(rect: &Rect, scale: f32) -> Option<Rect> {
+    Rect::from_ltrb(
+        rect.left() * scale,
+        rect.top() * scale,
+        rect.right() * scale,
+        rect.bottom() * scale,
     )
 }
 
@@ -248,10 +255,11 @@ impl Painter<'_> {
             return;
         };
 
-        let scale_x = icon_size / rtree.size().width();
-        let scale_y = icon_size / rtree.size().height();
+        let size = icon_size * self.scale();
+        let scale_x = size / rtree.size().width();
+        let scale_y = size / rtree.size().height();
 
-        let px_size = icon_size.ceil().max(1.0) as u32;
+        let px_size = size.ceil().max(1.0) as u32;
         let Some(mut icon_pixmap) = Pixmap::new(px_size, px_size) else {
             return;
         };
@@ -263,42 +271,13 @@ impl Painter<'_> {
         );
         tint_pixmap(&mut icon_pixmap, tint.into());
 
-        self.draw_pixmap(
-            (x - self.origin.0).round() as i32,
-            (y - self.origin.1).round() as i32,
-            &icon_pixmap,
-        );
+        let (px, py) = self.to_px(x, y);
+        self.draw_pixmap(px.round() as i32, py.round() as i32, &icon_pixmap);
     }
-}
-
-pub fn draw_panel_border(
-    canvas: &mut Pixmap,
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-    radius: f32,
-    opacity: f32,
-) {
-    Painter::new(canvas).panel_border(x, y, w, h, radius, opacity);
 }
 
 impl From<usvg::Color> for Rgba {
     fn from(c: usvg::Color) -> Self {
         Rgba(c.red, c.green, c.blue, 255)
     }
-}
-
-pub fn draw_svg_icon(
-    canvas: &mut Pixmap,
-    icons_cache: &HashMap<&'static str, Tree>,
-    svg_str: &'static str,
-    icon_size: f32,
-    x: f32,
-    y: f32,
-    tint: impl Into<Rgba>,
-) {
-    Painter::new(canvas)
-        .with_icons(icons_cache)
-        .icon(svg_str, icon_size, x, y, tint);
 }

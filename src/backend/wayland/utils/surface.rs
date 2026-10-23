@@ -41,9 +41,17 @@ pub struct SurfaceData {
     pub background: Option<Background>,
     pub role: Role,
     pub surface: wl_surface::WlSurface,
+    pub viewport: Option<wp_viewport::WpViewport>,
 
     pub shm_buffer: Option<ShmBuffer>,
 
     pub width: u32,
     pub height: u32,
+    pub scale: f32,
+}
+
+impl SurfaceData {
+    pub fn buffer_size(&self) -> (u32, u32) {
+        crate::types::px_size((self.width, self.height), self.scale)
+    }
 }

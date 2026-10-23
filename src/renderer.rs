@@ -12,7 +12,7 @@ pub use annotations::{
     draw_annotation, selection_chrome_pad, shadow_color_for, stroke_pen_segment, visual_pad,
 };
 pub use painter::{Icons, Painter};
-pub use paths::{rect_bounds, rounded_rect_path};
+pub use paths::{rect_bounds, rounded_rect_path, scale_rect};
 pub use text::measure_line_width;
 
 use crate::types::SelectionEdges;
@@ -76,6 +76,10 @@ pub struct RenderRequest<'a> {
     pub ocr_scan: Option<(Rect, f32)>,
     pub monitor_idx: usize,
     pub toasts: &'a crate::ui::toast::Toasts,
+    /// logical size of the monitor; canvas / scale is off by a fraction,
+    /// and the loupe would flip at another spot than its damage does
+    pub size: (f32, f32),
+    pub scale: f32,
 }
 
 /// the highest scale among monitors the region touches
@@ -157,25 +161,27 @@ pub fn composite(
 }
 
 pub fn render_frame(req: &mut RenderRequest) {
+    let s = req.scale;
     if req.selection_dirty {
         update_dimming_delta(
             req.dimmed,
             req.prev_selection,
             req.selection,
             req.selection_edges,
+            s,
         );
     }
     let dirty_rect = req.dirty_rect;
 
     if let Some(dirty) = dirty_rect {
-        blit_rect(req.dimmed, req.canvas, dirty);
+        blit_rect(req.dimmed, req.canvas, dirty, s);
     } else {
         req.canvas.data_mut().copy_from_slice(req.dimmed.data());
     }
 
     if !req.annotations_layer_empty {
         if let Some(dirty) = dirty_rect {
-            blit_annotations(req.annotations_layer, req.canvas, dirty);
+            blit_annotations(req.annotations_layer, req.canvas, dirty, s);
         } else {
             req.canvas.draw_pixmap(
                 0,
@@ -192,6 +198,7 @@ pub fn render_frame(req: &mut RenderRequest) {
     if let Some(pending) = req.pending {
         let text = &mut req.text;
         let mut p = Painter::new(req.canvas)
+            .with_scale(s)
             .with_text(text.font_system, text.swash_cache)
             .with_origin(req.offset);
         if !req.is_pending_selected
@@ -229,7 +236,7 @@ pub fn render_frame(req: &mut RenderRequest) {
         // blurs above the dragged annotation are opaque, so redrawing them
         // with whatever lies on them puts it back under
         if let Some(at) = req.dragged_index {
-            let (w, h) = (p.canvas().width() as f32, p.canvas().height() as f32);
+            let (w, h) = p.size();
             let area = dirty_rect.copied().or(Rect::from_xywh(0.0, 0.0, w, h));
             for (i, ann) in req.annotations.iter().enumerate().skip(at) {
                 if let crate::types::AnnotationShape::Redact { start, end, .. } = &ann.shape
@@ -256,14 +263,20 @@ pub fn render_frame(req: &mut RenderRequest) {
     }
 
     if let Some(sel) = req.selection {
-        draw_selection_border(&mut Painter::new(req.canvas), sel, req.selection_edges);
+        draw_selection_border(
+            &mut Painter::new(req.canvas).with_scale(s),
+            sel,
+            req.selection_edges,
+        );
     }
 
     if let Some(pending) = req.pending
         && req.is_pending_selected
     {
         annotations::draw_annotation_handles_only(
-            &mut Painter::new(req.canvas).with_origin(req.offset),
+            &mut Painter::new(req.canvas)
+                .with_scale(s)
+                .with_origin(req.offset),
             pending,
         );
     }
@@ -273,7 +286,9 @@ pub fn render_frame(req: &mut RenderRequest) {
         && let Some(ann) = req.annotations.get(idx)
     {
         annotations::draw_annotation_handles_only(
-            &mut Painter::new(req.canvas).with_origin(req.offset),
+            &mut Painter::new(req.canvas)
+                .with_scale(s)
+                .with_origin(req.offset),
             ann,
         );
     }
@@ -282,7 +297,7 @@ pub fn render_frame(req: &mut RenderRequest) {
     // so anything drawn outside the area just restored from `dimmed` would
     // stack a second layer on top of last frame's.
     if let Some(view) = req.ocr_view {
-        crate::ocr::draw::draw_ocr_overlay(req.canvas, view, req.offset, dirty_rect);
+        crate::ocr::draw::draw_ocr_overlay(req.canvas, view, req.offset, dirty_rect, s);
     }
 
     if let Some((region, phase)) = req.ocr_scan {
@@ -293,10 +308,12 @@ pub fn render_frame(req: &mut RenderRequest) {
             req.offset,
             req.icons_cache,
             dirty_rect,
+            s,
         );
     }
 
     let mut p = Painter::new(req.canvas)
+        .with_scale(s)
         .with_icons(req.icons_cache)
         .with_text(req.text.font_system, req.text.swash_cache);
 
@@ -307,6 +324,7 @@ pub fn render_frame(req: &mut RenderRequest) {
             &mut p,
             req.capture,
             (mag.pos.0 as f32, mag.pos.1 as f32),
+            req.size,
             req.mag_label,
         );
     }
@@ -364,15 +382,20 @@ fn dim_pixel() -> [u8; 4] {
     [px.red(), px.green(), px.blue(), px.alpha()]
 }
 
-pub fn init_dimming(dimmed: &mut Pixmap, selection: Option<&Rect>, edges: Option<&SelectionEdges>) {
+pub fn init_dimming(
+    dimmed: &mut Pixmap,
+    selection: Option<&Rect>,
+    edges: Option<&SelectionEdges>,
+    scale: f32,
+) {
     let px = dim_pixel();
     for d in dimmed.data_mut().as_chunks_mut::<4>().0 {
         d.copy_from_slice(&px);
     }
 
     if let Some(sel) = selection {
-        fill_rect(dimmed, sel, [0; 4]);
-        dim_hole_corners(dimmed, sel, edges);
+        fill_rect(dimmed, sel, [0; 4], scale);
+        dim_hole_corners(dimmed, sel, edges, scale);
     }
 }
 
@@ -412,7 +435,7 @@ fn draw_selection_border(p: &mut Painter, sel: &Rect, edges: Option<&SelectionEd
 ///
 /// A corner is only rounded if both sides are visible screen edges. If the
 /// selection goes off the edge of the monitor, that corner stays flat.
-fn dim_hole_corners(canvas: &mut Pixmap, sel: &Rect, edges: Option<&SelectionEdges>) {
+fn dim_hole_corners(canvas: &mut Pixmap, sel: &Rect, edges: Option<&SelectionEdges>, scale: f32) {
     let Some(edges) = edges else { return };
     let radius = hole_radius().min(sel.width() / 2.0).min(sel.height() / 2.0);
     if radius <= 0.0 {
@@ -420,7 +443,7 @@ fn dim_hole_corners(canvas: &mut Pixmap, sel: &Rect, edges: Option<&SelectionEdg
     }
 
     let dim = crate::config::get().selection.dim;
-    let mut p = Painter::new(canvas);
+    let mut p = Painter::new(canvas).with_scale(scale);
 
     // corner point, then the direction the rectangle's interior lies in
     let corners = [
@@ -469,19 +492,20 @@ fn update_dimming_delta(
     prev: Option<&Rect>,
     next: Option<&Rect>,
     edges: Option<&SelectionEdges>,
+    scale: f32,
 ) {
     if let Some(old) = prev {
-        fill_rect(dimmed, old, dim_pixel());
+        fill_rect(dimmed, old, dim_pixel(), scale);
     }
     if let Some(cur) = next {
-        fill_rect(dimmed, cur, [0; 4]);
-        dim_hole_corners(dimmed, cur, edges);
+        fill_rect(dimmed, cur, [0; 4], scale);
+        dim_hole_corners(dimmed, cur, edges, scale);
     }
 }
 
-fn fill_rect(pixmap: &mut Pixmap, rect: &Rect, px: [u8; 4]) {
+fn fill_rect(pixmap: &mut Pixmap, rect: &Rect, px: [u8; 4], scale: f32) {
     let (w, h) = (pixmap.width(), pixmap.height());
-    let Some((x, y, rw, rh)) = rect_bounds(rect, w, h) else {
+    let Some((x, y, rw, rh)) = scale_rect(rect, scale).and_then(|r| rect_bounds(&r, w, h)) else {
         return;
     };
 
@@ -496,9 +520,9 @@ fn fill_rect(pixmap: &mut Pixmap, rect: &Rect, px: [u8; 4]) {
     }
 }
 
-fn blit_rect(src: &Pixmap, dst: &mut Pixmap, rect: &Rect) {
+fn blit_rect(src: &Pixmap, dst: &mut Pixmap, rect: &Rect, scale: f32) {
     let (w, h) = (dst.width(), dst.height());
-    let Some((x, y, rw, rh)) = rect_bounds(rect, w, h) else {
+    let Some((x, y, rw, rh)) = scale_rect(rect, scale).and_then(|r| rect_bounds(&r, w, h)) else {
         return;
     };
 
@@ -523,9 +547,9 @@ fn blit_rect(src: &Pixmap, dst: &mut Pixmap, rect: &Rect) {
     }
 }
 
-fn blit_annotations(src: &Pixmap, dst: &mut Pixmap, rect: &Rect) {
+fn blit_annotations(src: &Pixmap, dst: &mut Pixmap, rect: &Rect, scale: f32) {
     let (w, h) = (dst.width(), dst.height());
-    let Some((x, y, rw, rh)) = rect_bounds(rect, w, h) else {
+    let Some((x, y, rw, rh)) = scale_rect(rect, scale).and_then(|r| rect_bounds(&r, w, h)) else {
         return;
     };
     let src_stride = (src.width() * 4) as usize;
@@ -609,29 +633,33 @@ pub fn rebuild_annotations_layer(
     dirty_rect: Option<Rect>,
 ) {
     let offset = p.origin;
-    let (lw, lh) = (p.canvas.width() as f32, p.canvas.height() as f32);
+    let s = p.scale();
+    let (lw, lh) = p.size();
 
     let Some(base_rect) = dirty_rect.or_else(|| Rect::from_xywh(0.0, 0.0, lw, lh)) else {
         return;
     };
+    let Some(px_rect) = scale_rect(&base_rect, s) else {
+        return;
+    };
 
     if dirty_rect.is_none() {
-        clear_rect_transparent(p.canvas, &base_rect);
+        clear_rect_transparent(p.canvas, &px_rect);
         for ann in annotations {
             draw_annotation(p, ann, false, text_editors, blurs, active_text_id);
         }
         return;
     }
 
-    clear_rect_transparent(p.canvas, &base_rect);
+    clear_rect_transparent(p.canvas, &px_rect);
 
     // Determine the integer bounds of the dirty rect within the layer.
     let lw = p.canvas.width();
     let lh = p.canvas.height();
-    let x0 = (base_rect.left().floor() as i32).clamp(0, lw as i32) as u32;
-    let y0 = (base_rect.top().floor() as i32).clamp(0, lh as i32) as u32;
-    let x1 = (base_rect.right().ceil() as i32).clamp(0, lw as i32) as u32;
-    let y1 = (base_rect.bottom().ceil() as i32).clamp(0, lh as i32) as u32;
+    let x0 = (px_rect.left().floor() as i32).clamp(0, lw as i32) as u32;
+    let y0 = (px_rect.top().floor() as i32).clamp(0, lh as i32) as u32;
+    let x1 = (px_rect.right().ceil() as i32).clamp(0, lw as i32) as u32;
+    let y1 = (px_rect.bottom().ceil() as i32).clamp(0, lh as i32) as u32;
     let tw = x1.saturating_sub(x0);
     let th = y1.saturating_sub(y0);
 
@@ -642,7 +670,7 @@ pub fn rebuild_annotations_layer(
     let Some(mut tmp) = Pixmap::new(tw, th) else {
         return;
     };
-    let tmp_offset = (offset.0 + x0 as f32, offset.1 + y0 as f32);
+    let tmp_offset = (offset.0 + x0 as f32 / s, offset.1 + y0 as f32 / s);
     let mut tmp_painter = p.sub(&mut tmp).with_origin(tmp_offset);
 
     for ann in annotations {

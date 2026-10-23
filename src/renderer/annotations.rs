@@ -1,5 +1,5 @@
 use super::Painter;
-use super::paths::{luminance, normalized_rect, oval_path, rect_bounds};
+use super::paths::{luminance, normalized_rect, oval_path, rect_bounds, scale_rect};
 use super::text::shape_single_line;
 use crate::renderer::paths::KAPPA;
 use crate::tools::text::render_text_annotation;
@@ -153,7 +153,8 @@ pub fn draw_annotation(
                     size: *strength,
                     pixelate: *pixelate,
                 };
-                super::blur::draw(p.canvas, rect, style, blurs.get(&ann.id), p.origin);
+                let scale = p.scale();
+                super::blur::draw(p.canvas, rect, style, blurs.get(&ann.id), p.origin, scale);
             }
         }
         AnnotationShape::Highlighter { points, flat_ends } => {
@@ -161,6 +162,7 @@ pub fn draw_annotation(
         }
         AnnotationShape::Text { .. } => {
             let is_editing = active_text_id == Some(ann.id);
+            let scale = p.scale();
             if let Some(fonts) = p.fonts.as_mut() {
                 let editor =
                     crate::tools::text::ensure_text_editor(ann, text_editors, fonts.system);
@@ -172,6 +174,7 @@ pub fn draw_annotation(
                     fonts.cache,
                     &mut pixmap_mut,
                     p.origin,
+                    scale,
                     is_editing,
                 );
             }
@@ -575,7 +578,7 @@ fn stroke_highlighter(
     let (cw, ch) = (p.canvas.width(), p.canvas.height());
     let (Some(mut mask), Some(outline), Some(dot), Some(rect)) = (
         Mask::new(cw, ch),
-        path.stroke(&stroke, 1.0),
+        path.stroke(&stroke, p.scale()),
         PathBuilder::from_circle(x, y, stroke_width / 2.0),
         Rect::from_xywh(0.0, 0.0, cw as f32, ch as f32),
     ) else {
@@ -596,8 +599,9 @@ pub fn draw_highlighter_live(
     dirty: Option<&Rect>,
 ) {
     let (cw, ch) = (p.canvas.width(), p.canvas.height());
+    let s = p.scale();
     let Some((x, y, w, h)) = dirty
-        .copied()
+        .and_then(|r| scale_rect(r, s))
         .or_else(|| Rect::from_xywh(0.0, 0.0, cw as f32, ch as f32))
         .and_then(|r| rect_bounds(&r, cw, ch))
     else {
@@ -607,13 +611,13 @@ pub fn draw_highlighter_live(
         return;
     };
 
-    let origin = (p.origin.0 + x as f32, p.origin.1 + y as f32);
+    let origin = (p.origin.0 + x as f32 / s, p.origin.1 + y as f32 / s);
     let pad = stroke_width / 2.0 + 1.0;
     let clip = Rect::from_xywh(
         origin.0 - pad,
         origin.1 - pad,
-        w as f32 + pad * 2.0,
-        h as f32 + pad * 2.0,
+        w as f32 / s + pad * 2.0,
+        h as f32 / s + pad * 2.0,
     );
     let Some(path) = freehand_path(points, 0, clip) else {
         return;

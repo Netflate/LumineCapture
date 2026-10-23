@@ -121,6 +121,7 @@ pub fn measure_text_prefix_width(
 
 impl Painter<'_> {
     pub fn text_buffer(&mut self, buffer: &Buffer, pos: (f32, f32), color: Color) {
+        let s = self.scale();
         let Some(fonts) = self.fonts.as_mut() else {
             return;
         };
@@ -129,7 +130,7 @@ impl Painter<'_> {
 
         for run in buffer.layout_runs() {
             for glyph in run.glyphs.iter() {
-                let physical = glyph.physical((0., 0.), 1.0);
+                let physical = glyph.physical((0., 0.), s);
 
                 if let Some(image) = fonts.cache.get_image(fonts.system, physical.cache_key) {
                     let width = image.placement.width;
@@ -139,10 +140,11 @@ impl Painter<'_> {
                         continue;
                     }
 
-                    let draw_x = (x_start + physical.x as f32 + image.placement.left as f32
-                        - offset.0) as i32;
-                    let draw_y =
-                        (y_start + run.line_y - image.placement.top as f32 - offset.1) as i32;
+                    let draw_x = (x_start * s + physical.x as f32 + image.placement.left as f32
+                        - offset.0 * s) as i32;
+                    let draw_y = ((y_start + run.line_y) * s
+                        - image.placement.top as f32
+                        - offset.1 * s) as i32;
 
                     if image.content == SwashContent::Mask
                         && let Some(mut glyph_pixmap) = Pixmap::new(width, height)

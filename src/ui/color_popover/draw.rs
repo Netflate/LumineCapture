@@ -43,6 +43,7 @@ fn build_rounded_clip_mask(
     item_w: f32,
     item_h: f32,
     radius: f32,
+    scale: f32,
 ) -> Option<Mask> {
     let item_rect = Rect::from_xywh(
         item_x + 0.5,
@@ -51,8 +52,16 @@ fn build_rounded_clip_mask(
         (item_h - 1.0).max(0.1),
     )?;
     let path = rounded_rect_path(&item_rect, radius, true, true, true, true)?;
-    let mut mask = Mask::new(canvas_w.ceil() as u32, canvas_h.ceil() as u32)?;
-    mask.fill_path(&path, FillRule::Winding, true, Transform::identity());
+    let mut mask = Mask::new(
+        (canvas_w * scale).ceil() as u32,
+        (canvas_h * scale).ceil() as u32,
+    )?;
+    mask.fill_path(
+        &path,
+        FillRule::Winding,
+        true,
+        Transform::from_scale(scale, scale),
+    );
     Some(mask)
 }
 
@@ -63,13 +72,21 @@ fn draw_color_popover_content(p: &mut Painter, color_popover: &mut ColorPickerPo
     };
 
     let cfg = cfg();
+    let scale = p.scale();
+    // mask must be exactly the canvas size, otherwise tiny-skia won't draw anything.
+    // canvas size changes when the panel moves to a monitor with another scale
+    let mask_size = ((w * scale).ceil() as u32, (h * scale).ceil() as u32);
+    let stale = |mask: &Option<Mask>| {
+        mask.as_ref()
+            .is_none_or(|m| (m.width(), m.height()) != mask_size)
+    };
     p.fill_rounded(rect, radius::panel(), cfg.background.get());
 
     // ── sv square ────────────────────────────────────────
     let square_origin = sv_square_origin((0.0, 0.0));
 
     let mut sv_clip = color_popover.sv_clip_mask.take();
-    if sv_clip.is_none() {
+    if stale(&sv_clip) {
         sv_clip = build_rounded_clip_mask(
             w,
             h,
@@ -78,10 +95,11 @@ fn draw_color_popover_content(p: &mut Painter, color_popover: &mut ColorPickerPo
             cfg.sv_size,
             cfg.sv_size,
             cfg.sv_radius,
+            scale,
         );
     }
 
-    let sv_pixmap = ensure_sv_pixmap(&mut color_popover.sv_square);
+    let sv_pixmap = ensure_sv_pixmap(&mut color_popover.sv_square, scale);
     blit_sv_square(p, sv_pixmap, square_origin, sv_clip.as_ref());
     color_popover.sv_clip_mask = sv_clip;
 
@@ -112,7 +130,7 @@ fn draw_color_popover_content(p: &mut Painter, color_popover: &mut ColorPickerPo
     let hue = color_popover.sv_square.hue;
 
     let mut hue_clip = color_popover.hue_clip_mask.take();
-    if hue_clip.is_none() {
+    if stale(&hue_clip) {
         hue_clip = build_rounded_clip_mask(
             w,
             h,
@@ -121,10 +139,11 @@ fn draw_color_popover_content(p: &mut Painter, color_popover: &mut ColorPickerPo
             cfg.hue_width,
             cfg.sv_size,
             cfg.hue_radius,
+            scale,
         );
     }
 
-    let hue_track = ensure_hue_track(color_popover);
+    let hue_track = ensure_hue_track(color_popover, scale);
     blit_hue_track(p, hue_track, track_origin, hue_clip.as_ref());
     color_popover.hue_clip_mask = hue_clip;
 
@@ -148,9 +167,14 @@ fn draw_color_popover_content(p: &mut Painter, color_popover: &mut ColorPickerPo
     draw_color_fields(p, color_popover);
 }
 
-fn ensure_sv_pixmap(square: &mut ColorSquareState) -> &Pixmap {
-    if square.sv_dirty || square.sv_pixmap.is_none() {
-        let side = cfg().sv_size as u32;
+fn ensure_sv_pixmap(square: &mut ColorSquareState, scale: f32) -> &Pixmap {
+    let side = (cfg().sv_size * scale) as u32;
+    if square.sv_dirty
+        || square
+            .sv_pixmap
+            .as_ref()
+            .is_none_or(|pm| pm.width() != side)
+    {
         square.sv_pixmap = Some(build_sv_pixmap(square.hue, side, side));
         square.sv_dirty = false;
     }
@@ -199,10 +223,14 @@ fn build_sv_pixmap(hue: f32, w: u32, h: u32) -> Pixmap {
     pm
 }
 
-fn ensure_hue_track(color_popover: &mut ColorPickerPopover) -> &Pixmap {
-    if color_popover.hue_track_pixmap.is_none() {
-        let w = cfg().hue_width.ceil() as u32;
-        let h = cfg().sv_size.ceil() as u32;
+fn ensure_hue_track(color_popover: &mut ColorPickerPopover, scale: f32) -> &Pixmap {
+    let w = (cfg().hue_width * scale).ceil() as u32;
+    let h = (cfg().sv_size * scale).ceil() as u32;
+    if color_popover
+        .hue_track_pixmap
+        .as_ref()
+        .is_none_or(|pm| (pm.width(), pm.height()) != (w, h))
+    {
         color_popover.hue_track_pixmap = Some(build_hue_track_pixmap(w, h));
     }
     color_popover.hue_track_pixmap.as_ref().unwrap()
@@ -265,9 +293,10 @@ fn blit_sv_square(
     square_origin: (f32, f32),
     clip: Option<&Mask>,
 ) {
+    let (x, y) = p.to_px(square_origin.0, square_origin.1);
     p.canvas().draw_pixmap(
-        square_origin.0 as i32,
-        square_origin.1 as i32,
+        x as i32,
+        y as i32,
         sv_pixmap.as_ref(),
         &PixmapPaint::default(),
         Transform::identity(),
@@ -281,9 +310,10 @@ fn blit_hue_track(
     track_origin: (f32, f32),
     clip: Option<&Mask>,
 ) {
+    let (x, y) = p.to_px(track_origin.0, track_origin.1);
     p.canvas().draw_pixmap(
-        track_origin.0 as i32,
-        track_origin.1 as i32,
+        x as i32,
+        y as i32,
         track_pixmap.as_ref(),
         &PixmapPaint::default(),
         Transform::identity(),
