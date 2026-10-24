@@ -23,7 +23,7 @@ use crate::backend::wayland::utils::shm::create_shm_buffer;
 use crate::backend::wayland::utils::surface::{Background, Role, SurfaceData};
 use crate::types::{CursorIcon, DamageRect, Output, OverlayEvent};
 use log::warn;
-use smithay_client_toolkit::compositor::Region;
+use smithay_client_toolkit::compositor::{FrameCallbackData, Region};
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer};
 use smithay_client_toolkit::shm::slot::SlotPool;
@@ -166,6 +166,7 @@ impl ScreenOverlay for WaylandOverlay {
                     width: w,
                     height: h,
                     scale,
+                    frame_pending: false,
                 },
             );
         }
@@ -206,6 +207,7 @@ impl ScreenOverlay for WaylandOverlay {
         damage: Option<DamageRect>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let rt = &mut self.runtime;
+        let qh = rt.event_queue.handle();
         let sd = rt
             .state
             .surfaces
@@ -239,6 +241,9 @@ impl ScreenOverlay for WaylandOverlay {
             sd.surface.damage_buffer(0, 0, bw as i32, bh as i32);
         }
 
+        // next frame of this surface waits until the compositor has shown this one
+        sd.surface.frame(&qh, FrameCallbackData(sd.surface.clone()));
+        sd.frame_pending = true;
         sd.surface.commit();
         Ok(())
     }
@@ -311,6 +316,14 @@ impl ScreenOverlay for WaylandOverlay {
         self.runtime.state.viewporter.is_some()
     }
 
+    fn ready(&self, monitor_idx: usize) -> bool {
+        self.runtime
+            .state
+            .surfaces
+            .get(&monitor_idx)
+            .is_none_or(|sd| !sd.frame_pending)
+    }
+
     fn active_output(&mut self) -> Option<usize> {
         let rt = &mut self.runtime;
         let qh = rt.event_queue.handle();
@@ -362,15 +375,15 @@ impl ScreenOverlay for WaylandOverlay {
 
         rt.state.pointer_surface_idx = rt.state.pointer_surface_idx.and_then(remap);
         rt.state.events.retain_mut(|ev| match ev {
-            OverlayEvent::PointerMove { monitor_idx, .. } | OverlayEvent::Focus { monitor_idx } => {
-                match remap(*monitor_idx) {
-                    Some(idx) => {
-                        *monitor_idx = idx;
-                        true
-                    }
-                    None => false,
+            OverlayEvent::PointerMove { monitor_idx, .. }
+            | OverlayEvent::Focus { monitor_idx }
+            | OverlayEvent::FrameDone { monitor_idx } => match remap(*monitor_idx) {
+                Some(idx) => {
+                    *monitor_idx = idx;
+                    true
                 }
-            }
+                None => false,
+            },
             _ => true,
         });
 

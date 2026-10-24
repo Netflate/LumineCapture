@@ -13,6 +13,7 @@ use wayland_client::{Connection, QueueHandle};
 
 use crate::backend::wayland::overlay::state::OverlayState;
 use crate::backend::wayland::utils::shm::create_shm_buffer;
+use crate::types::OverlayEvent;
 // ── compositor ────────────────────────────────────────────────────────────────────────────────
 impl CompositorHandler for OverlayState {
     fn scale_factor_changed(
@@ -35,9 +36,18 @@ impl CompositorHandler for OverlayState {
         &mut self,
         _: &Connection,
         _: &QueueHandle<Self>,
-        _: &wl_surface::WlSurface,
+        surface: &wl_surface::WlSurface,
         _time: u32,
     ) {
+        if let Some((&monitor_idx, sd)) = self
+            .surfaces
+            .iter_mut()
+            .find(|(_, sd)| &sd.surface == surface)
+        {
+            sd.frame_pending = false;
+            self.events
+                .push_back(OverlayEvent::FrameDone { monitor_idx });
+        }
     }
     fn surface_enter(
         &mut self,

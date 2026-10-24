@@ -86,6 +86,7 @@ pub trait ScreenOverlay: Send {
     ) -> Result<OverlayEvent, Box<dyn std::error::Error>>;
     fn discovered_outputs(&self) -> &[Output];
     fn hidpi(&self) -> bool;
+    fn ready(&self, monitor_idx: usize) -> bool;
     fn active_output(&mut self) -> Option<usize>;
     fn retain_outputs(&mut self, keep: &[usize]) -> Result<(), Box<dyn std::error::Error>>;
     fn set_background(

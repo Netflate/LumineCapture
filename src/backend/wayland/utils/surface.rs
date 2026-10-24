@@ -48,6 +48,7 @@ pub struct SurfaceData {
     pub width: u32,
     pub height: u32,
     pub scale: f32,
+    pub frame_pending: bool,
 }
 
 impl SurfaceData {
