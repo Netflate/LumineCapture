@@ -280,10 +280,21 @@ impl ScreenOverlay for WaylandOverlay {
                 // we only care about the latest mouse coordinate in the event queue per frame
                 if let OverlayEvent::PointerMove { .. } = ev {
                     let mut latest_move = ev;
-                    while let Some(OverlayEvent::PointerMove { .. }) = rt.state.events.front() {
-                        latest_move = rt.state.events.pop_front().unwrap();
+                    while let Some(
+                        OverlayEvent::PointerMove { .. } | OverlayEvent::FrameDone { .. },
+                    ) = rt.state.events.front()
+                    {
+                        let ev = rt.state.events.pop_front().unwrap();
+                        if let OverlayEvent::PointerMove { .. } = ev {
+                            latest_move = ev;
+                        }
                     }
                     return Ok(latest_move);
+                }
+                if let OverlayEvent::FrameDone { .. } = ev
+                    && !rt.state.events.is_empty()
+                {
+                    continue;
                 }
                 return Ok(ev);
             }

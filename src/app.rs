@@ -337,7 +337,10 @@ fn run_overlay(
             damage_hidden_annotations(editor_state, &mut dirty_mask);
         }
 
-        if dirty_mask != 0 || pacing.owes() {
+        // pass only when someone can show it
+        let drawable = (0..editor_state.captures.len())
+            .any(|i| (is_dirty(dirty_mask, i) || pacing.owes_to(i)) && overlay.ready(i));
+        if drawable {
             render_dirty_monitors(
                 editor_state,
                 overlay.as_mut(),
@@ -511,10 +514,6 @@ impl Pacing {
             owed: vec![None; monitors],
             dimmed_for: vec![None; monitors],
         }
-    }
-
-    fn owes(&self) -> bool {
-        self.owed.iter().any(Option::is_some)
     }
 
     fn owes_to(&self, monitor_idx: usize) -> bool {
