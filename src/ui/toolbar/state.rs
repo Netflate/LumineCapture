@@ -38,6 +38,7 @@ pub const ITEMS: &[ToolbarItem] = &[
 // ==========================================
 pub struct Toolbar {
     pub toolbar_pixmap: Option<Pixmap>, // to change its opacity (SVG icons limitation)
+    pub drawn_look: Option<ToolbarLook>,
 
     pub items: &'static [ToolbarItem],
     pub position: (f32, f32),
@@ -55,6 +56,16 @@ pub struct Toolbar {
     pub last_tick: Option<Instant>,
     pub render_pos: (f32, f32),
     pub placement_kind: Option<ToolbarPlacementKind>,
+}
+
+/// everything the toolbar's picture depends on
+/// while only its position or opacity changes, the cached picture is reused
+#[derive(Clone, Copy, PartialEq)]
+pub struct ToolbarLook {
+    selected: Option<usize>,
+    hovered: Option<usize>,
+    to: Outputs,
+    size: (f32, f32),
 }
 
 impl Default for Toolbar {
@@ -166,6 +177,7 @@ impl Toolbar {
     pub fn new() -> Self {
         let mut toolbar = Self {
             toolbar_pixmap: None,
+            drawn_look: None,
             items: ITEMS,
             size: (0.0, size::panel_height()),
             opacity: 1.0,
@@ -187,6 +199,15 @@ impl Toolbar {
         toolbar.size.1 = size::panel_height();
 
         toolbar
+    }
+
+    pub fn look(&self) -> ToolbarLook {
+        ToolbarLook {
+            selected: self.selected,
+            hovered: self.hovered,
+            to: self.to,
+            size: self.size,
+        }
     }
 
     /// Starts fully faded out, so the first frame doesn't flash it at the corner.

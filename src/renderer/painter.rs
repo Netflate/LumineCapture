@@ -163,6 +163,7 @@ impl<'a> Painter<'a> {
         pos: (f32, f32),
         size: (f32, f32),
         opacity: f32,
+        redraw: bool,
         content: impl FnOnce(&mut Painter),
     ) {
         let s = self.scale;
@@ -173,18 +174,20 @@ impl<'a> Painter<'a> {
         let (w, h) = size;
         let (pw, ph) = ((w * s).ceil() as u32, (h * s).ceil() as u32);
 
-        if cache
+        let fresh = cache
             .as_ref()
-            .is_none_or(|p| p.width() != pw || p.height() != ph)
-        {
+            .is_none_or(|p| p.width() != pw || p.height() != ph);
+        if fresh {
             *cache = Pixmap::new(pw, ph);
         }
         let Some(pixmap) = cache.as_mut() else {
             return;
         };
 
-        pixmap.fill(Color::TRANSPARENT);
-        content(&mut self.sub(pixmap));
+        if fresh || redraw {
+            pixmap.fill(Color::TRANSPARENT);
+            content(&mut self.sub(pixmap));
+        }
 
         self.canvas.draw_pixmap(
             x as i32,

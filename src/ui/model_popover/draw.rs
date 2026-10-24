@@ -26,6 +26,7 @@ pub fn draw_model_popover(p: &mut Painter, popover: &mut ModelPopover) {
         (rect.left(), rect.top()),
         popover.size,
         popover.opacity,
+        true,
         |p| draw_content(p, popover),
     );
     popover.pixmap = cache;

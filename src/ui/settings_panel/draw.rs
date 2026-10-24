@@ -27,6 +27,7 @@ pub fn draw_settings_panel(
         (panel_rect.left(), panel_rect.top()),
         panel.size,
         panel.opacity,
+        true,
         |p| draw_settings_content(p, panel, current_color, outline_color),
     );
     panel.panel_pixmap = cache;

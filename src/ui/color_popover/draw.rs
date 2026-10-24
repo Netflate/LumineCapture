@@ -30,6 +30,7 @@ pub fn draw_color_popover(p: &mut Painter, color_popover: &mut ColorPickerPopove
         (cp_rect.left(), cp_rect.top()),
         color_popover.size,
         color_popover.opacity,
+        true,
         |p| draw_color_popover_content(p, color_popover),
     );
     color_popover.colorpicker_pixmap = cache;

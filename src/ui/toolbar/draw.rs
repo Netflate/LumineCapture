@@ -12,14 +12,17 @@ pub fn draw_toolbar(p: &mut Painter, toolbar: &mut Toolbar) {
     };
 
     let mut cache = toolbar.toolbar_pixmap.take();
+    let look = toolbar.look();
     p.panel(
         &mut cache,
         (tb_rect.left(), tb_rect.top()),
         toolbar.size,
         toolbar.opacity,
+        toolbar.drawn_look != Some(look),
         |p| draw_toolbar_content(p, toolbar),
     );
     toolbar.toolbar_pixmap = cache;
+    toolbar.drawn_look = Some(look);
 }
 
 fn draw_toolbar_content(p: &mut Painter, toolbar: &Toolbar) {
