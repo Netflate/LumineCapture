@@ -129,8 +129,7 @@ impl AnimatedPanel for Toolbar {
     fn is_animating(&self) -> bool {
         let target_opacity = if self.interferes { 0.0 } else { 1.0 };
         (self.opacity - target_opacity).abs() > anim::OPACITY_EPSILON
-            || (self.position.0 - self.render_pos.0).abs() > POSITION_EPSILON
-            || (self.position.1 - self.render_pos.1).abs() > POSITION_EPSILON
+            || self.render_pos != self.position
     }
 
     fn animate_step(&mut self, dt: f32) -> bool {
@@ -314,4 +313,30 @@ pub enum ToolbarPlacementKind {
     Idle,        // no selection: top-center on the cursor's monitor
     Hidden,      // active selection drag: toolbar hidden
     AtSelection, // finished selection: toolbar anchored next to it
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// is_animating() used to treat anything within POSITION_EPSILON as finished animation
+    /// so toolbar stopped up to 0.5 px of where it had to be.
+    ///
+    /// it wasn't really visible for me, but on a 2x monitor it's a whole pixel off
+    /// and the settings panel (placed from the toolbar's render_pos) shifted with it
+    /// and with Shift+arrows the toolbar froze between key presses
+    #[test]
+    fn toolbar_lands_exactly_on_the_target() {
+        for hz in [60.0, 100.0, 144.0] {
+            let mut toolbar = Toolbar::new();
+            toolbar.position = (800.0, 300.0);
+            let mut t = 0.0;
+            while toolbar.is_animating() && t < 2.0 {
+                toolbar.animate_step(1.0 / hz);
+                t += 1.0 / hz;
+            }
+            assert_eq!(toolbar.render_pos, toolbar.position);
+            assert!(t < 1.0, "{hz} Hz took {t} s");
+        }
+    }
 }
