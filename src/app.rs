@@ -715,6 +715,8 @@ fn render_monitor(
 fn clear_frame_state(editor_state: &mut EditorState, dirty_mask: &mut u32, pacing: &Pacing) {
     editor_state.selection.prev_zone = editor_state.selection.zone;
     editor_state.prev_pending = editor_state.pending.clone();
+    // set per pointer move it could point at a spot never drawn (several moves per frame)
+    editor_state.magnifier.prev = editor_state.magnifier.current;
     editor_state.annotations_dirty = false;
     editor_state.damage_rects.clear();
     editor_state.layer_damage_rects.clear();

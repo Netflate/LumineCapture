@@ -48,12 +48,11 @@ impl Default for InputState {
     }
 }
 
-/// The loupe under the cursor: where it is now, where it was, and when it moved.
+/// The loupe under the cursor: where it is now and where the last frame drew it.
 #[derive(Default)]
 pub struct Magnifier {
     pub current: Option<MagnifierState>,
     pub prev: Option<MagnifierState>,
-    pub last_update: Option<Instant>,
     pub hidden: bool,
 }
 
