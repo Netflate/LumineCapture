@@ -13,6 +13,7 @@ use wayland_client::{Connection, QueueHandle};
 
 use crate::backend::wayland::overlay::state::OverlayState;
 use crate::backend::wayland::utils::shm::create_shm_buffer;
+use crate::types::OverlayEvent;
 // ── compositor ────────────────────────────────────────────────────────────────────────────────
 impl CompositorHandler for OverlayState {
     fn scale_factor_changed(
@@ -35,9 +36,18 @@ impl CompositorHandler for OverlayState {
         &mut self,
         _: &Connection,
         _: &QueueHandle<Self>,
-        _: &wl_surface::WlSurface,
+        surface: &wl_surface::WlSurface,
         _time: u32,
     ) {
+        if let Some((&monitor_idx, sd)) = self
+            .surfaces
+            .iter_mut()
+            .find(|(_, sd)| &sd.surface == surface)
+        {
+            sd.frame_sent = None;
+            self.events
+                .push_back(OverlayEvent::FrameDone { monitor_idx });
+        }
     }
     fn surface_enter(
         &mut self,
@@ -91,8 +101,9 @@ impl OverlayState {
         }
         // creating buffers and attaching
         let pool = &mut self.pool;
+        let (bw, bh) = crate::types::px_size((w, h), sd.scale);
 
-        let shm_buffer = match create_shm_buffer(pool, w, h) {
+        let shm_buffer = match create_shm_buffer(pool, bw, bh) {
             Ok(buffer) => buffer,
             Err(e) => {
                 self.configure_error = Some(e.to_string());
@@ -100,8 +111,12 @@ impl OverlayState {
             }
         };
 
+        // viewport maps buffer, which is is in physical pixels, back to the logical size
+        if let Some(viewport) = &sd.viewport {
+            viewport.set_destination(w as i32, h as i32);
+        }
         sd.surface.attach(Some(shm_buffer.wl_buffer()), 0, 0);
-        sd.surface.damage_buffer(0, 0, w as i32, h as i32);
+        sd.surface.damage_buffer(0, 0, bw as i32, bh as i32);
         sd.surface.commit();
 
         sd.shm_buffer = Some(shm_buffer);

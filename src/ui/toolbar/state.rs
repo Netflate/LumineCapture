@@ -38,6 +38,7 @@ pub const ITEMS: &[ToolbarItem] = &[
 // ==========================================
 pub struct Toolbar {
     pub toolbar_pixmap: Option<Pixmap>, // to change its opacity (SVG icons limitation)
+    pub drawn_look: Option<ToolbarLook>,
 
     pub items: &'static [ToolbarItem],
     pub position: (f32, f32),
@@ -55,6 +56,16 @@ pub struct Toolbar {
     pub last_tick: Option<Instant>,
     pub render_pos: (f32, f32),
     pub placement_kind: Option<ToolbarPlacementKind>,
+}
+
+/// everything the toolbar's picture depends on
+/// while only its position or opacity changes, the cached picture is reused
+#[derive(Clone, Copy, PartialEq)]
+pub struct ToolbarLook {
+    selected: Option<usize>,
+    hovered: Option<usize>,
+    to: Outputs,
+    size: (f32, f32),
 }
 
 impl Default for Toolbar {
@@ -129,8 +140,7 @@ impl AnimatedPanel for Toolbar {
     fn is_animating(&self) -> bool {
         let target_opacity = if self.interferes { 0.0 } else { 1.0 };
         (self.opacity - target_opacity).abs() > anim::OPACITY_EPSILON
-            || (self.position.0 - self.render_pos.0).abs() > POSITION_EPSILON
-            || (self.position.1 - self.render_pos.1).abs() > POSITION_EPSILON
+            || self.render_pos != self.position
     }
 
     fn animate_step(&mut self, dt: f32) -> bool {
@@ -167,6 +177,7 @@ impl Toolbar {
     pub fn new() -> Self {
         let mut toolbar = Self {
             toolbar_pixmap: None,
+            drawn_look: None,
             items: ITEMS,
             size: (0.0, size::panel_height()),
             opacity: 1.0,
@@ -188,6 +199,15 @@ impl Toolbar {
         toolbar.size.1 = size::panel_height();
 
         toolbar
+    }
+
+    pub fn look(&self) -> ToolbarLook {
+        ToolbarLook {
+            selected: self.selected,
+            hovered: self.hovered,
+            to: self.to,
+            size: self.size,
+        }
     }
 
     /// Starts fully faded out, so the first frame doesn't flash it at the corner.
@@ -314,4 +334,30 @@ pub enum ToolbarPlacementKind {
     Idle,        // no selection: top-center on the cursor's monitor
     Hidden,      // active selection drag: toolbar hidden
     AtSelection, // finished selection: toolbar anchored next to it
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// is_animating() used to treat anything within POSITION_EPSILON as finished animation
+    /// so toolbar stopped up to 0.5 px of where it had to be.
+    ///
+    /// it wasn't really visible for me, but on a 2x monitor it's a whole pixel off
+    /// and the settings panel (placed from the toolbar's render_pos) shifted with it
+    /// and with Shift+arrows the toolbar froze between key presses
+    #[test]
+    fn toolbar_lands_exactly_on_the_target() {
+        for hz in [60.0, 100.0, 144.0] {
+            let mut toolbar = Toolbar::new();
+            toolbar.position = (800.0, 300.0);
+            let mut t = 0.0;
+            while toolbar.is_animating() && t < 2.0 {
+                toolbar.animate_step(1.0 / hz);
+                t += 1.0 / hz;
+            }
+            assert_eq!(toolbar.render_pos, toolbar.position);
+            assert!(t < 1.0, "{hz} Hz took {t} s");
+        }
+    }
 }

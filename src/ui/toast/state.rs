@@ -234,9 +234,6 @@ impl Toasts {
             .last_tick
             .map(|t| now.duration_since(t))
             .unwrap_or(anim::frame());
-        if elapsed < anim::frame() {
-            return;
-        }
         self.last_tick = Some(now);
         let dt = elapsed.as_secs_f32().min(MAX_STEP);
         let speed = crate::config::get().animation.speed;

@@ -1,16 +1,8 @@
-use std::collections::HashMap;
-
-use cosmic_text::{FontSystem, Style, SwashCache, Weight};
-use tiny_skia::{
-    BlendMode, Color, FillRule, FilterQuality, Paint, Pixmap, PixmapPaint, Rect, Transform,
-};
-use usvg::Tree;
+use tiny_skia::Rect;
 
 use crate::ocr::models::{MODELS, ModelStatus};
-use crate::renderer::paths::{
-    draw_item_border, draw_panel_border, draw_progress_bar, draw_svg_icon, rounded_rect_path,
-};
-use crate::renderer::text::{HAlign, draw_aligned_text, measure_line_width};
+use crate::renderer::Painter;
+use crate::renderer::text::TextStyle;
 use crate::theme::{Rgba, color, font, radius, stroke};
 use crate::ui::icons;
 use crate::ui::model_popover::{
@@ -23,71 +15,28 @@ const TITLE_ENGLISH: &str = "each includes English";
 const TITLE_NO_MODEL: &str = "Choose a model to use OCR";
 const RECOMMENDED: &str = "Recommended for your system";
 
-pub fn draw_model_popover(
-    canvas: &mut Pixmap,
-    popover: &mut ModelPopover,
-    icons_cache: &HashMap<&'static str, Tree>,
-    font_system: &mut FontSystem,
-    swash_cache: &mut SwashCache,
-) {
+pub fn draw_model_popover(p: &mut Painter, popover: &mut ModelPopover) {
     let Some(rect) = popover.rect() else {
         return;
     };
 
-    // rounding is obligatory to avoid desync and visual glitches
-    let x = rect.left().round();
-    let y = rect.top().round();
-
-    let (w, h) = popover.size;
-    let pw = w.ceil() as u32;
-    let ph = h.ceil() as u32;
-
-    let needs_resize = popover
-        .pixmap
-        .as_ref()
-        .is_none_or(|p| p.width() != pw || p.height() != ph);
-    if needs_resize {
-        popover.pixmap = Pixmap::new(pw, ph);
-    }
-
-    let Some(mut pixmap) = popover.pixmap.take() else {
-        return;
-    };
-
-    if popover.dirty {
-        pixmap.fill(Color::TRANSPARENT);
-        draw_content(&mut pixmap, popover, icons_cache, font_system, swash_cache);
-    }
-
-    canvas.draw_pixmap(
-        x as i32,
-        y as i32,
-        pixmap.as_ref(),
-        &PixmapPaint {
-            opacity: popover.opacity,
-            blend_mode: BlendMode::SourceOver,
-            quality: FilterQuality::Nearest,
-        },
-        Transform::identity(),
-        None,
+    let mut cache = popover.pixmap.take();
+    p.panel(
+        &mut cache,
+        (rect.left(), rect.top()),
+        popover.size,
+        popover.opacity,
+        true,
+        |p| draw_content(p, popover),
     );
-
-    draw_panel_border(canvas, x, y, w, h, radius::panel(), popover.opacity);
-
-    popover.pixmap = Some(pixmap);
+    popover.pixmap = cache;
 }
 
-fn draw_content(
-    canvas: &mut Pixmap,
-    popover: &ModelPopover,
-    icons_cache: &HashMap<&'static str, Tree>,
-    font_system: &mut FontSystem,
-    swash_cache: &mut SwashCache,
-) {
+fn draw_content(p: &mut Painter, popover: &ModelPopover) {
     let cfg = cfg();
     let (w, h) = popover.size;
     if let Some(bg) = Rect::from_xywh(0.0, 0.0, w, h) {
-        fill(canvas, bg, radius::panel(), cfg.background.get().color());
+        p.fill_rounded(bg, radius::panel(), cfg.background.get());
     }
 
     let title_x = cfg.padding + cfg.row_padding;
@@ -112,46 +61,18 @@ fn draw_content(
             (title_x + title_w - x).max(1.0),
             cfg.title_height,
         ) {
-            draw_aligned_text(
-                canvas,
-                text,
-                font_system,
-                swash_cache,
-                rect,
-                size,
-                text_color.color(),
-                HAlign::Left,
-                (0.0, 0.0),
-                Weight::NORMAL,
-                Style::Normal,
-            );
+            p.text(rect, text, TextStyle::new(size, text_color.color()));
         }
         // title_gap: between the title's dot and its highlighted part
-        x += measure_line_width(text, size, font_system) + cfg.title_gap;
+        x += p.measure(text, size) + cfg.title_gap;
     }
 
     for (idx, row) in popover.rows.iter().enumerate() {
-        draw_row(
-            canvas,
-            idx,
-            *row,
-            popover.hovered,
-            icons_cache,
-            font_system,
-            swash_cache,
-        );
+        draw_row(p, idx, *row, popover.hovered);
     }
 }
 
-fn draw_row(
-    canvas: &mut Pixmap,
-    idx: usize,
-    row: ModelRow,
-    hovered: Option<ModelPopoverElement>,
-    icons_cache: &HashMap<&'static str, Tree>,
-    font_system: &mut FontSystem,
-    swash_cache: &mut SwashCache,
-) {
+fn draw_row(p: &mut Painter, idx: usize, row: ModelRow, hovered: Option<ModelPopoverElement>) {
     let (Some(rect), Some(button), Some(model)) = (
         row_geom((0.0, 0.0), idx),
         button_geom((0.0, 0.0), idx),
@@ -165,8 +86,7 @@ fn draw_row(
 
     let row_selected = row.active || row.recommended;
     if row_hovered || row_selected {
-        draw_item_border(
-            canvas,
+        p.item_border(
             rect.left(),
             rect.top(),
             rect.width(),
@@ -189,25 +109,17 @@ fn draw_row(
     if let Some(name_rect) =
         Rect::from_xywh(left, rect.top() + cfg.name_top, text_w, cfg.name_height)
     {
-        draw_aligned_text(
-            canvas,
-            model.name,
-            font_system,
-            swash_cache,
+        p.text(
             name_rect,
-            font::label(),
-            name_color.color(),
-            HAlign::Left,
-            (0.0, 0.0),
-            Weight::NORMAL,
-            Style::Normal,
+            model.name,
+            TextStyle::new(font::label(), name_color.color()),
         );
     }
 
     match row.status {
-        ModelStatus::Queued => draw_progress_bar(canvas, left, rect.top() + cfg.bar_top, text_w, 0),
+        ModelStatus::Queued => p.progress_bar(left, rect.top() + cfg.bar_top, text_w, 0),
         ModelStatus::Downloading(percent) => {
-            draw_progress_bar(canvas, left, rect.top() + cfg.bar_top, text_w, percent)
+            p.progress_bar(left, rect.top() + cfg.bar_top, text_w, percent)
         }
         _ => {
             if let Some(note_rect) =
@@ -218,18 +130,10 @@ fn draw_row(
                 } else {
                     (model.note, color::muted())
                 };
-                draw_aligned_text(
-                    canvas,
-                    note,
-                    font_system,
-                    swash_cache,
+                p.text(
                     note_rect,
-                    note_font_size(),
-                    note_color.color(),
-                    HAlign::Left,
-                    (0.0, 0.0),
-                    Weight::NORMAL,
-                    Style::Normal,
+                    note,
+                    TextStyle::new(note_font_size(), note_color.color()),
                 );
             }
         }
@@ -248,18 +152,10 @@ fn draw_row(
         cfg.status_width,
         cfg.row_height,
     ) {
-        draw_aligned_text(
-            canvas,
-            &status_text,
-            font_system,
-            swash_cache,
+        p.text(
             status_rect,
-            note_font_size(),
-            color::muted().color(),
-            HAlign::Center,
-            (0.0, 0.0),
-            Weight::NORMAL,
-            Style::Normal,
+            &status_text,
+            TextStyle::new(note_font_size(), color::muted().color()).center(),
         );
     }
 
@@ -274,8 +170,7 @@ fn draw_row(
     };
 
     if !checked && button_hovered {
-        draw_item_border(
-            canvas,
+        p.item_border(
             button.left(),
             button.top(),
             cfg.button_size,
@@ -293,30 +188,12 @@ fn draw_row(
     } else {
         color::foreground()
     };
-    draw_svg_icon(
-        canvas,
-        icons_cache,
+    p.icon(
         icon,
         cfg.icon_size,
         button.left() + (cfg.button_size - cfg.icon_size) / 2.0,
         button.top() + (cfg.button_size - cfg.icon_size) / 2.0,
         tint.usvg(),
-    );
-}
-
-fn fill(canvas: &mut Pixmap, rect: Rect, radius: f32, color: Color) {
-    let Some(path) = rounded_rect_path(&rect, radius, true, true, true, true) else {
-        return;
-    };
-    let mut paint = Paint::default();
-    paint.set_color(color);
-    paint.anti_alias = true;
-    canvas.fill_path(
-        &path,
-        &paint,
-        FillRule::Winding,
-        Transform::identity(),
-        None,
     );
 }
 

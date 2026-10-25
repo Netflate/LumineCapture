@@ -23,7 +23,7 @@ use crate::backend::wayland::utils::shm::create_shm_buffer;
 use crate::backend::wayland::utils::surface::{Background, Role, SurfaceData};
 use crate::types::{CursorIcon, DamageRect, Output, OverlayEvent};
 use log::warn;
-use smithay_client_toolkit::compositor::Region;
+use smithay_client_toolkit::compositor::{FrameCallbackData, Region};
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer};
 use smithay_client_toolkit::shm::slot::SlotPool;
@@ -67,7 +67,8 @@ impl ScreenOverlay for WaylandOverlay {
     /// TODO: on -m, instead of preloading memory for all amonitors, preloading max possible size of one monitor
     fn prefault(&mut self) {
         let state = &mut self.runtime.state;
-        let size = prefault_size(state.outputs.iter());
+        let hidpi = state.viewporter.is_some();
+        let size = prefault_size(state.outputs.iter(), hidpi);
         fault_in(&mut state.pool, &mut self.faulted, size);
     }
 
@@ -78,11 +79,22 @@ impl ScreenOverlay for WaylandOverlay {
         if rt.state.outputs.is_empty() {
             return Err("compositor reported no outputs".into());
         }
-        let prefault = prefault_size(targets.iter().filter_map(|&i| rt.state.outputs.get(i)));
+        let hidpi = rt.state.viewporter.is_some();
+        let prefault = prefault_size(
+            targets.iter().filter_map(|&i| rt.state.outputs.get(i)),
+            hidpi,
+        );
         let outputs_snapshot: Vec<_> = targets
             .iter()
             .filter_map(|&i| rt.state.outputs.get(i))
-            .map(|o| (o.wl_output.clone(), o.info.logical_size.unwrap_or((0, 0))))
+            .map(|o| {
+                let scale = if hidpi { o.scale() } else { 1.0 };
+                (
+                    o.wl_output.clone(),
+                    o.info.logical_size.unwrap_or((0, 0)),
+                    scale,
+                )
+            })
             .collect();
 
         if self.layer {
@@ -90,16 +102,17 @@ impl ScreenOverlay for WaylandOverlay {
         }
 
         // for each output
-        for (i, (wl_output, (w, h))) in outputs_snapshot.into_iter().enumerate() {
+        for (i, (wl_output, (w, h), scale)) in outputs_snapshot.into_iter().enumerate() {
             let (w, h) = (w as u32, h as u32);
 
             let surface = rt.state.compositor_state.create_surface(&qh);
 
             // scale the surface layout if the viewporter protocol is available
-            if let Some(viewporter) = rt.state.viewporter.clone() {
-                let viewport = viewporter.get_viewport(&surface, &qh, ());
-                viewport.set_destination(w as i32, h as i32);
-            }
+            let viewport = rt
+                .state
+                .viewporter
+                .as_ref()
+                .map(|viewporter| viewporter.get_viewport(&surface, &qh, ()));
 
             let role = match rt.state.layer_shell.as_ref().filter(|_| self.layer) {
                 Some(shell) => {
@@ -147,10 +160,13 @@ impl ScreenOverlay for WaylandOverlay {
                 SurfaceData {
                     background: None,
                     surface,
+                    viewport,
                     role,
                     shm_buffer: None,
                     width: w,
                     height: h,
+                    scale,
+                    frame_sent: None,
                 },
             );
         }
@@ -191,6 +207,7 @@ impl ScreenOverlay for WaylandOverlay {
         damage: Option<DamageRect>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let rt = &mut self.runtime;
+        let qh = rt.event_queue.handle();
         let sd = rt
             .state
             .surfaces
@@ -198,6 +215,7 @@ impl ScreenOverlay for WaylandOverlay {
             .ok_or("surface not found")?;
 
         let pool = &mut rt.state.pool;
+        let (bw, bh) = sd.buffer_size();
 
         let buffer = sd
             .shm_buffer
@@ -206,13 +224,12 @@ impl ScreenOverlay for WaylandOverlay {
 
         // optimization: only upload and redraw the modified area
         if let Some((x, y, w, h)) = damage {
-            if x == 0 && y == 0 && w == sd.width && h == sd.height {
+            if x == 0 && y == 0 && w == bw && h == bh {
                 buffer.write_pixels(pool, pixels);
                 sd.surface.attach(Some(buffer.wl_buffer()), 0, 0);
-                sd.surface
-                    .damage_buffer(0, 0, sd.width as i32, sd.height as i32);
+                sd.surface.damage_buffer(0, 0, bw as i32, bh as i32);
             } else {
-                buffer.write_pixels_rect(pool, pixels, sd.width, (x, y, w, h));
+                buffer.write_pixels_rect(pool, pixels, bw, (x, y, w, h));
                 sd.surface.attach(Some(buffer.wl_buffer()), 0, 0);
                 sd.surface
                     .damage_buffer(x as i32, y as i32, w as i32, h as i32);
@@ -221,10 +238,12 @@ impl ScreenOverlay for WaylandOverlay {
             // fallback to full frame redraw
             buffer.write_pixels(pool, pixels);
             sd.surface.attach(Some(buffer.wl_buffer()), 0, 0);
-            sd.surface
-                .damage_buffer(0, 0, sd.width as i32, sd.height as i32);
+            sd.surface.damage_buffer(0, 0, bw as i32, bh as i32);
         }
 
+        // next frame of this surface waits until the compositor has shown this one
+        sd.surface.frame(&qh, FrameCallbackData(sd.surface.clone()));
+        sd.frame_sent = Some(Instant::now());
         sd.surface.commit();
         Ok(())
     }
@@ -261,10 +280,21 @@ impl ScreenOverlay for WaylandOverlay {
                 // we only care about the latest mouse coordinate in the event queue per frame
                 if let OverlayEvent::PointerMove { .. } = ev {
                     let mut latest_move = ev;
-                    while let Some(OverlayEvent::PointerMove { .. }) = rt.state.events.front() {
-                        latest_move = rt.state.events.pop_front().unwrap();
+                    while let Some(
+                        OverlayEvent::PointerMove { .. } | OverlayEvent::FrameDone { .. },
+                    ) = rt.state.events.front()
+                    {
+                        let ev = rt.state.events.pop_front().unwrap();
+                        if let OverlayEvent::PointerMove { .. } = ev {
+                            latest_move = ev;
+                        }
                     }
                     return Ok(latest_move);
+                }
+                if let OverlayEvent::FrameDone { .. } = ev
+                    && !rt.state.events.is_empty()
+                {
+                    continue;
                 }
                 return Ok(ev);
             }
@@ -291,6 +321,19 @@ impl ScreenOverlay for WaylandOverlay {
 
     fn discovered_outputs(&self) -> &[Output] {
         &self.runtime.state.outputs
+    }
+
+    fn hidpi(&self) -> bool {
+        self.runtime.state.viewporter.is_some()
+    }
+
+    fn ready(&self, monitor_idx: usize) -> bool {
+        self.runtime
+            .state
+            .surfaces
+            .get(&monitor_idx)
+            .and_then(|sd| sd.frame_sent)
+            .is_none_or(|sent| sent.elapsed() >= crate::backend::FRAME_FALLBACK)
     }
 
     fn active_output(&mut self) -> Option<usize> {
@@ -344,15 +387,15 @@ impl ScreenOverlay for WaylandOverlay {
 
         rt.state.pointer_surface_idx = rt.state.pointer_surface_idx.and_then(remap);
         rt.state.events.retain_mut(|ev| match ev {
-            OverlayEvent::PointerMove { monitor_idx, .. } | OverlayEvent::Focus { monitor_idx } => {
-                match remap(*monitor_idx) {
-                    Some(idx) => {
-                        *monitor_idx = idx;
-                        true
-                    }
-                    None => false,
+            OverlayEvent::PointerMove { monitor_idx, .. }
+            | OverlayEvent::Focus { monitor_idx }
+            | OverlayEvent::FrameDone { monitor_idx } => match remap(*monitor_idx) {
+                Some(idx) => {
+                    *monitor_idx = idx;
+                    true
                 }
-            }
+                None => false,
+            },
             _ => true,
         });
 
@@ -414,10 +457,13 @@ impl ScreenOverlay for WaylandOverlay {
     }
 }
 
-fn prefault_size<'a>(outputs: impl Iterator<Item = &'a Output>) -> usize {
+fn prefault_size<'a>(outputs: impl Iterator<Item = &'a Output>, hidpi: bool) -> usize {
     outputs
         .flat_map(|o| {
-            let top = o.info.logical_size.unwrap_or((0, 0));
+            let (w, h) = o.info.logical_size.unwrap_or((0, 0));
+            let scale = if hidpi { o.scale() } else { 1.0 };
+            let (pw, ph) = crate::types::px_size((w.max(0) as u32, h.max(0) as u32), scale);
+            let top = (pw as i32, ph as i32);
             let background = o
                 .info
                 .modes

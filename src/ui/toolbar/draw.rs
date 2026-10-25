@@ -1,70 +1,31 @@
-use crate::renderer::paths::{draw_panel_border, draw_svg_icon, rounded_rect_path};
+use crate::renderer::Painter;
 use crate::theme::{radius, size};
 use crate::ui::icons::{get_svg_for_finish, get_svg_for_tool};
 use crate::ui::panel::PanelItem;
 use crate::ui::panel::UiPanel;
 use crate::ui::toolbar::{Toolbar, ToolbarButton, ToolbarItem};
-use std::collections::HashMap;
-use tiny_skia::{BlendMode, FilterQuality, Paint, Pixmap, PixmapPaint, Rect, Transform};
-use usvg::Tree;
+use tiny_skia::Rect;
 
-pub fn draw_toolbar(
-    canvas: &mut Pixmap,
-    toolbar: &mut Toolbar,
-    icons_cache: &HashMap<&'static str, Tree>,
-) {
+pub fn draw_toolbar(p: &mut Painter, toolbar: &mut Toolbar) {
     let Some(tb_rect) = toolbar.rect() else {
         return;
     };
 
-    let x = tb_rect.left().round();
-    let y = tb_rect.top().round();
-    let (w, h) = toolbar.size;
-    let pw = w.ceil() as u32;
-    let ph = h.ceil() as u32;
-
-    let needs_resize = toolbar
-        .toolbar_pixmap
-        .as_ref()
-        .is_none_or(|p| p.width() != pw || p.height() != ph);
-
-    if needs_resize {
-        toolbar.toolbar_pixmap = Pixmap::new(pw, ph);
-        toolbar.dirty = true;
-    }
-
-    let Some(mut toolbar_pixmap) = toolbar.toolbar_pixmap.take() else {
-        return;
-    };
-
-    if toolbar.dirty {
-        toolbar_pixmap.fill(tiny_skia::Color::TRANSPARENT);
-        draw_toolbar_content(&mut toolbar_pixmap, toolbar, icons_cache);
-    }
-
-    canvas.draw_pixmap(
-        x as i32,
-        y as i32,
-        toolbar_pixmap.as_ref(),
-        &PixmapPaint {
-            opacity: toolbar.opacity,
-            blend_mode: BlendMode::SourceOver,
-            quality: FilterQuality::Nearest,
-        },
-        Transform::identity(),
-        None,
+    let mut cache = toolbar.toolbar_pixmap.take();
+    let look = toolbar.look();
+    p.panel(
+        &mut cache,
+        (tb_rect.left(), tb_rect.top()),
+        toolbar.size,
+        toolbar.opacity,
+        toolbar.drawn_look != Some(look),
+        |p| draw_toolbar_content(p, toolbar),
     );
-
-    draw_panel_border(canvas, x, y, w, h, radius::panel(), toolbar.opacity);
-
-    toolbar.toolbar_pixmap = Some(toolbar_pixmap);
+    toolbar.toolbar_pixmap = cache;
+    toolbar.drawn_look = Some(look);
 }
 
-fn draw_toolbar_content(
-    canvas: &mut Pixmap,
-    toolbar: &Toolbar,
-    icons_cache: &HashMap<&'static str, Tree>,
-) {
+fn draw_toolbar_content(p: &mut Painter, toolbar: &Toolbar) {
     let cfg = &crate::config::get().toolbar;
     let theme = &crate::config::get().theme;
     let (w, h) = toolbar.size;
@@ -72,28 +33,7 @@ fn draw_toolbar_content(
         return;
     };
 
-    let (top_left, top_right, bot_left, bot_right) = (true, true, true, true);
-    let Some(path) = rounded_rect_path(
-        &rect,
-        radius::panel(),
-        top_left,
-        top_right,
-        bot_left,
-        bot_right,
-    ) else {
-        return;
-    };
-
-    let mut paint = Paint::default();
-    paint.set_color(cfg.background.get().color());
-    paint.anti_alias = true;
-    canvas.fill_path(
-        &path,
-        &paint,
-        tiny_skia::FillRule::Winding,
-        Transform::identity(),
-        None,
-    );
+    p.fill_rounded(rect, radius::panel(), cfg.background.get());
 
     let bg_h = h * cfg.highlight_height;
     let bg_y = rect.top() + (h - bg_h) / 2.0;
@@ -105,24 +45,13 @@ fn draw_toolbar_content(
             ToolbarItem::Button(button) => {
                 if (toolbar.selected == Some(index) || toolbar.hovered == Some(index))
                     && let Some(cell_rect) = Rect::from_xywh(current_x, bg_y, cell_size, bg_h)
-                    && let Some(cell_path) =
-                        rounded_rect_path(&cell_rect, radius::item(), true, true, true, true)
                 {
-                    let mut cell_paint = Paint::default();
                     let color = if toolbar.selected == Some(index) {
-                        cfg.button_selected.get().color()
+                        cfg.button_selected.get()
                     } else {
-                        cfg.button_hovered.get().color()
+                        cfg.button_hovered.get()
                     };
-                    cell_paint.set_color(color);
-                    cell_paint.anti_alias = true;
-                    canvas.fill_path(
-                        &cell_path,
-                        &cell_paint,
-                        tiny_skia::FillRule::Winding,
-                        Transform::identity(),
-                        None,
-                    );
+                    p.fill_rounded(cell_rect, radius::item(), color);
                 }
 
                 let (svg_str, icon_size) = match button {
@@ -144,15 +73,7 @@ fn draw_toolbar_content(
                     cfg.icon.get()
                 };
 
-                draw_svg_icon(
-                    canvas,
-                    icons_cache,
-                    svg_str,
-                    icon_size,
-                    icon_x,
-                    icon_y,
-                    tint,
-                );
+                p.icon(svg_str, icon_size, icon_x, icon_y, tint);
             }
             ToolbarItem::Seperator => {
                 let sep_w = theme.separator_width;
@@ -160,20 +81,8 @@ fn draw_toolbar_content(
                 let sep_x = current_x + (cell_size - sep_w) / 2.0;
                 let sep_y = rect.top() + (h - sep_h) / 2.0;
 
-                if let Some(sep_rect) = Rect::from_xywh(sep_x, sep_y, sep_w, sep_h)
-                    && let Some(sep_path) =
-                        rounded_rect_path(&sep_rect, radius::separator(), true, true, true, true)
-                {
-                    let mut sep_paint = Paint::default();
-                    sep_paint.set_color(cfg.separator.get().color());
-                    sep_paint.anti_alias = true;
-                    canvas.fill_path(
-                        &sep_path,
-                        &sep_paint,
-                        tiny_skia::FillRule::Winding,
-                        Transform::identity(),
-                        None,
-                    );
+                if let Some(sep_rect) = Rect::from_xywh(sep_x, sep_y, sep_w, sep_h) {
+                    p.fill_rounded(sep_rect, radius::separator(), cfg.separator.get());
                 }
             }
         }

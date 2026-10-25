@@ -1,4 +1,4 @@
-use tiny_skia::{IntRect, Pixmap, Rect};
+use tiny_skia::{FilterQuality, IntRect, Pixmap, PixmapPaint, Rect, Transform};
 
 use super::paste;
 
@@ -36,20 +36,53 @@ pub fn draw(
     style: Style,
     cached: Option<&Pixmap>,
     offset: (f32, f32),
+    scale: f32,
 ) {
     let Some(local) = Rect::from_xywh(
-        rect.left() - offset.0,
-        rect.top() - offset.1,
-        rect.width(),
-        rect.height(),
+        (rect.left() - offset.0) * scale,
+        (rect.top() - offset.1) * scale,
+        rect.width() * scale,
+        rect.height() * scale,
     )
     .and_then(|r| r.round_out()) else {
         return;
     };
     match cached {
-        Some(pixmap) => paste(canvas, pixmap, local.x(), local.y()),
+        Some(pixmap) if scale == 1.0 => paste(canvas, pixmap, local.x(), local.y()),
+        Some(pixmap) => {
+            let Some(at) = rect.round_out() else {
+                return;
+            };
+            let quality = if style.pixelate {
+                FilterQuality::Nearest
+            } else {
+                FilterQuality::Bilinear
+            };
+            canvas.draw_pixmap(
+                0,
+                0,
+                pixmap.as_ref(),
+                &PixmapPaint {
+                    quality,
+                    ..PixmapPaint::default()
+                },
+                Transform::from_row(
+                    scale,
+                    0.0,
+                    0.0,
+                    scale,
+                    (at.x() as f32 - offset.0) * scale,
+                    (at.y() as f32 - offset.1) * scale,
+                ),
+                None,
+            );
+        }
         None => {
-            let phase = (offset.0 as i32, offset.1 as i32);
+            let style = Style {
+                size: style.size * scale,
+                ..style
+            };
+            let phase = ((offset.0 * scale) as i32, (offset.1 * scale) as i32);
             if let Some(pixmap) =
                 Blurred::new(canvas, local, style, phase).and_then(|b| b.crop(local))
             {

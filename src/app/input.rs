@@ -9,7 +9,7 @@ use crate::editor::dirty::{apply_damage_rects, mark_all_dirty, mark_dirty};
 use crate::editor::{DamageZone, EditorState};
 use crate::interaction::ClickTarget;
 use crate::keys::{self, Chord, Key};
-use crate::theme::{anim, font};
+use crate::theme::font;
 use crate::tools::{
     Tool, dispatch_activate, dispatch_button, dispatch_cursor, dispatch_deactivate, dispatch_key,
     dispatch_move, dispatch_text,
@@ -480,27 +480,14 @@ fn update_pointer(
 }
 
 fn update_magnifier(editor_state: &mut EditorState, dirty_mask: &mut u32) {
-    let now = Instant::now();
-    if let Some(last) = editor_state.magnifier.last_update
-        && now.duration_since(last) < anim::frame()
-    {
-        return;
-    }
-    editor_state.magnifier.last_update = Some(now);
-
     let monitor_idx = editor_state.input.pointer.monitor_idx;
     let local = editor_state.input.pointer.local;
 
-    if let Some(mag) = editor_state.magnifier.current.as_ref() {
-        if mag.monitor_idx != monitor_idx && editor_state.magnifier_shown() {
-            mark_dirty(dirty_mask, mag.monitor_idx);
-        }
-        editor_state.magnifier.prev = Some(MagnifierState {
-            monitor_idx: mag.monitor_idx,
-            pos: mag.pos,
-        });
-    } else {
-        editor_state.magnifier.prev = None;
+    if let Some(mag) = editor_state.magnifier.current.as_ref()
+        && mag.monitor_idx != monitor_idx
+        && editor_state.magnifier_shown()
+    {
+        mark_dirty(dirty_mask, mag.monitor_idx);
     }
 
     editor_state.magnifier.current = Some(MagnifierState {

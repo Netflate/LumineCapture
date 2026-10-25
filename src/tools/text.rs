@@ -773,6 +773,7 @@ pub fn render_text_annotation(
     swash_cache: &mut SwashCache,
     pixmap: &mut PixmapMut<'_>,
     offset: (f32, f32),
+    scale: f32,
     is_editing: bool,
 ) {
     let AnnotationShape::Text {
@@ -784,8 +785,8 @@ pub fn render_text_annotation(
     else {
         return;
     };
-    let ann_x = start.0 - offset.0;
-    let ann_y = start.1 - offset.1;
+    let ann_x = (start.0 - offset.0) * scale;
+    let ann_y = (start.1 - offset.1) * scale;
     let text_x = (ann_x + 0.5).floor();
     let text_y = (ann_y + 0.5).floor();
 
@@ -810,11 +811,12 @@ pub fn render_text_annotation(
         shape_entire_buffer(buf, font_system, false);
     });
 
-    let outline_stroke_width = text_outline_stroke_width(*font_size);
+    let outline_stroke_width = text_outline_stroke_width(*font_size) * scale;
     if let Some(outline_color) = outline
         && outline_stroke_width > 0.0
         // same snap as text uses
-        && let Some(letters) = letters_path(editor, font_system, swash_cache, (text_x, text_y))
+        && let Some(letters) =
+            letters_path(editor, font_system, swash_cache, (text_x, text_y), scale)
     {
         draw_text_outline(
             pixmap,
@@ -829,18 +831,17 @@ pub fn render_text_annotation(
     let p_height = pixmap.height() as i32;
     let pixels = pixmap.pixels_mut();
 
-    editor.draw(
+    draw_editor(
+        editor,
         font_system,
         swash_cache,
-        text_color,
-        cur_col,
-        sel_col,
-        sel_text_color,
+        scale,
+        [text_color, cur_col, sel_col, sel_text_color],
         |x, y, w, h, color| {
             let mut draw_w = w as f32;
 
-            if color == sel_col && draw_w <= 1.0 {
-                draw_w = (ann.bbox.width() - x as f32).max(min_width());
+            if color == sel_col && draw_w <= scale {
+                draw_w = (ann.bbox.width() * scale - x as f32).max(min_width() * scale);
             }
 
             let start_x = text_x as i32 + x;
@@ -895,17 +896,92 @@ pub fn render_text_annotation(
     );
 }
 
+/// literally Editor::render from cosmic-text 0.19, but with scale implementation
+/// render_decoration (underline, strikethrough, overline) aren't ported yet,
+fn draw_editor(
+    editor: &mut Editor<'static>,
+    font_system: &mut cosmic_text::FontSystem,
+    swash_cache: &mut SwashCache,
+    scale: f32,
+    [
+        text_color,
+        cursor_color,
+        selection_color,
+        selected_text_color,
+    ]: [cosmic_text::Color; 4],
+    mut f: impl FnMut(i32, i32, u32, u32, cosmic_text::Color),
+) {
+    editor.with_buffer_mut(|buffer| buffer.shape_until_scroll(font_system, false));
+    let selection_bounds = editor.selection_bounds();
+    let cursor = editor.cursor();
+    editor.with_buffer(|buffer| {
+        let width = buffer.size().0.unwrap_or(0.0) * scale;
+        for run in buffer.layout_runs() {
+            let line_i = run.line_i;
+            let top = (run.line_top * scale) as i32;
+            let height = (run.line_height * scale) as u32;
+
+            if let Some((start, end)) = selection_bounds
+                && line_i >= start.line
+                && line_i <= end.line
+            {
+                let highlights: Vec<(f32, f32)> = run.highlight(start, end).collect();
+                if highlights.is_empty() && run.glyphs.is_empty() && end.line > line_i {
+                    f(0, top, width as i32 as u32, height, selection_color);
+                } else {
+                    let len = highlights.len();
+                    for (idx, (x, w)) in highlights.into_iter().enumerate() {
+                        let mut min = (x * scale) as i32;
+                        let mut max = ((x + w) * scale) as i32;
+                        if idx == len - 1 && end.line > line_i {
+                            if run.rtl {
+                                min = 0;
+                            } else {
+                                max = width as i32;
+                            }
+                        }
+                        f(min, top, (max - min).max(0) as u32, height, selection_color);
+                    }
+                }
+            }
+
+            if let Some(x) = run.cursor_position(&cursor) {
+                let w = scale.round().max(1.0) as u32;
+                f((x * scale) as i32, top, w, height, cursor_color);
+            }
+
+            for glyph in run.glyphs {
+                let physical = glyph.physical((0.0, run.line_y * scale), scale);
+                let mut color = glyph.color_opt.unwrap_or(text_color);
+                if text_color != selected_text_color
+                    && let Some((start, end)) = selection_bounds
+                    && line_i >= start.line
+                    && line_i <= end.line
+                    && (start.line != line_i || glyph.end > start.index)
+                    && (end.line != line_i || glyph.start < end.index)
+                {
+                    color = selected_text_color;
+                }
+                swash_cache.with_pixels(font_system, physical.cache_key, color, |x, y, c| {
+                    f(physical.x + x, physical.y + y, 1, 1, c);
+                });
+            }
+        }
+    });
+}
+
 fn letters_path(
     editor: &Editor<'static>,
     font_system: &mut cosmic_text::FontSystem,
     swash_cache: &mut SwashCache,
     text_pos: (f32, f32),
+    scale: f32,
 ) -> Option<Path> {
     let mut path_builder = PathBuilder::new();
     editor.with_buffer(|buf| {
         for run in buf.layout_runs() {
             for glyph in run.glyphs {
-                let pixel_glyph = glyph.physical((0.0, run.line_y), 1.0);
+                let pixel_glyph = glyph.physical((0.0, run.line_y * scale), scale);
                 let Some(glyph_shape) =
                     swash_cache.get_outline_commands(font_system, pixel_glyph.cache_key)
                 else {
