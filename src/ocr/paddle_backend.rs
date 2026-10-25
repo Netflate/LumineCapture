@@ -24,6 +24,7 @@ use tiny_skia::Rect;
 use crate::config::OcrFilter;
 
 use super::layout;
+use super::lookalikes;
 use super::models::ModelFiles;
 use super::{OcrBackend, OcrError, OcrImage, OcrLine, OcrText};
 
@@ -248,9 +249,14 @@ impl OcrBackend for PaddleBackend {
             .zip(reads)
             .filter(|(bounds, read)| !is_noise(bounds, read, body_height))
             .map(|(bounds, read)| {
-                let char_x = char_boundaries(&bounds, &read.text, &read.positions);
+                let text = if crate::config::get().ocr.lookalikes {
+                    lookalikes::fix(&read.text)
+                } else {
+                    read.text
+                };
+                let char_x = char_boundaries(&bounds, &text, &read.positions);
                 OcrLine {
-                    text: read.text,
+                    text,
                     bounds,
                     char_x,
                 }
