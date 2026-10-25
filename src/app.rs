@@ -8,7 +8,9 @@ mod panels;
 
 use crate::backend::ScreenOverlay;
 use crate::backend::notify::{self, Notice};
-use crate::backend::{initialize_capture, initialize_clipboard, initialize_overlay};
+use crate::backend::{
+    FRAME_FALLBACK, initialize_capture, initialize_clipboard, initialize_overlay,
+};
 use crate::editor::dirty::{apply_damage_rects, is_dirty, mark_all_dirty, mark_dirty};
 use crate::editor::{EditorState, Layers, OcrState, TextState};
 use crate::profiler::Profiler;
@@ -296,6 +298,12 @@ fn run_overlay(
         if let Some(deadline) = pointer_wait {
             let left = deadline.saturating_duration_since(Instant::now());
             timeout = Some(timeout.map_or(left, |t| t.min(left)));
+        }
+        // wake up by the fallback even if no other event ever comes
+        let waiting = (0..editor_state.captures.len())
+            .any(|i| (is_dirty(dirty_mask, i) || pacing.owes_to(i)) && !overlay.ready(i));
+        if waiting {
+            timeout = Some(timeout.map_or(FRAME_FALLBACK, |t| t.min(FRAME_FALLBACK)));
         }
         poll_background_work(editor_state, &mut dirty_mask);
 

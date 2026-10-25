@@ -44,7 +44,7 @@ impl CompositorHandler for OverlayState {
             .iter_mut()
             .find(|(_, sd)| &sd.surface == surface)
         {
-            sd.frame_pending = false;
+            sd.frame_sent = None;
             self.events
                 .push_back(OverlayEvent::FrameDone { monitor_idx });
         }

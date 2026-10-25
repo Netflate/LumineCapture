@@ -7,6 +7,7 @@
 // reminder: each output has its own surface
 
 use crate::backend::wayland::utils::shm::ShmBuffer;
+use std::time::Instant;
 use wayland_client::protocol::{wl_subsurface, wl_surface};
 use wayland_protocols::wp::viewporter::client::wp_viewport;
 
@@ -48,7 +49,7 @@ pub struct SurfaceData {
     pub width: u32,
     pub height: u32,
     pub scale: f32,
-    pub frame_pending: bool,
+    pub frame_sent: Option<Instant>,
 }
 
 impl SurfaceData {

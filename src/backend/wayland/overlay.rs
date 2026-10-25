@@ -166,7 +166,7 @@ impl ScreenOverlay for WaylandOverlay {
                     width: w,
                     height: h,
                     scale,
-                    frame_pending: false,
+                    frame_sent: None,
                 },
             );
         }
@@ -243,7 +243,7 @@ impl ScreenOverlay for WaylandOverlay {
 
         // next frame of this surface waits until the compositor has shown this one
         sd.surface.frame(&qh, FrameCallbackData(sd.surface.clone()));
-        sd.frame_pending = true;
+        sd.frame_sent = Some(Instant::now());
         sd.surface.commit();
         Ok(())
     }
@@ -332,7 +332,8 @@ impl ScreenOverlay for WaylandOverlay {
             .state
             .surfaces
             .get(&monitor_idx)
-            .is_none_or(|sd| !sd.frame_pending)
+            .and_then(|sd| sd.frame_sent)
+            .is_none_or(|sent| sent.elapsed() >= crate::backend::FRAME_FALLBACK)
     }
 
     fn active_output(&mut self) -> Option<usize> {
