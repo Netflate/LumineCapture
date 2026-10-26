@@ -38,6 +38,7 @@ pub mod dawn;
 pub mod download;
 pub mod draw;
 pub mod layout;
+pub mod lookalikes;
 pub mod models;
 pub mod paddle_backend;
 pub mod runtime;

@@ -235,12 +235,11 @@ impl EditorState {
         for other in stack(&self.annotations, &self.pending, at).take(below) {
             if rects_overlap(&other.damage_bbox(false), &region) {
                 crate::renderer::draw_annotation(
-                    &mut src,
+                    &mut crate::renderer::Painter::new(&mut src)
+                        .with_text(&mut self.text.font_system, &mut self.text.swash_cache)
+                        .with_origin((origin.0 as f32, origin.1 as f32)),
                     other,
-                    (origin.0 as f32, origin.1 as f32),
                     false,
-                    &mut self.text.font_system,
-                    &mut self.text.swash_cache,
                     &mut self.text.editors,
                     &self.blur.cache,
                     None,

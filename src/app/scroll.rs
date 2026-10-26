@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 use crate::backend::CaptureMethod;
 use crate::backend::ScreenOverlay;
 use crate::editor::EditorState;
+use crate::renderer::Painter;
 use crate::scroll::frame;
 use crate::scroll::panel::{self, PanelButton, PanelLayout};
 use crate::scroll::session::{ScrollSession, to_pixmap};
@@ -98,7 +99,15 @@ pub async fn run(
         }
 
         // wake up around the next expected frame capture
-        match overlay.next_event(Some(run.session.capture_interval()))? {
+        let deadline = Instant::now() + run.session.capture_interval();
+        let event = loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            match overlay.next_event(Some(left))? {
+                OverlayEvent::FrameDone { .. } => {}
+                event => break event,
+            }
+        };
+        match event {
             OverlayEvent::EscapePressed => return Ok(None),
             OverlayEvent::Key {
                 chord: Some(chord), ..
@@ -206,13 +215,16 @@ fn paint(
     );
 
     panel::draw(
-        canvas,
+        &mut Painter::new(canvas)
+            .with_scale(placement.scale)
+            .with_icons(&editor_state.icons_cache)
+            .with_text(
+                &mut editor_state.text.font_system,
+                &mut editor_state.text.swash_cache,
+            ),
         &mut run.session,
         &run.layout,
         run.hovered,
-        &mut editor_state.text.font_system,
-        &mut editor_state.text.swash_cache,
-        &editor_state.icons_cache,
     );
 
     overlay.stage_frame(idx, canvas.data(), None)?;

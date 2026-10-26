@@ -3,38 +3,9 @@ use crate::theme::{Rgba, color, stroke};
 /// 4/3*(sqrt(2)-1).
 pub const KAPPA: f32 = 0.552_284_8;
 
-use std::collections::HashMap;
-use tiny_skia::{Color, Paint, PathBuilder, Pixmap, Rect, Stroke, Transform};
-use usvg::Tree;
+use tiny_skia::{Color, PathBuilder, Pixmap, Rect, Stroke, Transform};
 
-pub fn draw_progress_bar(canvas: &mut Pixmap, x: f32, y: f32, w: f32, percent: u8) {
-    let h = stroke::progress();
-    let filled = match percent {
-        0 => 0.0,
-        _ => (w * f32::from(percent.min(100)) / 100.0).max(h),
-    };
-    let mut paint = Paint {
-        anti_alias: true,
-        ..Paint::default()
-    };
-    for (width, fill) in [(w, color::track()), (filled, color::active())] {
-        if width <= 0.0 {
-            continue;
-        }
-        if let Some(rect) = Rect::from_xywh(x, y, width, h)
-            && let Some(path) = rounded_rect_path(&rect, h / 2.0, true, true, true, true)
-        {
-            paint.set_color(fill.color());
-            canvas.fill_path(
-                &path,
-                &paint,
-                tiny_skia::FillRule::Winding,
-                Transform::identity(),
-                None,
-            );
-        }
-    }
-}
+use super::Painter;
 
 pub fn rounded_rect_path(
     rect: &Rect,
@@ -45,6 +16,7 @@ pub fn rounded_rect_path(
     bottom_left: bool,
 ) -> Option<tiny_skia::Path> {
     let r = r.min(rect.width() / 2.0).min(rect.height() / 2.0);
+    let k = 1.0 - KAPPA;
 
     let (l, t, ri, b) = (rect.left(), rect.top(), rect.right(), rect.bottom());
 
@@ -59,7 +31,7 @@ pub fn rounded_rect_path(
     pb.line_to(ri - r_tr, t);
 
     if top_right {
-        pb.cubic_to(ri - r_tr * KAPPA, t, ri, t + r_tr * KAPPA, ri, t + r_tr);
+        pb.cubic_to(ri - r_tr * k, t, ri, t + r_tr * k, ri, t + r_tr);
     } else {
         pb.line_to(ri, t);
     }
@@ -67,7 +39,7 @@ pub fn rounded_rect_path(
     pb.line_to(ri, b - r_br);
 
     if bottom_right {
-        pb.cubic_to(ri, b - r_br * KAPPA, ri - r_br * KAPPA, b, ri - r_br, b);
+        pb.cubic_to(ri, b - r_br * k, ri - r_br * k, b, ri - r_br, b);
     } else {
         pb.line_to(ri, b);
     }
@@ -75,7 +47,7 @@ pub fn rounded_rect_path(
     pb.line_to(l + r_bl, b);
 
     if bottom_left {
-        pb.cubic_to(l + r_bl * KAPPA, b, l, b - r_bl * KAPPA, l, b - r_bl);
+        pb.cubic_to(l + r_bl * k, b, l, b - r_bl * k, l, b - r_bl);
     } else {
         pb.line_to(l, b);
     }
@@ -83,11 +55,12 @@ pub fn rounded_rect_path(
     pb.line_to(l, t + r_tl);
 
     if top_left {
-        pb.cubic_to(l, t + r_tl * KAPPA, l + r_tl * KAPPA, t, l + r_tl, t);
+        pb.cubic_to(l, t + r_tl * k, l + r_tl * k, t, l + r_tl, t);
     } else {
         pb.line_to(l, t);
     }
 
+    pb.close();
     pb.finish()
 }
 
@@ -139,6 +112,15 @@ pub fn normalized_rect(start: (f32, f32), end: (f32, f32)) -> Option<Rect> {
     )
 }
 
+pub fn scale_rect(rect: &Rect, scale: f32) -> Option<Rect> {
+    Rect::from_ltrb(
+        rect.left() * scale,
+        rect.top() * scale,
+        rect.right() * scale,
+        rect.bottom() * scale,
+    )
+}
+
 pub fn rect_bounds(rect: &Rect, width: u32, height: u32) -> Option<(u32, u32, u32, u32)> {
     let x0 = rect.left().floor().max(0.0) as i32;
     let y0 = rect.top().floor().max(0.0) as i32;
@@ -182,149 +164,120 @@ pub fn panel_border_color(bg: Color) -> Color {
     }
 }
 
-pub fn draw_item_border(
-    canvas: &mut Pixmap,
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-    radius: f32,
-    stroke_width: f32,
-    is_hovered: bool,
-    is_selected: bool,
-) {
-    let inset = stroke_width / 2.0;
-    let Some(inset_rect) = Rect::from_xywh(
-        x + inset,
-        y + inset,
-        (w - stroke_width).max(0.1),
-        (h - stroke_width).max(0.1),
-    ) else {
-        return;
-    };
+impl Painter<'_> {
+    pub fn progress_bar(&mut self, x: f32, y: f32, w: f32, percent: u8) {
+        let h = stroke::progress();
+        let filled = match percent {
+            0 => 0.0,
+            _ => (w * f32::from(percent.min(100)) / 100.0).max(h),
+        };
+        for (width, fill) in [(w, color::track()), (filled, color::active())] {
+            if width <= 0.0 {
+                continue;
+            }
+            if let Some(rect) = Rect::from_xywh(x, y, width, h) {
+                self.fill_rounded(rect, h / 2.0, fill);
+            }
+        }
+    }
 
-    let r = (radius - inset)
-        .max(0.0)
-        .min(inset_rect.width() / 2.0)
-        .min(inset_rect.height() / 2.0);
-    let Some(path) = rounded_rect_path(&inset_rect, r, true, true, true, true) else {
-        return;
-    };
+    pub fn item_border(
+        &mut self,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        radius: f32,
+        stroke_width: f32,
+        is_hovered: bool,
+        is_selected: bool,
+    ) {
+        let color = if is_selected {
+            color::active().color()
+        } else if is_hovered {
+            color::hover().color()
+        } else {
+            panel_border_color(color::panel().color())
+        };
+        self.inset_border(x, y, w, h, radius, stroke_width, color);
+    }
 
-    let mut paint = Paint::default();
-    paint.set_color(if is_selected {
-        color::active().color()
-    } else if is_hovered {
-        color::hover().color()
-    } else {
-        panel_border_color(color::panel().color())
-    });
-    paint.anti_alias = true;
+    pub fn panel_border(&mut self, x: f32, y: f32, w: f32, h: f32, radius: f32, opacity: f32) {
+        let mut color = panel_border_color(color::panel().color());
+        color.set_alpha(color.alpha() * opacity);
+        self.inset_border(x, y, w, h, radius, stroke::border(), color);
+    }
 
-    let stroke = Stroke {
-        width: stroke_width,
-        ..Default::default()
-    };
-    canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
-}
+    fn inset_border(
+        &mut self,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        radius: f32,
+        stroke_width: f32,
+        color: Color,
+    ) {
+        let inset = stroke_width / 2.0;
+        let Some(inset_rect) = Rect::from_xywh(
+            x + inset,
+            y + inset,
+            (w - stroke_width).max(0.1),
+            (h - stroke_width).max(0.1),
+        ) else {
+            return;
+        };
 
-pub fn draw_panel_border(
-    canvas: &mut Pixmap,
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-    radius: f32,
-    opacity: f32,
-) {
-    let border_width = stroke::border();
-    let inset = border_width / 2.0;
-    let bx = x + inset;
-    let by = y + inset;
-    let bw = (w - border_width).max(0.0);
-    let bh = (h - border_width).max(0.0);
-    let r = (radius - inset).max(0.0).min(bw / 2.0).min(bh / 2.0);
-    let kr = r * KAPPA;
+        let r = (radius - inset)
+            .max(0.0)
+            .min(inset_rect.width() / 2.0)
+            .min(inset_rect.height() / 2.0);
+        let Some(path) = rounded_rect_path(&inset_rect, r, true, true, true, true) else {
+            return;
+        };
 
-    let mut pb = PathBuilder::new();
+        let stroke = Stroke {
+            width: stroke_width,
+            ..Default::default()
+        };
+        self.stroke_path(&path, color, &stroke);
+    }
 
-    pb.move_to(bx, by + r);
-    pb.line_to(bx, by + bh - r);
-    pb.cubic_to(bx, by + bh - r + kr, bx + r - kr, by + bh, bx + r, by + bh);
+    pub fn icon(
+        &mut self,
+        svg_str: &'static str,
+        icon_size: f32,
+        x: f32,
+        y: f32,
+        tint: impl Into<Rgba>,
+    ) {
+        let Some(rtree) = self.icons.and_then(|icons| icons.get(svg_str)) else {
+            return;
+        };
 
-    pb.line_to(bx + bw - r, by + bh);
-    pb.cubic_to(
-        bx + bw - r + kr,
-        by + bh,
-        bx + bw,
-        by + bh - r + kr,
-        bx + bw,
-        by + bh - r,
-    );
+        let size = icon_size * self.scale();
+        let scale_x = size / rtree.size().width();
+        let scale_y = size / rtree.size().height();
 
-    pb.line_to(bx + bw, by + r);
-    pb.cubic_to(bx + bw, by + r - kr, bx + bw - r + kr, by, bx + bw - r, by);
-    pb.line_to(bx + r, by);
-    pb.cubic_to(bx + r - kr, by, bx, by + r - kr, bx, by + r);
-    pb.close();
+        let px_size = size.ceil().max(1.0) as u32;
+        let Some(mut icon_pixmap) = Pixmap::new(px_size, px_size) else {
+            return;
+        };
 
-    let Some(path) = pb.finish() else { return };
+        resvg::render(
+            rtree,
+            Transform::from_scale(scale_x, scale_y),
+            &mut icon_pixmap.as_mut(),
+        );
+        tint_pixmap(&mut icon_pixmap, tint.into());
 
-    let mut border = panel_border_color(color::panel().color());
-    border.set_alpha(border.alpha() * opacity);
-
-    let mut paint = Paint::default();
-    paint.set_color(border);
-    paint.anti_alias = true;
-
-    let stroke = Stroke {
-        width: border_width,
-        ..Default::default()
-    };
-
-    canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+        let (px, py) = self.to_px(x, y);
+        self.draw_pixmap(px.round() as i32, py.round() as i32, &icon_pixmap);
+    }
 }
 
 impl From<usvg::Color> for Rgba {
     fn from(c: usvg::Color) -> Self {
         Rgba(c.red, c.green, c.blue, 255)
     }
-}
-
-pub fn draw_svg_icon(
-    canvas: &mut Pixmap,
-    icons_cache: &HashMap<&'static str, Tree>,
-    svg_str: &'static str,
-    icon_size: f32,
-    x: f32,
-    y: f32,
-    tint: impl Into<Rgba>,
-) {
-    let Some(rtree) = icons_cache.get(svg_str) else {
-        return;
-    };
-
-    let scale_x = icon_size / rtree.size().width();
-    let scale_y = icon_size / rtree.size().height();
-
-    let px_size = icon_size.ceil().max(1.0) as u32;
-    let Some(mut icon_pixmap) = Pixmap::new(px_size, px_size) else {
-        return;
-    };
-
-    resvg::render(
-        rtree,
-        Transform::from_scale(scale_x, scale_y),
-        &mut icon_pixmap.as_mut(),
-    );
-    tint_pixmap(&mut icon_pixmap, tint.into());
-
-    canvas.draw_pixmap(
-        x.round() as i32,
-        y.round() as i32,
-        icon_pixmap.as_ref(),
-        &tiny_skia::PixmapPaint::default(),
-        Transform::identity(),
-        None,
-    );
 }

@@ -38,7 +38,8 @@ use crate::backend::notify::{self, Notice};
 use crate::backend::wayland::keysym;
 use crate::backend::{ClipboardProvider, initialize_clipboard};
 use crate::keys::{self, Action, Mods};
-use crate::renderer::paths::{draw_panel_border, rounded_rect_path};
+use crate::renderer::Painter;
+use crate::renderer::paths::rounded_rect_path;
 use crate::theme::radius;
 use crate::types::Finish;
 use crate::utils::{copy_swizzled, premultiply};
@@ -185,7 +186,7 @@ fn render_pin(image: &[u8], scale: f32) -> Result<Pixmap, Box<dyn std::error::Er
     let mut mask = Mask::new(w, h).ok_or("image is too large")?;
     mask.fill_path(&shape, FillRule::Winding, true, Transform::identity());
     pin.apply_mask(&mask);
-    draw_panel_border(&mut pin, 0.0, 0.0, fw, fh, radius::panel() * scale, 1.0);
+    Painter::new(&mut pin).panel_border(0.0, 0.0, fw, fh, radius::panel() * scale, 1.0);
     Ok(pin)
 }
 

@@ -48,12 +48,11 @@ impl Default for InputState {
     }
 }
 
-/// The loupe under the cursor: where it is now, where it was, and when it moved.
+/// The loupe under the cursor: where it is now and where the last frame drew it.
 #[derive(Default)]
 pub struct Magnifier {
     pub current: Option<MagnifierState>,
     pub prev: Option<MagnifierState>,
-    pub last_update: Option<Instant>,
     pub hidden: bool,
 }
 
@@ -253,12 +252,12 @@ impl EditorState {
                 && rects_overlap(&vis, &mon)
             {
                 crate::renderer::draw_annotation(
-                    &mut self.annotations_layer[i],
+                    &mut crate::renderer::Painter::new(&mut self.annotations_layer[i])
+                        .with_scale(placement.scale)
+                        .with_text(&mut self.text.font_system, &mut self.text.swash_cache)
+                        .with_origin(offset),
                     ann,
-                    offset,
                     false,
-                    &mut self.text.font_system,
-                    &mut self.text.swash_cache,
                     &mut self.text.editors,
                     &self.blur.cache,
                     None,
@@ -329,11 +328,12 @@ impl EditorState {
                     && rects_overlap(&vis, &mon)
                 {
                     crate::renderer::stroke_pen_segment(
-                        &mut self.annotations_layer[i],
+                        &mut crate::renderer::Painter::new(&mut self.annotations_layer[i])
+                            .with_scale(placement.scale)
+                            .with_origin(offset),
                         &path,
                         color,
                         stroke_width,
-                        offset,
                     );
                 }
             }

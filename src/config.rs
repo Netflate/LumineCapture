@@ -620,6 +620,7 @@ section!(OcrLayout {
 
 section!(OcrDetect {
     max_side: u32 = 1920,
+    pad: u32 = 16,
     score_threshold: f32 = 0.3,
     box_threshold: f32 = 0.6,
     unclip_ratio: f32 = 1.5,
@@ -645,6 +646,7 @@ section!(Ocr {
     hit_slack: f32 = 3.0,
     vertical_slack: f32 = 10.0,
     min_region: f32 = 16.0,
+    lookalikes: bool = true,
     look: OcrLook = OcrLook::default(),
     layout: OcrLayout = OcrLayout::default(),
     detect: OcrDetect = OcrDetect::default(),
@@ -1137,6 +1139,9 @@ hit_slack = 3.0
 vertical_slack = 10.0
 # a smaller drag counts as a click, not a new region
 min_region = 16.0
+# handle visually identical Cyrillic/Greek letters in Latin words
+# not sure why would it be disabled, aside from testing of course
+lookalikes = true
 
 [ocr.look]
 region_shade = "#11111B60"
@@ -1170,6 +1175,9 @@ column_gutter = 6.0
 [ocr.detect]
 # larger screenshots are scaled down to this before detection
 max_side = 1920
+# padding in small selections so text at the edge isn't ignored; 0 = off
+# left here mostly only for testing
+pad = 16
 score_threshold = 0.3
 box_threshold = 0.6
 unclip_ratio = 1.5

@@ -40,6 +40,10 @@ pub enum OverlayEvent {
     },
     EscapePressed,
     Tick,
+    /// compositor showed the last frame of this monitor, it can take the next one
+    FrameDone {
+        monitor_idx: usize,
+    },
     Key {
         chord: Option<Chord>,
         text: Option<String>,

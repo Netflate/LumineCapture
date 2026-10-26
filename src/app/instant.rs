@@ -42,7 +42,7 @@ pub async fn full(conn: wayland_client::Connection, launch: Launch) -> Result {
         .map(|f| outputs[f.output].clone())
         .collect();
     let captures = init::build_captures(shots.frames)?;
-    let placements = init::build_placements(&outputs);
+    let placements = init::build_placements(&outputs, false);
     let region = get_full_workspace_rect(&placements).ok_or("no monitor was captured")?;
     let (pixmap, _, scale) = renderer::composite(&captures, &placements, region, None)
         .ok_or("couldn't put the monitors together")?;

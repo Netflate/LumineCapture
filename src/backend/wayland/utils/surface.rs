@@ -9,6 +9,7 @@
 use crate::backend::wayland::utils::input;
 use crate::backend::wayland::utils::shm::ShmBuffer;
 use smithay_client_toolkit::compositor::CompositorState;
+use std::time::Instant;
 use wayland_client::protocol::{wl_subsurface, wl_surface};
 use wayland_protocols::wp::viewporter::client::wp_viewport;
 
@@ -57,6 +58,7 @@ pub struct SurfaceData {
     pub background: Option<Background>,
     pub role: Role,
     pub surface: wl_surface::WlSurface,
+    pub viewport: Option<wp_viewport::WpViewport>,
 
     pub shm_buffer: Option<ShmBuffer>,
     /// Whether the surface currently has a buffer attached.
@@ -66,9 +68,15 @@ pub struct SurfaceData {
 
     pub width: u32,
     pub height: u32,
+    pub scale: f32,
+    pub frame_sent: Option<Instant>,
 }
 
 impl SurfaceData {
+    pub fn buffer_size(&self) -> (u32, u32) {
+        crate::types::px_size((self.width, self.height), self.scale)
+    }
+
     /// Sets the pending input region on the surface without committing.
     pub fn apply_input(&self, compositor: &CompositorState) {
         match self.input {

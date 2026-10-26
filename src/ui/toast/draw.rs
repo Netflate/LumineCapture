@@ -1,21 +1,13 @@
-use cosmic_text::{FontSystem, SwashCache};
-use tiny_skia::{Paint, Pixmap, Rect, Transform};
+use tiny_skia::Rect;
 
-use crate::renderer::paths::{draw_panel_border, rounded_rect_path};
-use crate::renderer::text::{HAlign, draw_aligned_text};
+use crate::renderer::Painter;
+use crate::renderer::text::TextStyle;
 use crate::theme::{font, radius};
 use crate::ui::toast::Toasts;
 /// clip is area of the screen cleared for current frame
 /// draw somewhat transparent toast only if it intersects with clip, otherwise
 /// the background will be drawn oveer the old frame a second time and darken it
-pub fn draw_toasts(
-    canvas: &mut Pixmap,
-    toasts: &Toasts,
-    monitor_idx: usize,
-    clip: Option<&Rect>,
-    font_system: &mut FontSystem,
-    swash_cache: &mut SwashCache,
-) {
+pub fn draw_toasts(p: &mut Painter, toasts: &Toasts, monitor_idx: usize, clip: Option<&Rect>) {
     let cfg = &crate::config::get().toasts;
     for toast in &toasts.items {
         if toast.monitor_idx != monitor_idx {
@@ -36,21 +28,9 @@ pub fn draw_toasts(
             continue;
         }
 
-        if let Some(path) = rounded_rect_path(&rect, radius::panel(), true, true, true, true) {
-            let mut paint = Paint::default();
-            paint.set_color(cfg.background.get().fade(opacity));
-            paint.anti_alias = true;
-            canvas.fill_path(
-                &path,
-                &paint,
-                tiny_skia::FillRule::Winding,
-                Transform::identity(),
-                None,
-            );
-        }
+        p.fill_rounded(rect, radius::panel(), cfg.background.get().fade(opacity));
 
-        draw_panel_border(
-            canvas,
+        p.panel_border(
             rect.left(),
             rect.top(),
             rect.width(),
@@ -59,18 +39,10 @@ pub fn draw_toasts(
             opacity,
         );
 
-        draw_aligned_text(
-            canvas,
-            toast.text.as_ref(),
-            font_system,
-            swash_cache,
+        p.text(
             rect,
-            font::label(),
-            cfg.text.get().fade(opacity),
-            HAlign::Center,
-            (0.0, 0.0),
-            cosmic_text::Weight::NORMAL,
-            cosmic_text::Style::Normal,
+            toast.text.as_ref(),
+            TextStyle::new(font::label(), cfg.text.get().fade(opacity)).center(),
         );
     }
 }

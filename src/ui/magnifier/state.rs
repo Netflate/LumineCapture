@@ -15,7 +15,7 @@ pub fn offset() -> f32 {
     crate::config::get().magnifier.offset
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct MagnifierState {
     pub monitor_idx: usize,
     pub pos: (f64, f64),

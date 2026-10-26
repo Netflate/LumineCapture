@@ -4,13 +4,15 @@
 
 mod annotations;
 pub mod blur;
+mod painter;
 pub mod paths;
 pub mod text;
 
 pub use annotations::{
     draw_annotation, selection_chrome_pad, shadow_color_for, stroke_pen_segment, visual_pad,
 };
-pub use paths::{rect_bounds, rounded_rect_path};
+pub use painter::{Icons, Painter};
+pub use paths::{rect_bounds, rounded_rect_path, scale_rect};
 pub use text::measure_line_width;
 
 use crate::types::SelectionEdges;
@@ -21,7 +23,7 @@ use crate::ui::settings_panel::SettingsPanel;
 use crate::ui::toolbar::Toolbar;
 use cosmic_text::{Editor, FontSystem, SwashCache};
 use std::collections::HashMap;
-use tiny_skia::{Color, Paint, PathBuilder, Pixmap, Rect, Stroke, Transform};
+use tiny_skia::{Color, PathBuilder, Pixmap, Rect, Stroke, Transform};
 use usvg::Tree;
 
 pub struct TextContext<'a> {
@@ -64,9 +66,8 @@ pub struct RenderRequest<'a> {
     pub selected_annotation: Option<usize>,
     pub annotations: &'a [Annotation],
     pub blurs: &'a HashMap<u64, Pixmap>,
-    /// Everything needed to lay out and draw text. The first paint runs on
-    /// several threads with nothing textual on screen, so it has none of this.
-    pub text: Option<TextContext<'a>>,
+    /// Everything needed to lay out and draw text.
+    pub text: TextContext<'a>,
     pub active_text_id: Option<u64>,
     // OCR tool: recognized lines + selection overlay
     pub ocr_view: Option<&'a crate::ocr::OcrView>,
@@ -75,6 +76,10 @@ pub struct RenderRequest<'a> {
     pub ocr_scan: Option<(Rect, f32)>,
     pub monitor_idx: usize,
     pub toasts: &'a crate::ui::toast::Toasts,
+    /// logical size of the monitor; canvas / scale is off by a fraction,
+    /// and the loupe would flip at another spot than its damage does
+    pub size: (f32, f32),
+    pub scale: f32,
 }
 
 /// the highest scale among monitors the region touches
@@ -156,29 +161,27 @@ pub fn composite(
 }
 
 pub fn render_frame(req: &mut RenderRequest) {
+    let s = req.scale;
     if req.selection_dirty {
         update_dimming_delta(
             req.dimmed,
             req.prev_selection,
             req.selection,
             req.selection_edges,
+            s,
         );
     }
     let dirty_rect = req.dirty_rect;
 
     if let Some(dirty) = dirty_rect {
-        blit_rect(req.dimmed, req.canvas, dirty);
+        blit_rect(req.dimmed, req.canvas, dirty, s);
     } else {
         req.canvas.data_mut().copy_from_slice(req.dimmed.data());
     }
 
-    if let Some(sel) = req.selection {
-        draw_selection_border(req.canvas, sel, req.selection_edges);
-    }
-
     if !req.annotations_layer_empty {
         if let Some(dirty) = dirty_rect {
-            blit_annotations(req.annotations_layer, req.canvas, dirty);
+            blit_annotations(req.annotations_layer, req.canvas, dirty, s);
         } else {
             req.canvas.draw_pixmap(
                 0,
@@ -192,93 +195,109 @@ pub fn render_frame(req: &mut RenderRequest) {
     }
 
     // Dynamic annotations: pending (in-progress drawing or dragging)
-    if let Some(p) = req.pending {
-        if let Some(text) = req.text.as_mut() {
-            if !req.is_pending_selected
-                && let crate::types::AnnotationShape::Pen { points } = &p.shape
-            {
-                annotations::draw_pen_active_tail(
-                    req.canvas,
-                    points,
-                    req.pending_pen_baked,
-                    p.color,
-                    p.stroke_width,
-                    req.offset,
-                );
-            } else if !req.is_pending_selected
-                && let crate::types::AnnotationShape::Highlighter { points, flat_ends } = &p.shape
-            {
-                annotations::draw_highlighter_live(
-                    req.canvas,
-                    points,
-                    *flat_ends,
-                    p.color,
-                    p.stroke_width,
-                    req.offset,
-                    dirty_rect,
-                );
-            } else {
-                annotations::draw_annotation(
-                    req.canvas,
-                    p,
-                    req.offset,
-                    false,
-                    text.font_system,
-                    text.swash_cache,
-                    text.editors,
-                    req.blurs,
-                    req.active_text_id,
-                );
-            }
+    if let Some(pending) = req.pending {
+        let text = &mut req.text;
+        let mut p = Painter::new(req.canvas)
+            .with_scale(s)
+            .with_text(text.font_system, text.swash_cache)
+            .with_origin(req.offset);
+        if !req.is_pending_selected
+            && let crate::types::AnnotationShape::Pen { points } = &pending.shape
+        {
+            annotations::draw_pen_active_tail(
+                &mut p,
+                points,
+                req.pending_pen_baked,
+                pending.color,
+                pending.stroke_width,
+            );
+        } else if !req.is_pending_selected
+            && let crate::types::AnnotationShape::Highlighter { points, flat_ends } = &pending.shape
+        {
+            annotations::draw_highlighter_live(
+                &mut p,
+                points,
+                *flat_ends,
+                pending.color,
+                pending.stroke_width,
+                dirty_rect,
+            );
+        } else {
+            annotations::draw_annotation(
+                &mut p,
+                pending,
+                false,
+                text.editors,
+                req.blurs,
+                req.active_text_id,
+            );
+        }
 
-            // blurs above the dragged annotation are opaque, so redrawing them
-            // with whatever lies on them puts it back under
-            if let Some(at) = req.dragged_index {
-                let (w, h) = (req.canvas.width() as f32, req.canvas.height() as f32);
-                let area = dirty_rect.copied().or(Rect::from_xywh(0.0, 0.0, w, h));
-                for (i, ann) in req.annotations.iter().enumerate().skip(at) {
-                    if let crate::types::AnnotationShape::Redact { start, end, .. } = &ann.shape
-                        && let Some(rect) = paths::normalized_rect(*start, *end)
-                        && let Some(local) = Rect::from_xywh(
-                            rect.x() - req.offset.0,
-                            rect.y() - req.offset.1,
-                            rect.width(),
-                            rect.height(),
-                        )
-                        && let Some(region) = area.and_then(|area| local.intersect(&area))
-                    {
-                        rebuild_annotations_layer(
-                            req.canvas,
-                            &req.annotations[i..],
-                            req.offset,
-                            text.font_system,
-                            text.swash_cache,
-                            text.editors,
-                            req.blurs,
-                            req.active_text_id,
-                            Some(region),
-                        );
-                    }
+        // blurs above the dragged annotation are opaque, so redrawing them
+        // with whatever lies on them puts it back under
+        if let Some(at) = req.dragged_index {
+            let (w, h) = p.size();
+            let area = dirty_rect.copied().or(Rect::from_xywh(0.0, 0.0, w, h));
+            for (i, ann) in req.annotations.iter().enumerate().skip(at) {
+                if let crate::types::AnnotationShape::Redact { start, end, .. } = &ann.shape
+                    && let Some(rect) = paths::normalized_rect(*start, *end)
+                    && let Some(local) = Rect::from_xywh(
+                        rect.x() - req.offset.0,
+                        rect.y() - req.offset.1,
+                        rect.width(),
+                        rect.height(),
+                    )
+                    && let Some(region) = area.and_then(|area| local.intersect(&area))
+                {
+                    rebuild_annotations_layer(
+                        &mut p,
+                        &req.annotations[i..],
+                        text.editors,
+                        req.blurs,
+                        req.active_text_id,
+                        Some(region),
+                    );
                 }
             }
         }
-        if req.is_pending_selected {
-            annotations::draw_annotation_handles_only(req.canvas, p, req.offset);
-        }
+    }
+
+    if let Some(sel) = req.selection {
+        draw_selection_border(
+            &mut Painter::new(req.canvas).with_scale(s),
+            sel,
+            req.selection_edges,
+        );
+    }
+
+    if let Some(pending) = req.pending
+        && req.is_pending_selected
+    {
+        annotations::draw_annotation_handles_only(
+            &mut Painter::new(req.canvas)
+                .with_scale(s)
+                .with_origin(req.offset),
+            pending,
+        );
     }
 
     // Dynamic selection chrome: handles for the currently selected annotation
     if let Some(idx) = req.selected_annotation
         && let Some(ann) = req.annotations.get(idx)
     {
-        annotations::draw_annotation_handles_only(req.canvas, ann, req.offset);
+        annotations::draw_annotation_handles_only(
+            &mut Painter::new(req.canvas)
+                .with_scale(s)
+                .with_origin(req.offset),
+            ann,
+        );
     }
 
     // Clipped to the dirty rect: everything the overlay paints is translucent,
     // so anything drawn outside the area just restored from `dimmed` would
     // stack a second layer on top of last frame's.
     if let Some(view) = req.ocr_view {
-        crate::ocr::draw::draw_ocr_overlay(req.canvas, view, req.offset, dirty_rect);
+        crate::ocr::draw::draw_ocr_overlay(req.canvas, view, req.offset, dirty_rect, s);
     }
 
     if let Some((region, phase)) = req.ocr_scan {
@@ -289,85 +308,56 @@ pub fn render_frame(req: &mut RenderRequest) {
             req.offset,
             req.icons_cache,
             dirty_rect,
+            s,
         );
     }
+
+    let mut p = Painter::new(req.canvas)
+        .with_scale(s)
+        .with_icons(req.icons_cache)
+        .with_text(req.text.font_system, req.text.swash_cache);
 
     if req.is_mag_monitor
         && let Some(mag) = req.magnifier
     {
-        let label = req
-            .text
-            .as_mut()
-            .filter(|_| req.mag_label)
-            .map(|text| (&mut *text.font_system, &mut *text.swash_cache));
         crate::ui::magnifier::draw_magnifier(
-            req.canvas,
+            &mut p,
             req.capture,
             (mag.pos.0 as f32, mag.pos.1 as f32),
-            label,
+            req.size,
+            req.mag_label,
         );
     }
 
     if let Some(tb) = req.toolbar.as_deref_mut()
         && tb.dirty
     {
-        crate::ui::toolbar::draw_toolbar(req.canvas, tb, req.icons_cache);
+        crate::ui::toolbar::draw_toolbar(&mut p, tb);
     }
 
     if let Some(settings) = req.settings_panel.as_deref_mut()
         && settings.dirty
-        && let Some(text) = req.text.as_mut()
     {
-        {
-            crate::ui::settings_panel::draw_settings_panel(
-                req.canvas,
-                settings,
-                req.current_color,
-                req.outline_color,
-                req.icons_cache,
-                text.font_system,
-                text.swash_cache,
-            );
-        }
+        crate::ui::settings_panel::draw_settings_panel(
+            &mut p,
+            settings,
+            req.current_color,
+            req.outline_color,
+        );
     }
     if let Some(color_picker) = req.color_picker.as_deref_mut()
         && color_picker.dirty
-        && let Some(text) = req.text.as_mut()
     {
-        {
-            crate::ui::color_popover::draw_color_popover(
-                req.canvas,
-                color_picker,
-                req.icons_cache,
-                text.font_system,
-                text.swash_cache,
-            );
-        }
+        crate::ui::color_popover::draw_color_popover(&mut p, color_picker);
     }
     if let Some(model_popover) = req.model_popover.as_deref_mut()
         && model_popover.dirty
-        && let Some(text) = req.text.as_mut()
     {
-        crate::ui::model_popover::draw_model_popover(
-            req.canvas,
-            model_popover,
-            req.icons_cache,
-            text.font_system,
-            text.swash_cache,
-        );
+        crate::ui::model_popover::draw_model_popover(&mut p, model_popover);
     }
 
-    if !req.toasts.items.is_empty()
-        && let Some(text) = req.text.as_mut()
-    {
-        crate::ui::toast::draw_toasts(
-            req.canvas,
-            req.toasts,
-            req.monitor_idx,
-            dirty_rect,
-            text.font_system,
-            text.swash_cache,
-        );
+    if !req.toasts.items.is_empty() {
+        crate::ui::toast::draw_toasts(&mut p, req.toasts, req.monitor_idx, dirty_rect);
     }
 }
 // ***************************/
@@ -392,23 +382,25 @@ fn dim_pixel() -> [u8; 4] {
     [px.red(), px.green(), px.blue(), px.alpha()]
 }
 
-pub fn init_dimming(dimmed: &mut Pixmap, selection: Option<&Rect>, edges: Option<&SelectionEdges>) {
+pub fn init_dimming(
+    dimmed: &mut Pixmap,
+    selection: Option<&Rect>,
+    edges: Option<&SelectionEdges>,
+    scale: f32,
+) {
     let px = dim_pixel();
     for d in dimmed.data_mut().as_chunks_mut::<4>().0 {
         d.copy_from_slice(&px);
     }
 
     if let Some(sel) = selection {
-        fill_rect(dimmed, sel, [0; 4]);
-        dim_hole_corners(dimmed, sel, edges);
+        fill_rect(dimmed, sel, [0; 4], scale);
+        dim_hole_corners(dimmed, sel, edges, scale);
     }
 }
 
-fn draw_selection_border(canvas: &mut Pixmap, sel: &Rect, edges: Option<&SelectionEdges>) {
+fn draw_selection_border(p: &mut Painter, sel: &Rect, edges: Option<&SelectionEdges>) {
     let cfg = &crate::config::get().selection;
-    let mut paint = Paint::default();
-    paint.set_color(cfg.border.get().color());
-    paint.anti_alias = true;
     let stroke = Stroke {
         width: cfg.border_width,
         ..Stroke::default()
@@ -432,7 +424,7 @@ fn draw_selection_border(canvas: &mut Pixmap, sel: &Rect, edges: Option<&Selecti
             edges.bottom && edges.right,
             edges.bottom && edges.left,
         ) {
-            canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+            p.stroke_path(&path, cfg.border.get(), &stroke);
         }
     }
 }
@@ -443,16 +435,15 @@ fn draw_selection_border(canvas: &mut Pixmap, sel: &Rect, edges: Option<&Selecti
 ///
 /// A corner is only rounded if both sides are visible screen edges. If the
 /// selection goes off the edge of the monitor, that corner stays flat.
-fn dim_hole_corners(canvas: &mut Pixmap, sel: &Rect, edges: Option<&SelectionEdges>) {
+fn dim_hole_corners(canvas: &mut Pixmap, sel: &Rect, edges: Option<&SelectionEdges>, scale: f32) {
     let Some(edges) = edges else { return };
     let radius = hole_radius().min(sel.width() / 2.0).min(sel.height() / 2.0);
     if radius <= 0.0 {
         return;
     }
 
-    let mut paint = Paint::default();
-    paint.set_color(crate::config::get().selection.dim.color());
-    paint.anti_alias = true;
+    let dim = crate::config::get().selection.dim;
+    let mut p = Painter::new(canvas).with_scale(scale);
 
     // corner point, then the direction the rectangle's interior lies in
     let corners = [
@@ -491,13 +482,7 @@ fn dim_hole_corners(canvas: &mut Pixmap, sel: &Rect, edges: Option<&SelectionEdg
         );
         pb.close();
         if let Some(path) = pb.finish() {
-            canvas.fill_path(
-                &path,
-                &paint,
-                tiny_skia::FillRule::Winding,
-                Transform::identity(),
-                None,
-            );
+            p.fill_path(&path, dim);
         }
     }
 }
@@ -507,19 +492,20 @@ fn update_dimming_delta(
     prev: Option<&Rect>,
     next: Option<&Rect>,
     edges: Option<&SelectionEdges>,
+    scale: f32,
 ) {
     if let Some(old) = prev {
-        fill_rect(dimmed, old, dim_pixel());
+        fill_rect(dimmed, old, dim_pixel(), scale);
     }
     if let Some(cur) = next {
-        fill_rect(dimmed, cur, [0; 4]);
-        dim_hole_corners(dimmed, cur, edges);
+        fill_rect(dimmed, cur, [0; 4], scale);
+        dim_hole_corners(dimmed, cur, edges, scale);
     }
 }
 
-fn fill_rect(pixmap: &mut Pixmap, rect: &Rect, px: [u8; 4]) {
+fn fill_rect(pixmap: &mut Pixmap, rect: &Rect, px: [u8; 4], scale: f32) {
     let (w, h) = (pixmap.width(), pixmap.height());
-    let Some((x, y, rw, rh)) = rect_bounds(rect, w, h) else {
+    let Some((x, y, rw, rh)) = scale_rect(rect, scale).and_then(|r| rect_bounds(&r, w, h)) else {
         return;
     };
 
@@ -534,9 +520,9 @@ fn fill_rect(pixmap: &mut Pixmap, rect: &Rect, px: [u8; 4]) {
     }
 }
 
-fn blit_rect(src: &Pixmap, dst: &mut Pixmap, rect: &Rect) {
+fn blit_rect(src: &Pixmap, dst: &mut Pixmap, rect: &Rect, scale: f32) {
     let (w, h) = (dst.width(), dst.height());
-    let Some((x, y, rw, rh)) = rect_bounds(rect, w, h) else {
+    let Some((x, y, rw, rh)) = scale_rect(rect, scale).and_then(|r| rect_bounds(&r, w, h)) else {
         return;
     };
 
@@ -561,9 +547,9 @@ fn blit_rect(src: &Pixmap, dst: &mut Pixmap, rect: &Rect) {
     }
 }
 
-fn blit_annotations(src: &Pixmap, dst: &mut Pixmap, rect: &Rect) {
+fn blit_annotations(src: &Pixmap, dst: &mut Pixmap, rect: &Rect, scale: f32) {
     let (w, h) = (dst.width(), dst.height());
-    let Some((x, y, rw, rh)) = rect_bounds(rect, w, h) else {
+    let Some((x, y, rw, rh)) = scale_rect(rect, scale).and_then(|r| rect_bounds(&r, w, h)) else {
         return;
     };
     let src_stride = (src.width() * 4) as usize;
@@ -639,49 +625,41 @@ fn clear_rect_transparent(layer: &mut Pixmap, rect: &Rect) {
 ///
 /// `None` indicates a full rebuild (first frame, resize, safety fallback).
 pub fn rebuild_annotations_layer(
-    layer: &mut Pixmap,
+    p: &mut Painter,
     annotations: &[Annotation],
-    offset: (f32, f32),
-    font_system: &mut FontSystem,
-    swash_cache: &mut SwashCache,
     text_editors: &mut HashMap<u64, Editor<'static>>,
     blurs: &HashMap<u64, Pixmap>,
     active_text_id: Option<u64>,
     dirty_rect: Option<Rect>,
 ) {
-    let (lw, lh) = (layer.width() as f32, layer.height() as f32);
+    let offset = p.origin;
+    let s = p.scale();
+    let (lw, lh) = p.size();
 
     let Some(base_rect) = dirty_rect.or_else(|| Rect::from_xywh(0.0, 0.0, lw, lh)) else {
         return;
     };
+    let Some(px_rect) = scale_rect(&base_rect, s) else {
+        return;
+    };
 
     if dirty_rect.is_none() {
-        clear_rect_transparent(layer, &base_rect);
+        clear_rect_transparent(p.canvas, &px_rect);
         for ann in annotations {
-            draw_annotation(
-                layer,
-                ann,
-                offset,
-                false,
-                font_system,
-                swash_cache,
-                text_editors,
-                blurs,
-                active_text_id,
-            );
+            draw_annotation(p, ann, false, text_editors, blurs, active_text_id);
         }
         return;
     }
 
-    clear_rect_transparent(layer, &base_rect);
+    clear_rect_transparent(p.canvas, &px_rect);
 
     // Determine the integer bounds of the dirty rect within the layer.
-    let lw = layer.width();
-    let lh = layer.height();
-    let x0 = (base_rect.left().floor() as i32).clamp(0, lw as i32) as u32;
-    let y0 = (base_rect.top().floor() as i32).clamp(0, lh as i32) as u32;
-    let x1 = (base_rect.right().ceil() as i32).clamp(0, lw as i32) as u32;
-    let y1 = (base_rect.bottom().ceil() as i32).clamp(0, lh as i32) as u32;
+    let lw = p.canvas.width();
+    let lh = p.canvas.height();
+    let x0 = (px_rect.left().floor() as i32).clamp(0, lw as i32) as u32;
+    let y0 = (px_rect.top().floor() as i32).clamp(0, lh as i32) as u32;
+    let x1 = (px_rect.right().ceil() as i32).clamp(0, lw as i32) as u32;
+    let y1 = (px_rect.bottom().ceil() as i32).clamp(0, lh as i32) as u32;
     let tw = x1.saturating_sub(x0);
     let th = y1.saturating_sub(y0);
 
@@ -692,7 +670,8 @@ pub fn rebuild_annotations_layer(
     let Some(mut tmp) = Pixmap::new(tw, th) else {
         return;
     };
-    let tmp_offset = (offset.0 + x0 as f32, offset.1 + y0 as f32);
+    let tmp_offset = (offset.0 + x0 as f32 / s, offset.1 + y0 as f32 / s);
+    let mut tmp_painter = p.sub(&mut tmp).with_origin(tmp_offset);
 
     for ann in annotations {
         let pad = ann.visual_pad();
@@ -707,12 +686,9 @@ pub fn rebuild_annotations_layer(
             && b > base_rect.top()
         {
             draw_annotation(
-                &mut tmp,
+                &mut tmp_painter,
                 ann,
-                tmp_offset,
                 false,
-                font_system,
-                swash_cache,
                 text_editors,
                 blurs,
                 active_text_id,
@@ -721,5 +697,5 @@ pub fn rebuild_annotations_layer(
     }
 
     // Composite the temp pixmap back into the real layer at the correct position.
-    paste(layer, &tmp, x0 as i32, y0 as i32);
+    paste(p.canvas, &tmp, x0 as i32, y0 as i32);
 }

@@ -20,7 +20,7 @@ use usvg::Tree;
 
 use crate::config::OcrLook;
 use crate::ocr::OcrView;
-use crate::renderer::paths::{draw_panel_border, draw_svg_icon, rect_bounds, rounded_rect_path};
+use crate::renderer::paths::{rect_bounds, rounded_rect_path, scale_rect};
 use crate::theme::{Rgba, color};
 use crate::ui::icons;
 
@@ -33,8 +33,9 @@ pub fn draw_ocr_overlay(
     view: &OcrView,
     offset: (f32, f32),
     clip: Option<&Rect>,
+    scale: f32,
 ) {
-    let Some(mut painter) = Painter::new(canvas, offset, clip) else {
+    let Some(mut painter) = Painter::new(canvas, offset, clip, scale) else {
         return;
     };
     let look = look();
@@ -51,18 +52,20 @@ pub fn draw_ocr_overlay(
     // reads as a box around the text rather than a tight box on it.
     let plates = view
         .block_bounds()
-        .filter_map(|bounds| pad(bounds, look.plate_pad_x, look.plate_pad_y));
+        .filter_map(|bounds| pad(bounds, look.plate_pad_x, look.plate_pad_y))
+        .filter_map(|plate| inside(plate, view.region()));
     painter.fill_union(plates, look.plate_radius, look.plate);
 
     // At least a hairline wide, so an empty span still reads as a caret.
     let spans = (0..view.lines.len()).filter_map(|i| {
         let sel = view.line_selection(i)?;
-        Rect::from_ltrb(
-            sel.x.0,
-            sel.y.0 - look.plate_pad_y,
-            sel.x.1.max(sel.x.0 + 1.0),
-            sel.y.1 + look.plate_pad_y,
-        )
+        let (mut top, mut bottom) = (sel.y.0 - look.plate_pad_y, sel.y.1 + look.plate_pad_y);
+        // (cutting the sides sometimes causes cutting a letter, and there is no need in that really)
+        if let Some(region) = view.region() {
+            top = top.max(region.top());
+            bottom = bottom.min(region.bottom());
+        }
+        Rect::from_ltrb(sel.x.0, top, sel.x.1.max(sel.x.0 + 1.0), bottom)
     });
     painter.fill_union(spans, look.selection_radius, color::text_selection());
 
@@ -80,8 +83,9 @@ pub fn draw_ocr_scan(
     offset: (f32, f32),
     icons_cache: &HashMap<&'static str, Tree>,
     clip: Option<&Rect>,
+    scale: f32,
 ) {
-    let Some(mut painter) = Painter::new(canvas, offset, clip) else {
+    let Some(mut painter) = Painter::new(canvas, offset, clip, scale) else {
         return;
     };
     let look = look();
@@ -93,15 +97,13 @@ pub fn draw_ocr_scan(
 
     let left = badge.left() - offset.0;
     let top = badge.top() - offset.1;
-    let (bx, by) = painter.to_buf((left, top));
-    draw_panel_border(&mut painter.buf, bx, by, size, size, look.badge_radius, 1.0);
-    draw_svg_icon(
-        &mut painter.buf,
-        icons_cache,
+    let mut p = painter.shared().with_icons(icons_cache);
+    p.panel_border(left, top, size, size, look.badge_radius, 1.0);
+    p.icon(
         icons::OCR,
         icon,
-        bx + (size - icon) / 2.0,
-        by + (size - icon) / 2.0,
+        left + (size - icon) / 2.0,
+        top + (size - icon) / 2.0,
         look.badge_icon.get().usvg(),
     );
 
@@ -139,20 +141,39 @@ struct Painter {
     buf: Pixmap,
     origin: (f32, f32),
     offset: (f32, f32),
+    scale: f32,
 }
 
 impl Painter {
-    fn new(canvas: &Pixmap, offset: (f32, f32), clip: Option<&Rect>) -> Option<Self> {
+    fn new(canvas: &Pixmap, offset: (f32, f32), clip: Option<&Rect>, scale: f32) -> Option<Self> {
         let (w, h) = (canvas.width(), canvas.height());
         let (x, y, cw, ch) = match clip {
-            Some(c) => rect_bounds(c, w, h)?,
+            Some(c) => rect_bounds(&scale_rect(c, scale)?, w, h)?,
             None => (0, 0, w, h),
         };
         Some(Self {
             buf: Pixmap::new(cw, ch)?,
             origin: (x as f32, y as f32),
             offset,
+            scale,
         })
+    }
+
+    fn shared(&mut self) -> crate::renderer::Painter<'_> {
+        let s = self.scale;
+        crate::renderer::Painter::new(&mut self.buf)
+            .with_scale(s)
+            .with_origin((self.origin.0 / s, self.origin.1 / s))
+    }
+
+    fn buf_rect(&self, rect: Rect) -> Option<Rect> {
+        let s = self.scale;
+        Rect::from_ltrb(
+            rect.left() * s - self.origin.0,
+            rect.top() * s - self.origin.1,
+            rect.right() * s - self.origin.0,
+            rect.bottom() * s - self.origin.1,
+        )
     }
 
     /// Fills every rectangle in one pass
@@ -164,7 +185,7 @@ impl Painter {
                 continue;
             };
             let sub = if radius > 0.0 {
-                rounded_rect_path(&rect, radius, true, true, true, true)
+                rounded_rect_path(&rect, radius * self.scale, true, true, true, true)
             } else {
                 Some(tiny_skia::PathBuilder::from_rect(rect))
             };
@@ -191,13 +212,13 @@ impl Painter {
     }
 
     fn to_buf_rect(&self, rect: Rect) -> Option<Rect> {
-        let (dx, dy) = (self.offset.0 + self.origin.0, self.offset.1 + self.origin.1);
-        let rect = Rect::from_ltrb(
+        let (dx, dy) = self.offset;
+        let rect = self.buf_rect(Rect::from_ltrb(
             rect.left() - dx,
             rect.top() - dy,
             rect.right() - dx,
             rect.bottom() - dy,
-        )?;
+        )?)?;
         let outside = rect.right() <= 0.0
             || rect.bottom() <= 0.0
             || rect.left() >= self.buf.width() as f32
@@ -218,12 +239,7 @@ impl Painter {
     }
 
     fn fill_local(&mut self, rect: Rect, radius: f32, color: Rgba) {
-        let Some(rect) = Rect::from_ltrb(
-            rect.left() - self.origin.0,
-            rect.top() - self.origin.1,
-            rect.right() - self.origin.0,
-            rect.bottom() - self.origin.1,
-        ) else {
+        let Some(rect) = self.buf_rect(rect) else {
             return;
         };
         if rect.right() <= 0.0
@@ -239,7 +255,7 @@ impl Painter {
         paint.anti_alias = radius > 0.0;
 
         let path = if radius > 0.0 {
-            rounded_rect_path(&rect, radius, true, true, true, true)
+            rounded_rect_path(&rect, radius * self.scale, true, true, true, true)
         } else {
             Some(tiny_skia::PathBuilder::from_rect(rect))
         };
@@ -254,10 +270,6 @@ impl Painter {
         );
     }
 
-    fn to_buf(&self, local: (f32, f32)) -> (f32, f32) {
-        (local.0 - self.origin.0, local.1 - self.origin.1)
-    }
-
     fn finish(self, canvas: &mut Pixmap) {
         canvas.draw_pixmap(
             self.origin.0 as i32,
@@ -267,6 +279,13 @@ impl Painter {
             Transform::identity(),
             None,
         );
+    }
+}
+
+fn inside(rect: Rect, region: Option<Rect>) -> Option<Rect> {
+    match region {
+        Some(region) => rect.intersect(&region),
+        None => Some(rect),
     }
 }
 

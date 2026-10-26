@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use wayland_client::Connection;
 
+pub const FRAME_FALLBACK: Duration = Duration::from_millis(150);
+
 #[async_trait]
 pub trait CaptureMethod: Send + Sync {
     async fn capture_frame(
@@ -85,6 +87,10 @@ pub trait ScreenOverlay: Send {
         timeout: Option<Duration>,
     ) -> Result<OverlayEvent, Box<dyn std::error::Error>>;
     fn discovered_outputs(&self) -> &[Output];
+    fn hidpi(&self) -> bool;
+    /// true once compositor has shown the last frame
+    /// or after FRAME_FALLBACK without an answer, to avoid monitor freezing
+    fn ready(&self, monitor_idx: usize) -> bool;
     fn active_output(&mut self) -> Option<usize>;
     fn retain_outputs(&mut self, keep: &[usize]) -> Result<(), Box<dyn std::error::Error>>;
     fn set_background(

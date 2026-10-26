@@ -2,11 +2,10 @@
 //
 // Layout is vertically divided into thumbnail, status text, length counter, and buttons.
 
-use cosmic_text::FontSystem;
-use tiny_skia::{Paint, Pixmap, PixmapPaint, Rect, Transform};
+use tiny_skia::{Pixmap, Rect};
 
-use crate::renderer::paths::{draw_panel_border, draw_svg_icon, rounded_rect_path};
-use crate::renderer::text::{HAlign, draw_aligned_text};
+use crate::renderer::Painter;
+use crate::renderer::text::TextStyle;
 use crate::scroll::session::ScrollSession;
 use crate::theme::{color, font, radius, size};
 use crate::ui::icons;
@@ -136,88 +135,46 @@ pub fn contains(layout: &PanelLayout, local: (f64, f64)) -> bool {
 
 /// Renders the floating control panel onto the monitor canvas.
 pub fn draw(
-    canvas: &mut Pixmap,
+    p: &mut Painter,
     session: &mut ScrollSession,
     layout: &PanelLayout,
     hovered: Option<PanelButton>,
-    font_system: &mut FontSystem,
-    swash_cache: &mut cosmic_text::SwashCache,
-    icons_cache: &std::collections::HashMap<&'static str, usvg::Tree>,
 ) {
     let cfg = &crate::config::get().toolbar;
 
-    if let Some(path) = rounded_rect_path(&layout.rect, radius::panel(), true, true, true, true) {
-        let mut paint = Paint::default();
-        paint.set_color(color::panel().color());
-        paint.anti_alias = true;
-        canvas.fill_path(
-            &path,
-            &paint,
-            tiny_skia::FillRule::Winding,
-            Transform::identity(),
-            None,
-        );
-    }
+    p.fill_rounded(layout.rect, radius::panel(), color::panel());
 
     // thumbnail clipped to bottom so latest stitched frames remain visible
     if let Some(rect) = layout.preview {
-        draw_preview(canvas, session, rect);
+        draw_preview(p, session, rect);
     }
 
     // draw status and length lines
     let small = font::small();
-    let status = fit_text(&session.status, layout.status.width(), small, font_system);
-    draw_aligned_text(
-        canvas,
-        &status,
-        font_system,
-        swash_cache,
+    let status = fit_text(p, &session.status, layout.status.width(), small);
+    p.text(
         layout.status,
-        small,
-        color::muted().color(),
-        HAlign::Left,
-        (0.0, 0.0),
-        cosmic_text::Weight::NORMAL,
-        cosmic_text::Style::Normal,
+        &status,
+        TextStyle::new(small, color::muted()),
     );
     let mut length = session.length_label();
     if session.last_append() > 0 {
         length = format!("{length}  +{}", session.last_append());
     }
     if !length.is_empty() {
-        let length = fit_text(&length, layout.length.width(), small, font_system);
-        draw_aligned_text(
-            canvas,
-            &length,
-            font_system,
-            swash_cache,
+        let length = fit_text(p, &length, layout.length.width(), small);
+        p.text(
             layout.length,
-            small,
-            color::foreground().color(),
-            HAlign::Left,
-            (0.0, 0.0),
-            cosmic_text::Weight::NORMAL,
-            cosmic_text::Style::Normal,
+            &length,
+            TextStyle::new(small, color::foreground()),
         );
     }
 
     // buttons with hover highlight
     for (button, rect) in &layout.buttons {
         let enabled = is_button_enabled(*button, session);
-        if enabled
-            && hovered == Some(*button)
-            && let Some(path) = rounded_rect_path(rect, radius::item(), true, true, true, true)
-        {
-            let mut paint = Paint::default();
-            paint.set_color(color::hover().color());
-            paint.anti_alias = true;
-            canvas.fill_path(
-                &path,
-                &paint,
-                tiny_skia::FillRule::Winding,
-                Transform::identity(),
-                None,
-            );
+        if enabled && hovered == Some(*button) {
+            p.fill_rounded(*rect, radius::item(), color::hover());
         }
 
         let svg = button_icon(*button, session);
@@ -229,11 +186,10 @@ pub fn draw(
         let icon_size = (rect.width() * 0.62).round();
         let x = rect.left() + (rect.width() - icon_size) / 2.0;
         let y = rect.top() + (rect.height() - icon_size) / 2.0;
-        draw_svg_icon(canvas, icons_cache, svg, icon_size, x, y, tint);
+        p.icon(svg, icon_size, x, y, tint);
     }
 
-    draw_panel_border(
-        canvas,
+    p.panel_border(
         layout.rect.left(),
         layout.rect.top(),
         layout.rect.width(),
@@ -244,21 +200,21 @@ pub fn draw(
 }
 
 /// Truncates text with an ellipsis if it exceeds the available width.
-fn fit_text(text: &str, width: f32, font_size: f32, font_system: &mut FontSystem) -> String {
+fn fit_text(p: &mut Painter, text: &str, width: f32, font_size: f32) -> String {
     if text.is_empty() || width <= 0.0 {
         return String::new();
     }
-    if crate::renderer::text::measure_line_width(text, font_size, font_system) <= width {
+    if p.measure(text, font_size) <= width {
         return text.to_string();
     }
 
     let ellipsis = "…";
-    let ellipsis_w = crate::renderer::text::measure_line_width(ellipsis, font_size, font_system);
+    let ellipsis_w = p.measure(ellipsis, font_size);
     let mut out = String::new();
     let mut used = 0.0;
     for ch in text.chars() {
         let probe = ch.to_string();
-        let w = crate::renderer::text::measure_line_width(&probe, font_size, font_system);
+        let w = p.measure(&probe, font_size);
         if used + w + ellipsis_w > width {
             break;
         }
@@ -270,7 +226,7 @@ fn fit_text(text: &str, width: f32, font_size: f32, font_system: &mut FontSystem
 }
 
 /// Draws thumbnail preview aligned to the bottom of rect.
-fn draw_preview(canvas: &mut Pixmap, session: &mut ScrollSession, rect: Rect) {
+fn draw_preview(p: &mut Painter, session: &mut ScrollSession, rect: Rect) {
     let Some(preview) = session.preview() else {
         return;
     };
@@ -280,6 +236,11 @@ fn draw_preview(canvas: &mut Pixmap, session: &mut ScrollSession, rect: Rect) {
         return;
     }
 
+    let s = p.scale();
+    let (left, top) = p.to_px(rect.left(), rect.top());
+    let Some(rect) = Rect::from_xywh(left, top, rect.width() * s, rect.height() * s) else {
+        return;
+    };
     let scale = rect.width() / pw;
     let drawn_h = ph * scale;
 
@@ -303,14 +264,7 @@ fn draw_preview(canvas: &mut Pixmap, session: &mut ScrollSession, rect: Rect) {
         }
     }
 
-    canvas.draw_pixmap(
-        rect.left() as i32,
-        rect.top() as i32,
-        scaled.as_ref(),
-        &PixmapPaint::default(),
-        Transform::identity(),
-        None,
-    );
+    p.draw_pixmap(rect.left() as i32, rect.top() as i32, &scaled);
 }
 
 /// Returns panel damage rectangle.

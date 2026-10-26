@@ -186,19 +186,17 @@ pub fn tick_panel_animation<P: AnimatedPanel>(
         .map(|t| now.duration_since(t))
         .unwrap_or(interval);
 
-    if elapsed < interval {
-        return;
-    }
-
-    let steps = ((elapsed.as_secs_f32() / dt).floor() as u32).clamp(1, MAX_CATCH_UP_STEPS);
+    let mut left = elapsed.as_secs_f32().min(dt * MAX_CATCH_UP_STEPS as f32);
 
     let old_render_pos = panel.render_pos();
     let mut changed = false;
 
-    for _ in 0..steps {
-        if panel.animate_step(dt) {
+    while left > 0.0 {
+        let step = left.min(dt);
+        if panel.animate_step(step) {
             changed = true;
         }
+        left -= step;
     }
     panel.set_last_tick(panel.is_animating().then_some(now));
 

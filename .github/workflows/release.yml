@@ -48,7 +48,7 @@ jobs:
             $(find target/arch -name '*.pkg.tar.zst' 2>/dev/null)
       - name: Keep as artifacts
         if: github.ref_type != 'tag'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: packages-${{ runner.arch }}
           if-no-files-found: error

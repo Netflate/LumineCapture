@@ -9,7 +9,7 @@ mod panels;
 mod scroll;
 
 use crate::backend::ScreenOverlay;
-use crate::backend::{initialize_capture, initialize_overlay};
+use crate::backend::{FRAME_FALLBACK, initialize_capture, initialize_overlay};
 use crate::editor::dirty::{apply_damage_rects, is_dirty, mark_all_dirty, mark_dirty};
 use crate::editor::{EditorState, Layers, OcrState, TextState};
 use crate::profiler::Profiler;
@@ -167,6 +167,7 @@ async fn start_capture(
     prof.mark("overlay init");
 
     let all = overlay.discovered_outputs().to_vec();
+    let hidpi = overlay.hidpi();
     let delayed = launch.shot_at.is_some();
     // with a delay the shot can't happen before the deadline anyway, so the backend is
     // created and prepared in advance (on KDE that's connecting to the session bus).
@@ -194,7 +195,7 @@ async fn start_capture(
         prof.mark("active output probed");
     }
     let layers_handle = {
-        let placements = init::build_placements(&outputs);
+        let placements = init::build_placements(&outputs, hidpi);
         std::thread::spawn(move || init::build_layers(&placements))
     };
     // with delay window is created only after the shot, since at least
@@ -224,7 +225,7 @@ async fn start_capture(
     let outputs: Vec<_> = kept.iter().map(|&i| outputs[i].clone()).collect();
 
     let captures = init::build_captures(screenshots.frames)?;
-    let placements = init::build_placements(&outputs);
+    let placements = init::build_placements(&outputs, hidpi);
     let layers = layers_handle.join().expect("Failed to join layers thread");
     let (canvas, dimmed, annotations) = if kept.iter().copied().eq(0..kept.len()) && !shrunk {
         layers
@@ -299,6 +300,7 @@ fn run_overlay(
     overlay: &mut Box<dyn ScreenOverlay>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let mut dirty_mask: u32 = 0;
+    let mut pacing = Pacing::new(editor_state.captures.len());
     let mut annotations_were_hidden = false;
     // wayland on COSMIC unlike KDE doesn't immediately send pointer event
     let mut pointer_wait = Some(Instant::now() + POINTER_GRACE);
@@ -308,6 +310,12 @@ fn run_overlay(
         if let Some(deadline) = pointer_wait {
             let left = deadline.saturating_duration_since(Instant::now());
             timeout = Some(timeout.map_or(left, |t| t.min(left)));
+        }
+        // wake up by the fallback even if no other event ever comes
+        let waiting = (0..editor_state.captures.len())
+            .any(|i| (is_dirty(dirty_mask, i) || pacing.owes_to(i)) && !overlay.ready(i));
+        if waiting {
+            timeout = Some(timeout.map_or(FRAME_FALLBACK, |t| t.min(FRAME_FALLBACK)));
         }
         poll_background_work(editor_state, &mut dirty_mask);
 
@@ -357,14 +365,18 @@ fn run_overlay(
             damage_hidden_annotations(editor_state, &mut dirty_mask);
         }
 
-        if dirty_mask != 0 {
+        // pass only when someone can show it
+        let drawable = (0..editor_state.captures.len())
+            .any(|i| (is_dirty(dirty_mask, i) || pacing.owes_to(i)) && overlay.ready(i));
+        if drawable {
             render_dirty_monitors(
                 editor_state,
                 overlay.as_mut(),
                 dirty_mask,
                 annotations_hidden,
+                &mut pacing,
             )?;
-            clear_frame_state(editor_state, &mut dirty_mask);
+            clear_frame_state(editor_state, &mut dirty_mask, &pacing);
         }
     }
 
@@ -407,7 +419,10 @@ fn poll_background_work(editor_state: &mut EditorState, dirty_mask: &mut u32) {
 
 fn handle_event(editor_state: &mut EditorState, ev: OverlayEvent, dirty_mask: &mut u32) {
     match ev {
-        OverlayEvent::Tick | OverlayEvent::EscapePressed | OverlayEvent::Focus { .. } => {}
+        OverlayEvent::Tick
+        | OverlayEvent::EscapePressed
+        | OverlayEvent::Focus { .. }
+        | OverlayEvent::FrameDone { .. } => {}
         OverlayEvent::PointerMove { monitor_idx, x, y } => {
             input::handle_pointer_move(editor_state, monitor_idx, x, y, dirty_mask);
         }
@@ -490,9 +505,51 @@ fn damage_hidden_annotations(editor_state: &mut EditorState, dirty_mask: &mut u3
     }
 }
 
+/// what has to be redrawed
+#[derive(Clone, Copy)]
+enum Redraw {
+    Area(Rect),
+    Whole,
+}
+
+impl Redraw {
+    fn join(self, other: Redraw) -> Redraw {
+        match (self, other) {
+            (Redraw::Area(a), Redraw::Area(b)) => a.join(&b).map_or(Redraw::Whole, Redraw::Area),
+            _ => Redraw::Whole,
+        }
+    }
+
+    fn area(self) -> Option<Rect> {
+        match self {
+            Redraw::Area(rect) => Some(rect),
+            Redraw::Whole => None,
+        }
+    }
+}
+
+/// every monitor draws on its own frame callbacks
+/// until then the damage piles up in `owed`
+struct Pacing {
+    owed: Vec<Option<Redraw>>,
+    dimmed_for: Vec<Option<Rect>>,
+}
+
+impl Pacing {
+    fn new(monitors: usize) -> Self {
+        Self {
+            owed: vec![None; monitors],
+            dimmed_for: vec![None; monitors],
+        }
+    }
+
+    fn owes_to(&self, monitor_idx: usize) -> bool {
+        self.owed[monitor_idx].is_some()
+    }
+}
+
 /// What every monitor of one frame draws from.
 struct Frame {
-    selection_dirty: bool,
     active_text_id: Option<u64>,
     scan_badge: Option<(Rect, f32)>,
     current_color: tiny_skia::Color,
@@ -505,9 +562,9 @@ fn render_dirty_monitors(
     overlay: &mut dyn ScreenOverlay,
     mut dirty_mask: u32,
     annotations_hidden: bool,
+    pacing: &mut Pacing,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let frame = Frame {
-        selection_dirty: editor_state.selection.zone != editor_state.selection.prev_zone,
         active_text_id: editor_state.text.editing.as_ref().map(|e| e.annotation_id),
         scan_badge: editor_state.ocr.scan_started.and_then(|started| {
             Some((
@@ -522,10 +579,29 @@ fn render_dirty_monitors(
     editor_state.refresh_blurs(&mut dirty_mask);
 
     for i in 0..editor_state.captures.len() {
-        if !is_dirty(dirty_mask, i) {
+        if is_dirty(dirty_mask, i) {
+            rebuild_layer(editor_state, i, &frame);
+            let area = editor_state
+                .monitor_dirty_rect(i)
+                .map_or(Redraw::Whole, Redraw::Area);
+            pacing.owed[i] = Some(pacing.owed[i].map_or(area, |owed| owed.join(area)));
+        }
+        let Some(owed) = pacing.owed[i] else {
+            continue;
+        };
+        // the layer is rebuilt right away, as its damage will be cleared afterwards
+        // (only the composite and the commit wait for the frame callback)
+        if !overlay.ready(i) {
             continue;
         }
-        let damage = render_monitor(editor_state, i, &frame);
+        pacing.owed[i] = None;
+        let damage = render_monitor(
+            editor_state,
+            i,
+            &frame,
+            owed.area(),
+            &mut pacing.dimmed_for[i],
+        );
         overlay.stage_frame(i, editor_state.canvas[i].data(), damage)?;
     }
     overlay.flush()?;
@@ -533,8 +609,36 @@ fn render_dirty_monitors(
     Ok(())
 }
 
+fn rebuild_layer(editor_state: &mut EditorState, i: usize, frame: &Frame) {
+    let layer_dirty = editor_state.monitor_layer_dirty_rect(i);
+    if layer_dirty.is_none() && !editor_state.annotations_dirty {
+        return;
+    }
+    let placement = &editor_state.placements[i];
+    renderer::rebuild_annotations_layer(
+        &mut renderer::Painter::new(&mut editor_state.annotations_layer[i])
+            .with_scale(placement.scale)
+            .with_text(
+                &mut editor_state.text.font_system,
+                &mut editor_state.text.swash_cache,
+            )
+            .with_origin(placement.offset()),
+        &editor_state.annotations,
+        &mut editor_state.text.editors,
+        &editor_state.blur.cache,
+        frame.active_text_id,
+        layer_dirty,
+    );
+}
+
 /// Draws one monitor's canvas and returns the region that changed
-fn render_monitor(editor_state: &mut EditorState, i: usize, frame: &Frame) -> Option<DamageRect> {
+fn render_monitor(
+    editor_state: &mut EditorState,
+    i: usize,
+    frame: &Frame,
+    dirty_rect: Option<Rect>,
+    dimmed_for: &mut Option<Rect>,
+) -> Option<DamageRect> {
     // No loupe while reading text: it sits right where the
     // pointer is selecting and hides the line under it.
     let picking = editor_state.picking();
@@ -546,33 +650,23 @@ fn render_monitor(editor_state: &mut EditorState, i: usize, frame: &Frame) -> Op
             .as_ref()
             .is_some_and(|m| m.monitor_idx == i);
 
-    let (local_sel, prev_local, edges) = selection_render_info(
-        &editor_state.selection.zone,
-        &editor_state.selection.prev_zone,
-        &editor_state.placements[i],
-    );
+    // to not redraw the whole dim layer on every frame, only the changed part is redrawn;
+    // that's why each monitor has to remember its own previous selection,
+    // to compare the new one against it
+    //
+    // (a monitor may skip frames, so the shared prev_zone can be outdated for it)
+    let zone = editor_state.selection.zone;
+    let (local_sel, prev_local, edges) =
+        selection_render_info(&zone, dimmed_for, &editor_state.placements[i]);
+    let selection_dirty = *dimmed_for != zone;
+    *dimmed_for = zone;
 
-    let dirty_rect = editor_state.monitor_dirty_rect(i);
-    let layer_dirty = editor_state.monitor_layer_dirty_rect(i);
     let offset = editor_state.placements[i].offset();
-
-    if layer_dirty.is_some() || editor_state.annotations_dirty {
-        renderer::rebuild_annotations_layer(
-            &mut editor_state.annotations_layer[i],
-            &editor_state.annotations,
-            offset,
-            &mut editor_state.text.font_system,
-            &mut editor_state.text.swash_cache,
-            &mut editor_state.text.editors,
-            &editor_state.blur.cache,
-            frame.active_text_id,
-            layer_dirty,
-        );
-    }
+    let scale = editor_state.placements[i].scale;
 
     let damage = dirty_rect.as_ref().and_then(|r| {
         renderer::rect_bounds(
-            r,
+            &renderer::scale_rect(r, scale)?,
             editor_state.canvas[i].width(),
             editor_state.canvas[i].height(),
         )
@@ -594,7 +688,7 @@ fn render_monitor(editor_state: &mut EditorState, i: usize, frame: &Frame) -> Op
         selection: local_sel.as_ref(),
         prev_selection: prev_local.as_ref(),
         dirty_rect: dirty_rect.as_ref(),
-        selection_dirty: frame.selection_dirty,
+        selection_dirty,
         selection_edges: edges.as_ref(),
         magnifier: editor_state.magnifier.current.as_ref(),
         mag_label: picking,
@@ -622,11 +716,11 @@ fn render_monitor(editor_state: &mut EditorState, i: usize, frame: &Frame) -> Op
         selected_annotation: editor_state.selected_annotation.filter(|_| !hidden),
         annotations: &editor_state.annotations,
         blurs: &editor_state.blur.cache,
-        text: Some(renderer::TextContext {
+        text: renderer::TextContext {
             font_system: &mut editor_state.text.font_system,
             swash_cache: &mut editor_state.text.swash_cache,
             editors: &mut editor_state.text.editors,
-        }),
+        },
         active_text_id: frame.active_text_id,
 
         ocr_view: (editor_state.selected_tool == Tool::Ocr && editor_state.ocr.view.is_active())
@@ -634,22 +728,38 @@ fn render_monitor(editor_state: &mut EditorState, i: usize, frame: &Frame) -> Op
         ocr_scan: frame.scan_badge,
         monitor_idx: i,
         toasts: &editor_state.toasts,
+        size: (
+            editor_state.placements[i].size.0 as f32,
+            editor_state.placements[i].size.1 as f32,
+        ),
+        scale,
     });
 
     damage
 }
 
 /// Everything the next frame starts from a clean slate.
-fn clear_frame_state(editor_state: &mut EditorState, dirty_mask: &mut u32) {
+fn clear_frame_state(editor_state: &mut EditorState, dirty_mask: &mut u32, pacing: &Pacing) {
     editor_state.selection.prev_zone = editor_state.selection.zone;
     editor_state.prev_pending = editor_state.pending.clone();
+    // set per pointer move it could point at a spot never drawn (several moves per frame)
+    editor_state.magnifier.prev = editor_state.magnifier.current;
     editor_state.annotations_dirty = false;
     editor_state.damage_rects.clear();
     editor_state.layer_damage_rects.clear();
-    editor_state.toolbar.dirty = false;
-    editor_state.settings_panel.dirty = false;
-    editor_state.color_popover.dirty = false;
-    editor_state.model_popover.dirty = false;
+    let drawn = |monitor_idx: usize| !pacing.owes_to(monitor_idx);
+    if drawn(editor_state.toolbar.monitor_idx) {
+        editor_state.toolbar.dirty = false;
+    }
+    if drawn(editor_state.settings_panel.monitor_idx) {
+        editor_state.settings_panel.dirty = false;
+    }
+    if drawn(editor_state.color_popover.monitor_idx) {
+        editor_state.color_popover.dirty = false;
+    }
+    if drawn(editor_state.model_popover.monitor_idx) {
+        editor_state.model_popover.dirty = false;
+    }
     *dirty_mask = 0;
 }
 
@@ -734,12 +844,14 @@ pub(crate) fn render_final(editor_state: &mut EditorState) -> Option<(Vec<u8>, (
             (&scaled, &mut scaled_editors)
         };
         renderer::draw_annotation(
-            &mut out,
+            &mut renderer::Painter::new(&mut out)
+                .with_text(
+                    &mut editor_state.text.font_system,
+                    &mut editor_state.text.swash_cache,
+                )
+                .with_origin(offset),
             ann,
-            offset,
             false,
-            &mut editor_state.text.font_system,
-            &mut editor_state.text.swash_cache,
             editors,
             &in_place,
             None,
