@@ -9,6 +9,7 @@ use crate::ui::text_field::LineEditState;
 pub enum HAlign {
     Left,
     Center,
+    Right,
 }
 
 pub fn shape_single_line(
@@ -191,6 +192,7 @@ impl Painter<'_> {
         let px = match style.align {
             HAlign::Left => rect.left(),
             HAlign::Center => rect.left() + (rect.width() - text_w) / 2.0,
+            HAlign::Right => rect.right() - text_w,
         };
         let py = rect.top() + (rect.height() - text_h) / 2.0;
 

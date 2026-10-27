@@ -27,6 +27,10 @@ pub const TRASH: &str = include_str!("../../assets/icons/trash.svg");
 pub const CHECK: &str = include_str!("../../assets/icons/check.svg");
 pub const PIN: &str = include_str!("../../assets/icons/pin.svg");
 pub const SAVE: &str = include_str!("../../assets/icons/save.svg");
+pub const SCROLL: &str = include_str!("../../assets/icons/scroll.svg");
+pub const SCROLL_HORIZONTAL: &str = include_str!("../../assets/icons/scroll_horizontal.svg");
+pub const SCROLL_PAUSE: &str = include_str!("../../assets/icons/scroll_pause.svg");
+pub const SCROLL_RESUME: &str = include_str!("../../assets/icons/scroll_resume.svg");
 
 /// used in the toolbar
 pub fn get_svg_for_tool(tool: Tool) -> (&'static str, f32) {
@@ -59,7 +63,23 @@ pub fn get_svg_for_finish(finish: Finish) -> (&'static str, f32) {
 
 /// icons besides tools
 pub const EXTRA_ICONS: &[&str] = &[
-    ITALIC, BOLD, BLURRED, PIXELATED, RETRY, COPY, GLOBE, DOWNLOAD, CLOSE, TRASH, CHECK, PIN, SAVE,
+    ITALIC,
+    BOLD,
+    BLURRED,
+    PIXELATED,
+    RETRY,
+    COPY,
+    GLOBE,
+    DOWNLOAD,
+    CLOSE,
+    TRASH,
+    CHECK,
+    PIN,
+    SAVE,
+    SCROLL,
+    SCROLL_HORIZONTAL,
+    SCROLL_PAUSE,
+    SCROLL_RESUME,
 ];
 
 #[cfg(test)]

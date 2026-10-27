@@ -31,6 +31,7 @@
 - **Speed.** Starts instantly. The project is built with a focus on speed and optimization and avoids heavy libraries. You can see the comparison with Flameshot & Spectacle with benchmarks [here](#speed-comparison-luminecapture-vs-flameshot-vs-spectacle).
 - **Functionality.** :
   - OCR: fast text scanning, with the option to download and choose a specific model
+  - Scrolling capture: stitch a page you scroll into one long image.
   - Pin
   - Color picker
   - Basic annotations: pen, highlighter, line, arrow, rectangle, circle, numbered arrows, text, redact (blur or pixelate)

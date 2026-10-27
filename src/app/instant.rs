@@ -5,7 +5,8 @@ use crate::profiler::Profiler;
 use crate::renderer;
 use crate::utils::{encode_png, encode_png_with_alpha, get_full_workspace_rect};
 
-use super::{Launch, delay, deliver, init};
+use super::finish::deliver;
+use super::{Launch, delay, init};
 
 type Result = std::result::Result<(), Box<dyn std::error::Error>>;
 

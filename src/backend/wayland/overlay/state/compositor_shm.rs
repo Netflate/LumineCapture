@@ -111,6 +111,9 @@ impl OverlayState {
             }
         };
 
+        // apply configured input region with the first frame after mapping
+        sd.mapped = true;
+        sd.apply_input(&self.compositor_state);
         // viewport maps buffer, which is is in physical pixels, back to the logical size
         if let Some(viewport) = &sd.viewport {
             viewport.set_destination(w as i32, h as i32);

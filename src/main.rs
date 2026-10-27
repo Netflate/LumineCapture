@@ -9,6 +9,7 @@ pub mod logging;
 pub mod ocr;
 pub mod profiler;
 pub mod renderer;
+pub mod scroll;
 pub mod theme;
 pub mod tools;
 pub mod types;
@@ -31,6 +32,9 @@ Modes (without one, the editor opens):
                        it doesn't show any scanning progress: it closes, and when the scan
                        finishes, shows a notification with the outcome.
                        Recommended to use with -t, see below
+  -S, --scroll         Start in scrolling capture: pick a region, scroll the page, and
+                       the frames are stitched into one long image. Enter saves it,
+                       Escape cancels
 
 Options:
   -m, --monitor        Only the monitor under the pointer
@@ -81,11 +85,12 @@ fn parse_launch(
         (pargs.contains(["-f", "--full"]), types::Mode::Full),
         (pargs.contains(["-w", "--window"]), types::Mode::Window),
         (pargs.contains(["-r", "--region"]), types::Mode::Region),
+        (pargs.contains(["-S", "--scroll"]), types::Mode::Scroll),
     ];
     let mut picked = modes.iter().filter(|(on, _)| *on).map(|(_, mode)| *mode);
     let mode = picked.next().unwrap_or_default();
     if picked.next().is_some() {
-        return Err("pick one mode: --full, --window or --region".into());
+        return Err("pick one mode: --full, --window, --region or --scroll".into());
     }
     let one_monitor = pargs.contains(["-m", "--monitor"]);
     let output =
