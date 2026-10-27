@@ -208,7 +208,7 @@ git clone https://github.com/Netflate/LumineCapture && cd LumineCapture/packagin
 
 **aerynOS**
 ```sh
-sudo moss it lumine-capture
+sudo moss pad lumine-capture
 ```
 
 ## Speed Comparison (LumineCapture vs Flameshot vs Spectacle)
