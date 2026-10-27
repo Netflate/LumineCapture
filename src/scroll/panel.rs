@@ -124,15 +124,6 @@ pub fn hit_test(layout: &PanelLayout, local: (f64, f64)) -> Option<PanelButton> 
     None
 }
 
-/// Checks if pointer falls within panel bounds.
-pub fn contains(layout: &PanelLayout, local: (f64, f64)) -> bool {
-    let (px, py) = (local.0 as f32, local.1 as f32);
-    px >= layout.rect.left()
-        && px <= layout.rect.right()
-        && py >= layout.rect.top()
-        && py <= layout.rect.bottom()
-}
-
 /// Renders the floating control panel onto the monitor canvas.
 pub fn draw(
     p: &mut Painter,
@@ -265,11 +256,6 @@ fn draw_preview(p: &mut Painter, session: &mut ScrollSession, rect: Rect) {
     }
 
     p.draw_pixmap(rect.left() as i32, rect.top() as i32, &scaled);
-}
-
-/// Returns panel damage rectangle.
-pub fn damage_rect(layout: &PanelLayout) -> Rect {
-    layout.rect
 }
 
 /// Returns whether a panel button is currently interactable.

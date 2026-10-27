@@ -3,15 +3,12 @@
 pub mod frame;
 pub mod panel;
 pub mod preview;
-pub mod scrub;
 pub mod session;
 
 #[cfg(test)]
 mod frame_tests;
 #[cfg(test)]
 mod panel_tests;
-#[cfg(test)]
-mod scrub_tests;
 #[cfg(test)]
 mod session_tests;
 

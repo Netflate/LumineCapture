@@ -28,7 +28,6 @@ pub const CHECK: &str = include_str!("../../assets/icons/check.svg");
 pub const PIN: &str = include_str!("../../assets/icons/pin.svg");
 pub const SAVE: &str = include_str!("../../assets/icons/save.svg");
 pub const SCROLL: &str = include_str!("../../assets/icons/scroll.svg");
-pub const SCROLL_AXIS: &str = include_str!("../../assets/icons/scroll_axis.svg");
 pub const SCROLL_HORIZONTAL: &str = include_str!("../../assets/icons/scroll_horizontal.svg");
 pub const SCROLL_PAUSE: &str = include_str!("../../assets/icons/scroll_pause.svg");
 pub const SCROLL_RESUME: &str = include_str!("../../assets/icons/scroll_resume.svg");
@@ -78,7 +77,6 @@ pub const EXTRA_ICONS: &[&str] = &[
     PIN,
     SAVE,
     SCROLL,
-    SCROLL_AXIS,
     SCROLL_HORIZONTAL,
     SCROLL_PAUSE,
     SCROLL_RESUME,

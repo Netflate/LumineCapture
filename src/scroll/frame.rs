@@ -1,6 +1,5 @@
 // Cropping frames for scrolling capture from screen buffers into stitcher images.
 
-use crate::scroll::scrub;
 use crate::types::MonitorFrame;
 use shot_image::Image;
 
@@ -34,9 +33,6 @@ pub fn crop(frame: &MonitorFrame, rect: (u32, u32, u32, u32)) -> Result<Image, S
             }),
         );
     }
-
-    // scrub border lines that may have been captured from selection UI
-    scrub::apply(&mut pixels, w as i32, h as i32);
 
     Image::from_pixels(w as i32, h as i32, pixels).map_err(|e| e.to_string())
 }

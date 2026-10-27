@@ -21,9 +21,6 @@ pub struct Background {
     pub surface: wl_surface::WlSurface,
     pub viewport: Option<wp_viewport::WpViewport>,
     pub buffer: ShmBuffer,
-    /// Buffer dimensions in pixels; required to damage full buffer upon restore.
-    pub buffer_width: u32,
-    pub buffer_height: u32,
 }
 
 impl Drop for Background {

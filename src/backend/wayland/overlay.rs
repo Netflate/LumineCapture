@@ -450,8 +450,6 @@ impl ScreenOverlay for WaylandOverlay {
             surface,
             viewport,
             buffer,
-            buffer_width: width,
-            buffer_height: height,
         });
         Ok(())
     }
