@@ -210,6 +210,15 @@ git clone https://github.com/Netflate/LumineCapture && cd LumineCapture/packagin
 sudo moss it lumine-capture
 ```
 
+**NixOS / Flakes**
+```sh
+nix run github:Netflate/LumineCapture
+```
+Or add as a flake input to your configuration:
+```nix
+inputs.lumine-capture.url = "github:Netflate/LumineCapture";
+```
+
 ## Speed Comparison (LumineCapture vs Flameshot vs Spectacle)
 > every test ran on a dual-monitor setup, so each screenshot covered the whole workspace (both screens), which made every run a bit slower. Compare the tools with each other rather than looking at the absolute numbers.
 

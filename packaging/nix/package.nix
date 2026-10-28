@@ -37,7 +37,6 @@ stdenv.mkDerivation {
     pipewire
   ];
 
-  # Not in DT_NEEDED, but the GUI/GPU stack may dlopen these at runtime
   runtimeDependencies = [
     wayland
     libGL
@@ -59,7 +58,6 @@ stdenv.mkDerivation {
     install -Dm644 usr/share/applications/lumine-capture.desktop \
       $out/share/applications/lumine-capture.desktop
     substituteInPlace $out/share/applications/lumine-capture.desktop \
-      --replace-fail 'Name=LumineCapture' 'Name=Lumine Capture' \
       --replace-fail 'Exec=/usr/bin/lumine-capture' "Exec=$out/bin/lumine-capture"
 
     cp -r usr/share/icons $out/share/

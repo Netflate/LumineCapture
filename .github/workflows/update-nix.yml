@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: nix-update
+  cancel-in-progress: false
+
 jobs:
   update:
     runs-on: ubuntu-latest
@@ -27,9 +31,6 @@ jobs:
           TAG: ${{ github.event.release.tag_name }}
         run: ./scripts/update-nix.sh "$TAG"
 
-      - name: Update flake.lock
-        run: nix flake update
-
       - name: Build
         run: nix build .#lumine-capture --print-build-logs
 
@@ -42,6 +43,6 @@ jobs:
           version=$(grep -oP '^\s*version = "\K[^"]+' packaging/nix/package.nix)
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -am "nix: update to $version"
+          git commit -m "nix: update to $version" packaging/nix/package.nix
           git pull --rebase
           git push
