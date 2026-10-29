@@ -47,8 +47,7 @@ pub enum Role {
 pub enum InputRegion {
     #[default]
     Full,
-    Rect(i32, i32, i32, i32),
-    Nothing,
+    Hole(crate::backend::InputHole),
 }
 
 pub struct SurfaceData {
@@ -78,10 +77,10 @@ impl SurfaceData {
     pub fn apply_input(&self, compositor: &CompositorState) {
         match self.input {
             InputRegion::Full => self.surface.set_input_region(None),
-            InputRegion::Rect(x, y, w, h) => {
-                input::apply_input_region(compositor, &self.surface, Some((x, y, w, h)))
+            InputRegion::Hole(hole) => {
+                let size = (self.width as i32, self.height as i32);
+                input::apply_input_hole(compositor, &self.surface, size, hole)
             }
-            InputRegion::Nothing => input::apply_input_region(compositor, &self.surface, None),
         }
     }
 }

@@ -103,9 +103,15 @@ pub trait ScreenOverlay: Send {
     fn set_cursor(&mut self, icon: CursorIcon);
     /// Drops the static snapshot subsurface on `monitor_idx` to expose the live screen beneath.
     fn clear_background(&mut self, monitor_idx: usize) -> Result<(), Box<dyn std::error::Error>>;
-    /// Sets the input region on `monitor_idx` to `rect`, or allows all pointer events
-    /// to fall through to windows beneath when `None`.
-    fn set_input_rect(&mut self, monitor_idx: usize, rect: Option<(i32, i32, i32, i32)>);
+    /// lets the pointer fall through `hole` to the window beneath, `None` takes all input back
+    fn set_input_hole(&mut self, monitor_idx: usize, hole: Option<InputHole>);
+}
+
+/// `keep` stays with the overlay even inside the hole (a panel squeezed into the region)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InputHole {
+    pub hole: (i32, i32, i32, i32),
+    pub keep: Option<(i32, i32, i32, i32)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]

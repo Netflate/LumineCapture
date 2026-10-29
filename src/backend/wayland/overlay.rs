@@ -472,16 +472,12 @@ impl ScreenOverlay for WaylandOverlay {
         Ok(())
     }
 
-    fn set_input_rect(&mut self, monitor_idx: usize, rect: Option<(i32, i32, i32, i32)>) {
+    fn set_input_hole(&mut self, monitor_idx: usize, hole: Option<crate::backend::InputHole>) {
         let rt = &mut self.runtime;
         let Some(sd) = rt.state.surfaces.get_mut(&monitor_idx) else {
             return;
         };
-        // empty input region lets clicks and wheel pass through to the window below
-        sd.input = match rect {
-            Some((x, y, w, h)) => InputRegion::Rect(x, y, w, h),
-            None => InputRegion::Nothing,
-        };
+        sd.input = hole.map_or(InputRegion::Full, InputRegion::Hole);
 
         // unmapped surfaces cannot commit state; defer until configure
         if !sd.mapped {

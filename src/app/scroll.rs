@@ -9,7 +9,7 @@ use log::info;
 use std::time::{Duration, Instant};
 
 use crate::backend::CaptureMethod;
-use crate::backend::ScreenOverlay;
+use crate::backend::{InputHole, ScreenOverlay};
 use crate::editor::EditorState;
 use crate::renderer::Painter;
 use crate::scroll::frame;
@@ -60,7 +60,8 @@ pub async fn run(
     // drop the static snapshot so the live page shows through;
     // confine overlay input strictly to the panel rectangle
     overlay.clear_background(monitor_idx)?;
-    overlay.set_input_rect(monitor_idx, panel_input_rect(&run));
+    let size = placement.size;
+    overlay.set_input_hole(monitor_idx, panel_input_hole(&run, size));
     paint(editor_state, &mut run, overlay.as_mut())?;
 
     let capture = crate::backend::initialize_capture(conn);
@@ -231,18 +232,22 @@ fn paint(
     overlay.flush()?;
 
     // keep input region in sync with panel position
-    overlay.set_input_rect(idx, panel_input_rect(run));
+    let size = placement.size;
+    overlay.set_input_hole(idx, panel_input_hole(run, size));
     Ok(())
 }
 
-fn panel_input_rect(run: &ScrollRun) -> Option<(i32, i32, i32, i32)> {
+fn panel_input_hole(run: &ScrollRun, (width, height): (i32, i32)) -> Option<InputHole> {
     let rect = run.layout.rect;
-    Some((
-        rect.left() as i32,
-        rect.top() as i32,
-        rect.width() as i32,
-        rect.height() as i32,
-    ))
+    Some(InputHole {
+        hole: (0, 0, width, height),
+        keep: Some((
+            rect.left() as i32,
+            rect.top() as i32,
+            rect.width() as i32,
+            rect.height() as i32,
+        )),
+    })
 }
 
 fn finish(run: &mut ScrollRun) -> Result<Option<Vec<u8>>, Box<dyn std::error::Error>> {

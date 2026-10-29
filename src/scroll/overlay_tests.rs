@@ -38,7 +38,13 @@ fn overlay_keeps_a_visible_panel_while_capturing() {
             overlay
                 .stage_frame(0, &canvas, None)
                 .unwrap_or_else(|e| panic!("round {round}: stage failed: {e}"));
-            overlay.set_input_rect(0, Some((10, 10, 40, 30)));
+            overlay.set_input_hole(
+                0,
+                Some(crate::backend::InputHole {
+                    hole: (10, 10, 40, 30),
+                    keep: None,
+                }),
+            );
 
             let shot = capture.capture_frame(&outputs[..1]).await;
             assert!(shot.is_ok(), "round {round}: capture failed");
