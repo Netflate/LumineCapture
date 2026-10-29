@@ -75,6 +75,8 @@ pub struct RenderRequest<'a> {
     /// recognition is working
     pub ocr_scan: Option<(Rect, f32)>,
     pub monitor_idx: usize,
+    /// annotations stay inside it, local
+    pub clip: Option<&'a Rect>,
     pub toasts: &'a crate::ui::toast::Toasts,
     /// logical size of the monitor; canvas / scale is off by a fraction,
     /// and the loupe would flip at another spot than its damage does
@@ -262,6 +264,12 @@ pub fn render_frame(req: &mut RenderRequest) {
         }
     }
 
+    // with a clip the handles go under the border
+    if let Some(clip) = req.clip {
+        draw_handles(req);
+        restore_outside(req.dimmed, req.canvas, clip, dirty_rect, s);
+    }
+
     if let Some(sel) = req.selection {
         draw_selection_border(
             &mut Painter::new(req.canvas).with_scale(s),
@@ -270,27 +278,8 @@ pub fn render_frame(req: &mut RenderRequest) {
         );
     }
 
-    if let Some(pending) = req.pending
-        && req.is_pending_selected
-    {
-        annotations::draw_annotation_handles_only(
-            &mut Painter::new(req.canvas)
-                .with_scale(s)
-                .with_origin(req.offset),
-            pending,
-        );
-    }
-
-    // Dynamic selection chrome: handles for the currently selected annotation
-    if let Some(idx) = req.selected_annotation
-        && let Some(ann) = req.annotations.get(idx)
-    {
-        annotations::draw_annotation_handles_only(
-            &mut Painter::new(req.canvas)
-                .with_scale(s)
-                .with_origin(req.offset),
-            ann,
-        );
+    if req.clip.is_none() {
+        draw_handles(req);
     }
 
     // Clipped to the dirty rect: everything the overlay paints is translucent,
@@ -360,6 +349,70 @@ pub fn render_frame(req: &mut RenderRequest) {
         crate::ui::toast::draw_toasts(&mut p, req.toasts, req.monitor_idx, dirty_rect);
     }
 }
+
+fn draw_handles(req: &mut RenderRequest) {
+    if let Some(pending) = req.pending
+        && req.is_pending_selected
+    {
+        annotations::draw_annotation_handles_only(
+            &mut Painter::new(req.canvas)
+                .with_scale(req.scale)
+                .with_origin(req.offset),
+            pending,
+        );
+    }
+
+    // Dynamic selection chrome: handles for the currently selected annotation
+    if let Some(idx) = req.selected_annotation
+        && let Some(ann) = req.annotations.get(idx)
+    {
+        annotations::draw_annotation_handles_only(
+            &mut Painter::new(req.canvas)
+                .with_scale(req.scale)
+                .with_origin(req.offset),
+            ann,
+        );
+    }
+}
+
+/// puts the base back everywhere around `clip` that this frame redraws
+fn restore_outside(
+    base: &Pixmap,
+    canvas: &mut Pixmap,
+    clip: &Rect,
+    dirty: Option<&Rect>,
+    scale: f32,
+) {
+    let whole = Rect::from_xywh(
+        0.0,
+        0.0,
+        canvas.width() as f32 / scale,
+        canvas.height() as f32 / scale,
+    );
+    let Some(area) = dirty.copied().or(whole) else {
+        return;
+    };
+    const HAIR: f32 = 0.01;
+    let (l, t, r, b) = (area.left(), area.top(), area.right(), area.bottom());
+    let (cl, ct) = (
+        (clip.left() - HAIR).clamp(l, r),
+        (clip.top() - HAIR).clamp(t, b),
+    );
+    let (cr, cb) = (
+        (clip.right() + HAIR).clamp(l, r),
+        (clip.bottom() + HAIR).clamp(t, b),
+    );
+    let strips = [
+        Rect::from_ltrb(l, t, r, ct),
+        Rect::from_ltrb(l, cb, r, b),
+        Rect::from_ltrb(l, ct, cl, cb),
+        Rect::from_ltrb(cr, ct, r, cb),
+    ];
+    for strip in strips.iter().flatten() {
+        blit_rect(base, canvas, strip, scale);
+    }
+}
+
 // ***************************/
 /// SELECTION + DIMMING  ////
 // **************************/

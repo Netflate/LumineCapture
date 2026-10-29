@@ -727,6 +727,7 @@ fn render_monitor(
             .then_some(&editor_state.ocr.view),
         ocr_scan: frame.scan_badge,
         monitor_idx: i,
+        clip: None,
         toasts: &editor_state.toasts,
         size: (
             editor_state.placements[i].size.0 as f32,
