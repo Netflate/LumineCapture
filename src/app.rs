@@ -614,6 +614,7 @@ fn rebuild_layer(editor_state: &mut EditorState, i: usize, frame: &Frame) {
     if layer_dirty.is_none() && !editor_state.annotations_dirty {
         return;
     }
+    let origin = editor_state.origin(i);
     let placement = &editor_state.placements[i];
     renderer::rebuild_annotations_layer(
         &mut renderer::Painter::new(&mut editor_state.annotations_layer[i])
@@ -622,7 +623,7 @@ fn rebuild_layer(editor_state: &mut EditorState, i: usize, frame: &Frame) {
                 &mut editor_state.text.font_system,
                 &mut editor_state.text.swash_cache,
             )
-            .with_origin(placement.offset()),
+            .with_origin(origin),
         &editor_state.annotations,
         &mut editor_state.text.editors,
         &editor_state.blur.cache,
@@ -661,7 +662,7 @@ fn render_monitor(
     let selection_dirty = *dimmed_for != zone;
     *dimmed_for = zone;
 
-    let offset = editor_state.placements[i].offset();
+    let offset = editor_state.origin(i);
     let scale = editor_state.placements[i].scale;
 
     let damage = dirty_rect.as_ref().and_then(|r| {

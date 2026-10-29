@@ -221,6 +221,25 @@ impl EditorState {
         }
     }
 
+    /// Where annotations start on this monitor: its position, plus how far the
+    /// scrolling region has moved over the long image.
+    pub fn origin(&self, monitor_idx: usize) -> (f32, f32) {
+        self.placements[monitor_idx].offset()
+    }
+
+    /// Monitors an annotation rect lands on, counting the scroll of the region.
+    pub fn monitors_touching(&self, rect: &Rect) -> u32 {
+        let mut mask = 0;
+        for (i, placement) in self.placements.iter().enumerate() {
+            let (x, y) = self.origin(i);
+            let (w, h) = (placement.size.0 as f32, placement.size.1 as f32);
+            if rect.left() < x + w && rect.right() > x && rect.top() < y + h && rect.bottom() > y {
+                mask |= 1 << i;
+            }
+        }
+        mask
+    }
+
     pub fn region(&self) -> bool {
         matches!(self.mode, Mode::Region | Mode::Ocr)
     }
@@ -240,7 +259,7 @@ impl EditorState {
     pub fn bake_annotation(&mut self, ann: &Annotation) {
         self.cache_blur(ann, self.annotations.len());
         for (i, placement) in self.placements.iter().enumerate() {
-            let offset = placement.offset();
+            let offset = self.origin(i);
             let pad = ann.visual_pad();
             let visual = Rect::from_ltrb(
                 ann.bbox.left() - offset.0 - pad,
@@ -317,7 +336,7 @@ impl EditorState {
 
         if let Some(path) = pb.finish() {
             for (i, placement) in self.placements.iter().enumerate() {
-                let offset = placement.offset();
+                let offset = self.origin(i);
                 let visual = Rect::from_ltrb(
                     segment_bbox.left() - offset.0,
                     segment_bbox.top() - offset.1,

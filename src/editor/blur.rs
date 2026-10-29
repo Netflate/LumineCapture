@@ -6,7 +6,7 @@ use crate::editor::{DamageZone, EditorState};
 use crate::renderer::blur::{self, Blurred, Style};
 use crate::renderer::paths::normalized_rect;
 use crate::types::{Annotation, AnnotationShape};
-use crate::utils::{get_full_workspace_rect, get_overlapping_monitors, rects_overlap};
+use crate::utils::{get_full_workspace_rect, rects_overlap};
 
 // Approach is largely taken from Spectacle (KQuickImageEditor, `Blur::image`)
 // everything below is blurred, older annotations included, once per gesture,
@@ -104,7 +104,7 @@ impl EditorState {
                 let rect = part.to_rect();
                 self.layer_damage_rects.push(rect);
                 self.damage_rects.push(DamageZone::Global(rect));
-                *dirty_mask |= get_overlapping_monitors(&rect, &self.placements);
+                *dirty_mask |= self.monitors_touching(&rect);
             }
         }
     }

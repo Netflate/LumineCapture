@@ -39,7 +39,7 @@ impl ToolBehavior for HighlighterTool {
             state.damage_rects.push(DamageZone::Global(tail_bbox));
             state.pending = Some(ann.clone());
             state.prev_pending = Some(ann);
-            *dirty_mask |= crate::utils::get_overlapping_monitors(&tail_bbox, &state.placements);
+            *dirty_mask |= state.monitors_touching(&tail_bbox);
         } else if let Some(ann) = state.pending.take() {
             state.next_id += 1;
             state.push_undo();
@@ -48,7 +48,7 @@ impl ToolBehavior for HighlighterTool {
 
             state.bake_annotation(&ann);
             state.damage_rects.push(DamageZone::Global(damage));
-            *dirty_mask |= crate::utils::get_overlapping_monitors(&damage, &state.placements);
+            *dirty_mask |= state.monitors_touching(&damage);
 
             state.annotations.push(ann);
             state.prev_pending = None;
@@ -102,7 +102,7 @@ impl ToolBehavior for HighlighterTool {
 
         if let Some(damage) = damage {
             state.damage_rects.push(DamageZone::Global(damage));
-            *dirty_mask |= crate::utils::get_overlapping_monitors(&damage, &state.placements);
+            *dirty_mask |= state.monitors_touching(&damage);
         }
     }
 }

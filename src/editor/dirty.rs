@@ -3,7 +3,6 @@ use crate::tools::selection::global_selection_to_local;
 use crate::types::Placement;
 use crate::types::annotations::Annotation;
 use crate::ui::magnifier::MagnifierState;
-use crate::utils::get_overlapping_monitors;
 
 use tiny_skia::Rect;
 
@@ -87,7 +86,7 @@ impl EditorState {
 
     fn calc_damage_zones_dirty(&self, monitor_idx: usize, placement: &Placement) -> Option<Rect> {
         let mut dirty = None;
-        let offset = placement.offset();
+        let offset = self.origin(monitor_idx);
         let (mw, mh) = (placement.size.0 as f32, placement.size.1 as f32);
 
         fn global_to_local_padded(
@@ -171,7 +170,7 @@ impl EditorState {
 
     pub fn monitor_layer_dirty_rect(&self, monitor_idx: usize) -> Option<Rect> {
         let placement = &self.placements[monitor_idx];
-        let offset = placement.offset();
+        let offset = self.origin(monitor_idx);
         let (mw, mh) = (placement.size.0 as f32, placement.size.1 as f32);
         let mut dirty: Option<Rect> = None;
 
@@ -282,19 +281,19 @@ pub fn apply_damage_rects(editor_state: &mut EditorState, dirty_mask: &mut u32) 
 
     if !is_pen_drawing {
         if let Some(ann) = &editor_state.pending {
-            *dirty_mask |= get_overlapping_monitors(&ann.bbox, &editor_state.placements);
+            *dirty_mask |= editor_state.monitors_touching(&ann.bbox);
         }
         if let Some(ann) = &editor_state.prev_pending {
-            *dirty_mask |= get_overlapping_monitors(&ann.bbox, &editor_state.placements);
+            *dirty_mask |= editor_state.monitors_touching(&ann.bbox);
         }
     }
     for rect in &editor_state.layer_damage_rects {
-        *dirty_mask |= get_overlapping_monitors(rect, &editor_state.placements);
+        *dirty_mask |= editor_state.monitors_touching(rect);
     }
     for zone in &editor_state.damage_rects {
         match zone {
             DamageZone::Global(rect) => {
-                *dirty_mask |= get_overlapping_monitors(rect, &editor_state.placements);
+                *dirty_mask |= editor_state.monitors_touching(rect);
             }
             DamageZone::Local { monitor_idx, .. } => {
                 mark_dirty(dirty_mask, *monitor_idx);

@@ -37,7 +37,7 @@ impl ToolBehavior for PenTool {
             state.damage_rects.push(DamageZone::Global(tail_bbox));
             state.pending = Some(ann.clone());
             state.prev_pending = Some(ann);
-            *dirty_mask |= crate::utils::get_overlapping_monitors(&tail_bbox, &state.placements);
+            *dirty_mask |= state.monitors_touching(&tail_bbox);
         } else if let Some(ann) = state.pending.take() {
             state.next_id += 1;
             state.push_undo();
@@ -50,7 +50,7 @@ impl ToolBehavior for PenTool {
             // bake the full annotation with pristine single pass drop shadow
             state.bake_annotation(&ann);
             state.damage_rects.push(DamageZone::Global(damage));
-            *dirty_mask |= crate::utils::get_overlapping_monitors(&damage, &state.placements);
+            *dirty_mask |= state.monitors_touching(&damage);
 
             state.pending_pen_baked = 0;
             state.annotations.push(ann);
@@ -97,8 +97,7 @@ impl ToolBehavior for PenTool {
 
             let prev_tail_bbox = ann.pen_active_tail_bbox();
             state.damage_rects.push(DamageZone::Global(prev_tail_bbox));
-            *dirty_mask |=
-                crate::utils::get_overlapping_monitors(&prev_tail_bbox, &state.placements);
+            *dirty_mask |= state.monitors_touching(&prev_tail_bbox);
 
             // extract segments to bake into a small Vec to avoid borrowing state.pending
             let mut segments_to_bake = Vec::new();
@@ -136,14 +135,13 @@ impl ToolBehavior for PenTool {
                 let seg_bbox = state.bake_pen_segment(start_p, ctrl, end_p, color, stroke_width);
                 state.pending_pen_baked += 1;
                 state.damage_rects.push(DamageZone::Global(seg_bbox));
-                *dirty_mask |= crate::utils::get_overlapping_monitors(&seg_bbox, &state.placements);
+                *dirty_mask |= state.monitors_touching(&seg_bbox);
             }
 
             if let Some(ann) = state.pending.as_ref() {
                 let new_tail_bbox = ann.pen_active_tail_bbox();
                 state.damage_rects.push(DamageZone::Global(new_tail_bbox));
-                *dirty_mask |=
-                    crate::utils::get_overlapping_monitors(&new_tail_bbox, &state.placements);
+                *dirty_mask |= state.monitors_touching(&new_tail_bbox);
             }
         } else if let Some(ann) = state.pending.as_mut() {
             if let AnnotationShape::Pen { points } = &mut ann.shape {

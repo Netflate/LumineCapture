@@ -47,12 +47,15 @@ pub fn handle_pointer_move(
     y: f64,
     dirty_mask: &mut u32,
 ) {
-    let global = (
+    let screen = (
         editor_state.placements[monitor_idx].position.0 as f64 + x,
         editor_state.placements[monitor_idx].position.1 as f64 + y,
     );
     let (current_monitor_idx, local_x, local_y) =
-        global_point_to_local(&editor_state.placements, global, monitor_idx, (x, y));
+        global_point_to_local(&editor_state.placements, screen, monitor_idx, (x, y));
+    // annotations live on the long image, which the region may have scrolled
+    let origin = editor_state.origin(current_monitor_idx);
+    let global = (origin.0 as f64 + local_x, origin.1 as f64 + local_y);
     update_pointer(
         editor_state,
         current_monitor_idx,
