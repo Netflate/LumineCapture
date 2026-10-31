@@ -63,7 +63,10 @@ pub fn handle_pointer_move(
         global,
     );
     update_magnifier(editor_state, dirty_mask);
-    dispatch_move(editor_state.selected_tool, editor_state, global, dirty_mask);
+    super::scroll::hover(editor_state, dirty_mask);
+    if !super::scroll::blocks_tool(editor_state, false) {
+        dispatch_move(editor_state.selected_tool, editor_state, global, dirty_mask);
+    }
     update_toolbar(editor_state, dirty_mask);
     if editor_state.settings_panel.visible {
         update_settings_panel(editor_state, dirty_mask);
@@ -153,6 +156,12 @@ fn hit_test_ui(editor_state: &EditorState, local: (f64, f64)) -> UiHit {
 }
 
 pub fn compute_cursor(editor_state: &EditorState) -> CursorIcon {
+    if super::scroll::over_panel(editor_state) {
+        return match editor_state.scroll.as_ref().and_then(|s| s.hovered) {
+            Some(_) => CursorIcon::Pointer,
+            None => CursorIcon::Default,
+        };
+    }
     match hit_test_ui(editor_state, editor_state.input.pointer.local) {
         UiHit::ColorPopoverInside | UiHit::ToolbarItem(_) | UiHit::SettingsItem(_) => {
             CursorIcon::Pointer
@@ -172,6 +181,8 @@ pub fn compute_cursor(editor_state: &EditorState) -> CursorIcon {
         UiHit::ColorPopoverOutside | UiHit::ModelPopoverOutside | UiHit::None => {
             if editor_state.pick_once {
                 CursorIcon::Crosshair
+            } else if super::scroll::blocks_tool(editor_state, true) {
+                CursorIcon::Default
             } else {
                 dispatch_cursor(editor_state.selected_tool, editor_state)
             }
@@ -202,6 +213,14 @@ pub fn handle_pointer_button(
     }
 
     // ── 1. priority ui hit test ──────────────────────────────────────────────
+
+    if pressed && super::scroll::over_panel(editor_state) {
+        if is_left_click_pressed {
+            super::scroll::click(editor_state, dirty_mask);
+        }
+        apply_damage_rects(editor_state, dirty_mask);
+        return;
+    }
 
     if is_left_click_pressed {
         let mut ui_hit = hit_test_ui(editor_state, editor_state.input.pointer.local);
@@ -254,25 +273,8 @@ pub fn handle_pointer_button(
                             return;
                         }
                         ToolbarButton::Scroll => {
-                            // scrolling capture requires a region; prompt if not yet selected
-                            if editor_state.selection.zone.is_none() {
-                                let mut fs = std::mem::replace(
-                                    &mut editor_state.text.font_system,
-                                    cosmic_text::FontSystem::new(),
-                                );
-                                editor_state
-                                    .toasts
-                                    .show(crate::ui::toast::ToastKind::ScrollNeedsRegion, &mut fs);
-                                editor_state.text.font_system = fs;
-                                crate::editor::dirty::mark_dirty(
-                                    dirty_mask,
-                                    editor_state.input.pointer.monitor_idx,
-                                );
-                                return;
-                            }
-                            editor_state.mode = crate::types::Mode::Scroll;
-                            editor_state.cancel = false;
-                            editor_state.finish = None;
+                            super::actions::begin_scroll_capture(editor_state, dirty_mask);
+                            apply_damage_rects(editor_state, dirty_mask);
                             return;
                         }
                     }
@@ -421,6 +423,11 @@ pub fn handle_pointer_button(
         }
     }
 
+    if super::scroll::blocks_tool(editor_state, pressed) {
+        apply_damage_rects(editor_state, dirty_mask);
+        return;
+    }
+
     //                                       ⬇⬇⬇⬇⬇⬇⬇⬇⬇
     if is_left_click_pressed && editor_state.pick_once {
         crate::tools::eyedropper::pick(editor_state, dirty_mask);
@@ -445,6 +452,19 @@ pub fn handle_pointer_button(
 }
 
 pub fn select_tool(editor_state: &mut EditorState, tool: Tool, dirty_mask: &mut u32) {
+    // the region is fixed while scrolling, so selection means the live page,
+    // and ocr reads only the screenshot
+    if editor_state.scroll.is_some() {
+        match tool {
+            Tool::Ocr => return,
+            Tool::Selection => {
+                super::scroll::set_live(editor_state, true, dirty_mask);
+                apply_damage_rects(editor_state, dirty_mask);
+                return;
+            }
+            _ => {}
+        }
+    }
     let Some(tb_button) =
         editor_state.toolbar.items.iter().position(
             |item| matches!(item, ToolbarItem::Button(ToolbarButton::Tool(t)) if *t == tool),
@@ -478,6 +498,7 @@ pub fn select_tool(editor_state: &mut EditorState, tool: Tool, dirty_mask: &mut 
     editor_state.toolbar.selected = Some(tb_button);
     editor_state.toolbar.dirty = true;
     dispatch_activate(tool, editor_state, dirty_mask);
+    super::scroll::set_live(editor_state, false, dirty_mask);
 
     refresh_panels(editor_state, dirty_mask);
     apply_damage_rects(editor_state, dirty_mask);
@@ -693,6 +714,10 @@ pub fn handle_scroll(
     delta_y: f32,
     dirty_mask: &mut u32,
 ) {
+    if super::scroll::wheel(editor_state, delta_x, delta_y, dirty_mask) {
+        apply_damage_rects(editor_state, dirty_mask);
+        return;
+    }
     let local = editor_state.input.pointer.local;
     let delta_y = delta_y * crate::config::get().input.scroll_sensitivity;
 

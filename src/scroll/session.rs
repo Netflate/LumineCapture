@@ -65,6 +65,10 @@ impl ScrollSession {
         })
     }
 
+    pub fn next_capture(&self) -> Instant {
+        self.last_capture + self.capture_interval()
+    }
+
     pub fn wants_capture(&self, now: Instant) -> bool {
         if self.paused {
             return false;
@@ -79,15 +83,15 @@ impl ScrollSession {
             && now.duration_since(self.last_progress).as_millis() >= IDLE_AFTER_MS
     }
 
-    /// Feeds a new frame into the stitcher, returning whether content was appended.
-    pub fn push(&mut self, image: Image) -> bool {
+    /// Feeds a new frame into the stitcher, `None` when it was skipped.
+    pub fn push(&mut self, image: Image) -> Option<StitchResult> {
         self.last_capture = std::time::Instant::now();
 
         // skip identical frames to avoid refreshing anchors repeatedly
         let signature = frame::signature(&image, SIGNATURE_COLS, SIGNATURE_ROWS);
         if frame::is_duplicate(&self.last_signature, &signature) {
             self.status = "Waiting for scroll".into();
-            return false;
+            return None;
         }
         self.last_signature = signature;
 
@@ -97,13 +101,14 @@ impl ScrollSession {
                 log::error!("stitcher failed: {e}");
                 self.status = "Capture error".into();
                 self.paused = true;
-                return false;
+                return None;
             }
         };
-        self.apply(outcome)
+        self.apply(outcome);
+        Some(outcome)
     }
 
-    fn apply(&mut self, outcome: StitchResult) -> bool {
+    fn apply(&mut self, outcome: StitchResult) {
         let stats = self.stitcher.stats();
         self.frame_count = stats.frame_count.max(0) as u32;
         self.total_height = stats.total_height;
@@ -117,7 +122,6 @@ impl ScrollSession {
         if matches!(outcome.status, Status::FirstFrame | Status::Appended) {
             self.last_progress = Instant::now();
         }
-        matches!(outcome.status, Status::FirstFrame | Status::Appended)
     }
 
     pub fn axis(&self) -> Axis {

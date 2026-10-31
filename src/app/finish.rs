@@ -1,28 +1,13 @@
-// Shot delivery: pin, save, copy to clipboard, stdout, and scrolling capture finalisation.
+// Shot delivery: pin, save, copy to clipboard and stdout.
 
 use std::path::Path;
 
-use crate::app::{Launch, render_final, scroll};
+use crate::app::render_final;
+use crate::backend::initialize_clipboard;
 use crate::backend::notify::{self, Notice};
-use crate::backend::{ScreenOverlay, initialize_clipboard};
 use crate::editor::EditorState;
 use crate::types::Outputs;
 use crate::utils::{save_to_file, write_to_stdout};
-
-/// Runs the scrolling capture on the still-open overlay, then delivers
-/// whatever it produced. An empty result means the user cancelled.
-pub async fn finish_scroll(
-    conn: &wayland_client::Connection,
-    editor_state: &mut EditorState,
-    overlay: &mut Box<dyn ScreenOverlay>,
-    launch: &Launch,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let png = scroll::capture(conn, editor_state, overlay).await?;
-    if let Some(png) = png {
-        deliver(png, 1.0, launch.outputs(), editor_state.output.as_deref()).await;
-    }
-    Ok(())
-}
 
 pub async fn finish_capture(
     editor_state: &mut EditorState,

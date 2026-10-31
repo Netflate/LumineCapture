@@ -134,7 +134,7 @@ async fn make_screenshot(
     init::initial_paint(&mut editor_state, &mut overlay, &mut prof)?;
     prof.dump();
 
-    let scroll_mode = run_overlay(&mut editor_state, &mut overlay)?;
+    run_overlay(&scroll_conn, &mut editor_state, &mut overlay).await?;
     // (saving what user chose)
     crate::editor::saved::save(
         &editor_state.tool_settings,
@@ -146,8 +146,6 @@ async fn make_screenshot(
     editor_state.ocr.models.shutdown();
     if launch.mode == Mode::Ocr {
         ocr::finish(&mut editor_state).await
-    } else if scroll_mode {
-        finish::finish_scroll(&scroll_conn, &mut editor_state, &mut overlay, &launch).await
     } else {
         finish::finish_capture(&mut editor_state).await
     }
@@ -295,10 +293,11 @@ fn build_ocr_state() -> OcrState {
 
 /// Runs the overlay until the user completes or cancels the selection.
 /// By the time this returns, the overlay is already closed and capture is complete.
-fn run_overlay(
+async fn run_overlay(
+    conn: &wayland_client::Connection,
     editor_state: &mut EditorState,
     overlay: &mut Box<dyn ScreenOverlay>,
-) -> Result<bool, Box<dyn std::error::Error>> {
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut dirty_mask: u32 = 0;
     let mut pacing = Pacing::new(editor_state.captures.len());
     let mut annotations_were_hidden = false;
@@ -307,6 +306,9 @@ fn run_overlay(
 
     loop {
         let mut timeout = poll_timeout(editor_state);
+        if let Some(left) = scroll::next_capture(editor_state) {
+            timeout = Some(timeout.map_or(left, |t| t.min(left)));
+        }
         if let Some(deadline) = pointer_wait {
             let left = deadline.saturating_duration_since(Instant::now());
             timeout = Some(timeout.map_or(left, |t| t.min(left)));
@@ -348,13 +350,17 @@ fn run_overlay(
             break;
         }
 
-        // hand off to the scrolling session once a region is selected and mouse is released
+        // scrolling starts once a region is selected and the mouse is released
         if editor_state.mode == Mode::Scroll
+            && editor_state.scroll.is_none()
             && editor_state.selection.zone.is_some()
             && !editor_state.input.mouse_down
+            && let Err(e) = scroll::start(conn, editor_state, &mut dirty_mask).await
         {
-            return Ok(true);
+            log::error!("can't start scrolling capture: {e}");
+            editor_state.mode = Mode::Editor;
         }
+        scroll::capture_step(editor_state, overlay.as_ref(), &mut dirty_mask).await;
 
         overlay.set_cursor(input::compute_cursor(editor_state));
         tick_panels(editor_state, &mut dirty_mask);
@@ -378,9 +384,12 @@ fn run_overlay(
             )?;
             clear_frame_state(editor_state, &mut dirty_mask, &pacing);
         }
+        scroll::sync(editor_state, overlay.as_mut(), |i| {
+            !is_dirty(dirty_mask, i) && !pacing.owes_to(i)
+        })?;
     }
 
-    Ok(false)
+    Ok(())
 }
 /// system can't sleep waiting only for events, since we have animation and
 /// download beat and etc
@@ -586,9 +595,15 @@ fn render_dirty_monitors(
                 .map_or(Redraw::Whole, Redraw::Area);
             pacing.owed[i] = Some(pacing.owed[i].map_or(area, |owed| owed.join(area)));
         }
-        let Some(owed) = pacing.owed[i] else {
+        let Some(mut owed) = pacing.owed[i] else {
             continue;
         };
+        // panel is drawn whole, so the base has to come back under all of it
+        if let (Some(area), Some(panel)) = (owed.area(), scroll::panel_rect(editor_state, i))
+            && crate::utils::rects_overlap(&area, &panel)
+        {
+            owed = owed.join(Redraw::Area(panel));
+        }
         // the layer is rebuilt right away, as its damage will be cleared afterwards
         // (only the composite and the commit wait for the frame callback)
         if !overlay.ready(i) {
@@ -610,8 +625,18 @@ fn render_dirty_monitors(
 }
 
 fn rebuild_layer(editor_state: &mut EditorState, i: usize, frame: &Frame) {
-    let layer_dirty = editor_state.monitor_layer_dirty_rect(i);
-    if layer_dirty.is_none() && !editor_state.annotations_dirty {
+    // region moved over the long image, everything in the layer moved with it
+    let moved = editor_state
+        .scroll
+        .as_mut()
+        .filter(|s| s.monitor_idx == i)
+        .is_some_and(|s| std::mem::take(&mut s.layer_stale));
+    let layer_dirty = if moved {
+        None
+    } else {
+        editor_state.monitor_layer_dirty_rect(i)
+    };
+    if !moved && layer_dirty.is_none() && !editor_state.annotations_dirty {
         return;
     }
     let origin = editor_state.origin(i);
@@ -657,10 +682,22 @@ fn render_monitor(
     //
     // (a monitor may skip frames, so the shared prev_zone can be outdated for it)
     let zone = editor_state.selection.zone;
-    let (local_sel, prev_local, edges) =
+    let (local_sel, prev_local, mut edges) =
         selection_render_info(&zone, dimmed_for, &editor_state.placements[i]);
-    let selection_dirty = *dimmed_for != zone;
+    let mut selection_dirty = *dimmed_for != zone;
     *dimmed_for = zone;
+    let mut clip = None;
+    if let Some(scroll) = editor_state.scroll.as_ref().filter(|s| s.monitor_idx == i) {
+        // scroll paints this base itself, and with square corner
+        selection_dirty = false;
+        edges = edges.map(|_| SelectionEdges {
+            left: false,
+            right: false,
+            top: false,
+            bottom: false,
+        });
+        clip = Some(scroll.region);
+    }
 
     let offset = editor_state.origin(i);
     let scale = editor_state.placements[i].scale;
@@ -673,14 +710,13 @@ fn render_monitor(
         )
     });
 
+    let hidden = frame.annotations_hidden || !editor_state.annotations_shown_on(i);
     let dragged_index = editor_state.dragged_index();
     let dirty = dirty_rect.as_ref();
     let toolbar = panel_to_draw(&mut editor_state.toolbar, i, dirty);
     let settings_panel = panel_to_draw(&mut editor_state.settings_panel, i, dirty);
     let color_picker = panel_to_draw(&mut editor_state.color_popover, i, dirty);
     let model_list = panel_to_draw(&mut editor_state.model_popover, i, dirty);
-
-    let hidden = frame.annotations_hidden;
 
     renderer::render_frame(&mut renderer::RenderRequest {
         canvas: &mut editor_state.canvas[i],
@@ -728,7 +764,7 @@ fn render_monitor(
             .then_some(&editor_state.ocr.view),
         ocr_scan: frame.scan_badge,
         monitor_idx: i,
-        clip: None,
+        clip: clip.as_ref(),
         toasts: &editor_state.toasts,
         size: (
             editor_state.placements[i].size.0 as f32,
@@ -736,6 +772,7 @@ fn render_monitor(
         ),
         scale,
     });
+    scroll::draw_panel(editor_state, i, dirty_rect.as_ref());
 
     damage
 }
@@ -819,6 +856,9 @@ pub fn selection_render_info(
 /// Returns the final PNG and the global position of its top-left corner.
 /// position is required for the pin feature ^^^
 pub(crate) fn render_final(editor_state: &mut EditorState) -> Option<(Vec<u8>, (i32, i32), f32)> {
+    if editor_state.scroll.is_some() {
+        return scroll::render_final(editor_state);
+    }
     let sel = match editor_state.selection.zone {
         Some(s) => s,
         None => get_full_workspace_rect(&editor_state.placements)?,

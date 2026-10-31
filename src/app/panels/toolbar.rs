@@ -97,7 +97,10 @@ fn compute_toolbar_placement(editor_state: &EditorState) -> (usize, (f32, f32), 
         return (monitor_idx, pos, false);
     };
 
-    let monitor_idx = editor_state.input.pointer.monitor_idx;
+    let monitor_idx = match &editor_state.scroll {
+        Some(scroll) => scroll.monitor_idx,
+        None => editor_state.input.pointer.monitor_idx,
+    };
     let placement = &editor_state.placements[monitor_idx];
 
     let local_sel = global_selection_to_local(&sel, placement).unwrap_or_else(|| {
@@ -118,5 +121,12 @@ fn compute_toolbar_placement(editor_state: &EditorState) -> (usize, (f32, f32), 
         local_sel.top() + margin
     };
 
-    (monitor_idx, (pos_x, pos_y), false)
+    // inside the live region it would end up in the frames
+    let in_frames = editor_state.scroll.as_ref().is_some_and(|scroll| {
+        scroll.live()
+            && Rect::from_xywh(pos_x, pos_y, tb_w, tb_h)
+                .is_some_and(|rect| crate::utils::rects_overlap(&rect, &scroll.region))
+    });
+
+    (monitor_idx, (pos_x, pos_y), in_frames)
 }

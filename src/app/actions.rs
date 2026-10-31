@@ -56,6 +56,9 @@ pub fn run(editor_state: &mut EditorState, action: Action, dirty_mask: &mut u32)
                 crate::tools::pick::delete_selected(editor_state, dirty_mask);
             }
         }
+        // the region can't change under a running scroll
+        Action::SelectAll | Action::Move { .. } | Action::Resize { .. }
+            if editor_state.scroll.is_some() => {}
         Action::SelectAll => select_all(editor_state, dirty_mask),
         Action::ToggleUi | Action::Tool(_) if editor_state.region() => {}
         Action::ToggleUi => toggle_ui(editor_state, dirty_mask),
@@ -168,7 +171,11 @@ fn toggle_ui(editor_state: &mut EditorState, dirty_mask: &mut u32) {
 }
 
 /// Switch to scrolling capture if a region is selected, or toast otherwise.
-fn begin_scroll_capture(editor_state: &mut EditorState, dirty_mask: &mut u32) {
+pub(super) fn begin_scroll_capture(editor_state: &mut EditorState, dirty_mask: &mut u32) {
+    if editor_state.scroll.is_some() {
+        super::scroll::toggle_live(editor_state, dirty_mask);
+        return;
+    }
     if editor_state.selection.zone.is_none() {
         editor_state.toasts.show(
             crate::ui::toast::ToastKind::ScrollNeedsRegion,
