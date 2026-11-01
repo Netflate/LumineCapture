@@ -3,7 +3,8 @@
 
 use shot_stitch::{Axis, Edge, Status, StitchResult};
 use tiny_skia::{
-    BlendMode, FilterQuality, IntRect, Paint, Pattern, Pixmap, Rect, SpreadMode, Transform,
+    BlendMode, FilterQuality, IntRect, Paint, Pattern, Pixmap, PixmapPaint, Rect, SpreadMode,
+    Transform,
 };
 
 use crate::backend::{CaptureMethod, InputHole};
@@ -154,6 +155,38 @@ impl Scroll {
             self.long = Some((revision, to_pixmap(&image)?));
         }
         self.long.as_ref().map(|(_, pixmap)| pixmap)
+    }
+
+    /// Logical pixels of the long image under a global `region`, like `renderer::composite`.
+    pub fn compose(&mut self, region: Rect) -> Option<(Pixmap, (i32, i32))> {
+        let doc = self.doc_rect()?;
+        let scale = self.scale;
+        let left = region.left().floor() as i32;
+        let top = region.top().floor() as i32;
+        let width = (region.right().ceil() as i32 - left).max(0) as u32;
+        let height = (region.bottom().ceil() as i32 - top).max(0) as u32;
+        let mut out = Pixmap::new(width, height)?;
+        let long = self.long_pixmap()?;
+        let transform = Transform::from_row(
+            1.0 / scale,
+            0.0,
+            0.0,
+            1.0 / scale,
+            doc.left() - left as f32,
+            doc.top() - top as f32,
+        );
+        out.draw_pixmap(
+            0,
+            0,
+            long.as_ref(),
+            &PixmapPaint {
+                quality: FilterQuality::Bicubic,
+                ..PixmapPaint::default()
+            },
+            transform,
+            None,
+        );
+        Some((out, (left, top)))
     }
 
     fn window(&self, long: &Pixmap) -> Option<IntRect> {

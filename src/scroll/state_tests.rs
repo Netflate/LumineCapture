@@ -151,3 +151,14 @@ fn live_region_is_a_hole_in_the_base() {
     assert_eq!(outside.alpha(), 255);
     assert!(outside.red() < 255, "the snapshot outside is dimmed");
 }
+
+#[test]
+fn compose_reads_the_long_image_in_global_coordinates() {
+    let mut scroll = scroll();
+    show(&mut scroll, 0);
+    show(&mut scroll, -40);
+    let top = Rect::from_xywh(100.0, 10.0, W as f32, 1.0).unwrap();
+    let (pixmap, origin) = scroll.compose(top).unwrap();
+    assert_eq!(origin, (100, 10));
+    assert_eq!(row(&pixmap, 0), page_row(-40));
+}
