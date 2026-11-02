@@ -33,29 +33,45 @@ pub fn compute(frame: &Image) -> Result<Signature, ImageError> {
     result
         .try_reserve_exact(rows)
         .map_err(|_| ImageError::Allocation)?;
-    result.resize(rows, [0.0; BAND_COUNT]);
-    for band in 0..BAND_COUNT {
-        let (start, end) = band_columns(frame.width(), band);
-        let count = (end - start + 1).clamp(1, 9);
-        let step = if count > 1 {
-            (end - start) as f32 / (count - 1) as f32
-        } else {
-            0.0
-        };
-        for (y, row) in result.iter_mut().enumerate() {
+    let sampler = Sampler::new(frame.width());
+    result.extend((0..rows).map(|y| sampler.profile(frame.row(y as i32))));
+    Ok(result)
+}
+
+/// points of a row that make its signature, so one row can be redone alone.
+pub(crate) struct Sampler {
+    bands: [(i32, i32, f32); BAND_COUNT],
+    width: i32,
+}
+
+impl Sampler {
+    pub fn new(width: i32) -> Self {
+        let bands = std::array::from_fn(|band| {
+            let (start, end) = band_columns(width, band);
+            let count = (end - start + 1).clamp(1, 9);
+            let step = if count > 1 {
+                (end - start) as f32 / (count - 1) as f32
+            } else {
+                0.0
+            };
+            (start, count, step)
+        });
+        Self { bands, width }
+    }
+
+    pub fn profile(&self, row: &[u32]) -> [f32; BAND_COUNT] {
+        self.bands.map(|(start, count, step)| {
             let mut sum = 0.0;
             for i in 0..count {
-                let x =
-                    ((start as f32 + i as f32 * step).round() as i32).clamp(0, frame.width() - 1);
-                let pixel = frame.row(y as i32)[x as usize];
+                let x = ((start as f32 + i as f32 * step).round() as i32).clamp(0, self.width - 1);
+                let pixel = row[x as usize];
                 sum += 0.299 * ((pixel >> 16) & 255) as f32
                     + 0.587 * ((pixel >> 8) & 255) as f32
                     + 0.114 * (pixel & 255) as f32;
             }
-            row[band] = sum / count as f32;
-        }
+            sum / count as f32
+        })
     }
-    Ok(result)
 }
 
 fn scaled_ignore(height: i32, ratio: f32) -> i32 {
