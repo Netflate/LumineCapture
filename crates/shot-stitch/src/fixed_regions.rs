@@ -17,15 +17,23 @@ struct Band {
 
 impl Band {
     fn update(&mut self, candidate: i32) {
-        if !self.sampled || candidate <= self.committed {
+        if !self.sampled || candidate == self.committed {
             self.committed = candidate;
             self.sampled = true;
             self.pending = None;
-        } else if let Some(pending) = self.pending {
-            self.committed = pending.min(candidate);
-            self.pending = None;
-        } else {
-            self.pending = Some(candidate);
+            return;
+        }
+        let grows = candidate > self.committed;
+        match self.pending {
+            Some(pending) if (pending > self.committed) == grows => {
+                self.committed = if grows {
+                    pending.min(candidate)
+                } else {
+                    pending.max(candidate)
+                };
+                self.pending = None;
+            }
+            _ => self.pending = Some(candidate),
         }
     }
 }

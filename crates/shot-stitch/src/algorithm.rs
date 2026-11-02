@@ -1,3 +1,4 @@
+use crate::fixed_regions::Observation;
 use crate::profile::{Signature, compute};
 use crate::session::Stitcher;
 use crate::types::{LineMatch, overhang};
@@ -58,6 +59,38 @@ impl Stitcher {
             position,
             frame_length: height,
             ..StitchResult::default()
+        }
+    }
+    fn observe_fixed(&mut self, frame: &Image, offset: i32) -> Observation {
+        self.last_frame
+            .as_ref()
+            .map(|last| self.fixed.observe(last, frame, offset))
+            .unwrap_or_default()
+    }
+    fn trims(&self, observation: Observation, position: i32, height: i32, full: i32) -> (i32, i32) {
+        let (amount, edge) = overhang(position, height, full);
+        if amount <= 0 {
+            return (0, 0);
+        }
+        if edge == Edge::End {
+            let footer = if observation.valid {
+                observation.footer
+            } else {
+                self.fixed.bottom()
+            };
+            let maximum = (full - 1)
+                .min(height / 3)
+                .min(full / 3)
+                .min(full - position)
+                .max(0);
+            (0, footer.clamp(0, maximum))
+        } else {
+            let header = if observation.valid {
+                observation.header
+            } else {
+                self.fixed.top()
+            };
+            (header.clamp(0, (height - amount).min(full - 1).max(0)), 0)
         }
     }
 
@@ -123,11 +156,11 @@ impl Stitcher {
         };
         let near_edge = self.anchor <= self.config.min_append
             || self.anchor + height >= full - self.config.min_append;
-        let disagrees = confidence <= self.config.accept_diff
-            && full >= height
-            && overhang(predicted, height, full).0 <= 0
-            && self.known_diff(&cols, predicted, (0, 0)).0 > self.config.accept_diff;
-        // when adjacent frame matching fails, verify edge growth before searching full canvas
+        let mut observation = self.observe_fixed(&frame, offset);
+        let disagrees = confidence <= self.config.accept_diff && full >= height && {
+            let (top, bottom) = self.trims(observation, predicted, height, full);
+            self.known_diff(&cols, predicted, (top, bottom)).0 > self.config.accept_diff
+        };
         if confidence > self.config.accept_diff || disagrees {
             if let Some(recovered) = near_edge
                 .then(|| self.recover(&frame, &cols, predicted))
@@ -151,43 +184,14 @@ impl Stitcher {
                 placement = recovered;
             }
         }
-        // observe fixed regions only with trusted displacement
-        let observation = self
-            .last_frame
-            .as_ref()
-            .map(|last| self.fixed.observe(last, &frame, placement.offset))
-            .unwrap_or_default();
-        let mut top_trim = 0;
-        let mut bottom_trim = 0;
-        if let Some(line) = placement.line {
-            if line.edge == Edge::Start {
-                top_trim = line.trim;
-            } else {
-                bottom_trim = line.trim;
-            }
-        } else {
-            let (amount, edge) = overhang(placement.position, height, full);
-            if amount > 0 && edge == Edge::End {
-                let footer = if observation.valid {
-                    observation.footer
-                } else {
-                    self.fixed.bottom()
-                };
-                let maximum = (full - 1)
-                    .min(height / 3)
-                    .min(full / 3)
-                    .min(full - placement.position)
-                    .max(0);
-                bottom_trim = footer.clamp(0, maximum);
-            } else if amount > 0 && edge == Edge::Start {
-                let header = if observation.valid {
-                    observation.header
-                } else {
-                    self.fixed.top()
-                };
-                top_trim = header.clamp(0, (height - amount).min(full - 1).max(0));
-            }
+        if placement.offset != offset {
+            observation = self.observe_fixed(&frame, placement.offset);
         }
+        let (mut top_trim, mut bottom_trim) = match placement.line {
+            Some(line) if line.edge == Edge::Start => (line.trim, 0),
+            Some(line) => (0, line.trim),
+            None => self.trims(observation, placement.position, height, full),
+        };
         let (mut amount, mut edge, mut edge_diff, mut overlap) =
             self.score_edge(&cols, placement, (top_trim, bottom_trim));
         let switching =
