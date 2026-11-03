@@ -1,7 +1,8 @@
-use crate::comparison::{Window, overlap_diff};
+use crate::comparison::{Skip, Window, overlap_diff};
 use crate::fixed_regions::FixedRegions;
 use crate::long_image::LongImage;
 use crate::motion_mask::MotionMask;
+use crate::overlay::Mask;
 use crate::profile::{Signature, compute};
 use crate::{Axis, Config, Edge, Stats, Status, StitchResult};
 use shot_image::{Image, ImageError};
@@ -12,6 +13,18 @@ pub struct Stitcher {
     pub(crate) axis_locked: bool,
     pub(crate) long: LongImage,
     pub(crate) last_frame: Option<Image>,
+    /// floats from the last frame
+    pub(crate) mask: Option<Mask>,
+    /// rows where placement can't be determined: covered by a float or unchanged
+    pub(crate) skip: Vec<u8>,
+    /// rows that changed independently in the last frame, like video content
+    pub(crate) skip_before: Vec<u8>,
+    /// stitched rows where placement can't be determined due to floats
+    pub(crate) long_skip: Vec<u8>,
+    /// floats in the frame being placed, at their expected offset
+    pub(crate) early: Option<(i32, Mask)>,
+    /// signature of the last frame
+    pub(crate) previous_cols: Signature,
     pub(crate) last_cols: Signature,
     pub(crate) fixed: FixedRegions,
     pub(crate) motion: MotionMask,
@@ -36,6 +49,12 @@ impl Stitcher {
             axis_locked: false,
             long: LongImage::default(),
             last_frame: None,
+            mask: None,
+            skip: Vec::new(),
+            skip_before: Vec::new(),
+            long_skip: Vec::new(),
+            early: None,
+            previous_cols: Vec::new(),
             last_cols: Vec::new(),
             fixed: FixedRegions::default(),
             motion: MotionMask::default(),
@@ -87,6 +106,7 @@ impl Stitcher {
             let cols = compute(&seed)?;
             self.long.reset(&seed, cols.clone())?;
             self.last_frame = Some(seed);
+            self.mask = None;
             self.last_cols = cols;
             self.stats.total_height = self.long.height();
             self.stats.last_append = self.long.height();
@@ -142,7 +162,7 @@ impl Stitcher {
             total_height: height,
             last_append: height,
         };
-        self.remember(frame, cols);
+        self.remember(frame, cols, None);
         Ok(StitchResult {
             status: Status::FirstFrame,
             added: height,
@@ -152,8 +172,9 @@ impl Stitcher {
         })
     }
 
-    pub(crate) fn remember(&mut self, frame: Image, cols: Signature) {
+    pub(crate) fn remember(&mut self, frame: Image, cols: Signature, mask: Option<Mask>) {
         self.last_frame = Some(frame);
+        self.mask = mask;
         self.last_cols = cols;
     }
 
@@ -178,6 +199,7 @@ impl Stitcher {
             self.window(),
             excluded,
             &self.motion.weights,
+            (Skip(&self.skip), Skip(&self.long_skip)),
         )
     }
 

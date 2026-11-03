@@ -146,3 +146,107 @@ fn config_and_session_isolation() {
     first.push(frame(0, 80, 180)).unwrap();
     assert_eq!(second.stats().frame_count, 0);
 }
+
+/// A floating fixed element
+fn pinned(origin: i32, (x, y, w, h): (i32, i32, i32, i32)) -> Image {
+    let page = frame(origin, 80, 180);
+    let mut pixels = page.pixels().to_vec();
+    for row in y..y + h {
+        for col in x..x + w {
+            pixels[(row * 80 + col) as usize] = if (row + col) % 3 == 0 {
+                0xffffffff
+            } else {
+                0xff3a6ea5
+            };
+        }
+    }
+    Image::from_pixels(80, 180, pixels).unwrap()
+}
+
+fn scroll_past(float: (i32, i32, i32, i32)) {
+    let mut stitch = Stitcher::new(Config::default()).unwrap();
+    let last = 200;
+    for origin in (0..=last).step_by(20) {
+        stitch.push(pinned(origin, float)).unwrap();
+    }
+    let result = stitch.full_image().unwrap().unwrap();
+    let page = frame(0, 80, last + 180);
+    assert_eq!(result.height(), page.height());
+    let (_, y, _, h) = float;
+    let kept = last + y..last + y + h;
+    for row in 0..result.height() {
+        if !kept.contains(&row) {
+            assert_eq!(result.row(row), page.row(row), "row {row}");
+        }
+    }
+}
+
+/// like "jump to bottom"
+fn above_footer(origin: i32) -> Image {
+    let page = frame(origin, 80, 400);
+    let mut pixels = page.pixels().to_vec();
+    for row in 334..400 {
+        for col in 0..80 {
+            pixels[(row * 80 + col) as usize] = if row >= 360 {
+                0xff202020 | ((row * 7 + col * 3) as u32 & 0x3f)
+            } else if (30..70).contains(&col) {
+                if (row + col) % 3 == 0 {
+                    0xffffffff
+                } else {
+                    0xff3a6ea5
+                }
+            } else {
+                pixels[(row * 80 + col) as usize]
+            };
+        }
+    }
+    Image::from_pixels(80, 400, pixels).unwrap()
+}
+
+#[test]
+fn button_at_the_bottom_stays_only_in_the_last_screen() {
+    scroll_past((50, 140, 20, 20));
+}
+
+#[test]
+fn tab_in_the_middle_of_the_side_stays_only_in_the_last_screen() {
+    scroll_past((68, 70, 12, 40));
+}
+
+#[test]
+fn plaque_right_above_a_sticky_footer_stays_only_in_the_last_screen() {
+    let mut stitch = Stitcher::new(Config::default()).unwrap();
+    let last = 400;
+    for origin in (0..=last).step_by(26) {
+        stitch.push(above_footer(origin)).unwrap();
+    }
+    let result = stitch.full_image().unwrap().unwrap();
+    let height = result.height();
+    let end = (0..=last).step_by(26).last().unwrap();
+    assert_eq!(height, end + 400);
+    // with a step of exactly one plaque the rows right above the last one are only ever
+    // seen next to it, so a sliver of the previous plaque may stay in the last screen
+    let page = frame(0, 80, end + 360);
+    for row in 0..height - 66 - 26 {
+        assert_eq!(result.row(row), page.row(row), "row {row}");
+    }
+}
+
+#[test]
+fn a_jump_far_from_the_last_step_is_found_to_the_pixel() {
+    // noise fits at one offset only, every third offset of a coarse search misses it
+    for jump in [200, 201, 202, 203] {
+        let mut stitch = Stitcher::new(config()).unwrap();
+        stitch.push(frame(0, 80, 400)).unwrap();
+        let result = stitch.push(frame(jump, 80, 400)).unwrap();
+        assert_eq!(
+            (result.status, result.added),
+            (Status::Appended, jump),
+            "jump {jump}"
+        );
+        assert_eq!(
+            stitch.full_image().unwrap().unwrap(),
+            frame(0, 80, 400 + jump)
+        );
+    }
+}

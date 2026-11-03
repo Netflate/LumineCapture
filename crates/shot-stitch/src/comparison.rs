@@ -20,6 +20,19 @@ impl Window {
     }
 }
 
+/// A row-indexed bitmask indicating which bands to skip during comparison
+/// One bit per band. Rows past the end of the slice default to skipping nothing.
+///
+/// required to skip in comparison stuff like floating overlays
+#[derive(Clone, Copy, Default)]
+pub(crate) struct Skip<'a>(pub &'a [u8]);
+
+impl Skip<'_> {
+    fn at(self, y: i32) -> u8 {
+        self.0.get(y as usize).copied().unwrap_or(0)
+    }
+}
+
 fn textured(cols: &Signature, y: usize, weights: &Weights) -> bool {
     y > 0
         && weights
@@ -28,29 +41,51 @@ fn textured(cols: &Signature, y: usize, weights: &Weights) -> bool {
             .any(|(g, &weight)| weight > 0.0 && (cols[y][g] - cols[y - 1][g]).abs() > 1.0)
 }
 
-fn trimmed_mean(sums: &[f32; BAND_COUNT], rows: i32, weights: &Weights) -> f32 {
-    let (mut sum, mut total, mut worst, mut worst_weight, mut active) = (0.0, 0.0, 0.0, 0.0, 0);
-    for g in 0..BAND_COUNT {
-        if weights[g] <= 0.0 {
-            continue;
+#[derive(Default)]
+struct Sums {
+    sums: [f32; BAND_COUNT],
+    counts: [i32; BAND_COUNT],
+    rows: i32,
+    textured: i32,
+}
+
+impl Sums {
+    fn add(&mut self, a: &[f32; BAND_COUNT], b: &[f32; BAND_COUNT], skip: u8, weights: &Weights) {
+        let mut used = false;
+        for g in 0..BAND_COUNT {
+            if skip >> g & 1 == 0 && weights[g] > 0.0 {
+                self.sums[g] += (a[g] - b[g]).abs();
+                self.counts[g] += 1;
+                used = true;
+            }
         }
-        let value = weights[g] * sums[g];
-        sum += value;
-        total += weights[g];
-        active += 1;
-        if value > worst {
-            worst = value;
-            worst_weight = weights[g];
+        self.rows += i32::from(used);
+    }
+
+    fn finish(&self, weights: &Weights, minimum: i32) -> f32 {
+        if self.rows < minimum || self.textured < 8 {
+            return NO_MATCH;
         }
-    }
-    if active >= 4 {
-        sum -= worst;
-        total -= worst_weight;
-    }
-    if rows <= 0 || total <= 0.0 {
-        NO_MATCH
-    } else {
-        sum / (rows as f32 * total)
+        let enough = (self.rows / 4).max(8);
+        let (mut sum, mut total, mut worst, mut worst_weight, mut active) = (0.0, 0.0, 0.0, 0.0, 0);
+        for (g, &weight) in weights.iter().enumerate() {
+            if weight <= 0.0 || self.counts[g] < enough {
+                continue;
+            }
+            let value = weight * self.sums[g] / self.counts[g] as f32;
+            sum += value;
+            total += weight;
+            active += 1;
+            if value > worst {
+                worst = value;
+                worst_weight = weight;
+            }
+        }
+        if active >= 4 {
+            sum -= worst;
+            total -= worst_weight;
+        }
+        if total <= 0.0 { NO_MATCH } else { sum / total }
     }
 }
 
@@ -60,6 +95,7 @@ pub(crate) fn frame_diff(
     offset: i32,
     window: Window,
     weights: &Weights,
+    (skip, first_skip): (Skip, Skip),
 ) -> f32 {
     let (h1, h2) = (first.len() as i32, second.len() as i32);
     let length = if offset >= 0 {
@@ -76,19 +112,20 @@ pub(crate) fn frame_diff(
     } else {
         (0, -offset)
     };
-    let (mut rows, mut textured_rows) = (0, 0);
-    let mut sums = [0.0; BAND_COUNT];
+    let mut sums = Sums::default();
     for i in 0..length {
         let (y1, y2) = (s1 + i, s2 + i);
         if !window.usable(y1, h1, crop) || !window.usable(y2, h2, crop) {
             continue;
         }
-        rows += 1;
-        for (g, sum) in sums.iter_mut().enumerate() {
-            *sum += (first[y1 as usize][g] - second[y2 as usize][g]).abs();
-        }
-        if textured_rows < 8 && textured(second, y2 as usize, weights) {
-            textured_rows += 1;
+        sums.add(
+            &first[y1 as usize],
+            &second[y2 as usize],
+            skip.at(y1) | skip.at(y2) | first_skip.at(y1),
+            weights,
+        );
+        if sums.textured < 8 && textured(second, y2 as usize, weights) {
+            sums.textured += 1;
         }
     }
     let minimum = if crop {
@@ -96,11 +133,7 @@ pub(crate) fn frame_diff(
     } else {
         window.minimum
     };
-    if rows < minimum || textured_rows < 8 {
-        NO_MATCH
-    } else {
-        trimmed_mean(&sums, rows, weights)
-    }
+    sums.finish(weights, minimum)
 }
 
 pub(crate) fn overlap_diff(
@@ -110,6 +143,7 @@ pub(crate) fn overlap_diff(
     window: Window,
     excluded: (i32, i32),
     weights: &Weights,
+    (skip, tainted): (Skip, Skip),
 ) -> (f32, i32) {
     let (full_h, frame_h) = (full.len() as i32, frame.len() as i32);
     let top = excluded.0.clamp(0, full_h);
@@ -121,19 +155,21 @@ pub(crate) fn overlap_diff(
         return (NO_MATCH, length);
     }
     let crop = window.crop(length, frame_h);
-    let (mut rows, mut textured_rows) = (0, 0);
-    let mut sums = [0.0; BAND_COUNT];
+    let mut sums = Sums::default();
     for row in 0..length {
         let y = start - position + row;
         if !window.usable(y, frame_h, crop) {
             continue;
         }
-        rows += 1;
-        for (g, sum) in sums.iter_mut().enumerate() {
-            *sum += (full[(start + row) as usize][g] - frame[y as usize][g]).abs();
-        }
-        if textured_rows < 8 && textured(frame, y as usize, weights) {
-            textured_rows += 1;
+        let at = start + row;
+        sums.add(
+            &full[at as usize],
+            &frame[y as usize],
+            skip.at(y) | tainted.at(at),
+            weights,
+        );
+        if sums.textured < 8 && textured(frame, y as usize, weights) {
+            sums.textured += 1;
         }
     }
     let minimum = if crop {
@@ -141,12 +177,5 @@ pub(crate) fn overlap_diff(
     } else {
         window.minimum
     };
-    (
-        if rows < minimum || textured_rows < 8 {
-            NO_MATCH
-        } else {
-            trimmed_mean(&sums, rows, weights)
-        },
-        length,
-    )
+    (sums.finish(weights, minimum), length)
 }

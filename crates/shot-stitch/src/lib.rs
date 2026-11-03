@@ -10,6 +10,7 @@ mod line_matching;
 mod long_image;
 mod matching;
 mod motion_mask;
+mod overlay;
 pub mod profile;
 mod session;
 mod types;

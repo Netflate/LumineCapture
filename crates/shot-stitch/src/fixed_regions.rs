@@ -53,6 +53,11 @@ impl FixedRegions {
         self.header.committed
     }
 
+    /// Whether frames told anything of the bars yet.
+    pub fn known(&self) -> bool {
+        self.header.sampled && self.footer.sampled
+    }
+
     pub fn bottom(&self) -> i32 {
         self.footer.committed
     }
@@ -74,6 +79,17 @@ impl FixedRegions {
             valid: true,
         }
     }
+}
+
+/// Rows at the top and at the bottom that stayed the same from `previous` to `current`.
+pub(crate) fn bars(previous: &Image, current: &Image) -> (i32, i32) {
+    if previous.width() != current.width() || previous.height() != current.height() {
+        return (0, 0);
+    }
+    (
+        scan(previous, current, false),
+        scan(previous, current, true),
+    )
 }
 
 fn scan(previous: &Image, current: &Image, bottom: bool) -> i32 {

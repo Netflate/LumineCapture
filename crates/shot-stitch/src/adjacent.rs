@@ -1,4 +1,4 @@
-use crate::comparison::{Window, frame_diff};
+use crate::comparison::{Skip, Window, frame_diff};
 use crate::profile::{Signature, Weights};
 use crate::session::Stitcher;
 use crate::types::NO_MATCH;
@@ -8,6 +8,7 @@ struct Search<'a> {
     current: &'a Signature,
     weights: &'a Weights,
     window: Window,
+    skips: (Skip<'a>, Skip<'a>),
     /// rank of the best few offsets apart from each other
     top: Vec<(i32, f32)>,
 }
@@ -23,6 +24,7 @@ impl Search<'_> {
             offset,
             self.window,
             self.weights,
+            self.skips,
         );
         if diff >= NO_MATCH {
             return;
@@ -69,6 +71,7 @@ impl Stitcher {
             current: cols,
             weights: &self.motion.weights,
             window: self.window(),
+            skips: (Skip(&self.skip), Skip(&self.skip_before)),
             top: Vec::new(),
         };
         let predicted = self.last_offset.clamp(-maximum, maximum);
