@@ -1,3 +1,4 @@
+use crate::overlay::near;
 use crate::types::NO_MATCH;
 use shot_image::{Image, ImageError, MAX_PIXELS};
 
@@ -120,4 +121,81 @@ pub fn row_diff(a: &[u32], b: &[u32], start: i32, width: i32) -> f32 {
     } else {
         NO_MATCH
     }
+}
+
+/// Pixels of a row `exact_rows` looks at
+const SAMPLES: usize = 256;
+/// Fewer columns than this that changed tell too little to consider
+const MIN_MOVING: usize = 16;
+/// Changes of color along a row it takes to tell where the row is
+const MIN_EDGES: usize = 8;
+
+/// Selects columns that actually changed between frames for `exact_rows` to compare,
+/// ignoring static side panels, docks, and repeating UI patterns (like chat lists)
+/// that could cause false matches during a scroll.
+pub(crate) fn moving_columns(previous: &Image, current: &Image) -> Vec<usize> {
+    let (w, h) = (current.width(), current.height());
+    let side = side_ignore(w).max(0) as usize;
+    let all = side..(w.max(0) as usize).saturating_sub(side);
+    let even = |columns: &[usize]| -> Vec<usize> {
+        let step = columns.len().div_ceil(SAMPLES).max(1);
+        columns.iter().step_by(step).copied().collect()
+    };
+    let every: Vec<usize> = all.collect();
+    if previous.width() != w || previous.height() != h {
+        return even(&every);
+    }
+    let candidates = even(&every);
+    let mut moved = vec![false; candidates.len()];
+    for y in (0..h).step_by(4) {
+        let (before, now) = (previous.row(y), current.row(y));
+        for (moved, &x) in moved.iter_mut().zip(&candidates) {
+            *moved |= !near(before[x], now[x]);
+        }
+    }
+    let moving: Vec<usize> = candidates
+        .iter()
+        .zip(&moved)
+        .filter(|(_, moved)| **moved)
+        .map(|(&x, _)| x)
+        .collect();
+    if moving.len() < MIN_MOVING {
+        candidates
+    } else {
+        moving
+    }
+}
+
+/// Whether row `b` shows what row `a` does, pixel for pixel give or take what a translucent
+/// window lets through, at `columns`. `None` when `b` has too little drawn there to tell
+/// where it is (see `MIN_EDGES`).
+pub(crate) fn rows_alike(a: &[u32], b: &[u32], columns: &[usize]) -> Option<bool> {
+    if columns.iter().any(|&x| x >= a.len().min(b.len())) {
+        return None;
+    }
+    let edges = columns
+        .windows(2)
+        .filter(|pair| !near(b[pair[0]], b[pair[1]]))
+        .count();
+    if edges < MIN_EDGES {
+        return None;
+    }
+    Some(columns.iter().all(|&x| near(a[x], b[x])))
+}
+
+/// Counts how many alternating rows in `current` match the corresponding rows in `previous`
+/// shifted by `offset` across the given `columns`.
+///
+/// At the correct scroll offset, a vast majority of the page rows will match perfectly;
+/// at an incorrect offset, matches will be sparse or absent.
+pub(crate) fn exact_rows(previous: &Image, current: &Image, offset: i32, columns: &[usize]) -> i32 {
+    let (w, h) = (current.width(), current.height());
+    if previous.width() != w || previous.height() != h {
+        return 0;
+    }
+    (0..h)
+        .step_by(2)
+        .filter(|&y| (0..h).contains(&(y + offset)))
+        .filter(|&y| rows_alike(previous.row(y + offset), current.row(y), columns) == Some(true))
+        .count() as i32
 }

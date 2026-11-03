@@ -23,6 +23,8 @@ pub struct Stitcher {
     pub(crate) long_skip: Vec<u8>,
     /// floats in the frame being placed, at their expected offset
     pub(crate) early: Option<(i32, Mask)>,
+    /// offset where rows match the last frame pixel for pixel
+    pub(crate) backed: Option<i32>,
     /// signature of the last frame
     pub(crate) previous_cols: Signature,
     pub(crate) last_cols: Signature,
@@ -54,6 +56,7 @@ impl Stitcher {
             skip_before: Vec::new(),
             long_skip: Vec::new(),
             early: None,
+            backed: None,
             previous_cols: Vec::new(),
             last_cols: Vec::new(),
             fixed: FixedRegions::default(),

@@ -1,13 +1,14 @@
 use crate::comparison::{Skip, frame_diff};
 use crate::fixed_regions::Observation;
 use crate::overlay::{self, Bands, Mask};
-use crate::profile::{BAND_COUNT, Sampler, Signature, compute};
+use crate::profile::{BAND_COUNT, Sampler, Signature, compute, exact_rows, moving_columns};
 use crate::session::Stitcher;
 use crate::types::{LineMatch, NO_MATCH, overhang};
 use crate::{Axis, Edge, Status, StitchResult};
 use shot_image::{Image, ImageError};
 
 const MIN_CHECKED: usize = 32;
+const MIN_EXACT_ROWS: i32 = 8;
 
 #[derive(Clone, Copy)]
 struct Placement {
@@ -93,6 +94,9 @@ impl Stitcher {
         mask: Option<&Mask>,
         fresh: std::ops::Range<i32>,
     ) -> bool {
+        if self.backed == Some(top - self.anchor) {
+            return true;
+        }
         let fit = self.long.fit(frame, top, self.mask.as_ref(), mask, fresh);
         if fit.checked >= MIN_CHECKED {
             // Require a clear pixel-level majority.
@@ -112,6 +116,25 @@ impl Stitcher {
             self.long
                 .observe(frame, top, mask, &Sampler::new(frame.width()), fresh);
         }
+    }
+    fn pick_offset(&self, frame: &Image, cols: &Signature, columns: &[usize]) -> (i32, f32, i32) {
+        let candidates = self.find_offsets(cols);
+        let best = candidates[0];
+        let Some(last) = self.last_frame.as_ref() else {
+            return (best.0, best.1, 0);
+        };
+        if best.1 >= NO_MATCH {
+            return (best.0, best.1, 0);
+        }
+        let bound = (best.1 * 3.0).max(self.config.accept_diff);
+        candidates
+            .iter()
+            .filter(|candidate| candidate.1 <= bound)
+            .map(|&candidate| (exact_rows(last, frame, candidate.0, columns), candidate))
+            .max_by(|a, b| a.0.cmp(&b.0).then(b.1.1.total_cmp(&a.1.1)))
+            .map_or((best.0, best.1, 0), |(rows, (offset, diff))| {
+                (offset, diff, rows)
+            })
     }
     fn leave_out_floats(
         &mut self,
@@ -286,9 +309,34 @@ impl Stitcher {
         self.screen_skip(&cols);
         self.long_skip.clone_from(&self.long.tainted);
         self.early = None;
-        let (offset, mut confidence) = self.find_offsets(&cols)[0];
+        self.backed = None;
+        let columns = self
+            .last_frame
+            .as_ref()
+            .map_or_else(Vec::new, |last| moving_columns(last, &frame));
+        let (mut offset, mut confidence, exact) = self.pick_offset(&frame, &cols, &columns);
+        self.backed = (exact >= MIN_EXACT_ROWS).then_some(offset);
         if confidence < NO_MATCH {
             confidence = self.leave_out_floats(&frame, &cols, offset, confidence);
+        }
+        if confidence > self.config.accept_diff {
+            let still = frame_diff(
+                &self.last_cols,
+                &cols,
+                0,
+                self.window(),
+                &self.motion.weights,
+                (Skip::default(), Skip::default()),
+            );
+            let still_exact = self
+                .last_frame
+                .as_ref()
+                .map_or(0, |last| exact_rows(last, &frame, 0, &columns));
+            let unmoved = offset == 0 || still_exact > exact;
+            if still <= self.config.accept_diff && unmoved {
+                (offset, confidence) = (0, still);
+                self.backed = (still_exact >= MIN_EXACT_ROWS).then_some(0);
+            }
         }
         if offset == 0 {
             self.unmoved(cols.len());
