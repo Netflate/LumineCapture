@@ -146,7 +146,7 @@ impl Stitcher {
             });
         }
         self.motion.observe(&self.last_cols, &cols);
-        let (offset, confidence) = self.find_offset(&cols);
+        let (offset, confidence) = self.find_offsets(&cols)[0];
         let predicted = self.anchor + offset;
         let mut placement = Placement {
             position: predicted,

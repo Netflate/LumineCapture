@@ -2,6 +2,9 @@ use crate::profile::Signature;
 use crate::session::Stitcher;
 use crate::types::{Edge, NO_MATCH, overhang};
 
+/// Steps of the coarse search looked at closer
+const REFINED: usize = 6;
+
 struct Candidates {
     best: (i32, f32),
     good: (i32, f32),
@@ -39,32 +42,52 @@ impl Stitcher {
             good: (inside, NO_MATCH),
             distance: i32::MAX,
         };
+        let mut coarse = Vec::new();
         for pos in [prediction, self.anchor, 0, maximum]
             .into_iter()
             .chain((0..=maximum).step_by(8))
             .chain(std::iter::once(maximum))
         {
             let pos = pos.clamp(0, maximum);
-            candidates.visit(
-                pos,
-                self.known_diff(cols, pos, (0, 0)).0,
-                inside,
-                self.config.accept_diff,
-            );
+            let diff = self.known_diff(cols, pos, (0, 0)).0;
+            candidates.visit(pos, diff, inside, self.config.accept_diff);
+            coarse.push((pos, diff));
         }
-        for pos in (candidates.best.0 - 8).max(0)..=(candidates.best.0 + 8).min(maximum) {
-            candidates.visit(
-                pos,
-                self.known_diff(cols, pos, (0, 0)).0,
-                inside,
-                self.config.accept_diff,
-            );
+        coarse.sort_by(|a, b| a.1.total_cmp(&b.1));
+        let mut around: Vec<i32> = Vec::new();
+        for (pos, _) in coarse {
+            if around.len() == REFINED {
+                break;
+            }
+            if around.iter().all(|&a| (a - pos).abs() > 8) {
+                around.push(pos);
+            }
         }
-        if candidates.good.1 <= self.config.accept_diff {
+        for at in around {
+            for pos in (at - 8).max(0)..=(at + 8).min(maximum) {
+                candidates.visit(
+                    pos,
+                    self.known_diff(cols, pos, (0, 0)).0,
+                    inside,
+                    self.config.accept_diff,
+                );
+            }
+        }
+        let chosen = if candidates.good.1 <= self.config.accept_diff {
             candidates.good
         } else {
             candidates.best
+        };
+        // the place nearest to the prediction that fits, but where it fits best: the rows
+        // next to it fit almost as well on a smooth page
+        let mut bottom = chosen;
+        for pos in (chosen.0 - 8).max(0)..=(chosen.0 + 8).min(maximum) {
+            let diff = self.known_diff(cols, pos, (0, 0)).0;
+            if diff < bottom.1 {
+                bottom = (pos, diff);
+            }
         }
+        bottom
     }
 
     fn visit_edge(&self, cols: &Signature, pos: i32, best: &mut (i32, f32)) {

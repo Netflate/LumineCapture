@@ -18,7 +18,6 @@ fn config() -> Config {
         min_overlap: 32,
         accept_diff: 0.5,
         min_append: 10,
-        approx_diff: 0.1,
     }
 }
 

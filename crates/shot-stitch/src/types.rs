@@ -29,7 +29,6 @@ pub struct Config {
     pub min_overlap: i32,
     pub accept_diff: f32,
     pub min_append: i32,
-    pub approx_diff: f32,
 }
 
 impl Default for Config {
@@ -38,7 +37,6 @@ impl Default for Config {
             min_overlap: 100,
             accept_diff: 9.0,
             min_append: 15,
-            approx_diff: 1.0,
         }
     }
 }
@@ -52,9 +50,6 @@ impl Config {
             && self.accept_diff.is_finite()
             && self.accept_diff >= 0.0
             && self.accept_diff < NO_MATCH
-            && self.approx_diff.is_finite()
-            && self.approx_diff >= 0.0
-            && self.approx_diff <= self.accept_diff
     }
 }
 
