@@ -8,7 +8,6 @@ pub(crate) struct LongImage {
     width: i32,
     top: usize,
     used: usize,
-    reserve_top: bool,
     pub cols: Signature,
     pub revision: u64,
 }
@@ -43,18 +42,18 @@ impl LongImage {
     }
 
     pub fn image(&self) -> Result<Image, ImageError> {
-        let mut data = allocate(self.used * self.width as usize)?;
-        let start = self.top * self.width as usize;
-        data.copy_from_slice(&self.pixels[start..start + self.used * self.width as usize]);
+        let width = self.width as usize;
+        let mut data = Vec::new();
+        data.try_reserve_exact(self.used * width)
+            .map_err(|_| ImageError::Allocation)?;
+        let start = self.top * width;
+        data.extend_from_slice(&self.pixels[start..start + self.used * width]);
         Image::from_pixels(self.width, self.height(), data)
     }
 
+    /// Reserves space; bottom growth avoids copying the existing image.
     fn ensure_room(&mut self, grow_top: usize, grow_bottom: usize) -> Result<(), ImageError> {
         let width = self.width as usize;
-        let capacity = self.pixels.len() / width;
-        if self.top >= grow_top && self.top + self.used + grow_bottom <= capacity {
-            return Ok(());
-        }
         let target = self
             .used
             .checked_add(grow_top)
@@ -64,20 +63,27 @@ impl LongImage {
         if target > limit {
             return Err(ImageError::Dimensions);
         }
-        let new_capacity = (target + target / 2).max(target + 256).min(limit);
-        let new_top = grow_top
-            + if grow_top > 0 || self.reserve_top {
-                (new_capacity - target) / 4
-            } else {
-                0
-            };
-        let mut grown = allocate(new_capacity * width)?;
-        let old_start = self.top * width;
-        let new_start = new_top * width;
-        grown[new_start..new_start + self.used * width]
-            .copy_from_slice(&self.pixels[old_start..old_start + self.used * width]);
-        self.pixels = grown;
-        self.top = new_top;
+        if self.top < grow_top {
+            let reserve = grow_top + (target / 8).max(256);
+            let mut grown = Vec::new();
+            grown
+                .try_reserve_exact((reserve + self.used + grow_bottom) * width)
+                .map_err(|_| ImageError::Allocation)?;
+            grown.resize(reserve * width, 0);
+            let start = self.top * width;
+            grown.extend_from_slice(&self.pixels[start..start + self.used * width]);
+            self.pixels = grown;
+            self.top = reserve;
+        }
+        let needed = self.top + self.used + grow_bottom;
+        if needed * width > self.pixels.capacity() {
+            let rows = (needed + needed / 2)
+                .max(needed + 256)
+                .min(self.top + limit);
+            self.pixels
+                .try_reserve_exact(rows * width - self.pixels.len())
+                .map_err(|_| ImageError::Allocation)?;
+        }
         Ok(())
     }
 
@@ -96,11 +102,11 @@ impl LongImage {
         self.ensure_room(0, rows.saturating_sub(trim))?;
         self.used -= trim;
         self.cols.truncate(self.used);
-        let width = self.width as usize;
+        self.pixels
+            .truncate((self.top + self.used) * self.width as usize);
         for i in 0..rows {
             let y = frame.height() as usize - rows + i;
-            let start = (self.top + self.used + i) * width;
-            self.pixels[start..start + width].copy_from_slice(frame.row(y as i32));
+            self.pixels.extend_from_slice(frame.row(y as i32));
             self.cols.push(cols[y]);
         }
         self.used += rows;
@@ -133,7 +139,6 @@ impl LongImage {
         }
         self.top -= rows;
         self.used += rows;
-        self.reserve_top = true;
         self.cols = merged;
         self.revision = self.revision.wrapping_add(1);
         Ok(())
