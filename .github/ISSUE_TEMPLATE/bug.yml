@@ -6,7 +6,7 @@ body:
     id: compositor
     attributes:
       label: Compositor
-      options: [KDE Plasma, COSMIC, niri, Hyprland, GNOME, Other]
+      options: [KDE Plasma, COSMIC, niri, Umbriel, Hyprland, GNOME, Other]
     validations:
       required: true
   - type: input

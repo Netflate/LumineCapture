@@ -123,9 +123,10 @@ pub enum OverlayShell {
 /// cannot be temporarily moved to another desktop or minimized, which seems non-optimal.
 /// Therefore, a forced full-screen window is used as default.
 ///
-/// Niri, and likely other scroll managers, places every new full-screen window on the side
-/// making the user experience clunky since every trigger plays an animation of opening a new app.
-/// Therefore, layer_shell is used there instead.
+/// Niri and Umbriel, and likely other scroll managers, place every new full-screen window as a new
+/// column in the layout making the user experience clunky since every trigger plays an animation of
+/// opening a new app. Therefore, layer_shell is used there instead. It also suits Umbriel's other
+/// layouts (dwindle, master, stacking), since a layer surface is never tiled.
 ///
 /// COSMIC gets layer_shell too since a full-screen window there flashes gray while it opens,
 /// and there is few focus grabbing issues.
@@ -134,12 +135,13 @@ pub fn initialize_overlay(
     conn: Connection,
 ) -> Result<Box<dyn ScreenOverlay>, Box<dyn std::error::Error>> {
     let layer = match crate::config::get().general.overlay {
-        OverlayShell::Auto => on_niri() || on_cosmic(),
+        OverlayShell::Auto => on_niri() || on_umbriel() || on_cosmic(),
         shell => shell == OverlayShell::Layer,
     };
     info!(
-        "overlay surface: {}",
-        if layer { "layer" } else { "window" }
+        "overlay surface: {} (XDG_CURRENT_DESKTOP={:?})",
+        if layer { "layer" } else { "window" },
+        std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default()
     );
     Ok(Box::new(wayland::overlay::WaylandOverlay::new(
         conn, layer,
@@ -147,13 +149,19 @@ pub fn initialize_overlay(
 }
 
 fn on_niri() -> bool {
-    let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
-    desktop.split(':').any(|d| d == "niri") || std::env::var_os("NIRI_SOCKET").is_some()
+    desktop_is("niri") || std::env::var_os("NIRI_SOCKET").is_some()
+}
+
+fn on_umbriel() -> bool {
+    desktop_is("umbriel") || std::env::var_os("UMBRIEL_SOCKET").is_some()
 }
 
 fn on_cosmic() -> bool {
-    let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
-    desktop.split(':').any(|d| d == "COSMIC")
+    desktop_is("COSMIC")
+}
+
+fn desktop_is(name: &str) -> bool {
+    std::env::var("XDG_CURRENT_DESKTOP").is_ok_and(|d| d.split(':').any(|s| s == name))
 }
 
 pub fn initialize_clipboard() -> Box<dyn ClipboardProvider> {
