@@ -135,7 +135,7 @@ pub fn draw(
 
     p.fill_rounded(layout.rect, radius::panel(), color::panel());
 
-    // thumbnail clipped to bottom so latest stitched frames remain visible
+    // the thumbnail is clipped to keep the frame placed last in view
     if let Some(rect) = layout.preview {
         draw_preview(p, session, rect);
     }
@@ -216,8 +216,17 @@ fn fit_text(p: &mut Painter, text: &str, width: f32, font_size: f32) -> String {
     out
 }
 
-/// Draws thumbnail preview aligned to the bottom of rect.
+/// First visible row, keeping the focus in view from the direction it was reached.
+pub fn preview_window(rows: f32, visible: f32, focus: (f32, f32)) -> f32 {
+    let at_most = (rows - visible).max(0.0);
+    let (top, bottom) = (focus.0.clamp(0.0, rows), focus.1.clamp(0.0, rows));
+    (bottom - visible).max(0.0).min(top).min(at_most)
+}
+
+/// Draws the thumbnail into `rect`, the frame placed last in view.
 fn draw_preview(p: &mut Painter, session: &mut ScrollSession, rect: Rect) {
+    let focus = session.focus();
+    let transposed = session.axis() == Axis::Horizontal;
     let Some(preview) = session.preview() else {
         return;
     };
@@ -242,7 +251,14 @@ fn draw_preview(p: &mut Painter, session: &mut ScrollSession, rect: Rect) {
     };
 
     let dst = scaled.pixels_mut();
-    let source_top = (preview.height() as f32 - clip_h as f32 / scale).max(0.0);
+    // a horizontal capture scrolls along the thumbnail's width, which is all shown
+    // which doesn't work but whatever
+    let focus = if transposed {
+        (0.0, ph)
+    } else {
+        (focus.0 * ph, focus.1 * ph)
+    };
+    let source_top = preview_window(ph, clip_h as f32 / scale, focus);
     for y in 0..clip_h {
         let sy = (source_top + y as f32 / scale) as i32;
         let sy = sy.clamp(0, preview.height() as i32 - 1);

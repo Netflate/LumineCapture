@@ -5,7 +5,7 @@ use crate::motion_mask::MotionMask;
 use crate::overlay::Mask;
 use crate::profile::{Signature, compute};
 use crate::{Axis, Config, Edge, Stats, Status, StitchResult};
-use shot_image::{Image, ImageError};
+use shot_image::{Image, ImageError, ImageView};
 
 pub struct Stitcher {
     pub(crate) config: Config,
@@ -123,6 +123,10 @@ impl Stitcher {
         self.best_top_trim = 0;
         self.cache = None;
         Ok(true)
+    }
+
+    pub fn view(&self) -> Option<ImageView<'_>> {
+        self.long.view()
     }
 
     /// Returns the stitched long image, cached by revision number.

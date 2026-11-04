@@ -36,6 +36,9 @@ pub struct ScrollSession {
     pub frame_count: u32,
     pub total_height: i32,
     pub last_append: i32,
+    /// where the frame placed last lies in the stitched image, along the scrolling axis:
+    /// its first row and its length
+    focus: (i32, i32),
 }
 
 impl ScrollSession {
@@ -59,6 +62,7 @@ impl ScrollSession {
             frame_count: 0,
             total_height: 0,
             last_append: 0,
+            focus: (0, 0),
         })
     }
 
@@ -127,6 +131,9 @@ impl ScrollSession {
         self.frame_count = stats.frame_count.max(0) as u32;
         self.total_height = stats.total_height;
         self.last_append = stats.last_append;
+        if outcome.status != Status::NoMatch {
+            self.focus = (outcome.position, outcome.frame_length);
+        }
         self.status = match outcome.status {
             Status::FirstFrame => "Capturing".into(),
             Status::Appended => "Capturing".into(),
@@ -134,6 +141,22 @@ impl ScrollSession {
             // the page went further than one frame to the next can follow
             Status::NoMatch => "Lost it, scroll back".into(),
         };
+    }
+
+    /// Where the frame placed last lies in the stitched image, as shares of its length
+    /// along the scrolling axis: from the first to the last. The preview keeps it in view,
+    /// at whichever end the image grows, or wherever the page went back to.
+    pub fn focus(&self) -> (f32, f32) {
+        let (width, height) = self.stitcher.dimensions();
+        let length = match self.stitcher.axis() {
+            Axis::Vertical => height,
+            Axis::Horizontal => width,
+        };
+        if length <= 0 {
+            return (0.0, 1.0);
+        }
+        let share = |at: i32| (at as f32 / length as f32).clamp(0.0, 1.0);
+        (share(self.focus.0), share(self.focus.0 + self.focus.1))
     }
 
     pub fn axis(&self) -> Axis {
@@ -151,6 +174,7 @@ impl ScrollSession {
         };
         match self.stitcher.set_axis(next) {
             Ok(true) => {
+                self.focus = (0, i32::MAX);
                 self.last_signature.clear();
                 self.status = "Waiting for scroll".into();
                 info!("scrolling capture switched axis to {next:?}");
@@ -167,10 +191,11 @@ impl ScrollSession {
     pub fn preview(&mut self) -> Option<&Pixmap> {
         let revision = self.stitcher.revision();
         if self.preview.is_none() || revision != self.preview_revision {
-            let image = self.stitcher.full_image().ok().flatten();
-            self.preview = image
-                .as_ref()
-                .and_then(|image| preview::thumbnail(image, PREVIEW_WIDTH));
+            let transposed = self.stitcher.axis() == Axis::Horizontal;
+            self.preview = self
+                .stitcher
+                .view()
+                .and_then(|view| preview::thumbnail(view, transposed, PREVIEW_WIDTH));
             self.preview_revision = revision;
         }
         self.preview.as_ref()

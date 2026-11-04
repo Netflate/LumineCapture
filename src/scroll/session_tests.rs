@@ -141,3 +141,27 @@ fn the_last_few_rows_are_added_once_the_page_stops() {
     // and nothing more comes of it
     assert!(push(&mut session, 49).is_none());
 }
+
+#[test]
+fn the_focus_follows_the_frame_placed_last() {
+    let mut session = ScrollSession::new(region(), 0).unwrap();
+    let push = |session: &mut ScrollSession, origin| {
+        session.push(frame::crop(&page_frame(origin, 40, 160), CROP).unwrap())
+    };
+    push(&mut session, 100);
+    assert_eq!(session.focus(), (0.0, 1.0));
+    // down: the image grows at the bottom, the last frame ends there
+    push(&mut session, 140);
+    assert_eq!(session.length_label(), "200 px");
+    assert_eq!(session.focus(), (0.2, 1.0));
+    // up: it grows at the top, the last frame starts there. A frame the other way is taken
+    // for jitter, the next one for a turn; both overlap the last frame enough
+    let turn = push(&mut session, 110).unwrap();
+    let up = push(&mut session, 80).unwrap();
+    assert_eq!(
+        session.length_label(),
+        "220 px",
+        "turn {turn:?}, then {up:?}"
+    );
+    assert_eq!(session.focus(), (0.0, 160.0 / 220.0));
+}

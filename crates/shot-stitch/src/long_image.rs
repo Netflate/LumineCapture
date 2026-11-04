@@ -1,7 +1,7 @@
 use crate::overlay::{Bands, Mask, NEAR, cells, detailed as detailed_cell, same, span};
 use crate::profile::{Sampler, Signature};
 use shot_image::buffer::allocate;
-use shot_image::{Image, ImageError, MAX_PIXELS};
+use shot_image::{Image, ImageError, ImageView, MAX_PIXELS};
 
 /// A cell confirmed by `VOTES` distinct screen rows.
 const VERIFIED: u16 = u16::MAX;
@@ -165,6 +165,19 @@ impl LongImage {
         let width = self.width as usize;
         let start = (self.top + y) * width;
         &mut self.pixels[start..start + width]
+    }
+
+    /// Borrows the stitched pixels.
+    pub fn view(&self) -> Option<ImageView<'_>> {
+        let width = self.width as usize;
+        let start = self.top * width;
+        ImageView::new(
+            &self.pixels[start..start + self.used * width],
+            self.width,
+            self.height(),
+            width,
+        )
+        .ok()
     }
 
     /// Builds the stitched image, restoring content from the end frames.

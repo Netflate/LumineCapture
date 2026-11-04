@@ -112,3 +112,19 @@ fn toggle_axis_availability_before_and_after_growth() {
         &session
     ));
 }
+
+#[test]
+fn preview_window_keeps_the_last_frame_in_view() {
+    // the thumbnail is 1000 rows, 220 of them fit
+    let window = |focus| panel::preview_window(1000.0, 220.0, focus);
+    // scrolling down: the frame placed last ends at the bottom
+    assert_eq!(window((900.0, 1000.0)), 780.0);
+    // scrolling up: it starts at the top
+    assert_eq!(window((0.0, 100.0)), 0.0);
+    // back somewhere in the middle: the window ends where the frame does
+    assert_eq!(window((500.0, 600.0)), 380.0);
+    // a frame taller than the window shows from its top
+    assert_eq!(window((300.0, 700.0)), 300.0);
+    // a thumbnail that fits is shown whole
+    assert_eq!(panel::preview_window(100.0, 220.0, (50.0, 100.0)), 0.0);
+}
