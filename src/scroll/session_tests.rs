@@ -109,3 +109,22 @@ fn idle_slows_capture_down_but_never_stops_it() {
     assert_eq!(session.capture_interval(), active);
     assert!(!session.should_idle(std::time::Instant::now()));
 }
+
+#[test]
+fn the_last_few_rows_are_added_once_the_page_stops() {
+    let mut session = ScrollSession::new(region(), 0).unwrap();
+    let push = |session: &mut ScrollSession, origin| {
+        session.push(frame::crop(&page_frame(origin, 40, 160), CROP).unwrap())
+    };
+    push(&mut session, 0);
+    push(&mut session, 40);
+    assert_eq!(session.length_label(), "200 px");
+    // less than the stitcher waits for while the page moves
+    push(&mut session, 49);
+    assert_eq!(session.length_label(), "200 px");
+    // the same screen again: the page stopped there
+    push(&mut session, 49);
+    assert_eq!(session.length_label(), "209 px");
+    // and nothing more comes of it
+    assert!(push(&mut session, 49).is_none());
+}

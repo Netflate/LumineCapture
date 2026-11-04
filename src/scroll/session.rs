@@ -25,6 +25,8 @@ pub struct ScrollSession {
     last_signature: Vec<u8>,
     last_capture: std::time::Instant,
     last_progress: std::time::Instant,
+    /// whether the screen has stayed unchanged
+    settled: bool,
     preview: Option<Pixmap>,
     preview_revision: u64,
     pub frame_count: u32,
@@ -47,6 +49,7 @@ impl ScrollSession {
             last_signature: Vec::new(),
             last_capture: std::time::Instant::now(),
             last_progress: std::time::Instant::now(),
+            settled: false,
             preview: None,
             preview_revision: u64::MAX,
             frame_count: 0,
@@ -87,13 +90,19 @@ impl ScrollSession {
     pub fn push(&mut self, image: Image) -> Option<StitchResult> {
         self.last_capture = std::time::Instant::now();
 
-        // skip identical frames to avoid refreshing anchors repeatedly
+        // skip identical frames to avoid refreshing anchors repeatedly, all but the first:
+        // once the page stops, the stitcher takes in what moved by less than it waits for
         let signature = frame::signature(&image, SIGNATURE_COLS, SIGNATURE_ROWS);
         if frame::is_duplicate(&self.last_signature, &signature) {
-            self.status = "Waiting for scroll".into();
-            return None;
+            if self.settled {
+                self.status = "Waiting for scroll".into();
+                return None;
+            }
+            self.settled = true;
+        } else {
+            self.last_signature = signature;
+            self.settled = false;
         }
-        self.last_signature = signature;
 
         let outcome = match self.stitcher.push(image) {
             Ok(outcome) => outcome,
