@@ -90,6 +90,44 @@ impl Stitcher {
         bottom
     }
 
+    pub(crate) fn known_places(&self, cols: &Signature) -> Vec<(i32, f32)> {
+        let maximum = self.long.height() - cols.len() as i32;
+        if maximum < 0 || cols.is_empty() {
+            return Vec::new();
+        }
+        let mut coarse: Vec<(i32, f32)> = (0..=maximum)
+            .step_by(8)
+            .chain(std::iter::once(maximum))
+            .map(|pos| (pos, self.known_diff(cols, pos, (0, 0)).0))
+            .collect();
+        coarse.sort_by(|a, b| a.1.total_cmp(&b.1));
+        let mut places: Vec<(i32, f32)> = Vec::new();
+        let mut looked: Vec<i32> = Vec::new();
+        for (pos, _) in coarse {
+            if looked.len() == REFINED {
+                break;
+            }
+            if looked.iter().any(|&at| (at - pos).abs() <= 8) {
+                continue;
+            }
+            looked.push(pos);
+            let mut bottom = (pos, NO_MATCH);
+            for at in (pos - 8).max(0)..=(pos + 8).min(maximum) {
+                let diff = self.known_diff(cols, at, (0, 0)).0;
+                if diff < bottom.1 {
+                    bottom = (at, diff);
+                }
+            }
+            if bottom.1 <= self.config.accept_diff
+                && places.iter().all(|&(at, _)| (at - bottom.0).abs() > 8)
+            {
+                places.push(bottom);
+            }
+        }
+        places.sort_by(|a, b| a.1.total_cmp(&b.1));
+        places
+    }
+
     fn visit_edge(&self, cols: &Signature, pos: i32, best: &mut (i32, f32)) {
         let height = cols.len() as i32;
         let (amount, edge) = overhang(pos, height, self.long.height());

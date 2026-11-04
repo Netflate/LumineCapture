@@ -105,6 +105,32 @@ impl Stitcher {
             fit.detailed < MIN_CHECKED
         }
     }
+    fn look_everywhere(&mut self, frame: Image, cols: Signature) -> Option<StitchResult> {
+        if self.long.height() < frame.height() {
+            return None;
+        }
+        self.screen_skip(&cols);
+        self.long_skip.clone_from(&self.long.tainted);
+        self.early = None;
+        self.backed = None;
+        let places = self.known_places(&cols);
+        let position = places
+            .into_iter()
+            .map(|(position, _)| position)
+            .find(|&position| self.fits_at(&frame, position))?;
+        let offset = position - self.anchor;
+        if let Some(last) = &self.last_frame {
+            self.fixed.observe(last, &frame, offset);
+        }
+        Some(self.adopt(frame, cols, position, offset))
+    }
+    fn fits_at(&mut self, frame: &Image, position: i32) -> bool {
+        let offset = position - self.anchor;
+        let mask = self.floats(frame, offset);
+        let fits = self.agrees(frame, position, mask.as_ref(), 0..0);
+        self.early = mask.map(|mask| (offset, mask));
+        fits
+    }
     fn take_in(
         &mut self,
         frame: &Image,
@@ -364,7 +390,7 @@ impl Stitcher {
             } else {
                 if full >= height {
                     let known = self.find_known(&cols, predicted);
-                    if known.1 <= self.config.accept_diff {
+                    if known.1 <= self.config.accept_diff && self.fits_at(&frame, known.0) {
                         let applied = known.0 - self.anchor;
                         if let Some(last) = &self.last_frame {
                             self.fixed.observe(last, &frame, applied);
@@ -373,7 +399,7 @@ impl Stitcher {
                     }
                 }
                 let Some(recovered) = self.recover(&frame, &cols, predicted) else {
-                    return Ok(StitchResult::default());
+                    return Ok(self.look_everywhere(frame, cols).unwrap_or_default());
                 };
                 placement = recovered;
             }
@@ -407,7 +433,7 @@ impl Stitcher {
             && (edge_diff > self.config.accept_diff || overlap < self.config.min_overlap)
         {
             let known = self.find_known(&cols, predicted);
-            if known.1 <= self.config.accept_diff {
+            if known.1 <= self.config.accept_diff && self.fits_at(&frame, known.0) {
                 placement.position = known.0;
                 placement.offset = known.0 - self.anchor;
                 placement.line = None;
@@ -441,12 +467,12 @@ impl Stitcher {
             if (changing && !trusted_switch && (!edge_valid || !at_end))
                 || (!edge_valid && !trusted_switch)
             {
-                return Ok(StitchResult::default());
+                return Ok(self.look_everywhere(frame, cols).unwrap_or_default());
             }
             let mask = self.floats(&frame, placement.offset);
             // Verify the overlap before committing new rows.
             if !self.agrees(&frame, placement.position, mask.as_ref(), 0..0) {
-                return Ok(StitchResult::default());
+                return Ok(self.look_everywhere(frame, cols).unwrap_or_default());
             }
             let (top, fresh) = if edge == Edge::End {
                 self.long
@@ -484,6 +510,9 @@ impl Stitcher {
             });
         }
         if amount == 0 {
+            if !self.fits_at(&frame, placement.position) {
+                return Ok(self.look_everywhere(frame, cols).unwrap_or_default());
+            }
             return Ok(self.adopt(frame, cols, placement.position, placement.offset));
         }
         self.pending_edge = edge;

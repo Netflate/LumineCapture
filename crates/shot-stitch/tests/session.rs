@@ -250,3 +250,45 @@ fn a_jump_far_from_the_last_step_is_found_to_the_pixel() {
         );
     }
 }
+
+/// `frame` with every column the signatures don't read changed: alike to them, not to the eye.
+fn lookalike(origin: i32, width: i32, height: i32) -> Image {
+    let read: std::collections::HashSet<i32> = (0..shot_stitch::profile::BAND_COUNT)
+        .flat_map(|band| {
+            let (start, end) = shot_stitch::profile::band_columns(width, band);
+            let count = (end - start + 1).clamp(1, 9);
+            let step = if count > 1 {
+                (end - start) as f32 / (count - 1) as f32
+            } else {
+                0.0
+            };
+            (0..count).map(move |i| (start as f32 + i as f32 * step).round() as i32)
+        })
+        .collect();
+    let page = frame(origin, width, height);
+    let mut pixels = page.pixels().to_vec();
+    for (i, p) in pixels.iter_mut().enumerate() {
+        if !read.contains(&(i as i32 % width)) {
+            *p ^= 0x00ffffff;
+        }
+    }
+    Image::from_pixels(width, height, pixels).unwrap()
+}
+
+#[test]
+fn a_frame_that_only_looks_alike_is_not_taken() {
+    let mut stitch = Stitcher::new(config()).unwrap();
+    for origin in (0..=900).step_by(100) {
+        stitch.push(frame(origin, 1000, 400)).unwrap();
+    }
+    let before = stitch.full_image().unwrap().unwrap();
+    assert_eq!(before, frame(0, 1000, 1300));
+    for origin in [800, 790] {
+        let result = stitch.push(lookalike(origin, 1000, 400)).unwrap();
+        assert_eq!(result.status, Status::NoMatch);
+    }
+    assert_eq!(stitch.full_image().unwrap().unwrap(), before);
+    let result = stitch.push(frame(1000, 1000, 400)).unwrap();
+    assert_eq!(result.status, Status::Appended);
+    assert_eq!(stitch.full_image().unwrap().unwrap(), frame(0, 1000, 1400));
+}
