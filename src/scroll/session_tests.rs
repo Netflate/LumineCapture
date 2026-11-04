@@ -111,6 +111,19 @@ fn idle_slows_capture_down_but_never_stops_it() {
 }
 
 #[test]
+fn a_frame_the_stitcher_cant_place_still_wakes_capture_up() {
+    let mut session = ScrollSession::new(region(), 0).unwrap();
+    let active = session.capture_interval();
+    session.push(frame::crop(&page_frame(0, 40, 160), CROP).unwrap());
+    std::thread::sleep(std::time::Duration::from_millis(1050));
+    assert!(session.capture_interval() > active);
+
+    // a flick after a pause: nothing in common with the last frame
+    session.push(frame::crop(&page_frame(5000, 40, 160), CROP).unwrap());
+    assert_eq!(session.capture_interval(), active);
+}
+
+#[test]
 fn the_last_few_rows_are_added_once_the_page_stops() {
     let mut session = ScrollSession::new(region(), 0).unwrap();
     let push = |session: &mut ScrollSession, origin| {

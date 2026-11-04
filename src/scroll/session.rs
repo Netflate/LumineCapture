@@ -10,7 +10,10 @@ use crate::scroll::frame;
 use crate::scroll::preview;
 
 const CAPTURE_INTERVAL_MS: u64 = 45;
-const IDLE_INTERVAL_MS: u64 = 400;
+/// Polling while nothing moves. A flick right after a pause moves the page by a screen or
+/// more within a few hundred milliseconds: wait longer and the next frame shares nothing with
+/// the last one, the stitcher loses the page and polling never speeds up again.
+const IDLE_INTERVAL_MS: u64 = 120;
 const SIGNATURE_COLS: usize = 18;
 const SIGNATURE_ROWS: usize = 24;
 const PREVIEW_WIDTH: u32 = 132;
@@ -24,7 +27,8 @@ pub struct ScrollSession {
     pub monitor_idx: usize,
     last_signature: Vec<u8>,
     last_capture: std::time::Instant,
-    last_progress: std::time::Instant,
+    /// last screen change, regardless of stitcher state
+    last_motion: std::time::Instant,
     /// whether the screen has stayed unchanged
     settled: bool,
     preview: Option<Pixmap>,
@@ -48,7 +52,7 @@ impl ScrollSession {
             monitor_idx,
             last_signature: Vec::new(),
             last_capture: std::time::Instant::now(),
-            last_progress: std::time::Instant::now(),
+            last_motion: std::time::Instant::now(),
             settled: false,
             preview: None,
             preview_revision: u64::MAX,
@@ -60,7 +64,7 @@ impl ScrollSession {
 
     /// Current capture interval: backs off when idle, polls fast during scrolling.
     pub fn capture_interval(&self) -> Duration {
-        let idle = self.last_progress.elapsed().as_millis() >= IDLE_AFTER_MS;
+        let idle = self.last_motion.elapsed().as_millis() >= IDLE_AFTER_MS;
         Duration::from_millis(if idle {
             IDLE_INTERVAL_MS
         } else {
@@ -79,11 +83,11 @@ impl ScrollSession {
         now.duration_since(self.last_capture) >= self.capture_interval()
     }
 
-    /// Checks if scrolling has stopped to back off frame capture.
+    /// Checks whether scrolling has stopped.
     pub fn should_idle(&self, now: Instant) -> bool {
         self.frame_count > 0
             && !self.paused
-            && now.duration_since(self.last_progress).as_millis() >= IDLE_AFTER_MS
+            && now.duration_since(self.last_motion).as_millis() >= IDLE_AFTER_MS
     }
 
     /// Feeds a new frame into the stitcher, `None` when it was skipped.
@@ -101,6 +105,7 @@ impl ScrollSession {
             self.settled = true;
         } else {
             self.last_signature = signature;
+            self.last_motion = Instant::now();
             self.settled = false;
         }
 
@@ -126,11 +131,9 @@ impl ScrollSession {
             Status::FirstFrame => "Capturing".into(),
             Status::Appended => "Capturing".into(),
             Status::NoProgress => "Waiting for scroll".into(),
-            Status::NoMatch => "No overlap match".into(),
+            // the page went further than one frame to the next can follow
+            Status::NoMatch => "Lost it, scroll back".into(),
         };
-        if matches!(outcome.status, Status::FirstFrame | Status::Appended) {
-            self.last_progress = Instant::now();
-        }
     }
 
     pub fn axis(&self) -> Axis {
