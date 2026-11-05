@@ -19,7 +19,7 @@
 
 <div align="center">
 
-![KDE Plasma](https://img.shields.io/badge/KDE_Plasma-supported-B483EF?logo=kde&logoColor=white&labelColor=1D1D2D) ![COSMIC](https://img.shields.io/badge/COSMIC-supported-B483EF?labelColor=1D1D2D) ![niri](https://img.shields.io/badge/niri-supported-B483EF?labelColor=1D1D2D) ![Hyprland](https://img.shields.io/badge/Hyprland-supported-B483EF?logo=hyprland&logoColor=white&labelColor=1D1D2D) ![GNOME](https://img.shields.io/badge/GNOME-not_yet-red?logo=gnome&logoColor=white&labelColor=1D1D2D)
+![KDE Plasma](https://img.shields.io/badge/KDE_Plasma-supported-B483EF?logo=kde&logoColor=white&labelColor=1D1D2D) ![COSMIC](https://img.shields.io/badge/COSMIC-supported-B483EF?labelColor=1D1D2D) ![niri](https://img.shields.io/badge/niri-supported-B483EF?labelColor=1D1D2D) ![Umbriel](https://img.shields.io/badge/Umbriel-supported-B483EF?labelColor=1D1D2D) ![Hyprland](https://img.shields.io/badge/Hyprland-supported-B483EF?logo=hyprland&logoColor=white&labelColor=1D1D2D) ![GNOME](https://img.shields.io/badge/GNOME-not_yet-red?logo=gnome&logoColor=white&labelColor=1D1D2D)
 
 </div>
 

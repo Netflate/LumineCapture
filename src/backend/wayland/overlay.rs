@@ -5,7 +5,7 @@
 // via xdg windows or layer_shell, managing shm pixel buffers, and driving the event loop
 //
 // by default, auto decides what to use, for everything a fullscreen window
-// for scrolling wm (for now only niri) layer, since creating a window there will start a clunky animation for a screenshot app
+// for scrolling compositors (niri, umbriel) layer, since creating a window there starts a clunky animation for a screenshot app
 // and for COSMIC, since force fullscreen window is unstable, at least for now (focus grabbing + gray cosmic ui)
 use rustix::{
     event::{PollFd, PollFlags, poll},
@@ -195,7 +195,9 @@ impl ScreenOverlay for WaylandOverlay {
                 return Err(format!("can't allocate overlay buffer: {e}").into());
             }
             if Instant::now() > deadline {
-                return Err("compositor didn't configure the overlay windows".into());
+                return Err("compositor didn't configure the overlay windows, \
+                            try general.overlay = \"window\""
+                    .into());
             }
         }
 
