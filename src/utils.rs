@@ -395,6 +395,25 @@ pub fn copy_swizzled(dst: &mut [u8], src: &[u8]) {
     }
 }
 
+// same single pass as copy_swizzled; the xor only reports whether anything
+// differed, a separate compare pass would read the buffer twice
+#[inline]
+pub fn sync_swizzled(dst: &mut [u8], src: &[u8]) -> bool {
+    let mut diff = 0;
+    for (d, s) in dst
+        .as_chunks_mut::<4>()
+        .0
+        .iter_mut()
+        .zip(src.as_chunks::<4>().0)
+    {
+        let v = u32::from_le_bytes(*s);
+        let px = (v & 0xff00_ff00) | ((v >> 16) & 0xff) | ((v & 0xff) << 16);
+        diff |= u32::from_le_bytes(*d) ^ px;
+        *d = px.to_le_bytes();
+    }
+    diff != 0
+}
+
 /// Spawns a new instance of this binary and passes image bytes via stdin.
 /// Runs in its own process group so Ctrl+C in the terminal won't kill pins or the clipboard handler.
 pub fn spawn_self(args: &[&str], stdin: &[u8]) -> Result<(), Box<dyn std::error::Error>> {

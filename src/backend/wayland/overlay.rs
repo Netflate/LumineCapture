@@ -226,23 +226,17 @@ impl ScreenOverlay for WaylandOverlay {
             .as_mut()
             .ok_or("SHM buffer is not configured yet")?;
 
-        // optimization: only upload and redraw the modified area
-        if let Some((x, y, w, h)) = damage {
-            if x == 0 && y == 0 && w == bw && h == bh {
-                buffer.write_pixels(pool, pixels);
-                sd.surface.attach(Some(buffer.wl_buffer()), 0, 0);
-                sd.surface.damage_buffer(0, 0, bw as i32, bh as i32);
-            } else {
-                buffer.write_pixels_rect(pool, pixels, bw, (x, y, w, h));
-                sd.surface.attach(Some(buffer.wl_buffer()), 0, 0);
-                sd.surface
-                    .damage_buffer(x as i32, y as i32, w as i32, h as i32);
-            }
-        } else {
-            // fallback to full frame redraw
-            buffer.write_pixels(pool, pixels);
-            sd.surface.attach(Some(buffer.wl_buffer()), 0, 0);
-            sd.surface.damage_buffer(0, 0, bw as i32, bh as i32);
+        let changed = buffer.sync_rect(pool, pixels, bw, damage.unwrap_or((0, 0, bw, bh)));
+        if changed.is_empty() {
+            // still committed: a cleared background (synchronized subsurface) applies only
+            // with the parent's commit. No frame callback, nothing will be shown
+            sd.surface.commit();
+            return Ok(());
+        }
+        sd.surface.attach(Some(buffer.wl_buffer()), 0, 0);
+        for (x, y, w, h) in changed {
+            sd.surface
+                .damage_buffer(x as i32, y as i32, w as i32, h as i32);
         }
 
         // next frame of this surface waits until the compositor has shown this one
