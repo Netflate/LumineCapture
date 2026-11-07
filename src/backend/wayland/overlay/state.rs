@@ -59,6 +59,7 @@ pub struct OverlayState {
     pub pending_flush: bool,
     pub configure_error: Option<String>,
     pub mods: crate::keys::Mods,
+    pub toplevel: bool,
 }
 
 pub struct Probe {
@@ -177,6 +178,7 @@ impl OverlayState {
             configure_error: None,
             mods: crate::keys::Mods::default(),
             pointer_enter_serial: 0,
+            toplevel: false,
         }
     }
 }

@@ -21,8 +21,11 @@ impl CompositorHandler for OverlayState {
         _: &Connection,
         _: &QueueHandle<Self>,
         _: &wl_surface::WlSurface,
-        _: i32,
+        factor: i32,
     ) {
+        if self.frac.is_none() {
+            self.rescale_window(factor as f32);
+        }
     }
     fn transform_changed(
         &mut self,
@@ -86,7 +89,11 @@ impl ShmHandler for OverlayState {
 impl OverlayState {
     /// shared code between window and layer overlay
     pub fn configure_surface(&mut self, surface: &wl_surface::WlSurface, size: Option<(u32, u32)>) {
-        let Some(sd) = self.surfaces.values_mut().find(|sd| &sd.surface == surface) else {
+        let Some((&monitor_idx, sd)) = self
+            .surfaces
+            .iter_mut()
+            .find(|(_, sd)| &sd.surface == surface)
+        else {
             return;
         };
 
@@ -111,6 +118,20 @@ impl OverlayState {
             }
         };
 
+        // app draws the new size before anything is attached,
+        // since a blank buffer would flash on every resize
+        if self.toplevel {
+            if let Some(viewport) = &sd.viewport {
+                viewport.set_destination(w as i32, h as i32);
+            }
+            sd.shm_buffer = Some(shm_buffer);
+            sd.width = w;
+            sd.height = h;
+            sd.mapped = true;
+            self.events.push_back(OverlayEvent::Resized { monitor_idx });
+            return;
+        }
+
         // apply configured input region with the first frame after mapping
         sd.mapped = true;
         sd.apply_input(&self.compositor_state);
@@ -125,5 +146,23 @@ impl OverlayState {
         sd.shm_buffer = Some(shm_buffer);
         sd.width = w;
         sd.height = h;
+    }
+
+    pub fn rescale_window(&mut self, scale: f32) {
+        if !self.toplevel || self.viewporter.is_none() || scale <= 0.0 {
+            return;
+        }
+        let Some(sd) = self.surfaces.values_mut().next() else {
+            return;
+        };
+        if sd.scale == scale {
+            return;
+        }
+        sd.scale = scale;
+        // before the first configure the scale is just picked up by it
+        if sd.shm_buffer.take().is_some() {
+            let surface = sd.surface.clone();
+            self.configure_surface(&surface, None);
+        }
     }
 }

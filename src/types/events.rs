@@ -55,6 +55,12 @@ pub enum OverlayEvent {
     Scroll {
         delta_x: f32,
         delta_y: f32,
+        /// wheel clicks, same signs as the deltas
+        /// `None` for a touchpad
+        wheel: Option<(f32, f32)>,
+    },
+    Resized {
+        monitor_idx: usize,
     },
 }
 

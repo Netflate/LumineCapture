@@ -74,6 +74,7 @@ pub fn run(editor_state: &mut EditorState, action: Action, dirty_mask: &mut u32)
             nudge_selection(editor_state, dir, fast, true, dirty_mask)
         }
         Action::Tool(_) | Action::Move { .. } | Action::Resize { .. } => {}
+        Action::ZoomIn | Action::ZoomOut | Action::ZoomFit | Action::ZoomActual => {}
     }
     apply_damage_rects(editor_state, dirty_mask);
 }

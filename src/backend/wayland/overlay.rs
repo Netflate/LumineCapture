@@ -57,6 +57,78 @@ impl WaylandOverlay {
     }
 }
 
+impl WaylandOverlay {
+    /// plain resizable window with the compositor's decorations, as surface 0;
+    /// the app gets `Resized` before every frame of a new size
+    pub fn open_window(
+        &mut self,
+        title: &str,
+        size: (u32, u32),
+        scale: f32,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let rt = &mut self.runtime;
+        let qh = rt.event_queue.handle();
+        let state = &mut rt.state;
+        state.toplevel = true;
+
+        let surface = state.compositor_state.create_surface(&qh);
+        let viewport = state
+            .viewporter
+            .as_ref()
+            .map(|viewporter| viewporter.get_viewport(&surface, &qh, ()));
+        let window = state.xdg_shell.create_window(
+            surface.clone(),
+            smithay_client_toolkit::shell::xdg::window::WindowDecorations::RequestServer,
+            &qh,
+        );
+        window.set_title(title);
+        window.set_app_id("lumine-capture");
+        if let Some(frac) = state.frac.as_ref() {
+            state.frac_scale = Some(frac.get_fractional_scale(&surface, &qh, ()));
+        }
+        window.commit();
+
+        state.surfaces.insert(
+            0,
+            SurfaceData {
+                background: None,
+                surface,
+                role: Role::Window(window),
+                shm_buffer: None,
+                mapped: false,
+                input: InputRegion::Full,
+                width: size.0.max(1),
+                height: size.1.max(1),
+                scale: if viewport.is_some() { scale } else { 1.0 },
+                viewport,
+                frame_sent: None,
+            },
+        );
+
+        let deadline = Instant::now() + CONFIGURE_TIMEOUT;
+        while rt
+            .state
+            .surfaces
+            .get(&0)
+            .is_some_and(|sd| sd.shm_buffer.is_none())
+        {
+            rt.event_queue.roundtrip(&mut rt.state)?;
+            if let Some(e) = rt.state.configure_error.take() {
+                return Err(format!("can't allocate the window buffer: {e}").into());
+            }
+            if Instant::now() > deadline {
+                return Err("compositor didn't configure the window".into());
+            }
+        }
+        Ok(())
+    }
+
+    pub fn window_size(&self) -> Option<((u32, u32), f32)> {
+        let sd = self.runtime.state.surfaces.get(&0)?;
+        Some(((sd.width, sd.height), sd.scale))
+    }
+}
+
 impl ScreenOverlay for WaylandOverlay {
     /// Preloads memory for all monitors
     /// this is done in advance so as not to waste extra time on it later.
@@ -220,6 +292,10 @@ impl ScreenOverlay for WaylandOverlay {
 
         let pool = &mut rt.state.pool;
         let (bw, bh) = sd.buffer_size();
+        // drawn before resize, `Resized` is already queued for the right one
+        if rt.state.toplevel && pixels.len() != bw as usize * bh as usize * 4 {
+            return Ok(());
+        }
 
         let buffer = sd
             .shm_buffer

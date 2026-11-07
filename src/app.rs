@@ -431,7 +431,8 @@ fn handle_event(editor_state: &mut EditorState, ev: OverlayEvent, dirty_mask: &m
         OverlayEvent::Tick
         | OverlayEvent::EscapePressed
         | OverlayEvent::Focus { .. }
-        | OverlayEvent::FrameDone { .. } => {}
+        | OverlayEvent::FrameDone { .. }
+        | OverlayEvent::Resized { .. } => {}
         OverlayEvent::PointerMove { monitor_idx, x, y } => {
             input::handle_pointer_move(editor_state, monitor_idx, x, y, dirty_mask);
         }
@@ -444,7 +445,9 @@ fn handle_event(editor_state: &mut EditorState, ev: OverlayEvent, dirty_mask: &m
         OverlayEvent::ModifiersChanged { ctrl, shift } => {
             input::handle_modifiers(editor_state, ctrl, shift, dirty_mask);
         }
-        OverlayEvent::Scroll { delta_x, delta_y } => {
+        OverlayEvent::Scroll {
+            delta_x, delta_y, ..
+        } => {
             input::handle_scroll(editor_state, delta_x, delta_y, dirty_mask);
         }
     }

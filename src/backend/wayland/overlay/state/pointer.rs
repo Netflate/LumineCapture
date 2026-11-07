@@ -3,7 +3,9 @@
 // use of 'pointer_frame', to group multiple mouse events in one cycle
 // instead of sending them one by one
 
-use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind, PointerHandler};
+use smithay_client_toolkit::seat::pointer::{
+    AxisScroll, PointerEvent, PointerEventKind, PointerHandler,
+};
 use wayland_client::protocol::wl_pointer;
 use wayland_client::{Connection, QueueHandle};
 
@@ -79,10 +81,19 @@ impl PointerHandler for OverlayState {
                 } => {
                     let delta_x = horizontal.absolute as f32;
                     let delta_y = -vertical.absolute as f32;
+                    let clicks = |axis: &AxisScroll| match axis.value120 {
+                        0 => axis.discrete as f32,
+                        v => v as f32 / 120.0,
+                    };
+                    let wheel = (clicks(&horizontal), -clicks(&vertical));
+                    let wheel = (wheel != (0.0, 0.0)).then_some(wheel);
 
                     if delta_x != 0.0 || delta_y != 0.0 {
-                        self.events
-                            .push_back(OverlayEvent::Scroll { delta_x, delta_y });
+                        self.events.push_back(OverlayEvent::Scroll {
+                            delta_x,
+                            delta_y,
+                            wheel,
+                        });
                     }
                 }
             }

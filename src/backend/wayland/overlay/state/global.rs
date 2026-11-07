@@ -43,6 +43,7 @@ impl Dispatch<wp_fractional_scale_v1::WpFractionalScaleV1, ()> for OverlayState 
         // we divide by 120.0 to convert it into a usual floating point scale (1.0, 1.25, 2.0, etc)
         if let wp_fractional_scale_v1::Event::PreferredScale { scale } = event {
             state.scale = scale as f64 / 120.0;
+            state.rescale_window(state.scale as f32);
         }
     }
 }

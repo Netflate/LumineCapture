@@ -1,6 +1,7 @@
 mod app;
 pub mod backend;
 pub mod config;
+pub mod edit;
 pub mod editor;
 pub mod fonts;
 pub mod interaction;
@@ -22,6 +23,7 @@ use std::time::{Duration, Instant};
 
 const HELP: &str = "\
 Usage: {name} [MODE] [OPTIONS]
+       {name} --edit [FILE]
        {name} --ocr-daemon [serve|status|stop|calibrate]
 
 Modes (without one, the editor opens):
@@ -35,6 +37,9 @@ Modes (without one, the editor opens):
   -S, --scroll         Start in scrolling capture: pick a region, scroll the page, and
                        the frames are stitched into one long image. Enter saves it,
                        Escape cancels
+      --edit [FILE]    Open an image in the editor window instead of taking a shot,
+                       reads it from stdin without FILE. The wheel scrolls it, Ctrl+wheel
+                       zooms, the middle button drags it
 
 Options:
   -m, --monitor        Only the monitor under the pointer
@@ -179,6 +184,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Err(e) = &result {
                 log::error!("pin failed: {e}");
                 backend::notify::send_blocking(backend::notify::Notice::PinFailed(e.to_string()));
+            }
+            result
+        }
+        Some(edit::EDIT_ARG) => {
+            logging::init(logging::Process::Edit);
+            let result = edit::cli(args);
+            if let Err(e) = &result {
+                log::error!("editor failed: {e}");
             }
             result
         }

@@ -18,6 +18,7 @@ const DEFAULT_FILE_LEVEL: LevelFilter = LevelFilter::Info;
 pub enum Process {
     Overlay,
     Pin,
+    Edit,
     Clipboard,
     OcrDaemon,
 }
@@ -27,6 +28,7 @@ impl Process {
         match self {
             Process::Overlay => "lumine",
             Process::Pin => "pin",
+            Process::Edit => "edit",
             Process::Clipboard => "clipboard",
             Process::OcrDaemon => "ocr-daemon",
         }
