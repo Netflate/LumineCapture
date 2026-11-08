@@ -141,27 +141,96 @@ fn halve(src: &Pixmap) -> Option<Pixmap> {
     let (hw, hh) = (w.div_ceil(2), h.div_ceil(2));
     let mut out = Pixmap::new(hw as u32, hh as u32)?;
     let data = src.data();
-    let dst = out.data_mut();
-    for y in 0..hh {
-        let (r0, r1) = (2 * y * w, (2 * y + 1).min(h - 1) * w);
-        for x in 0..hw {
-            let (c0, c1) = (2 * x, (2 * x + 1).min(w - 1));
-            let at = (y * hw + x) * 4;
-            for ch in 0..4 {
-                let sum = data[(r0 + c0) * 4 + ch] as u32
-                    + data[(r0 + c1) * 4 + ch] as u32
-                    + data[(r1 + c0) * 4 + ch] as u32
-                    + data[(r1 + c1) * 4 + ch] as u32;
-                dst[at + ch] = ((sum + 2) / 4) as u8;
-            }
-        }
+    let row = |y: usize| &data[y.min(h - 1) * w * 4..][..w * 4];
+    for (y, dst) in out.data_mut().chunks_exact_mut(hw * 4).enumerate() {
+        halve_rows(row(2 * y), row(2 * y + 1), dst);
     }
     Some(out)
+}
+
+fn halve_rows(a: &[u8], b: &[u8], dst: &mut [u8]) {
+    const EVEN: u32 = 0x00ff_00ff;
+    let px = |c: &[u8]| u32::from_le_bytes([c[0], c[1], c[2], c[3]]);
+    let avg = |p: [u32; 4]| {
+        let even = p.iter().map(|v| v & EVEN).sum::<u32>() + 0x0002_0002;
+        let odd = p.iter().map(|v| (v >> 8) & EVEN).sum::<u32>() + 0x0002_0002;
+        ((even >> 2) & EVEN) | (((odd >> 2) & EVEN) << 8)
+    };
+    let ((a, a_odd), (b, b_odd)) = (a.as_chunks::<8>(), b.as_chunks::<8>());
+    let (out, _) = dst.as_chunks_mut::<4>();
+    for ((a, b), d) in a.iter().zip(b).zip(&mut *out) {
+        *d = avg([px(&a[..4]), px(&a[4..]), px(&b[..4]), px(&b[4..])]).to_le_bytes();
+    }
+    if !a_odd.is_empty() {
+        let (p, q) = (px(a_odd), px(b_odd));
+        out[a.len()] = avg([p, p, q, q]).to_le_bytes();
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn halve_reference(src: &Pixmap) -> Option<Pixmap> {
+        let (w, h) = (src.width() as usize, src.height() as usize);
+        if w < 2 && h < 2 {
+            return None;
+        }
+        let (hw, hh) = (w.div_ceil(2), h.div_ceil(2));
+        let mut out = Pixmap::new(hw as u32, hh as u32)?;
+        let data = src.data();
+        let dst = out.data_mut();
+        for y in 0..hh {
+            let (r0, r1) = (2 * y * w, (2 * y + 1).min(h - 1) * w);
+            for x in 0..hw {
+                let (c0, c1) = (2 * x, (2 * x + 1).min(w - 1));
+                let at = (y * hw + x) * 4;
+                for ch in 0..4 {
+                    let sum = data[(r0 + c0) * 4 + ch] as u32
+                        + data[(r0 + c1) * 4 + ch] as u32
+                        + data[(r1 + c0) * 4 + ch] as u32
+                        + data[(r1 + c1) * 4 + ch] as u32;
+                    dst[at + ch] = ((sum + 2) / 4) as u8;
+                }
+            }
+        }
+        Some(out)
+    }
+
+    fn noise(w: u32, h: u32, seed: u64) -> Pixmap {
+        let mut pixmap = Pixmap::new(w, h).unwrap();
+        let mut state = seed;
+        for byte in pixmap.data_mut() {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            *byte = (state >> 56) as u8;
+        }
+        pixmap
+    }
+
+    #[test]
+    fn halving_matches_the_reference() {
+        let sizes = [
+            (1, 1),
+            (1, 7),
+            (7, 1),
+            (2, 2),
+            (3, 5),
+            (5, 3),
+            (64, 64),
+            (1001, 37),
+        ];
+        for (i, (w, h)) in sizes.into_iter().enumerate() {
+            let src = noise(w, h, i as u64 + 1);
+            let (new, old) = (halve(&src), halve_reference(&src));
+            assert_eq!(new.is_none(), old.is_none(), "{w}x{h}");
+            if let (Some(new), Some(old)) = (new, old) {
+                assert_eq!((new.width(), new.height()), (old.width(), old.height()));
+                assert!(new.data() == old.data(), "{w}x{h}");
+            }
+        }
+    }
 
     #[test]
     fn halving_averages_and_keeps_odd_edges() {
