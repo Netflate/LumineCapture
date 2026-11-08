@@ -461,8 +461,11 @@ pub fn handle_pointer_button(
 }
 
 pub fn select_tool(editor_state: &mut EditorState, tool: Tool, dirty_mask: &mut u32) {
-    if editor_state.scroll.is_some() {
-        return;
+    if let Some(scroll) = editor_state.scroll.as_ref() {
+        if scroll.grown() {
+            return;
+        }
+        super::scroll::stop(editor_state, dirty_mask);
     }
     let Some(tb_button) =
         editor_state.toolbar.items.iter().position(

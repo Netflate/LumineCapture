@@ -18,7 +18,7 @@ use crate::scroll::state::inside;
 use crate::scroll::{Scroll, ScrollSession, frame};
 use crate::tools::Tool;
 use crate::tools::selection::global_selection_to_local;
-use crate::types::Outputs;
+use crate::types::{Mode, Outputs};
 use crate::ui::toolbar::{ToolbarButton, ToolbarItem};
 use crate::utils::rects_overlap;
 
@@ -88,6 +88,8 @@ pub async fn start(
     editor_state.scroll = Some(scroll);
     info!("scrolling capture started on monitor {monitor_idx}");
 
+    super::panels::color::close_color_popover(editor_state, dirty_mask);
+    super::panels::model::close_model_popover(editor_state, dirty_mask);
     highlight(editor_state);
     redraw_monitor(editor_state, monitor_idx, dirty_mask);
     super::input::refresh_panels(editor_state, dirty_mask);
@@ -119,6 +121,7 @@ pub async fn capture_step(
         scroll.session.stitcher.revision(),
         scroll.session.status.clone(),
     );
+    let was_grown = scroll.grown();
 
     let pushed = match overlay
         .discovered_outputs()
@@ -158,8 +161,12 @@ pub async fn capture_step(
         scroll.session.stitcher.revision(),
         scroll.session.status.clone(),
     );
+    let grown = scroll.grown();
     if before != after {
         refresh_panel(editor_state, dirty_mask);
+    }
+    if grown && !was_grown {
+        super::input::refresh_panels(editor_state, dirty_mask);
     }
 }
 
@@ -171,6 +178,18 @@ pub fn sync(
     drawn: impl Fn(usize) -> bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let Some(scroll) = editor_state.scroll.as_mut() else {
+        if let Some((idx, restore)) = editor_state.scroll_left.take() {
+            if restore {
+                let snapshot = &editor_state.captures[idx].pixmap;
+                overlay.set_background(
+                    idx,
+                    snapshot.data(),
+                    snapshot.width(),
+                    snapshot.height(),
+                )?;
+            }
+            overlay.set_input_hole(idx, None);
+        }
         return Ok(());
     };
     let idx = scroll.monitor_idx;
@@ -184,6 +203,29 @@ pub fn sync(
         scroll.input = Some(hole);
     }
     Ok(())
+}
+
+/// backend side is done by `sync`
+pub fn stop(editor_state: &mut EditorState, dirty_mask: &mut u32) {
+    let Some(scroll) = editor_state.scroll.take() else {
+        return;
+    };
+    let idx = scroll.monitor_idx;
+    editor_state.scroll_left = Some((idx, !scroll.background));
+    editor_state.mode = Mode::Editor;
+
+    let zone = editor_state.selection.zone;
+    let (local, _, edges) = super::selection_render_info(editor_state, idx, &zone, &None);
+    crate::renderer::init_dimming(
+        &mut editor_state.dimmed[idx],
+        local.as_ref(),
+        edges.as_ref(),
+        editor_state.placements[idx].scale,
+    );
+    crate::tools::dispatch_activate(editor_state.selected_tool, editor_state, dirty_mask);
+    highlight(editor_state);
+    redraw_monitor(editor_state, idx, dirty_mask);
+    super::input::refresh_panels(editor_state, dirty_mask);
 }
 
 pub fn blocks_tool(editor_state: &EditorState) -> bool {
@@ -200,11 +242,16 @@ fn redraw_monitor(editor_state: &mut EditorState, idx: usize, dirty_mask: &mut u
 
 fn highlight(editor_state: &mut EditorState) {
     let running = editor_state.scroll.is_some();
+    let tool = editor_state.selected_tool;
     editor_state.toolbar.selected = editor_state
         .toolbar
         .items
         .iter()
-        .position(|item| matches!(item, ToolbarItem::Button(ToolbarButton::Scroll)) && running);
+        .position(|item| match item {
+            ToolbarItem::Button(ToolbarButton::Scroll) => running,
+            ToolbarItem::Button(ToolbarButton::Tool(t)) => !running && *t == tool,
+            _ => false,
+        });
     editor_state.toolbar.dirty = true;
 }
 

@@ -70,6 +70,14 @@ impl Scroll {
         inside(&self.region, local)
     }
 
+    pub fn grown(&self) -> bool {
+        let (w, h) = self.session.stitcher.dimensions();
+        match self.axis() {
+            Axis::Vertical => h > self.crop.height() as i32,
+            Axis::Horizontal => w > self.crop.width() as i32,
+        }
+    }
+
     pub fn observe(&mut self, result: &StitchResult) {
         match result.status {
             Status::FirstFrame => self.lead = 0,

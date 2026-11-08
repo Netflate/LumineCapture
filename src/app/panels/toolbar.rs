@@ -152,8 +152,9 @@ fn compute_toolbar_placement(editor_state: &EditorState) -> (usize, (f32, f32), 
 
     // inside the live region it would end up in the frames
     let in_frames = editor_state.scroll.as_ref().is_some_and(|scroll| {
-        Rect::from_xywh(pos_x, pos_y, tb_w, tb_h)
-            .is_some_and(|rect| crate::utils::rects_overlap(&rect, &scroll.region))
+        scroll.grown()
+            || Rect::from_xywh(pos_x, pos_y, tb_w, tb_h)
+                .is_some_and(|rect| crate::utils::rects_overlap(&rect, &scroll.region))
     });
 
     (monitor_idx, (pos_x, pos_y), in_frames)

@@ -86,6 +86,17 @@ fn scrolling_above_the_start_moves_the_long_image_up() {
 }
 
 #[test]
+fn grown_once_the_page_has_moved() {
+    let mut scroll = scroll();
+    assert!(!scroll.grown());
+    show(&mut scroll, 0);
+    show(&mut scroll, 0);
+    assert!(!scroll.grown());
+    show(&mut scroll, 40);
+    assert!(scroll.grown());
+}
+
+#[test]
 fn live_region_is_a_hole_in_the_base() {
     let mut scroll = scroll();
     show(&mut scroll, 0);
