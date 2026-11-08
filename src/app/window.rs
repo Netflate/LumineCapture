@@ -1,6 +1,7 @@
 // edit mode in its own window: the overlay's editor with one monitor,
 // the window, which shows the picture of `EditorState.sheet` under the ui
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use cosmic_text::SwashCache;
 use tiny_skia::{Pixmap, Rect};
@@ -12,11 +13,13 @@ use crate::edit::{Sheet, TITLE, TOUCHPAD_ZOOM, WHEEL_STEP, ZOOM_STEP};
 use crate::editor::dirty::{apply_damage_rects, mark_dirty};
 use crate::editor::{EditorState, Layers, TextState};
 use crate::keys::Action;
-use crate::types::{Capture, Placement};
+use crate::types::{Capture, Outputs, Placement};
 
 pub async fn run(
     conn: wayland_client::Connection,
     image: Pixmap,
+    outputs: Outputs,
+    output: Option<PathBuf>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let icons = std::thread::spawn(init::load_icons_cache);
     let system_fonts = std::thread::spawn(crate::fonts::system);
@@ -59,7 +62,9 @@ pub async fn run(
     );
     editor_state.sheet = Some(sheet);
     editor_state.selection.zone = editor_state.workspace();
-    editor_state.toolbar.to = editor_state.to;
+    editor_state.to = outputs;
+    editor_state.toolbar.to = outputs;
+    editor_state.output = output;
     window.set_min_size(super::panels::toolbar::min_window_size(
         editor_state.toolbar.natural_size(),
     ));

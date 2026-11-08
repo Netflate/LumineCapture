@@ -189,7 +189,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Some(edit::EDIT_ARG) => {
             logging::init(logging::Process::Edit);
-            let result = edit::cli(args);
+            let result = edit::cli(args, launch);
             if let Err(e) = &result {
                 log::error!("editor failed: {e}");
             }
@@ -237,6 +237,65 @@ mod tests {
         assert_eq!(mode(&["-rm", "ocr"]), Ok(types::Mode::Ocr));
         assert_eq!(mode(&["-r", "-t", "c", "ocr"]), Ok(types::Mode::Ocr));
         assert_eq!(mode(&["-r", "-o", "ocr"]), Ok(types::Mode::Region));
+    }
+
+    fn edit_launch(list: &[&str]) -> (Option<types::Outputs>, Option<PathBuf>, Vec<String>) {
+        let mut pargs = args(list);
+        let launch = parse_launch(&mut pargs, Instant::now()).unwrap();
+        let rest = pargs
+            .finish()
+            .into_iter()
+            .map(|s| s.into_string().unwrap())
+            .collect();
+        (launch.to, launch.output, rest)
+    }
+
+    #[test]
+    fn edit_takes_to_and_output_around_the_file() {
+        let copy = Some(types::Outputs::parse("c").unwrap());
+        let rest = vec!["--edit".to_string(), "a.png".to_string()];
+        let dir = Some(PathBuf::from("dir"));
+        assert_eq!(
+            edit_launch(&["--edit", "a.png", "-t", "c"]),
+            (copy, None, rest.clone())
+        );
+        assert_eq!(
+            edit_launch(&["--edit", "-t", "c", "a.png"]),
+            (copy, None, rest.clone())
+        );
+        assert_eq!(
+            edit_launch(&["-o", "dir", "--edit", "a.png"]),
+            (None, dir.clone(), rest.clone())
+        );
+        assert_eq!(
+            edit_launch(&["--edit", "a.png", "-o", "dir", "-t", "c"]),
+            (copy, dir, rest)
+        );
+    }
+
+    #[test]
+    fn edit_takes_bare_and_combined_to() {
+        let none = Some(types::Outputs::default());
+        let rest = vec!["--edit".to_string(), "-".to_string()];
+        assert_eq!(
+            edit_launch(&["--edit", "-", "-t"]),
+            (none, None, rest.clone())
+        );
+        assert_eq!(
+            edit_launch(&["--edit", "-", "-t", ""]),
+            (none, None, rest.clone())
+        );
+        let both = Some(types::Outputs::parse("cs").unwrap());
+        assert_eq!(
+            edit_launch(&["--edit", "-", "-t", "cs"]),
+            (both, None, rest)
+        );
+    }
+
+    #[test]
+    fn edit_leaves_unknown_arguments_for_the_cli() {
+        let (_, _, rest) = edit_launch(&["--edit", "a.png", "extra", "-t", "c"]);
+        assert_eq!(rest, ["--edit", "a.png", "extra"]);
     }
 
     #[test]

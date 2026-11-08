@@ -51,7 +51,7 @@ pub struct Launch {
 }
 
 impl Launch {
-    fn outputs(&self) -> Outputs {
+    pub fn outputs(&self) -> Outputs {
         let mut outputs = self.to.unwrap_or(crate::config::get().general.to);
         outputs.save |= self.output.is_some();
         if self.mode == Mode::Ocr {

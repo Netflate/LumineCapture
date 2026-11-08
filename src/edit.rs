@@ -20,7 +20,10 @@ pub const ZOOM_STEP: f32 = 1.25;
 /// touchpad pixels that zoom as much as one wheel click
 pub const TOUCHPAD_ZOOM: f32 = 15.0;
 
-pub fn cli(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::error::Error>> {
+pub fn cli(
+    mut args: impl Iterator<Item = String>,
+    mut launch: crate::app::Launch,
+) -> Result<(), Box<dyn std::error::Error>> {
     let path = args.next();
     if let Some(extra) = args.next() {
         return Err(format!("unexpected argument {extra:?}").into());
@@ -38,10 +41,12 @@ pub fn cli(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::er
         Some(path) => std::fs::read(path).map_err(|e| format!("can't read {path}: {e}"))?,
     };
     let image = decode(&bytes)?;
+    launch.mode = crate::types::Mode::Editor;
+    let outputs = launch.outputs();
     tokio::runtime::Runtime::new()?.block_on(async {
         let conn = wayland_client::Connection::connect_to_env()
             .map_err(|e| format!("can't connect to Wayland: {e}"))?;
-        crate::app::window::run(conn, image).await
+        crate::app::window::run(conn, image, outputs, launch.output).await
     })
 }
 
