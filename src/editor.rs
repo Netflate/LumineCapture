@@ -140,6 +140,7 @@ pub struct EditorState {
     /// in the ui, finish adds it alongside the user chioce
     pub to: crate::types::Outputs,
     pub cancel: bool,
+    pub to_window: bool,
     pub ui_hidden: bool,
     /// `--region`: no toolbar, releasing a freshly dragged selection finishes the shot.
     pub mode: Mode,
@@ -220,6 +221,7 @@ impl EditorState {
             finish: None,
             to: crate::config::get().general.to,
             cancel: false,
+            to_window: false,
             ui_hidden: false,
             mode: Mode::Editor,
             output: None,

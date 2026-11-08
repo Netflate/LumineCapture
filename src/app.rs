@@ -147,6 +147,8 @@ async fn make_screenshot(
     editor_state.ocr.models.shutdown();
     if launch.mode == Mode::Ocr {
         ocr::finish(&mut editor_state).await
+    } else if editor_state.to_window {
+        finish::hand_to_window(&mut editor_state).await
     } else {
         finish::finish_capture(&mut editor_state).await
     }
@@ -347,7 +349,7 @@ async fn run_overlay(
             apply_damage_rects(editor_state, &mut dirty_mask);
         }
 
-        if editor_state.finish.is_some() || editor_state.cancel {
+        if editor_state.finish.is_some() || editor_state.cancel || editor_state.to_window {
             break;
         }
 

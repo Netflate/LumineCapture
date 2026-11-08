@@ -45,6 +45,10 @@ pub fn cli(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::er
     })
 }
 
+pub fn spawn(png: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+    crate::utils::spawn_self(&[EDIT_ARG, "-"], png)
+}
+
 fn decode(bytes: &[u8]) -> Result<Pixmap, Box<dyn std::error::Error>> {
     let rgba = image::load_from_memory(bytes)?.into_rgba8();
     let (w, h) = rgba.dimensions();

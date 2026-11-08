@@ -13,7 +13,7 @@ use shot_stitch::Axis;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PanelButton {
-    TogglePause,
+    Edit,
     ToggleAxis,
     Finish,
     Cancel,
@@ -33,7 +33,7 @@ const BUTTON_GAP: f32 = 6.0;
 const LINE_HEIGHT: f32 = 16.0;
 const PREVIEW_MAX_HEIGHT: f32 = 220.0;
 const SHEET: &[PanelButton] = &[
-    PanelButton::TogglePause,
+    PanelButton::Edit,
     PanelButton::ToggleAxis,
     PanelButton::Finish,
     PanelButton::Cancel,
@@ -278,15 +278,14 @@ fn draw_preview(p: &mut Painter, session: &mut ScrollSession, rect: Rect) {
 pub fn is_button_enabled(button: PanelButton, session: &ScrollSession) -> bool {
     match button {
         PanelButton::ToggleAxis => session.can_toggle_axis(),
-        PanelButton::TogglePause | PanelButton::Finish | PanelButton::Cancel => true,
+        PanelButton::Edit | PanelButton::Finish | PanelButton::Cancel => true,
     }
 }
 
 /// Returns the icon SVG string corresponding to a panel button and session state.
 pub fn button_icon(button: PanelButton, session: &ScrollSession) -> &'static str {
     match button {
-        PanelButton::TogglePause if session.paused => icons::SCROLL_RESUME,
-        PanelButton::TogglePause => icons::SCROLL_PAUSE,
+        PanelButton::Edit => icons::PEN,
         PanelButton::ToggleAxis => match session.axis() {
             Axis::Vertical => icons::SCROLL,
             Axis::Horizontal => icons::SCROLL_HORIZONTAL,

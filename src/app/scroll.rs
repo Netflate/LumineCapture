@@ -249,11 +249,6 @@ fn switched(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     super::input::refresh_panels(editor_state, dirty_mask);
 }
 
-pub fn toggle_live(editor_state: &mut EditorState, dirty_mask: &mut u32) {
-    let live = live(editor_state);
-    set_live(editor_state, !live, dirty_mask);
-}
-
 /// wheel over the paused region scrolls the long image, returns whether it did.
 pub fn wheel(
     editor_state: &mut EditorState,
@@ -401,7 +396,7 @@ pub fn click(editor_state: &mut EditorState, dirty_mask: &mut u32) -> bool {
         return true;
     }
     match button {
-        PanelButton::TogglePause => toggle_live(editor_state, dirty_mask),
+        PanelButton::Edit => editor_state.to_window = true,
         PanelButton::ToggleAxis => {
             if scroll.session.toggle_axis() {
                 scroll.reset();

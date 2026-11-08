@@ -28,6 +28,20 @@ pub async fn finish_capture(
     Ok(())
 }
 
+/// if the editor window can't start for some reason, screenshot is delivered like a plain finish
+pub async fn hand_to_window(
+    editor_state: &mut EditorState,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let Some((png, _, scale)) = render_final(editor_state) else {
+        return Ok(());
+    };
+    if let Err(e) = crate::edit::spawn(&png) {
+        log::error!("can't open the editor window: {e}");
+        deliver(png, scale, editor_state.to, editor_state.output.as_deref()).await;
+    }
+    Ok(())
+}
+
 /// Pins, saves and copies the finished shot, then tells the user about it.
 pub async fn deliver(png: Vec<u8>, scale: f32, outputs: Outputs, dir: Option<&Path>) {
     if outputs.pin

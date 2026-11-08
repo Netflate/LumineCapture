@@ -99,10 +99,7 @@ fn toggle_axis_availability_before_and_after_growth() {
         panel::PanelButton::ToggleAxis,
         &session
     ));
-    assert!(panel::is_button_enabled(
-        panel::PanelButton::TogglePause,
-        &session
-    ));
+    assert!(panel::is_button_enabled(panel::PanelButton::Edit, &session));
     assert!(panel::is_button_enabled(
         panel::PanelButton::Finish,
         &session
