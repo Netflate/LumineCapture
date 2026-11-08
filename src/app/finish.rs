@@ -35,7 +35,7 @@ pub async fn hand_to_window(
     let Some((png, _, scale)) = render_final(editor_state) else {
         return Ok(());
     };
-    if let Err(e) = crate::edit::spawn(&png) {
+    if let Err(e) = crate::edit::spawn(&png, editor_state.to, editor_state.output.as_deref()) {
         log::error!("can't open the editor window: {e}");
         deliver(png, scale, editor_state.to, editor_state.output.as_deref()).await;
     }

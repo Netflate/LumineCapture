@@ -50,8 +50,28 @@ pub fn cli(
     })
 }
 
-pub fn spawn(png: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
-    crate::utils::spawn_self(&[EDIT_ARG, "-"], png)
+pub fn spawn(
+    png: &[u8],
+    to: crate::types::Outputs,
+    dir: Option<&std::path::Path>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use std::ffi::OsString;
+
+    let mut args: Vec<OsString> = vec![
+        EDIT_ARG.into(),
+        "-".into(),
+        "-t".into(),
+        to.letters().into(),
+    ];
+    if let Some(dir) = dir {
+        args.extend(["-o".into(), dir.into()]);
+    }
+    let stdout = if to.stdout {
+        std::process::Stdio::inherit()
+    } else {
+        std::process::Stdio::null()
+    };
+    crate::utils::spawn_self_stdout(&args, png, stdout)
 }
 
 fn decode(bytes: &[u8]) -> Result<Pixmap, Box<dyn std::error::Error>> {

@@ -116,6 +116,19 @@ impl Outputs {
         Ok(outputs)
     }
 
+    pub fn letters(self) -> String {
+        [
+            (self.copy, 'c'),
+            (self.pin, 'p'),
+            (self.save, 's'),
+            (self.stdout, 'o'),
+            (self.primary, 'r'),
+        ]
+        .into_iter()
+        .filter_map(|(on, letter)| on.then_some(letter))
+        .collect()
+    }
+
     pub fn is_empty(self) -> bool {
         self == Self::default()
     }
@@ -174,6 +187,21 @@ mod tests {
             Ok(all)
         );
         assert_eq!(Outputs::parse("p"), Ok(Outputs::from(Finish::Pin)));
+    }
+
+    #[test]
+    fn letters_are_the_inverse_of_parse() {
+        for bits in 0..32u32 {
+            let outputs = Outputs {
+                copy: bits & 1 != 0,
+                pin: bits & 2 != 0,
+                save: bits & 4 != 0,
+                stdout: bits & 8 != 0,
+                primary: bits & 16 != 0,
+            };
+            assert_eq!(Outputs::parse(&outputs.letters()), Ok(outputs));
+        }
+        assert_eq!(Outputs::default().letters(), "");
     }
 
     #[test]

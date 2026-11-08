@@ -401,7 +401,15 @@ pub fn sync_swizzled(dst: &mut [u8], src: &[u8]) -> bool {
 /// Spawns a new instance of this binary and passes image bytes via stdin.
 /// Runs in its own process group so Ctrl+C in the terminal won't kill pins or the clipboard handler.
 pub fn spawn_self(args: &[&str], stdin: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
-    spawn_self_with(args, stdin, std::process::Stdio::null()).map(|_| ())
+    spawn_self_stdout(args, stdin, std::process::Stdio::null())
+}
+
+pub fn spawn_self_stdout(
+    args: &[impl AsRef<std::ffi::OsStr>],
+    stdin: &[u8],
+    stdout: std::process::Stdio,
+) -> Result<(), Box<dyn std::error::Error>> {
+    spawn_self_with(args, stdin, stdout).map(|_| ())
 }
 
 /// Like `spawn_self`, but waits for the child's first stdout line:
@@ -433,7 +441,7 @@ pub fn spawn_self_ready(
 }
 
 fn spawn_self_with(
-    args: &[&str],
+    args: &[impl AsRef<std::ffi::OsStr>],
     stdin: &[u8],
     stdout: std::process::Stdio,
 ) -> Result<Option<std::process::ChildStdout>, Box<dyn std::error::Error>> {
