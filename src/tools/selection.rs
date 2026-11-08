@@ -70,7 +70,9 @@ impl ToolBehavior for SelectionTool {
                 .selection
                 .zone
                 .as_ref()
-                .map(|sel| hit_test_rect_handle(sel, state.input.pointer.global))
+                .map(|sel| {
+                    hit_test_rect_handle(sel, state.input.pointer.global, state.pointer_zoom())
+                })
                 .unwrap_or(SelectionHandle::None);
 
             let pos = (
@@ -135,6 +137,13 @@ impl ToolBehavior for SelectionTool {
         }
 
         if selection_changed {
+            if let (Some(sel), Some(bounds)) = (
+                state.selection.zone,
+                state.sheet.as_ref().and(state.workspace()),
+            ) {
+                let moving = state.selection.active_handle == SelectionHandle::Move;
+                state.selection.zone = keep_inside(sel, bounds, moving);
+            }
             if let Some(sel) = old_sel {
                 state.damage_rects.push(DamageZone::Global(sel));
             }
@@ -151,12 +160,44 @@ impl ToolBehavior for SelectionTool {
         }
         if let Some(sel) = state.selection.zone
             && let Some(icon) = cursor_for_handle(
-                hit_test_rect_handle(&sel, state.input.pointer.global),
+                hit_test_rect_handle(&sel, state.input.pointer.global, state.pointer_zoom()),
                 false,
             )
         {
             return icon;
         }
         CursorIcon::Crosshair
+    }
+}
+
+fn keep_inside(sel: Rect, bounds: Rect, moving: bool) -> Option<Rect> {
+    let sel = if moving {
+        let back = |lo: f32, hi: f32, min: f32, max: f32| (min - lo).max(0.0) + (max - hi).min(0.0);
+        let dx = back(sel.left(), sel.right(), bounds.left(), bounds.right());
+        let dy = back(sel.top(), sel.bottom(), bounds.top(), bounds.bottom());
+        Rect::from_xywh(sel.x() + dx, sel.y() + dy, sel.width(), sel.height())?
+    } else {
+        sel
+    };
+    sel.intersect(&bounds)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn selection_stays_on_the_picture() {
+        let bounds = Rect::from_xywh(0.0, 0.0, 100.0, 80.0).unwrap();
+        let past = Rect::from_xywh(70.0, -10.0, 50.0, 30.0).unwrap();
+        assert_eq!(
+            keep_inside(past, bounds, true),
+            Rect::from_xywh(50.0, 0.0, 50.0, 30.0)
+        );
+        assert_eq!(
+            keep_inside(past, bounds, false),
+            Rect::from_xywh(70.0, 0.0, 30.0, 20.0)
+        );
+        assert_eq!(keep_inside(bounds, bounds, true), Some(bounds));
     }
 }

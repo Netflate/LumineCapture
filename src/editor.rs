@@ -13,9 +13,10 @@ use usvg::Tree;
 use crate::editor::blur::BlurState;
 use crate::interaction::{ClickTarget, DoubleClickTracker};
 use crate::tools::Tool;
+use crate::tools::selection::{global_selection_to_local, selection_edges_for_monitor};
 use crate::types::{
-    AnnDragState, Annotation, Capture, Mode, Placement, PointerState, SelectionState,
-    TextEditState, ToolSettings,
+    AnnDragState, Annotation, Capture, Mode, Placement, PointerState, SelectionEdges,
+    SelectionState, TextEditState, ToolSettings,
 };
 use crate::ui::color_popover::ColorPickerPopover;
 use crate::ui::magnifier::MagnifierState;
@@ -30,6 +31,7 @@ pub struct InputState {
     pub mouse_down: bool,
     pub ctrl: bool,
     pub shift: bool,
+    pub alt: bool,
     pub straight: bool,
     pub clicks: DoubleClickTracker<ClickTarget>,
 }
@@ -42,6 +44,7 @@ impl Default for InputState {
             mouse_down: false,
             ctrl: false,
             shift: false,
+            alt: false,
             straight: false,
             clicks: DoubleClickTracker::new(),
         }
@@ -145,6 +148,7 @@ pub struct EditorState {
 
     pub ocr: OcrState,
     pub scroll: Option<crate::scroll::Scroll>,
+    pub sheet: Option<crate::edit::Sheet>,
 }
 
 // types.rs
@@ -220,12 +224,16 @@ impl EditorState {
             mode: Mode::Editor,
             output: None,
             scroll: None,
+            sheet: None,
         }
     }
 
     /// Where annotations start on this monitor: its position, plus how far the
     /// scrolling region has moved over the long image.
     pub fn origin(&self, monitor_idx: usize) -> (f32, f32) {
+        if let Some(sheet) = &self.sheet {
+            return sheet.origin();
+        }
         let (x, y) = self.placements[monitor_idx].offset();
         match &self.scroll {
             Some(scroll) if scroll.monitor_idx == monitor_idx => {
@@ -236,12 +244,78 @@ impl EditorState {
         }
     }
 
+    pub fn zoom(&self, monitor_idx: usize) -> f32 {
+        match &self.sheet {
+            Some(sheet) => sheet.zoom(self.placements[monitor_idx].scale),
+            None => 1.0,
+        }
+    }
+
+    pub fn pointer_zoom(&self) -> f32 {
+        self.zoom(self.input.pointer.monitor_idx)
+    }
+
+    pub fn sources(&self) -> &[Placement] {
+        match &self.sheet {
+            Some(sheet) => std::slice::from_ref(sheet.placement()),
+            None => &self.placements,
+        }
+    }
+
+    pub fn workspace(&self) -> Option<Rect> {
+        crate::utils::get_full_workspace_rect(self.sources())
+    }
+
+    pub fn selection_on(&self, monitor_idx: usize, sel: &Rect) -> Option<Rect> {
+        let placement = &self.placements[monitor_idx];
+        match &self.sheet {
+            Some(_) => global_selection_to_local(&self.to_screen(monitor_idx, sel)?, placement),
+            None => global_selection_to_local(sel, placement),
+        }
+    }
+
+    pub fn selection_edges_on(&self, monitor_idx: usize, sel: &Rect) -> SelectionEdges {
+        let placement = &self.placements[monitor_idx];
+        match self
+            .sheet
+            .as_ref()
+            .and_then(|_| self.to_screen(monitor_idx, sel))
+        {
+            Some(screen) => selection_edges_for_monitor(&screen, placement),
+            None => selection_edges_for_monitor(sel, placement),
+        }
+    }
+
+    pub fn to_screen(&self, monitor_idx: usize, rect: &Rect) -> Option<Rect> {
+        let ((x, y), zoom) = (self.origin(monitor_idx), self.zoom(monitor_idx));
+        Rect::from_ltrb(
+            (rect.left() - x) * zoom,
+            (rect.top() - y) * zoom,
+            (rect.right() - x) * zoom,
+            (rect.bottom() - y) * zoom,
+        )
+    }
+
+    pub fn pixel_under_pointer(&self) -> Option<(usize, (f64, f64))> {
+        let pointer = &self.input.pointer;
+        if self.sheet.is_none() {
+            let capture = self.captures.get(pointer.monitor_idx)?;
+            return Some((pointer.monitor_idx, capture.to_native(pointer.local)));
+        }
+        let capture = self.captures.first()?;
+        Some((0, capture.to_native(pointer.global)))
+    }
+
     /// Monitors an annotation rect lands on, counting the scroll of the region.
     pub fn monitors_touching(&self, rect: &Rect) -> u32 {
         let mut mask = 0;
         for (i, placement) in self.placements.iter().enumerate() {
             let (x, y) = self.origin(i);
-            let (w, h) = (placement.size.0 as f32, placement.size.1 as f32);
+            let zoom = self.zoom(i);
+            let (w, h) = (
+                placement.size.0 as f32 / zoom,
+                placement.size.1 as f32 / zoom,
+            );
             if rect.left() < x + w && rect.right() > x && rect.top() < y + h && rect.bottom() > y {
                 mask |= 1 << i;
             }
@@ -277,12 +351,13 @@ impl EditorState {
         self.cache_blur(ann, self.annotations.len());
         for (i, placement) in self.placements.iter().enumerate() {
             let offset = self.origin(i);
+            let zoom = self.zoom(i);
             let pad = ann.visual_pad();
             let visual = Rect::from_ltrb(
-                ann.bbox.left() - offset.0 - pad,
-                ann.bbox.top() - offset.1 - pad,
-                ann.bbox.right() - offset.0 + pad,
-                ann.bbox.bottom() - offset.1 + pad,
+                (ann.bbox.left() - offset.0 - pad) * zoom,
+                (ann.bbox.top() - offset.1 - pad) * zoom,
+                (ann.bbox.right() - offset.0 + pad) * zoom,
+                (ann.bbox.bottom() - offset.1 + pad) * zoom,
             );
             if let (Some(vis), Some(mon)) = (visual, placement.rect())
                 && rects_overlap(&vis, &mon)
@@ -290,6 +365,7 @@ impl EditorState {
                 crate::renderer::draw_annotation(
                     &mut crate::renderer::Painter::new(&mut self.annotations_layer[i])
                         .with_scale(placement.scale)
+                        .with_zoom(zoom)
                         .with_text(&mut self.text.font_system, &mut self.text.swash_cache)
                         .with_origin(offset),
                     ann,
@@ -354,11 +430,12 @@ impl EditorState {
         if let Some(path) = pb.finish() {
             for (i, placement) in self.placements.iter().enumerate() {
                 let offset = self.origin(i);
+                let zoom = self.zoom(i);
                 let visual = Rect::from_ltrb(
-                    segment_bbox.left() - offset.0,
-                    segment_bbox.top() - offset.1,
-                    segment_bbox.right() - offset.0,
-                    segment_bbox.bottom() - offset.1,
+                    (segment_bbox.left() - offset.0) * zoom,
+                    (segment_bbox.top() - offset.1) * zoom,
+                    (segment_bbox.right() - offset.0) * zoom,
+                    (segment_bbox.bottom() - offset.1) * zoom,
                 );
                 if let (Some(vis), Some(mon)) = (visual, placement.rect())
                     && rects_overlap(&vis, &mon)
@@ -366,6 +443,7 @@ impl EditorState {
                     crate::renderer::stroke_pen_segment(
                         &mut crate::renderer::Painter::new(&mut self.annotations_layer[i])
                             .with_scale(placement.scale)
+                            .with_zoom(zoom)
                             .with_origin(offset),
                         &path,
                         color,

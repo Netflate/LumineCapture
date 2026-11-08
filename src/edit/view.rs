@@ -10,6 +10,7 @@ pub struct View {
     pub zoom: f32,
     pub pan: (f32, f32),
     fitted: bool,
+    untouched: bool,
 }
 
 impl View {
@@ -20,13 +21,14 @@ impl View {
             zoom: 1.0,
             pan: (0.0, 0.0),
             fitted: true,
+            untouched: true,
         }
     }
 
     /// `ratio` is the new scale over the old one: the picture keeps its size on screen
     pub fn resize(&mut self, area: (u32, u32), ratio: f32) {
         let area = (area.0 as f32, area.1 as f32);
-        if self.area == (0.0, 0.0) {
+        if self.area == (0.0, 0.0) || self.untouched {
             self.area = area;
             self.fit();
             return;
@@ -49,6 +51,7 @@ impl View {
         self.zoom = self.fit_zoom();
         self.pan = (0.0, 0.0);
         self.fitted = true;
+        self.untouched = true;
         self.clamp();
     }
 
@@ -69,6 +72,7 @@ impl View {
         self.pan = (at.0 - point.0 * self.zoom, at.1 - point.1 * self.zoom);
         self.fitted = false;
         self.clamp();
+        self.untouched &= self.zoom == before.zoom && self.pan == before.pan;
         *self != before
     }
 
@@ -76,6 +80,7 @@ impl View {
         let before = self.pan;
         self.pan = (self.pan.0 + dx, self.pan.1 + dy);
         self.clamp();
+        self.untouched &= self.pan == before;
         self.pan != before
     }
 
@@ -197,6 +202,16 @@ mod tests {
         assert_eq!(view.zoom, 0.5);
         let moved = view.picture_point(view.center());
         assert!((middle.1 - moved.1).abs() < 1e-2);
+    }
+
+    #[test]
+    fn untouched_long_capture_fits_again_from_the_top() {
+        let mut view = view((1600, 30000), (1200, 800));
+        view.resize((1200, 700), 1.0);
+        assert_eq!(view.pan, (0.0, 0.0));
+        view.pan_by((0.0, -100.0));
+        view.resize((1200, 600), 1.0);
+        assert_ne!(view.pan.1, 0.0);
     }
 
     #[test]

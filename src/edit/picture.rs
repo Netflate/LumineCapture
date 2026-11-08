@@ -5,6 +5,11 @@ use super::view::View;
 const SHARP_FROM: f32 = 2.0;
 
 pub struct Picture {
+    /// Halved copies generated on demand.
+    ///
+    /// Pure bilinear scaling skips rows when zoomed far out, causing text in long
+    /// captures to shimmer during movement. The full-size version remains with
+    /// the editor's captures.
     levels: Vec<Pixmap>,
     opaque: bool,
     /// Canvas state (zoom, pan, and size) from the last paint, panning shifts
@@ -20,21 +25,15 @@ struct Shown {
 }
 
 impl Picture {
-    pub fn new(pixmap: Pixmap) -> Self {
-        let opaque = pixmap.pixels().iter().all(|p| p.alpha() == 255);
+    pub fn new(full: &Pixmap) -> Self {
         Self {
-            levels: vec![pixmap],
-            opaque,
+            levels: Vec::new(),
+            opaque: full.pixels().iter().all(|p| p.alpha() == 255),
             shown: None,
         }
     }
 
-    pub fn size(&self) -> (u32, u32) {
-        let full = &self.levels[0];
-        (full.width(), full.height())
-    }
-
-    pub fn draw(&mut self, canvas: &mut Pixmap, view: &View, backdrop: Color) {
+    pub fn draw(&mut self, full: &Pixmap, canvas: &mut Pixmap, view: &View, backdrop: Color) {
         let size = (canvas.width(), canvas.height());
         let moved = self
             .shown
@@ -46,7 +45,7 @@ impl Picture {
             size,
         });
         let Some((dx, dy)) = moved else {
-            self.paint(canvas, view.pan, view.zoom, backdrop);
+            self.paint(full, canvas, view.pan, view.zoom, backdrop);
             return;
         };
         shift(canvas, dx, dy);
@@ -55,41 +54,50 @@ impl Picture {
                 continue;
             };
             let pan = (view.pan.0 - x as f32, view.pan.1 - y as f32);
-            self.paint(&mut part, pan, view.zoom, backdrop);
+            self.paint(full, &mut part, pan, view.zoom, backdrop);
             crate::renderer::paste(canvas, &part, x as i32, y as i32);
         }
     }
 
-    fn paint(&mut self, canvas: &mut Pixmap, pan: (f32, f32), zoom: f32, backdrop: Color) {
+    fn paint(
+        &mut self,
+        full: &Pixmap,
+        canvas: &mut Pixmap,
+        pan: (f32, f32),
+        zoom: f32,
+        backdrop: Color,
+    ) {
         canvas.fill(backdrop);
         // whole pixels at 100% and from SHARP_FROM up
         // in between nearest makes columns of uneven width, so it's smoothed like zooming out
         let (x, y) = (pan.0.round(), pan.1.round());
         if zoom == 1.0 && self.opaque {
-            crate::renderer::paste(canvas, &self.levels[0], x as i32, y as i32);
+            crate::renderer::paste(canvas, full, x as i32, y as i32);
             return;
         }
         if zoom >= SHARP_FROM {
-            let full = &self.levels[0];
             draw(canvas, full, zoom, zoom, (x, y), FilterQuality::Nearest);
             return;
         }
 
-        let (w, h) = self.size();
-        let level = self.level((1.0 / zoom).log2().floor().max(0.0) as usize);
+        let (w, h) = (full.width(), full.height());
+        let level = self.level(full, (1.0 / zoom).log2().floor().max(0.0) as usize);
         let sx = zoom * w as f32 / level.width() as f32;
         let sy = zoom * h as f32 / level.height() as f32;
         draw(canvas, level, sx, sy, pan, FilterQuality::Bilinear);
     }
 
-    fn level(&mut self, wanted: usize) -> &Pixmap {
-        while self.levels.len() <= wanted {
-            let Some(half) = self.levels.last().and_then(halve) else {
+    fn level<'a>(&'a mut self, full: &'a Pixmap, wanted: usize) -> &'a Pixmap {
+        while self.levels.len() < wanted {
+            let Some(half) = halve(self.levels.last().unwrap_or(full)) else {
                 break;
             };
             self.levels.push(half);
         }
-        &self.levels[wanted.min(self.levels.len() - 1)]
+        match wanted.min(self.levels.len()) {
+            0 => full,
+            n => &self.levels[n - 1],
+        }
     }
 }
 
@@ -197,12 +205,12 @@ mod tests {
         }
         let backdrop = Color::from_rgba8(20, 20, 20, 255);
         for zoom in [0.3, 0.8, 1.0, 1.5, 3.0] {
-            let mut picture = Picture::new(image.clone());
+            let mut picture = Picture::new(&image);
             let mut view = View::new((300, 200));
             view.resize((120, 90), 1.0);
             view.zoom_to(zoom, (17.0, 9.0));
             let mut canvas = Pixmap::new(120, 90).unwrap();
-            picture.draw(&mut canvas, &view, backdrop);
+            picture.draw(&image, &mut canvas, &view, backdrop);
             for step in [
                 (-7.0, -5.0),
                 (3.0, 11.0),
@@ -211,9 +219,9 @@ mod tests {
                 (0.0, -30.0),
             ] {
                 view.pan_by(step);
-                picture.draw(&mut canvas, &view, backdrop);
+                picture.draw(&image, &mut canvas, &view, backdrop);
                 let mut full = Pixmap::new(120, 90).unwrap();
-                Picture::new(image.clone()).draw(&mut full, &view, backdrop);
+                Picture::new(&image).draw(&image, &mut full, &view, backdrop);
                 let off = canvas
                     .data()
                     .iter()
@@ -227,8 +235,10 @@ mod tests {
 
     #[test]
     fn levels_stop_at_one_pixel() {
-        let mut picture = Picture::new(Pixmap::new(4, 4).unwrap());
-        assert_eq!(picture.level(10).width(), 1);
-        assert_eq!(picture.levels.len(), 3);
+        let full = Pixmap::new(4, 4).unwrap();
+        let mut picture = Picture::new(&full);
+        assert_eq!(picture.level(&full, 0).width(), 4);
+        assert_eq!(picture.level(&full, 10).width(), 1);
+        assert_eq!(picture.levels.len(), 2);
     }
 }

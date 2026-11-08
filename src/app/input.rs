@@ -22,7 +22,7 @@ use crate::ui::settings_panel::char_index_for_x;
 use crate::ui::settings_panel::{ArrowHoldState, SettingsWidget, StepperArrow};
 use crate::ui::text_field::CursorInit;
 use crate::ui::toolbar::{ToolbarButton, ToolbarItem};
-use crate::utils::{get_full_workspace_rect, global_point_to_local};
+use crate::utils::global_point_to_local;
 
 use std::time::Instant;
 
@@ -55,7 +55,11 @@ pub fn handle_pointer_move(
         global_point_to_local(&editor_state.placements, screen, monitor_idx, (x, y));
     // annotations live on the long image, which the region may have scrolled
     let origin = editor_state.origin(current_monitor_idx);
-    let global = (origin.0 as f64 + local_x, origin.1 as f64 + local_y);
+    let zoom = editor_state.zoom(current_monitor_idx) as f64;
+    let global = (
+        origin.0 as f64 + local_x / zoom,
+        origin.1 as f64 + local_y / zoom,
+    );
     update_pointer(
         editor_state,
         current_monitor_idx,
@@ -85,11 +89,13 @@ pub fn handle_modifiers(
     editor_state: &mut EditorState,
     ctrl: bool,
     shift: bool,
+    alt: bool,
     dirty_mask: &mut u32,
 ) {
     let shift_pressed = shift && !editor_state.input.shift;
     editor_state.input.ctrl = ctrl;
     editor_state.input.shift = shift;
+    editor_state.input.alt = alt;
     if !shift {
         editor_state.input.straight = false;
     }
@@ -156,6 +162,9 @@ fn hit_test_ui(editor_state: &EditorState, local: (f64, f64)) -> UiHit {
 }
 
 pub fn compute_cursor(editor_state: &EditorState) -> CursorIcon {
+    if super::window::grabbing(editor_state) {
+        return CursorIcon::Grabbing;
+    }
     if super::scroll::over_panel(editor_state) {
         return match editor_state.scroll.as_ref().and_then(|s| s.hovered) {
             Some(_) => CursorIcon::Pointer,
@@ -485,10 +494,11 @@ pub fn select_tool(editor_state: &mut EditorState, tool: Tool, dirty_mask: &mut 
     // i think there must be a visual indicator, that
     // ocr worked in ONE monitor, but  not  the other
     if editor_state.selection.zone.is_none() && tool != Tool::Selection && tool != Tool::Ocr {
-        editor_state.selection.zone = get_full_workspace_rect(&editor_state.placements);
+        editor_state.selection.zone = editor_state.workspace();
         mark_all_dirty(dirty_mask, editor_state.placements.len());
     } else if tool == Tool::Selection
-        && editor_state.selection.zone == get_full_workspace_rect(&editor_state.placements)
+        && editor_state.sheet.is_none()
+        && editor_state.selection.zone == editor_state.workspace()
     {
         editor_state.selection.zone = None;
         mark_all_dirty(dirty_mask, editor_state.placements.len());
@@ -536,9 +546,13 @@ fn update_magnifier(editor_state: &mut EditorState, dirty_mask: &mut u32) {
         mark_dirty(dirty_mask, mag.monitor_idx);
     }
 
+    let native = editor_state
+        .pixel_under_pointer()
+        .map_or(local, |(_, native)| native);
     editor_state.magnifier.current = Some(MagnifierState {
         monitor_idx,
         pos: local,
+        native,
     });
     if editor_state.magnifier_shown() {
         mark_dirty(dirty_mask, monitor_idx);
@@ -710,8 +724,8 @@ fn handle_key_press(editor_state: &mut EditorState, key: SpecialKey, dirty_mask:
 // ──── scroll: hit-test first (color popover fields -> settings stepper), then apply ──────────
 pub fn handle_scroll(
     editor_state: &mut EditorState,
-    delta_x: f32,
-    delta_y: f32,
+    (delta_x, delta_y): (f32, f32),
+    wheel: Option<(f32, f32)>,
     dirty_mask: &mut u32,
 ) {
     if super::scroll::wheel(editor_state, delta_x, delta_y, dirty_mask) {
@@ -737,6 +751,14 @@ pub fn handle_scroll(
         )
     {
         handle_stepper_scroll(editor_state, widget_idx, delta_y, dirty_mask);
+        apply_damage_rects(editor_state, dirty_mask);
+        return;
+    }
+
+    // in the window edit mode the picture takes it, Alt+wheel is left for the width
+    if matches!(hit_test_ui(editor_state, local), UiHit::None)
+        && super::window::wheel(editor_state, (delta_x, delta_y), wheel, dirty_mask)
+    {
         apply_damage_rects(editor_state, dirty_mask);
         return;
     }

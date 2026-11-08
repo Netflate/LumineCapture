@@ -53,6 +53,7 @@ impl KeyboardHandler for OverlayState {
         self.events.push_back(OverlayEvent::ModifiersChanged {
             ctrl: self.mods.ctrl,
             shift: self.mods.shift,
+            alt: self.mods.alt,
         });
     }
 

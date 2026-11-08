@@ -11,7 +11,6 @@ use crate::tools::Tool;
 use crate::types::{Finish, Mode};
 use crate::ui::magnifier::magnifier_rect;
 use crate::ui::settings_panel::{SettingsWidget, StepperArrow, ValueField};
-use crate::utils::get_full_workspace_rect;
 
 use super::input::{refresh_panels, select_tool};
 use super::panels::color::close_color_popover;
@@ -74,7 +73,9 @@ pub fn run(editor_state: &mut EditorState, action: Action, dirty_mask: &mut u32)
             nudge_selection(editor_state, dir, fast, true, dirty_mask)
         }
         Action::Tool(_) | Action::Move { .. } | Action::Resize { .. } => {}
-        Action::ZoomIn | Action::ZoomOut | Action::ZoomFit | Action::ZoomActual => {}
+        Action::ZoomIn | Action::ZoomOut | Action::ZoomFit | Action::ZoomActual => {
+            super::window::zoom_key(editor_state, action, dirty_mask)
+        }
     }
     apply_damage_rects(editor_state, dirty_mask);
 }
@@ -103,8 +104,10 @@ fn select_all(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     }
     let placement = &editor_state.placements[editor_state.input.pointer.monitor_idx];
     let (x, y) = placement.offset();
-    editor_state.selection.zone =
-        Rect::from_xywh(x, y, placement.size.0 as f32, placement.size.1 as f32);
+    editor_state.selection.zone = match editor_state.sheet {
+        Some(_) => editor_state.workspace(),
+        None => Rect::from_xywh(x, y, placement.size.0 as f32, placement.size.1 as f32),
+    };
     mark_all_dirty(dirty_mask, editor_state.placements.len());
     refresh_panels(editor_state, dirty_mask);
 }
@@ -119,10 +122,7 @@ fn nudge_selection(
     if editor_state.selected_tool == Tool::Ocr {
         return;
     }
-    let (Some(old), Some(bounds)) = (
-        editor_state.selection.zone,
-        get_full_workspace_rect(&editor_state.placements),
-    ) else {
+    let (Some(old), Some(bounds)) = (editor_state.selection.zone, editor_state.workspace()) else {
         return;
     };
 

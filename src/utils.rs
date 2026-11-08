@@ -168,27 +168,10 @@ pub fn rects_overlap(a: &Rect, b: &Rect) -> bool {
     a.left() < b.right() && a.right() > b.left() && a.top() < b.bottom() && a.bottom() > b.top()
 }
 
-// to render necessary monitors
-#[inline]
-pub fn get_overlapping_monitors(selection: &Rect, placements: &[crate::types::Placement]) -> u32 {
-    let mut mask = 0u32;
-    for (i, p) in placements.iter().enumerate() {
-        let mx = p.position.0 as f32;
-        let my = p.position.1 as f32;
-        let overlaps = selection.left() < mx + p.size.0 as f32
-            && selection.right() > mx
-            && selection.top() < my + p.size.1 as f32
-            && selection.bottom() > my;
-        if overlaps {
-            mask |= 1 << i;
-        }
-    }
-    mask
-}
-
 // used for selecting/resizing annotations or selection
 #[inline]
-pub fn hit_test_rect_handle(sel: &Rect, pos: (f64, f64)) -> SelectionHandle {
+/// `zoom` is screen pixels per unit of `sel`, the handles are as wide on screen at any zoom
+pub fn hit_test_rect_handle(sel: &Rect, pos: (f64, f64), zoom: f32) -> SelectionHandle {
     let (x, y) = pos;
     let (l, r, t, b) = (
         sel.left() as f64,
@@ -200,15 +183,16 @@ pub fn hit_test_rect_handle(sel: &Rect, pos: (f64, f64)) -> SelectionHandle {
     let h = sel.height() as f64;
 
     let input = &crate::config::get().input;
+    let zoom = zoom as f64;
     let (ratio, min, max) = (
         input.corner_ratio as f64,
-        input.corner_min as f64,
-        input.corner_max as f64,
+        input.corner_min as f64 / zoom,
+        input.corner_max as f64 / zoom,
     );
     let corner_w = (w * ratio).clamp(min, max).min(w * 0.5);
     let corner_h = (h * ratio).clamp(min, max).min(h * 0.5);
 
-    let half_pad = input.handle_hit_width as f64 / 2.0;
+    let half_pad = input.handle_hit_width as f64 / 2.0 / zoom;
 
     // Top-Left
     let in_tl_horizontal = (y - t).abs() <= half_pad && x >= l - half_pad && x <= l + corner_w;

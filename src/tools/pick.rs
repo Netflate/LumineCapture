@@ -28,7 +28,7 @@ impl ToolBehavior for PickTool {
         if pressed {
             let mut selected_annotation = None;
             for (i, ann) in state.annotations.iter().enumerate().rev() {
-                if ann.initial_hit_test(state.input.pointer.global) {
+                if ann.initial_hit_test(state.input.pointer.global, state.pointer_zoom()) {
                     selected_annotation = Some(i);
                     break;
                 }
@@ -126,7 +126,8 @@ impl ToolBehavior for PickTool {
         else {
             return CursorIcon::Default;
         };
-        let handle = handle_hit_test_for_annotation(ann, state.input.pointer.global);
+        let handle =
+            handle_hit_test_for_annotation(ann, state.input.pointer.global, state.pointer_zoom());
         cursor_for_handle(handle, false).unwrap_or(CursorIcon::Default)
     }
 }

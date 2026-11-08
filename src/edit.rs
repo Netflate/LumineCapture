@@ -1,23 +1,24 @@
+// editor window mode is a process of its own, like pin window;
+// the editor itself is the overlay's, see app/window.rs
 mod picture;
 mod view;
 
 use std::io::{IsTerminal, Read};
 
-use tiny_skia::{IntSize, Pixmap};
+use tiny_skia::{Color, IntSize, Pixmap};
 
-use crate::backend::wayland::overlay::WaylandOverlay;
-use crate::backend::{FRAME_FALLBACK, ScreenOverlay};
-use crate::keys::{self, Action};
-use crate::types::{CursorIcon, MouseButton, OverlayEvent, px_size};
+use crate::types::Placement;
 use picture::Picture;
-use view::View;
+pub use view::View;
 
 pub const EDIT_ARG: &str = "--edit";
-const TITLE: &str = "LumineCapture";
+pub const TITLE: &str = "LumineCapture";
 const MAX_SHARE: f32 = 0.85;
-const WHEEL_STEP: f32 = 100.0;
-const ZOOM_STEP: f32 = 1.25;
-const TOUCHPAD_ZOOM: f32 = 15.0;
+/// logical pixels per wheel click, the touchpad moves the picture 1:1
+pub const WHEEL_STEP: f32 = 100.0;
+pub const ZOOM_STEP: f32 = 1.25;
+/// touchpad pixels that zoom as much as one wheel click
+pub const TOUCHPAD_ZOOM: f32 = 15.0;
 
 pub fn cli(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::error::Error>> {
     let path = args.next();
@@ -36,7 +37,12 @@ pub fn cli(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::er
         }
         Some(path) => std::fs::read(path).map_err(|e| format!("can't read {path}: {e}"))?,
     };
-    run(decode(&bytes)?)
+    let image = decode(&bytes)?;
+    tokio::runtime::Runtime::new()?.block_on(async {
+        let conn = wayland_client::Connection::connect_to_env()
+            .map_err(|e| format!("can't connect to Wayland: {e}"))?;
+        crate::app::window::run(conn, image).await
+    })
 }
 
 fn decode(bytes: &[u8]) -> Result<Pixmap, Box<dyn std::error::Error>> {
@@ -48,157 +54,97 @@ fn decode(bytes: &[u8]) -> Result<Pixmap, Box<dyn std::error::Error>> {
     Ok(Pixmap::from_vec(data, size).ok_or("invalid image")?)
 }
 
-struct Editor {
+/// picture of the editor window and how it's shown
+///
+/// annotations are in document units, `scale` picture pixels each, like logical pixels of a monitor
+pub struct Sheet {
     picture: Picture,
-    view: View,
-    canvas: Option<Pixmap>,
-    scale: f32,
-    dirty: bool,
-    pointer: (f32, f32),
-    dragging: Option<(f32, f32)>,
+    pub view: View,
+    placement: Placement,
+    pub base: Pixmap,
+    pub stale: bool,
     /// fractions not panned yet pixel : whole steps let `Picture` move the old frame
     pan_rest: (f32, f32),
-    ctrl: bool,
-    shift: bool,
+    pub dragging: Option<(f64, f64)>,
 }
 
-pub fn run(image: Pixmap) -> Result<(), Box<dyn std::error::Error>> {
-    let conn = wayland_client::Connection::connect_to_env()?;
-    let mut window = WaylandOverlay::new(conn, false)?;
-    let (size, scale) = initial_size(window.discovered_outputs(), (image.width(), image.height()));
-    window.open_window(TITLE, size, scale)?;
-
-    let picture = Picture::new(image);
-    let mut editor = Editor {
-        view: View::new(picture.size()),
-        picture,
-        canvas: None,
-        scale,
-        dirty: true,
-        pointer: (0.0, 0.0),
-        dragging: None,
-        pan_rest: (0.0, 0.0),
-        ctrl: false,
-        shift: false,
-    };
-    let backdrop = crate::theme::color::panel().with_alpha(255).color();
-
-    loop {
-        let timeout = (editor.dirty && !window.ready(0)).then_some(FRAME_FALLBACK);
-        match window.next_event(timeout)? {
-            OverlayEvent::EscapePressed => break,
-            OverlayEvent::Resized { .. } => {
-                if let Some((size, scale)) = window.window_size() {
-                    editor.resize(size, scale);
-                }
-            }
-            OverlayEvent::Key {
-                chord: Some(chord), ..
-            } => {
-                if keys::map().lookup(chord) == Some(Action::Cancel) {
-                    break;
-                }
-                editor.key(chord);
-            }
-            ev => editor.handle(ev),
-        }
-        window.set_cursor(match editor.dragging {
-            Some(_) => CursorIcon::Grabbing,
-            None => CursorIcon::Default,
-        });
-
-        if editor.dirty
-            && window.ready(0)
-            && let Some(canvas) = editor.canvas.as_mut()
-        {
-            editor.picture.draw(canvas, &editor.view, backdrop);
-            window.stage_frame(0, canvas.data(), None)?;
-            window.flush()?;
-            editor.dirty = false;
-        }
-    }
-    Ok(())
-}
-
-impl Editor {
-    fn resize(&mut self, size: (u32, u32), scale: f32) {
-        let (w, h) = px_size(size, scale);
-        self.view.resize((w, h), scale / self.scale);
-        self.pointer = (
-            self.pointer.0 * scale / self.scale,
-            self.pointer.1 * scale / self.scale,
-        );
-        self.scale = scale;
-        self.canvas = Pixmap::new(w, h);
-        self.dirty = true;
-    }
-
-    fn handle(&mut self, ev: OverlayEvent) {
-        match ev {
-            OverlayEvent::PointerMove { x, y, .. } => {
-                let at = (x as f32 * self.scale, y as f32 * self.scale);
-                if let Some(from) = self.dragging {
-                    self.pan((at.0 - from.0, at.1 - from.1));
-                    self.dragging = Some(at);
-                }
-                self.pointer = at;
-            }
-            OverlayEvent::PointerButton {
-                button: MouseButton::Middle,
-                pressed,
-            } => self.dragging = pressed.then_some(self.pointer),
-            OverlayEvent::ModifiersChanged { ctrl, shift } => {
-                self.ctrl = ctrl;
-                self.shift = shift;
-            }
-            OverlayEvent::Scroll {
-                delta_x,
-                delta_y,
-                wheel,
-            } => self.scroll((delta_x, delta_y), wheel),
-            _ => {}
+impl Sheet {
+    pub fn new(picture: &Pixmap, scale: f32) -> Self {
+        let (w, h) = (picture.width(), picture.height());
+        let scale = doc_scale((w, h), scale);
+        Self {
+            picture: Picture::new(picture),
+            view: View::new((w, h)),
+            placement: Placement {
+                position: (0, 0),
+                size: ((w as f32 / scale) as i32, (h as f32 / scale) as i32),
+                scale,
+            },
+            base: Pixmap::new(1, 1).expect("1x1 pixmap"),
+            stale: true,
+            pan_rest: (0.0, 0.0),
+            dragging: None,
         }
     }
 
-    fn scroll(&mut self, delta: (f32, f32), wheel: Option<(f32, f32)>) {
-        if self.ctrl {
-            let clicks = wheel.map_or(delta.1 / TOUCHPAD_ZOOM, |w| w.1);
-            self.dirty |= self.view.zoom_at(ZOOM_STEP.powf(clicks), self.pointer);
-            return;
-        }
-        let (dx, dy) = match wheel {
-            Some((x, y)) => (-x * WHEEL_STEP, y * WHEEL_STEP),
-            None => (-delta.0, delta.1),
-        };
-        let (dx, dy) = if self.shift { (dy, dx) } else { (dx, dy) };
-        self.pan((dx * self.scale, dy * self.scale));
+    pub fn placement(&self) -> &Placement {
+        &self.placement
     }
 
-    fn pan(&mut self, (dx, dy): (f32, f32)) {
+    pub fn scale(&self) -> f32 {
+        self.placement.scale
+    }
+
+    pub fn origin(&self) -> (f32, f32) {
+        let k = self.view.zoom * self.scale();
+        (-self.view.pan.0 / k, -self.view.pan.1 / k)
+    }
+
+    pub fn zoom(&self, window_scale: f32) -> f32 {
+        self.view.zoom * self.scale() / window_scale
+    }
+
+    pub fn resize(&mut self, px: (u32, u32), ratio: f32) {
+        self.view.resize(px, ratio);
+        if let Some(base) = Pixmap::new(px.0, px.1) {
+            self.base = base;
+        }
+        self.stale = true;
+    }
+
+    pub fn pan(&mut self, (dx, dy): (f32, f32)) -> bool {
         let rest = (self.pan_rest.0 + dx, self.pan_rest.1 + dy);
         let whole = (rest.0.round(), rest.1.round());
         self.pan_rest = (rest.0 - whole.0, rest.1 - whole.1);
-        self.dirty |= self.view.pan_by(whole);
+        let moved = self.view.pan_by(whole);
+        self.moved(moved)
     }
 
-    fn key(&mut self, chord: keys::Chord) {
-        let center = self.view.center();
-        self.dirty |= match keys::map().lookup(chord) {
-            Some(Action::ZoomIn) => self.view.zoom_at(ZOOM_STEP, center),
-            Some(Action::ZoomOut) => self.view.zoom_at(1.0 / ZOOM_STEP, center),
-            Some(Action::ZoomActual) => self.view.zoom_to(1.0, center),
-            Some(Action::ZoomFit) => {
-                self.view.fit();
-                true
-            }
-            _ => false,
-        };
+    pub fn moved(&mut self, moved: bool) -> bool {
+        self.stale |= moved;
+        moved
     }
+
+    pub fn paint(&mut self, full: &Pixmap, backdrop: Color) {
+        self.picture
+            .draw(full, &mut self.base, &self.view, backdrop);
+    }
+}
+
+/// The monitor scale at which picture pixels align perfectly with whole
+/// logical pixels, resembling a native screenshot taken on that display.
+/// Otherwise, picture pixels serve as independent layout units.
+fn doc_scale((w, h): (u32, u32), scale: f32) -> f32 {
+    let whole = |s: f32| s >= 1.0 && (w as f32 / s).fract() == 0.0 && (h as f32 / s).fract() == 0.0;
+    [scale, scale.floor()]
+        .into_iter()
+        .find(|&s| whole(s))
+        .unwrap_or(1.0)
 }
 
 /// sized by the biggest monitor
 /// window's real scale only comes once it's shown
-fn initial_size(outputs: &[crate::types::Output], picture: (u32, u32)) -> ((u32, u32), f32) {
+pub fn initial_size(outputs: &[crate::types::Output], picture: (u32, u32)) -> ((u32, u32), f32) {
     let biggest = outputs
         .iter()
         .filter_map(|o| Some((o.info.logical_size?, o.scale())))
@@ -206,4 +152,18 @@ fn initial_size(outputs: &[crate::types::Output], picture: (u32, u32)) -> ((u32,
     let ((mw, mh), scale) = biggest.unwrap_or(((1280, 800), 1.0));
     let fit = |px: u32, max: i32| (px as f32 / scale).min(max as f32 * MAX_SHARE).round() as u32;
     ((fit(picture.0, mw), fit(picture.1, mh)), scale)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn document_scale_keeps_whole_logical_pixels() {
+        assert_eq!(doc_scale((2400, 1500), 1.25), 1.25);
+        assert_eq!(doc_scale((2560, 1600), 2.0), 2.0);
+        assert_eq!(doc_scale((2001, 1500), 1.25), 1.0);
+        assert_eq!(doc_scale((1000, 602), 2.5), 2.0);
+        assert_eq!(doc_scale((999, 600), 0.5), 1.0);
+    }
 }

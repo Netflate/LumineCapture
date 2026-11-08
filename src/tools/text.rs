@@ -203,7 +203,7 @@ impl ToolBehavior for TextTool {
             if !matches!(ann.shape, AnnotationShape::Text { .. }) {
                 continue;
             }
-            if !ann.initial_hit_test(state.input.pointer.global) {
+            if !ann.initial_hit_test(state.input.pointer.global, state.pointer_zoom()) {
                 continue;
             }
 
@@ -510,7 +510,11 @@ impl ToolBehavior for TextTool {
             .and_then(|idx| state.annotations.get(idx))
             && matches!(ann.shape, AnnotationShape::Text { .. })
             && let Some(icon) = cursor_for_handle(
-                handle_hit_test_for_annotation(ann, state.input.pointer.global),
+                handle_hit_test_for_annotation(
+                    ann,
+                    state.input.pointer.global,
+                    state.pointer_zoom(),
+                ),
                 false,
             )
         {

@@ -289,7 +289,7 @@ fn start_ocr(state: &mut EditorState) {
         return;
     }
 
-    let Some(capture) = ocr::composite_region(&state.captures, &state.placements, region) else {
+    let Some(capture) = ocr::composite_region(&state.captures, state.sources(), region) else {
         return;
     };
 
@@ -351,7 +351,7 @@ pub fn tick_scan_badge(state: &mut EditorState, dirty_mask: &mut u32) {
     };
     let badge = scan_badge_rect(region);
     state.damage_rects.push(DamageZone::Global(badge));
-    *dirty_mask |= crate::utils::get_overlapping_monitors(&badge, &state.placements);
+    *dirty_mask |= state.monitors_touching(&badge);
 }
 
 /// Called from the event loop when a recognition finishes: load the lines into

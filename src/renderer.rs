@@ -36,6 +36,9 @@ pub struct RenderRequest<'a> {
     // basic layers
     pub canvas: &'a mut Pixmap,
     pub capture: &'a crate::types::Capture,
+    /// what's under `dimmed` when the compositor doesn't show the capture
+    /// beneath: the picture of the editor window
+    pub base: Option<&'a Pixmap>,
     pub dimmed: &'a mut Pixmap,
     // selection + magnifier + toolbar
     pub selection: Option<&'a Rect>,
@@ -179,15 +182,29 @@ pub fn render_frame(req: &mut RenderRequest) {
     }
     let dirty_rect = req.dirty_rect;
 
-    if let Some(dirty) = dirty_rect {
-        blit_rect(req.dimmed, req.canvas, dirty, s);
-    } else {
-        req.canvas.data_mut().copy_from_slice(req.dimmed.data());
+    match (req.base, dirty_rect) {
+        (None, Some(dirty)) => blit_rect(req.dimmed, req.canvas, dirty, s),
+        (None, None) => req.canvas.data_mut().copy_from_slice(req.dimmed.data()),
+        (Some(base), Some(dirty)) => {
+            blit_rect(base, req.canvas, dirty, s);
+            blend_rect(req.dimmed, req.canvas, dirty, s);
+        }
+        (Some(base), None) => {
+            req.canvas.data_mut().copy_from_slice(base.data());
+            req.canvas.draw_pixmap(
+                0,
+                0,
+                req.dimmed.as_ref(),
+                &tiny_skia::PixmapPaint::default(),
+                Transform::identity(),
+                None,
+            );
+        }
     }
 
     if !req.annotations_layer_empty {
         if let Some(dirty) = dirty_rect {
-            blit_annotations(req.annotations_layer, req.canvas, dirty, s);
+            blend_rect(req.annotations_layer, req.canvas, dirty, s);
         } else {
             req.canvas.draw_pixmap(
                 0,
@@ -323,6 +340,7 @@ pub fn render_frame(req: &mut RenderRequest) {
         crate::ui::magnifier::draw_magnifier(
             &mut p,
             req.capture,
+            mag.native,
             (mag.pos.0 as f32, mag.pos.1 as f32),
             req.size,
             req.mag_label,
@@ -613,7 +631,7 @@ fn blit_rect(src: &Pixmap, dst: &mut Pixmap, rect: &Rect, scale: f32) {
     }
 }
 
-fn blit_annotations(src: &Pixmap, dst: &mut Pixmap, rect: &Rect, scale: f32) {
+fn blend_rect(src: &Pixmap, dst: &mut Pixmap, rect: &Rect, scale: f32) {
     let (w, h) = (dst.width(), dst.height());
     let Some((x, y, rw, rh)) = scale_rect(rect, scale).and_then(|r| rect_bounds(&r, w, h)) else {
         return;

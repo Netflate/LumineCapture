@@ -1,4 +1,5 @@
 pub type DamageRect = (u32, u32, u32, u32);
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Placement {
     pub size: (i32, i32),
     pub position: (i32, i32),

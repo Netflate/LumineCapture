@@ -6,7 +6,7 @@ use crate::editor::{DamageZone, EditorState};
 use crate::renderer::blur::{self, Blurred, Style};
 use crate::renderer::paths::normalized_rect;
 use crate::types::{Annotation, AnnotationShape};
-use crate::utils::{get_full_workspace_rect, rects_overlap};
+use crate::utils::rects_overlap;
 
 // Approach is largely taken from Spectacle (KQuickImageEditor, `Blur::image`)
 // everything below is blurred, older annotations included, once per gesture,
@@ -232,7 +232,7 @@ impl EditorState {
     fn blur_bounds(&self) -> Option<Rect> {
         match &self.scroll {
             Some(scroll) => scroll.doc_rect(),
-            None => get_full_workspace_rect(&self.placements),
+            None => self.workspace(),
         }
     }
 
@@ -240,12 +240,8 @@ impl EditorState {
         let (mut src, origin) = match self.scroll.as_mut() {
             Some(scroll) => scroll.compose(region)?,
             None => {
-                let (src, origin, _) = crate::renderer::composite(
-                    &self.captures,
-                    &self.placements,
-                    region,
-                    Some(1.0),
-                )?;
+                let (src, origin, _) =
+                    crate::renderer::composite(&self.captures, self.sources(), region, Some(1.0))?;
                 (src, origin)
             }
         };

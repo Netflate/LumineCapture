@@ -2,7 +2,6 @@
 
 use crate::editor::EditorState;
 use crate::theme::size;
-use crate::tools::selection::global_selection_to_local;
 use crate::ui::panel::UiPanel;
 use crate::ui::panel::{sync_panel_hover, sync_panel_rect};
 use crate::ui::toolbar::ToolbarPlacementKind;
@@ -19,7 +18,7 @@ pub fn update_toolbar(editor_state: &mut EditorState, dirty_mask: &mut u32) {
 
     let new_kind = if hidden {
         ToolbarPlacementKind::Hidden
-    } else if editor_state.selection.zone.is_none() {
+    } else if editor_state.selection.zone.is_none() || editor_state.sheet.is_some() {
         ToolbarPlacementKind::Idle
     } else {
         ToolbarPlacementKind::AtSelection
@@ -81,7 +80,9 @@ pub fn update_toolbar(editor_state: &mut EditorState, dirty_mask: &mut u32) {
 }
 
 fn compute_toolbar_placement(editor_state: &EditorState) -> (usize, (f32, f32), bool) {
-    if editor_state.tool_active || editor_state.ui_hidden {
+    // in the window edit mode it stays on top while drawing, it's never in the way there
+    let window = editor_state.sheet.is_some();
+    if (editor_state.tool_active && !window) || editor_state.ui_hidden {
         return (
             editor_state.toolbar.monitor_idx,
             editor_state.toolbar.position,
@@ -89,7 +90,8 @@ fn compute_toolbar_placement(editor_state: &EditorState) -> (usize, (f32, f32), 
         );
     }
 
-    let Some(sel) = editor_state.selection.zone else {
+    let zone = editor_state.selection.zone.filter(|_| !window);
+    let Some(sel) = zone else {
         let monitor_idx = editor_state.input.pointer.monitor_idx;
         let placement = &editor_state.placements[monitor_idx];
         let mon_w = placement.size.0 as f32;
@@ -103,9 +105,11 @@ fn compute_toolbar_placement(editor_state: &EditorState) -> (usize, (f32, f32), 
     };
     let placement = &editor_state.placements[monitor_idx];
 
-    let local_sel = global_selection_to_local(&sel, placement).unwrap_or_else(|| {
-        Rect::from_xywh(0.0, 0.0, placement.size.0 as f32, placement.size.1 as f32).unwrap()
-    });
+    let local_sel = editor_state
+        .selection_on(monitor_idx, &sel)
+        .unwrap_or_else(|| {
+            Rect::from_xywh(0.0, 0.0, placement.size.0 as f32, placement.size.1 as f32).unwrap()
+        });
 
     let tb_w = editor_state.toolbar.size.0;
     let tb_h = editor_state.toolbar.size.1;

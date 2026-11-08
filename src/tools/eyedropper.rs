@@ -99,11 +99,8 @@ pub fn copy_value(state: &mut EditorState, field: ValueField, color: Color) {
 }
 
 fn color_under_pointer(state: &EditorState) -> Option<Color> {
-    let capture = state.captures.get(state.input.pointer.monitor_idx)?;
-    sample_pixel(
-        &capture.pixmap,
-        capture.to_native(state.input.pointer.local),
-    )
+    let (idx, native) = state.pixel_under_pointer()?;
+    sample_pixel(&state.captures.get(idx)?.pixmap, native)
 }
 
 fn damage_loupe(state: &mut EditorState, dirty_mask: &mut u32) {

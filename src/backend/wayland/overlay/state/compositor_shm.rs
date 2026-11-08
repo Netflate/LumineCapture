@@ -128,7 +128,11 @@ impl OverlayState {
             sd.width = w;
             sd.height = h;
             sd.mapped = true;
-            self.events.push_back(OverlayEvent::Resized { monitor_idx });
+            self.events.push_back(OverlayEvent::Resized {
+                monitor_idx,
+                size: (w, h),
+                scale: sd.scale,
+            });
             return;
         }
 

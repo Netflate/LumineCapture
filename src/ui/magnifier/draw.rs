@@ -35,13 +35,13 @@ fn box_height(with_label: bool) -> f32 {
 pub fn draw_magnifier(
     p: &mut Painter,
     capture: &Capture,
+    native: (f64, f64),
     cursor: (f32, f32),
     (screen_w, screen_h): (f32, f32),
     label: bool,
 ) {
     let scale = p.scale();
     let source = &capture.pixmap;
-    let native = capture.to_native((cursor.0 as f64, cursor.1 as f64));
 
     let sample_size = cells() as i32;
 

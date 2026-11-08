@@ -19,6 +19,7 @@ pub fn offset() -> f32 {
 pub struct MagnifierState {
     pub monitor_idx: usize,
     pub pos: (f64, f64),
+    pub native: (f64, f64),
 }
 
 pub fn sample_pixel(source: &Pixmap, point: (f64, f64)) -> Option<Color> {

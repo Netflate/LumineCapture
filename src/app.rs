@@ -7,6 +7,7 @@ mod instant;
 mod ocr;
 mod panels;
 mod scroll;
+pub mod window;
 
 use crate::backend::ScreenOverlay;
 use crate::backend::{FRAME_FALLBACK, initialize_capture, initialize_overlay};
@@ -16,11 +17,10 @@ use crate::profiler::Profiler;
 use crate::renderer;
 use crate::theme::anim;
 use crate::tools::Tool;
-use crate::tools::selection::{global_selection_to_local, selection_edges_for_monitor};
-use crate::types::{DamageRect, Mode, Outputs, OverlayEvent, Placement, SelectionEdges};
+use crate::types::{DamageRect, Mode, Outputs, OverlayEvent, SelectionEdges};
 use crate::ui::panel::UiPanel;
 use crate::ui::panel::{AnimatedPanel, panel_to_draw, tick_panel_animation};
-use crate::utils::{encode_png, get_full_workspace_rect};
+use crate::utils::encode_png;
 
 use cosmic_text::SwashCache;
 use std::collections::HashMap;
@@ -431,24 +431,33 @@ fn handle_event(editor_state: &mut EditorState, ev: OverlayEvent, dirty_mask: &m
         OverlayEvent::Tick
         | OverlayEvent::EscapePressed
         | OverlayEvent::Focus { .. }
-        | OverlayEvent::FrameDone { .. }
-        | OverlayEvent::Resized { .. } => {}
+        | OverlayEvent::FrameDone { .. } => {}
+        OverlayEvent::Resized { size, scale, .. } => {
+            window::resized(editor_state, size, scale, dirty_mask);
+        }
         OverlayEvent::PointerMove { monitor_idx, x, y } => {
+            window::drag(editor_state, (x, y), dirty_mask);
             input::handle_pointer_move(editor_state, monitor_idx, x, y, dirty_mask);
         }
+        OverlayEvent::PointerButton {
+            button: crate::types::MouseButton::Middle,
+            pressed,
+        } if window::grab(editor_state, pressed) => {}
         OverlayEvent::PointerButton { button, pressed } => {
             input::handle_pointer_button(editor_state, button, pressed, dirty_mask);
         }
         OverlayEvent::Key { chord, text } => {
             input::handle_key(editor_state, chord, text, dirty_mask);
         }
-        OverlayEvent::ModifiersChanged { ctrl, shift } => {
-            input::handle_modifiers(editor_state, ctrl, shift, dirty_mask);
+        OverlayEvent::ModifiersChanged { ctrl, shift, alt } => {
+            input::handle_modifiers(editor_state, ctrl, shift, alt, dirty_mask);
         }
         OverlayEvent::Scroll {
-            delta_x, delta_y, ..
+            delta_x,
+            delta_y,
+            wheel,
         } => {
-            input::handle_scroll(editor_state, delta_x, delta_y, dirty_mask);
+            input::handle_scroll(editor_state, (delta_x, delta_y), wheel, dirty_mask);
         }
     }
 }
@@ -482,7 +491,7 @@ fn tick_panels(editor_state: &mut EditorState, dirty_mask: &mut u32) {
                 .selection
                 .zone
                 .as_ref()
-                .and_then(|zone| global_selection_to_local(zone, placement)),
+                .and_then(|zone| editor_state.selection_on(idx, zone)),
         }
     };
     editor_state
@@ -509,7 +518,7 @@ fn tick_panels(editor_state: &mut EditorState, dirty_mask: &mut u32) {
 fn damage_hidden_annotations(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     let has_annotations =
         !editor_state.annotations.is_empty() || editor_state.pending_pen_baked != 0;
-    if has_annotations && let Some(workspace) = get_full_workspace_rect(&editor_state.placements) {
+    if has_annotations && let Some(workspace) = editor_state.workspace() {
         editor_state
             .damage_rects
             .push(crate::editor::DamageZone::Global(workspace));
@@ -643,10 +652,12 @@ fn rebuild_layer(editor_state: &mut EditorState, i: usize, frame: &Frame) {
         return;
     }
     let origin = editor_state.origin(i);
+    let zoom = editor_state.zoom(i);
     let placement = &editor_state.placements[i];
     renderer::rebuild_annotations_layer(
         &mut renderer::Painter::new(&mut editor_state.annotations_layer[i])
             .with_scale(placement.scale)
+            .with_zoom(zoom)
             .with_text(
                 &mut editor_state.text.font_system,
                 &mut editor_state.text.swash_cache,
@@ -686,9 +697,20 @@ fn render_monitor(
     // (a monitor may skip frames, so the shared prev_zone can be outdated for it)
     let zone = editor_state.selection.zone;
     let (local_sel, prev_local, mut edges) =
-        selection_render_info(&zone, dimmed_for, &editor_state.placements[i]);
+        selection_render_info(editor_state, i, &zone, dimmed_for);
     let mut selection_dirty = *dimmed_for != zone;
     *dimmed_for = zone;
+    // Picture moved under the dim layer, which moves with it whole
+    if window::paint(editor_state) {
+        let scale = editor_state.placements[i].scale;
+        renderer::init_dimming(
+            &mut editor_state.dimmed[i],
+            local_sel.as_ref(),
+            edges.as_ref(),
+            scale,
+        );
+        selection_dirty = false;
+    }
     let mut clip = None;
     if let Some(scroll) = editor_state.scroll.as_ref().filter(|s| s.monitor_idx == i) {
         // scroll paints this base itself, and with square corner
@@ -703,6 +725,7 @@ fn render_monitor(
     }
 
     let offset = editor_state.origin(i);
+    let zoom = editor_state.zoom(i);
     let scale = editor_state.placements[i].scale;
 
     let damage = dirty_rect.as_ref().and_then(|r| {
@@ -724,6 +747,7 @@ fn render_monitor(
     renderer::render_frame(&mut renderer::RenderRequest {
         canvas: &mut editor_state.canvas[i],
         capture: &editor_state.captures[i],
+        base: editor_state.sheet.as_ref().map(|sheet| &sheet.base),
         dimmed: &mut editor_state.dimmed[i],
         selection: local_sel.as_ref(),
         prev_selection: prev_local.as_ref(),
@@ -774,7 +798,7 @@ fn render_monitor(
             editor_state.placements[i].size.1 as f32,
         ),
         scale,
-        zoom: 1.0,
+        zoom,
     });
     scroll::draw_panel(editor_state, i, dirty_rect.as_ref());
 
@@ -839,20 +863,18 @@ fn refresh_panels_after_history(editor_state: &mut EditorState, dirty_mask: &mut
 }
 
 pub fn selection_render_info(
+    editor_state: &EditorState,
+    monitor_idx: usize,
     selection: &Option<Rect>,
     prev_selection: &Option<Rect>,
-    placement: &Placement,
 ) -> (Option<Rect>, Option<Rect>, Option<SelectionEdges>) {
-    let local_sel = selection
-        .as_ref()
-        .and_then(|sel| global_selection_to_local(sel, placement));
-    let prev_local = prev_selection
-        .as_ref()
-        .and_then(|sel| global_selection_to_local(sel, placement));
+    let on_monitor = |sel: &Rect| editor_state.selection_on(monitor_idx, sel);
+    let local_sel = selection.as_ref().and_then(on_monitor);
+    let prev_local = prev_selection.as_ref().and_then(on_monitor);
 
     let mut edges = None;
     if let (Some(sel), Some(_)) = (selection.as_ref(), local_sel.as_ref()) {
-        edges = Some(selection_edges_for_monitor(sel, placement));
+        edges = Some(editor_state.selection_edges_on(monitor_idx, sel));
     }
     (local_sel, prev_local, edges)
 }
@@ -865,14 +887,14 @@ pub(crate) fn render_final(editor_state: &mut EditorState) -> Option<(Vec<u8>, (
     }
     let sel = match editor_state.selection.zone {
         Some(s) => s,
-        None => get_full_workspace_rect(&editor_state.placements)?,
+        None => editor_state.workspace()?,
     };
 
-    let scale = renderer::capture_scale(&editor_state.captures, &editor_state.placements, sel);
+    let scale = renderer::capture_scale(&editor_state.captures, editor_state.sources(), sel);
     let area = editor_state.blur_area(sel, scale);
     let (mut out, mut origin, _) = renderer::composite(
         &editor_state.captures,
-        &editor_state.placements,
+        editor_state.sources(),
         area,
         Some(scale),
     )?;

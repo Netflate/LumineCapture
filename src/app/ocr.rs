@@ -26,8 +26,7 @@ pub async fn finish(editor_state: &mut EditorState) -> Result {
     let Some(region) = editor_state.selection.zone else {
         return Ok(());
     };
-    let Some(image) =
-        ocr::composite_region(&editor_state.captures, &editor_state.placements, region)
+    let Some(image) = ocr::composite_region(&editor_state.captures, editor_state.sources(), region)
     else {
         return Ok(());
     };

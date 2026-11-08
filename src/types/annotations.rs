@@ -435,10 +435,10 @@ impl Annotation {
         result
     }
 
-    pub fn initial_hit_test(&self, coordinates: (f64, f64)) -> bool {
+    pub fn initial_hit_test(&self, coordinates: (f64, f64), zoom: f32) -> bool {
         // TODO: separate for pen
         let (x, y) = (coordinates.0 as f32, coordinates.1 as f32);
-        let pad = crate::config::get().input.handle_hit_width;
+        let pad = crate::config::get().input.handle_hit_width / zoom;
 
         x >= self.bbox.left() - pad
             && x <= self.bbox.right() + pad
@@ -482,8 +482,12 @@ impl Annotation {
 // (they both can select and drag, tho text does that only with text)
 // utils.rs or editor/drag.rs
 
-pub fn handle_hit_test_for_annotation(ann: &Annotation, pos: (f64, f64)) -> SelectionHandle {
-    let out_pad = crate::config::get().input.handle_hit_width / 2.0;
+pub fn handle_hit_test_for_annotation(
+    ann: &Annotation,
+    pos: (f64, f64),
+    zoom: f32,
+) -> SelectionHandle {
+    let out_pad = crate::config::get().input.handle_hit_width / 2.0 / zoom;
     let bbox = ann.bbox;
 
     let visual_bbox = Rect::from_ltrb(
@@ -494,12 +498,13 @@ pub fn handle_hit_test_for_annotation(ann: &Annotation, pos: (f64, f64)) -> Sele
     )
     .unwrap_or(bbox);
 
-    hit_test_rect_handle(&visual_bbox, pos)
+    hit_test_rect_handle(&visual_bbox, pos, zoom)
 }
 
 pub fn begin_drag_for_annotation(state: &mut EditorState, idx: usize) {
     let ann = &state.annotations[idx];
-    let handle = handle_hit_test_for_annotation(ann, state.input.pointer.global);
+    let handle =
+        handle_hit_test_for_annotation(ann, state.input.pointer.global, state.pointer_zoom());
 
     state.ann_drag = Some(AnnDragState {
         handle,
@@ -569,6 +574,7 @@ pub fn apply_annotation_drag(state: &mut EditorState, global: (f64, f64)) {
         }
     }
 
+    let zoom = state.pointer_zoom();
     let Some(ann) = state.pending.as_mut() else {
         return;
     };
@@ -600,7 +606,7 @@ pub fn apply_annotation_drag(state: &mut EditorState, global: (f64, f64)) {
                 let total_dx = (global.0 - start_global.0) as f32;
                 let total_dy = (global.1 - start_global.1) as f32;
                 let orig = state.ann_drag.as_ref().unwrap().orig.clone();
-                apply_shape_resize_from_orig(ann, &orig, handle, total_dx, total_dy);
+                apply_shape_resize_from_orig(ann, &orig, handle, total_dx, total_dy, zoom);
             }
         }
     }
@@ -655,8 +661,9 @@ fn apply_shape_resize_from_orig(
     handle: SelectionHandle,
     total_dx: f32,
     total_dy: f32,
+    zoom: f32,
 ) {
-    let out_pad = crate::config::get().input.handle_hit_width / 2.0;
+    let out_pad = crate::config::get().input.handle_hit_width / 2.0 / zoom;
 
     let visual_bbox = Rect::from_ltrb(
         orig.bbox.left() - out_pad,

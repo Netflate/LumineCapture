@@ -1,5 +1,4 @@
 use crate::editor::{DamageZone, EditorState};
-use crate::tools::selection::global_selection_to_local;
 use crate::types::Placement;
 use crate::types::annotations::Annotation;
 use crate::ui::magnifier::MagnifierState;
@@ -11,14 +10,14 @@ impl EditorState {
         let placement = &self.placements[monitor_idx];
         let mut dirty: Option<Rect> = None;
 
-        dirty = union_rect(dirty, self.calc_selection_dirty(placement));
+        dirty = union_rect(dirty, self.calc_selection_dirty(monitor_idx));
         dirty = union_rect(dirty, self.calc_magnifier_dirty(monitor_idx, placement));
         dirty = union_rect(dirty, self.calc_damage_zones_dirty(monitor_idx, placement));
 
         dirty
     }
 
-    fn calc_selection_dirty(&self, placement: &Placement) -> Option<Rect> {
+    fn calc_selection_dirty(&self, monitor_idx: usize) -> Option<Rect> {
         if self.selection.zone == self.selection.prev_zone {
             return None;
         }
@@ -30,13 +29,13 @@ impl EditorState {
             .selection
             .zone
             .as_ref()
-            .and_then(|sel| global_selection_to_local(sel, placement));
+            .and_then(|sel| self.selection_on(monitor_idx, sel));
 
         let prev_local = self
             .selection
             .prev_zone
             .as_ref()
-            .and_then(|sel| global_selection_to_local(sel, placement));
+            .and_then(|sel| self.selection_on(monitor_idx, sel));
 
         if let Some(r) = local_sel
             .as_ref()
@@ -87,19 +86,20 @@ impl EditorState {
     fn calc_damage_zones_dirty(&self, monitor_idx: usize, placement: &Placement) -> Option<Rect> {
         let mut dirty = None;
         let offset = self.origin(monitor_idx);
+        let zoom = self.zoom(monitor_idx);
         let (mw, mh) = (placement.size.0 as f32, placement.size.1 as f32);
+        // zoomed out, handles take more of the document than its bboxes count
+        let chrome = if zoom < 1.0 {
+            crate::renderer::selection_chrome_pad()
+        } else {
+            0.0
+        };
 
-        fn global_to_local_padded(
-            global_bbox: &Rect,
-            offset: (f32, f32),
-            pad: f32,
-            mw: f32,
-            mh: f32,
-        ) -> Option<Rect> {
-            let l = global_bbox.left() - offset.0 - pad;
-            let t = global_bbox.top() - offset.1 - pad;
-            let r = global_bbox.right() - offset.0 + pad;
-            let b = global_bbox.bottom() - offset.1 + pad;
+        let global_to_local_padded = |global_bbox: &Rect, pad: f32| -> Option<Rect> {
+            let l = (global_bbox.left() - offset.0 - pad) * zoom;
+            let t = (global_bbox.top() - offset.1 - pad) * zoom;
+            let r = (global_bbox.right() - offset.0 + pad) * zoom;
+            let b = (global_bbox.bottom() - offset.1 + pad) * zoom;
 
             let ix1 = l.max(0.0);
             let iy1 = t.max(0.0);
@@ -111,7 +111,15 @@ impl EditorState {
             }
 
             Rect::from_ltrb(ix1, iy1, ix2, iy2)
-        }
+        };
+        let global_to_local = |global_bbox: &Rect, margin: f32| -> Option<Rect> {
+            let l = (global_bbox.left() - offset.0) * zoom - margin;
+            let t = (global_bbox.top() - offset.1) * zoom - margin;
+            let r = (global_bbox.right() - offset.0) * zoom + margin;
+            let b = (global_bbox.bottom() - offset.1) * zoom + margin;
+            Rect::from_ltrb(l.max(0.0), t.max(0.0), r.min(mw), b.min(mh))
+                .filter(|r| r.width() > 0.0 && r.height() > 0.0)
+        };
 
         let is_pen_drawing = matches!(
             self.selected_tool,
@@ -121,33 +129,24 @@ impl EditorState {
         if !is_pen_drawing {
             if let Some(ann) = &self.pending {
                 let pad = ann.visual_pad();
-                dirty = union_rect(
-                    dirty,
-                    global_to_local_padded(&ann.bbox, offset, pad, mw, mh),
-                );
+                dirty = union_rect(dirty, global_to_local_padded(&ann.bbox, pad));
             }
             if let Some(ann) = &self.prev_pending {
                 let pad = ann.visual_pad();
-                dirty = union_rect(
-                    dirty,
-                    global_to_local_padded(&ann.bbox, offset, pad, mw, mh),
-                );
+                dirty = union_rect(dirty, global_to_local_padded(&ann.bbox, pad));
             }
         }
         if let Some(ann_idx) = self.selected_annotation
             && let Some(ann) = self.annotations.get(ann_idx)
         {
-            let pad = crate::renderer::selection_chrome_pad().max(ann.visual_pad());
-            dirty = union_rect(
-                dirty,
-                global_to_local_padded(&ann.bbox, offset, pad, mw, mh),
-            );
+            let pad = (crate::renderer::selection_chrome_pad() / zoom).max(ann.visual_pad());
+            dirty = union_rect(dirty, global_to_local_padded(&ann.bbox, pad));
         }
 
         for zone in &self.damage_rects {
             match zone {
                 DamageZone::Global(rect) => {
-                    dirty = union_rect(dirty, global_to_local_padded(rect, offset, 4.0, mw, mh));
+                    dirty = union_rect(dirty, global_to_local(rect, 4.0 + chrome));
                 }
                 DamageZone::Local {
                     monitor_idx: idx,
@@ -171,14 +170,15 @@ impl EditorState {
     pub fn monitor_layer_dirty_rect(&self, monitor_idx: usize) -> Option<Rect> {
         let placement = &self.placements[monitor_idx];
         let offset = self.origin(monitor_idx);
+        let zoom = self.zoom(monitor_idx);
         let (mw, mh) = (placement.size.0 as f32, placement.size.1 as f32);
         let mut dirty: Option<Rect> = None;
 
         for rect in &self.layer_damage_rects {
-            let l = rect.left() - offset.0;
-            let t = rect.top() - offset.1;
-            let r = rect.right() - offset.0;
-            let b = rect.bottom() - offset.1;
+            let l = (rect.left() - offset.0) * zoom;
+            let t = (rect.top() - offset.1) * zoom;
+            let r = (rect.right() - offset.0) * zoom;
+            let b = (rect.bottom() - offset.1) * zoom;
 
             let ix1 = l.max(0.0);
             let iy1 = t.max(0.0);

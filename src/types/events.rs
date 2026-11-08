@@ -51,6 +51,7 @@ pub enum OverlayEvent {
     ModifiersChanged {
         ctrl: bool,
         shift: bool,
+        alt: bool,
     },
     Scroll {
         delta_x: f32,
@@ -61,6 +62,8 @@ pub enum OverlayEvent {
     },
     Resized {
         monitor_idx: usize,
+        size: (u32, u32),
+        scale: f32,
     },
 }
 
