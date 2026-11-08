@@ -702,6 +702,16 @@ fn clear_rect_transparent(layer: &mut Pixmap, rect: &Rect) {
     }
 }
 
+fn touches(ann: &Annotation, area: &Rect, offset: (f32, f32), zoom: f32) -> bool {
+    let pad = ann.visual_pad();
+    let l = (ann.bbox.left() - offset.0 - pad) * zoom;
+    let t = (ann.bbox.top() - offset.1 - pad) * zoom;
+    let r = (ann.bbox.right() - offset.0 + pad) * zoom;
+    let b = (ann.bbox.bottom() - offset.1 + pad) * zoom;
+
+    l < area.right() && r > area.left() && t < area.bottom() && b > area.top()
+}
+
 /// Rebuilds the annotations layer.
 ///
 /// If `dirty_rect` is provided (in local layer coordinates), clears and
@@ -731,7 +741,12 @@ pub fn rebuild_annotations_layer(
     if dirty_rect.is_none() {
         clear_rect_transparent(p.canvas, &px_rect);
         for ann in annotations {
-            draw_annotation(p, ann, false, text_editors, blurs, active_text_id);
+            // text is always drawn: its bbox comes from the text layout code, not from update_bbox
+            if matches!(ann.shape, crate::types::AnnotationShape::Text { .. })
+                || touches(ann, &base_rect, offset, zoom)
+            {
+                draw_annotation(p, ann, false, text_editors, blurs, active_text_id);
+            }
         }
         return;
     }
@@ -759,17 +774,7 @@ pub fn rebuild_annotations_layer(
     let mut tmp_painter = p.sub(&mut tmp).with_origin(tmp_offset);
 
     for ann in annotations {
-        let pad = ann.visual_pad();
-        let l = (ann.bbox.left() - offset.0 - pad) * zoom;
-        let t = (ann.bbox.top() - offset.1 - pad) * zoom;
-        let r = (ann.bbox.right() - offset.0 + pad) * zoom;
-        let b = (ann.bbox.bottom() - offset.1 + pad) * zoom;
-
-        if l < base_rect.right()
-            && r > base_rect.left()
-            && t < base_rect.bottom()
-            && b > base_rect.top()
-        {
+        if touches(ann, &base_rect, offset, zoom) {
             draw_annotation(
                 &mut tmp_painter,
                 ann,
@@ -964,5 +969,87 @@ mod tests {
             }
         }
         assert!(painted > 0);
+    }
+
+    #[test]
+    fn full_rebuild_skips_only_what_is_off_the_layer() {
+        let scene = |at: &dyn Fn(f32, f32) -> (f32, f32)| {
+            vec![
+                ann(
+                    1,
+                    AnnotationShape::Rectangle {
+                        start: at(60.0, 30.0),
+                        end: at(110.0, 70.0),
+                        filled: false,
+                    },
+                    3.0,
+                ),
+                ann(
+                    2,
+                    AnnotationShape::Pen {
+                        points: (0..10).map(|i| at(11.0, 30.0 + i as f32 * 6.0)).collect(),
+                    },
+                    20.0,
+                ),
+                ann(
+                    3,
+                    AnnotationShape::Rectangle {
+                        start: at(40.0, 150.0),
+                        end: at(100.0, 180.0),
+                        filled: true,
+                    },
+                    3.0,
+                ),
+                ann(
+                    4,
+                    AnnotationShape::Arrow {
+                        start: at(-300.0, -300.0),
+                        end: at(-250.0, -260.0),
+                    },
+                    4.0,
+                ),
+            ]
+        };
+        let check = |anns: Vec<Annotation>, painter: &dyn Fn(&mut Pixmap) -> Painter<'_>| {
+            let mut reference = Pixmap::new(480, 320).unwrap();
+            for ann in &anns {
+                draw_annotation(
+                    &mut painter(&mut reference),
+                    ann,
+                    false,
+                    &mut HashMap::new(),
+                    &HashMap::new(),
+                    None,
+                );
+            }
+            let mut full = Pixmap::new(480, 320).unwrap();
+            rebuild_annotations_layer(
+                &mut painter(&mut full),
+                &anns,
+                &mut HashMap::new(),
+                &HashMap::new(),
+                None,
+                None,
+            );
+            assert!(ink(&reference) > 0);
+            assert!(reference.data() == full.data());
+
+            let mut without_edge = Pixmap::new(480, 320).unwrap();
+            for ann in anns.iter().filter(|ann| ann.id != 2) {
+                draw_annotation(
+                    &mut painter(&mut without_edge),
+                    ann,
+                    false,
+                    &mut HashMap::new(),
+                    &HashMap::new(),
+                    None,
+                );
+            }
+            assert!(ink(&reference) > ink(&without_edge));
+        };
+
+        check(scene(&|x, y| (x, y)), &|canvas| zoomed(canvas));
+        let screen = |x: f32, y: f32| ((x - ORIGIN.0) * ZOOM, (y - ORIGIN.1) * ZOOM);
+        check(scene(&screen), &|canvas| Painter::new(canvas));
     }
 }
