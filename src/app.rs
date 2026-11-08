@@ -640,12 +640,6 @@ fn render_dirty_monitors(
 }
 
 fn rebuild_layer(editor_state: &mut EditorState, i: usize, frame: &Frame) {
-    // region moved over the long image, everything in the layer moved with it
-    let moved = editor_state
-        .scroll
-        .as_mut()
-        .filter(|s| s.monitor_idx == i)
-        .is_some_and(|s| std::mem::take(&mut s.layer_stale));
     let size = (
         editor_state.annotations_layer[i].width(),
         editor_state.annotations_layer[i].height(),
@@ -654,14 +648,9 @@ fn rebuild_layer(editor_state: &mut EditorState, i: usize, frame: &Frame) {
         .sheet
         .as_mut()
         .map_or(Follow::Same, |sheet| sheet.follow(size));
-    let layer_dirty = if moved {
-        None
-    } else {
-        editor_state.monitor_layer_dirty_rect(i)
-    };
+    let layer_dirty = editor_state.monitor_layer_dirty_rect(i);
     // in the window edit mode the layer moves with a pan and only the strips that came into view are drawn
-    let full = moved
-        || matches!(follow, Follow::Redraw)
+    let full = matches!(follow, Follow::Redraw)
         || (editor_state.annotations_dirty && layer_dirty.is_none());
     let mut areas = Vec::new();
     if !full {
@@ -780,7 +769,7 @@ fn render_monitor(
         )
     });
 
-    let hidden = frame.annotations_hidden || !editor_state.annotations_shown_on(i);
+    let hidden = frame.annotations_hidden || editor_state.scroll.is_some();
     let dragged_index = editor_state.dragged_index();
     let dirty = dirty_rect.as_ref();
     let toolbar = panel_to_draw(&mut editor_state.toolbar, i, dirty);

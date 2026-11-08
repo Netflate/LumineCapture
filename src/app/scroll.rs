@@ -1,12 +1,11 @@
 // Scrolling capture inside the editor loop: starting it on the selected region,
-// grabbing frames while the page is live, drawing on the long image while paused,
+// grabbing frames while the page is live,
 // its control panel, and the final long shot.
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use log::info;
-use shot_stitch::Axis;
 use tiny_skia::{IntRect, Rect};
 use wayland_client::Connection;
 
@@ -22,9 +21,6 @@ use crate::tools::selection::global_selection_to_local;
 use crate::types::Outputs;
 use crate::ui::toolbar::{ToolbarButton, ToolbarItem};
 use crate::utils::rects_overlap;
-
-/// pixels of the long image per unit of the wheel
-const WHEEL_STEP: f32 = 3.0;
 
 pub async fn start(
     conn: &Connection,
@@ -83,9 +79,9 @@ pub async fn start(
     editor_state.tool_active = false;
     editor_state.selection.zone = Some(zone);
 
-    let mut scroll = Scroll::new(session, zone, crop, scale, size, capture);
+    let scroll = Scroll::new(session, zone, crop, scale, size, capture);
     scroll.paint_base(
-        &mut editor_state.captures[monitor_idx],
+        &editor_state.captures[monitor_idx],
         &mut editor_state.dimmed[monitor_idx],
         canvas_scale,
     );
@@ -158,14 +154,11 @@ pub async fn capture_step(
         }
     }
 
-    let paused = !scroll.live();
     let after = (
         scroll.session.stitcher.revision(),
         scroll.session.status.clone(),
     );
-    if paused {
-        switched(editor_state, dirty_mask);
-    } else if before != after {
+    if before != after {
         refresh_panel(editor_state, dirty_mask);
     }
 }
@@ -193,117 +186,8 @@ pub fn sync(
     Ok(())
 }
 
-pub fn live(editor_state: &EditorState) -> bool {
-    editor_state.scroll.as_ref().is_some_and(Scroll::live)
-}
-
-/// While live nothing reaches the tools; while drawing only presses inside the region do.
-pub fn blocks_tool(editor_state: &EditorState, pressed: bool) -> bool {
-    let Some(scroll) = editor_state.scroll.as_ref() else {
-        return false;
-    };
-    let pointer = editor_state.input.pointer;
-    let outside = pointer.monitor_idx != scroll.monitor_idx || !scroll.contains(pointer.local);
-    scroll.live() || editor_state.selected_tool == Tool::Selection || (pressed && outside)
-}
-
-pub fn set_live(editor_state: &mut EditorState, live: bool, dirty_mask: &mut u32) {
-    let busy = editor_state.tool_active || editor_state.pending.is_some();
-    let Some(scroll) = editor_state.scroll.as_ref() else {
-        return;
-    };
-    if scroll.live() == live || (live && busy) {
-        return;
-    }
-    if live {
-        crate::tools::dispatch_deactivate(editor_state.selected_tool, editor_state, dirty_mask);
-        super::panels::color::close_color_popover(editor_state, dirty_mask);
-    }
-    let Some(scroll) = editor_state.scroll.as_mut() else {
-        return;
-    };
-    scroll.session.paused = !live;
-    scroll.session.status = if live { "Capturing" } else { "Paused" }.into();
-    if live {
-        scroll.follow_page();
-    }
-    switched(editor_state, dirty_mask);
-}
-
-fn switched(editor_state: &mut EditorState, dirty_mask: &mut u32) {
-    let Some(scroll) = editor_state.scroll.as_mut() else {
-        return;
-    };
-    let idx = scroll.monitor_idx;
-    scroll.layer_stale = true;
-    scroll.paint_region(
-        &mut editor_state.captures[idx],
-        &mut editor_state.dimmed[idx],
-        editor_state.placements[idx].scale,
-    );
-    // what lies under the blurs is the long image now
-    editor_state.blur = Default::default();
-    editor_state.selected_annotation = None;
-    highlight(editor_state);
-    redraw_monitor(editor_state, idx, dirty_mask);
-    super::input::refresh_panels(editor_state, dirty_mask);
-}
-
-/// wheel over the paused region scrolls the long image, returns whether it did.
-pub fn wheel(
-    editor_state: &mut EditorState,
-    delta_x: f32,
-    delta_y: f32,
-    dirty_mask: &mut u32,
-) -> bool {
-    let pointer = editor_state.input.pointer;
-    let Some(scroll) = editor_state.scroll.as_mut() else {
-        return false;
-    };
-    if scroll.live() || pointer.monitor_idx != scroll.monitor_idx || !scroll.contains(pointer.local)
-    {
-        return false;
-    }
-    let delta = match scroll.axis() {
-        Axis::Vertical => -delta_y,
-        Axis::Horizontal => delta_x - delta_y,
-    };
-    if scroll.scroll_by(delta * WHEEL_STEP) {
-        moved(editor_state, dirty_mask);
-    }
-    true
-}
-
-fn moved(editor_state: &mut EditorState, dirty_mask: &mut u32) {
-    let Some(scroll) = editor_state.scroll.as_mut() else {
-        return;
-    };
-    let idx = scroll.monitor_idx;
-    let region = scroll.region;
-    scroll.layer_stale = true;
-    scroll.paint_region(
-        &mut editor_state.captures[idx],
-        &mut editor_state.dimmed[idx],
-        editor_state.placements[idx].scale,
-    );
-    editor_state.damage_local(idx, region);
-    mark_dirty(dirty_mask, idx);
-
-    // pointer stays put while the page moves under it
-    let pointer = editor_state.input.pointer;
-    if pointer.monitor_idx == idx {
-        let (x, y) = editor_state.origin(idx);
-        let global = (x as f64 + pointer.local.0, y as f64 + pointer.local.1);
-        editor_state.input.pointer.global = global;
-        if !blocks_tool(editor_state, false) {
-            crate::tools::dispatch_move(
-                editor_state.selected_tool,
-                editor_state,
-                global,
-                dirty_mask,
-            );
-        }
-    }
+pub fn blocks_tool(editor_state: &EditorState) -> bool {
+    editor_state.scroll.is_some()
 }
 
 fn redraw_monitor(editor_state: &mut EditorState, idx: usize, dirty_mask: &mut u32) {
@@ -314,19 +198,13 @@ fn redraw_monitor(editor_state: &mut EditorState, idx: usize, dirty_mask: &mut u
     mark_dirty(dirty_mask, idx);
 }
 
-/// live is shown on the scroll button, drawing on the tool.
 fn highlight(editor_state: &mut EditorState) {
-    let live = live(editor_state);
-    let tool = editor_state.selected_tool;
+    let running = editor_state.scroll.is_some();
     editor_state.toolbar.selected = editor_state
         .toolbar
         .items
         .iter()
-        .position(|item| match item {
-            ToolbarItem::Button(ToolbarButton::Scroll) => live,
-            ToolbarItem::Button(ToolbarButton::Tool(t)) => !live && *t == tool,
-            _ => false,
-        });
+        .position(|item| matches!(item, ToolbarItem::Button(ToolbarButton::Scroll)) && running);
     editor_state.toolbar.dirty = true;
 }
 
@@ -400,7 +278,6 @@ pub fn click(editor_state: &mut EditorState, dirty_mask: &mut u32) -> bool {
         PanelButton::ToggleAxis => {
             if scroll.session.toggle_axis() {
                 scroll.reset();
-                moved(editor_state, dirty_mask);
             }
         }
         PanelButton::Finish => editor_state.finish = Some(Outputs::default()),

@@ -230,20 +230,12 @@ impl EditorState {
         }
     }
 
-    /// Where annotations start on this monitor: its position, plus how far the
-    /// scrolling region has moved over the long image.
+    /// Where annotations start on this monitor: its position.
     pub fn origin(&self, monitor_idx: usize) -> (f32, f32) {
         if let Some(sheet) = &self.sheet {
             return sheet.origin();
         }
-        let (x, y) = self.placements[monitor_idx].offset();
-        match &self.scroll {
-            Some(scroll) if scroll.monitor_idx == monitor_idx => {
-                let (dx, dy) = scroll.shift();
-                (x + dx, y + dy)
-            }
-            _ => (x, y),
-        }
+        self.placements[monitor_idx].offset()
     }
 
     pub fn zoom(&self, monitor_idx: usize) -> f32 {
@@ -339,12 +331,6 @@ impl EditorState {
         mask
     }
 
-    pub fn annotations_shown_on(&self, monitor_idx: usize) -> bool {
-        self.scroll
-            .as_ref()
-            .is_none_or(|scroll| !scroll.live() && scroll.monitor_idx == monitor_idx)
-    }
-
     pub fn region(&self) -> bool {
         matches!(self.mode, Mode::Region | Mode::Ocr)
     }
@@ -356,8 +342,7 @@ impl EditorState {
 
     pub fn magnifier_shown(&self) -> bool {
         // a live region would catch the loupe in its frames
-        let live = self.scroll.as_ref().is_some_and(|s| s.live());
-        (!self.magnifier.hidden || self.picking()) && !live
+        (!self.magnifier.hidden || self.picking()) && self.scroll.is_none()
     }
 
     // to avoid revbuilding the entire annotation layer like it was implemented before

@@ -1,10 +1,8 @@
-// Scrolling capture inside the editor: the live page shows through the region while
-// capturing, the stitched long image (scrolled by the wheel) while drawing
+// Scrolling capture inside the editor: the live page shows through the region
 
 use shot_stitch::{Axis, Edge, Status, StitchResult};
 use tiny_skia::{
-    BlendMode, FilterQuality, IntRect, Paint, Pattern, Pixmap, PixmapPaint, Rect, SpreadMode,
-    Transform,
+    BlendMode, FilterQuality, IntRect, Paint, Pattern, Pixmap, Rect, SpreadMode, Transform,
 };
 
 use crate::backend::{CaptureMethod, InputHole};
@@ -23,16 +21,11 @@ pub struct Scroll {
     pub crop: IntRect,
     /// pixels of captured frames per logical one
     pub scale: f32,
-    /// how far the region is scrolled from where the shot started, logical
-    pub view: f32,
-    /// where the page itself was at the last capture
-    page: f32,
     /// rows the long image grew above the first frame
     lead: i32,
     pub layout: PanelLayout,
     pub hovered: Option<PanelButton>,
     pub capture: Box<dyn CaptureMethod>,
-    pub layer_stale: bool,
     pub background: bool,
     pub input: Option<Option<InputHole>>,
     long: Option<(u64, Pixmap)>,
@@ -56,12 +49,9 @@ impl Scroll {
             zone,
             crop,
             scale,
-            view: 0.0,
-            page: 0.0,
             lead: 0,
             hovered: None,
             capture,
-            layer_stale: true,
             background: true,
             input: None,
             long: None,
@@ -76,65 +66,20 @@ impl Scroll {
         self.session.axis()
     }
 
-    pub fn shift(&self) -> (f32, f32) {
-        match self.axis() {
-            Axis::Vertical => (0.0, self.view),
-            Axis::Horizontal => (self.view, 0.0),
-        }
-    }
-
     pub fn contains(&self, local: (f64, f64)) -> bool {
         inside(&self.region, local)
     }
 
-    fn lengths(&self) -> (i32, i32) {
-        let (w, h) = self.session.stitcher.dimensions();
-        match self.axis() {
-            Axis::Vertical => (h, self.crop.height() as i32),
-            Axis::Horizontal => (w, self.crop.width() as i32),
-        }
-    }
-
-    pub fn range(&self) -> (f32, f32) {
-        let (long, frame) = self.lengths();
-        let min = -self.lead as f32 / self.scale;
-        let max = (long - self.lead - frame) as f32 / self.scale;
-        (min, max.max(min))
-    }
-
     pub fn observe(&mut self, result: &StitchResult) {
         match result.status {
-            Status::NoMatch => return,
             Status::FirstFrame => self.lead = 0,
             Status::Appended if result.edge == Edge::Start => self.lead += result.added,
             _ => {}
-        }
-        let (min, max) = self.range();
-        self.page = ((result.position - self.lead) as f32 / self.scale).clamp(min, max);
-        if self.live() {
-            self.view = self.page;
         }
     }
 
     pub fn reset(&mut self) {
         self.lead = 0;
-        self.view = 0.0;
-        self.page = 0.0;
-    }
-
-    pub fn follow_page(&mut self) {
-        self.view = self.page;
-    }
-
-    pub fn scroll_by(&mut self, delta: f32) -> bool {
-        let (min, max) = self.range();
-        // whole pixels of the long image, or the annotations would sit
-        // a fraction of a pixel off the rows under them
-        let view = ((self.view + delta) * self.scale).round() / self.scale;
-        let view = view.clamp(min, max);
-        let moved = view != self.view;
-        self.view = view;
-        moved
     }
 
     /// long image in global coordinates, as when shot started
@@ -157,73 +102,13 @@ impl Scroll {
         self.long.as_ref().map(|(_, pixmap)| pixmap)
     }
 
-    /// Logical pixels of the long image under a global `region`, like `renderer::composite`.
-    pub fn compose(&mut self, region: Rect) -> Option<(Pixmap, (i32, i32))> {
-        let doc = self.doc_rect()?;
-        let scale = self.scale;
-        let left = region.left().floor() as i32;
-        let top = region.top().floor() as i32;
-        let width = (region.right().ceil() as i32 - left).max(0) as u32;
-        let height = (region.bottom().ceil() as i32 - top).max(0) as u32;
-        let mut out = Pixmap::new(width, height)?;
-        let long = self.long_pixmap()?;
-        let transform = Transform::from_row(
-            1.0 / scale,
-            0.0,
-            0.0,
-            1.0 / scale,
-            doc.left() - left as f32,
-            doc.top() - top as f32,
-        );
-        out.draw_pixmap(
-            0,
-            0,
-            long.as_ref(),
-            &PixmapPaint {
-                quality: FilterQuality::Bicubic,
-                ..PixmapPaint::default()
-            },
-            transform,
-            None,
-        );
-        Some((out, (left, top)))
-    }
-
-    fn window(&self, long: &Pixmap) -> Option<IntRect> {
-        let start = self.lead + (self.view * self.scale).round() as i32;
-        let (w, h) = (long.width() as i32, long.height() as i32);
-        match self.axis() {
-            Axis::Vertical => {
-                let len = (self.crop.height() as i32).min(h);
-                IntRect::from_xywh(0, start.clamp(0, h - len), w as u32, len as u32)
-            }
-            Axis::Horizontal => {
-                let len = (self.crop.width() as i32).min(w);
-                IntRect::from_xywh(start.clamp(0, w - len), 0, len as u32, h as u32)
-            }
-        }
-    }
-
-    /// capture gets the same pixels, so the loupe and the eyedropper see them too.
-    pub fn paint_region(&mut self, capture: &mut Capture, dimmed: &mut Pixmap, canvas_scale: f32) {
-        let Some(target) = canvas_rect(self.region, canvas_scale, dimmed) else {
-            return;
-        };
-        if self.live() {
+    pub fn paint_region(&self, dimmed: &mut Pixmap, canvas_scale: f32) {
+        if let Some(target) = canvas_rect(self.region, canvas_scale, dimmed) {
             clear(dimmed, target);
-            return;
         }
-        let crop = self.crop;
-        self.long_pixmap();
-        if let Some((_, long)) = self.long.as_ref()
-            && let Some(window) = self.window(long)
-        {
-            paste(&mut capture.pixmap, crop, long, window);
-        }
-        paste(dimmed, target, &capture.pixmap, crop);
     }
 
-    pub fn paint_base(&mut self, capture: &mut Capture, dimmed: &mut Pixmap, canvas_scale: f32) {
+    pub fn paint_base(&self, capture: &Capture, dimmed: &mut Pixmap, canvas_scale: f32) {
         let (cw, ch) = (capture.pixmap.width(), capture.pixmap.height());
         let (dw, dh) = (dimmed.width(), dimmed.height());
         if let (Some(from), Some(at)) = (
@@ -235,11 +120,11 @@ impl Scroll {
             paint.set_color(crate::config::get().selection.dim.color());
             dimmed.fill_rect(at.to_rect(), &paint, Transform::identity(), None);
         }
-        self.paint_region(capture, dimmed, canvas_scale);
+        self.paint_region(dimmed, canvas_scale);
     }
 
     pub fn input_hole(&self) -> Option<InputHole> {
-        self.live().then(|| InputHole {
+        Some(InputHole {
             hole: logical_rect(self.region),
             keep: Some(logical_rect(self.layout.rect)),
         })

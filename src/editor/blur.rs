@@ -116,7 +116,7 @@ impl EditorState {
     }
 
     pub fn blur_area(&self, sel: Rect, scale: f32) -> Rect {
-        let Some(workspace) = self.blur_bounds() else {
+        let Some(workspace) = self.workspace() else {
             return sel;
         };
         let mut area = sel;
@@ -186,7 +186,7 @@ impl EditorState {
     }
 
     fn build_blur_base(&mut self, id: u64, below: usize, style: Style) -> Option<Base> {
-        let workspace = self.blur_bounds()?;
+        let workspace = self.workspace()?;
         let (src, origin) = self.blur_source(workspace, below)?;
         let whole = IntRect::from_xywh(0, 0, src.width(), src.height())?;
         Some(Base {
@@ -206,7 +206,7 @@ impl EditorState {
         {
             return base.crop(at);
         }
-        let workspace = self.blur_bounds()?;
+        let workspace = self.workspace()?;
         let region = expand_rect(&at.to_rect(), blur::margin(style))?.intersect(&workspace)?;
         let (src, origin) = self.blur_source(region, below)?;
         let local = at.translate(-origin.0, -origin.1)?;
@@ -228,23 +228,9 @@ impl EditorState {
             .collect()
     }
 
-    /// scrolling capture blurs its long image, not the screenshot
-    fn blur_bounds(&self) -> Option<Rect> {
-        match &self.scroll {
-            Some(scroll) => scroll.doc_rect(),
-            None => self.workspace(),
-        }
-    }
-
     fn blur_source(&mut self, region: Rect, below: usize) -> Option<(Pixmap, (i32, i32))> {
-        let (mut src, origin) = match self.scroll.as_mut() {
-            Some(scroll) => scroll.compose(region)?,
-            None => {
-                let (src, origin, _) =
-                    crate::renderer::composite(&self.captures, self.sources(), region, Some(1.0))?;
-                (src, origin)
-            }
-        };
+        let (mut src, origin, _) =
+            crate::renderer::composite(&self.captures, self.sources(), region, Some(1.0))?;
         let at = self.dragged_index().unwrap_or(self.annotations.len());
         for other in stack(&self.annotations, &self.pending, at).take(below) {
             if rects_overlap(&other.damage_bbox(false), &region) {
