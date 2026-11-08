@@ -13,6 +13,7 @@ use wayland_client::{Connection, QueueHandle};
 
 use crate::backend::wayland::overlay::state::OverlayState;
 use crate::backend::wayland::utils::shm::create_shm_buffer;
+use crate::backend::wayland::utils::surface::Role;
 use crate::types::OverlayEvent;
 // ── compositor ────────────────────────────────────────────────────────────────────────────────
 impl CompositorHandler for OverlayState {
@@ -48,6 +49,11 @@ impl CompositorHandler for OverlayState {
             .find(|(_, sd)| &sd.surface == surface)
         {
             sd.frame_sent = None;
+            // only when the window is shown, with the first commit Hyprland opens a floating window at its min size
+            if let (Some(min), Role::Window(window)) = (self.min_size.take(), &sd.role) {
+                window.set_min_size(Some(min));
+                sd.surface.commit();
+            }
             self.events
                 .push_back(OverlayEvent::FrameDone { monitor_idx });
         }

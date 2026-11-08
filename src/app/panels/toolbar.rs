@@ -79,6 +79,14 @@ pub fn update_toolbar(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     }
 }
 
+pub fn min_window_size(toolbar: (f32, f32)) -> (u32, u32) {
+    let margin = size::margin();
+    (
+        (toolbar.0 + margin * 2.0).ceil() as u32,
+        (toolbar.1 + margin * 2.0).ceil() as u32,
+    )
+}
+
 fn compute_toolbar_placement(editor_state: &EditorState) -> (usize, (f32, f32), bool) {
     // in the window edit mode it stays on top while drawing, it's never in the way there
     let window = editor_state.sheet.is_some();

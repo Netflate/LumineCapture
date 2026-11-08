@@ -123,6 +123,10 @@ impl WaylandOverlay {
         Ok(())
     }
 
+    pub fn set_min_size(&mut self, size: (u32, u32)) {
+        self.runtime.state.min_size = Some(size);
+    }
+
     pub fn window_size(&self) -> Option<((u32, u32), f32)> {
         let sd = self.runtime.state.surfaces.get(&0)?;
         Some(((sd.width, sd.height), sd.scale))

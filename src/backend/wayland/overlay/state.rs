@@ -60,6 +60,7 @@ pub struct OverlayState {
     pub configure_error: Option<String>,
     pub mods: crate::keys::Mods,
     pub toplevel: bool,
+    pub min_size: Option<(u32, u32)>,
 }
 
 pub struct Probe {
@@ -179,6 +180,7 @@ impl OverlayState {
             mods: crate::keys::Mods::default(),
             pointer_enter_serial: 0,
             toplevel: false,
+            min_size: None,
         }
     }
 }

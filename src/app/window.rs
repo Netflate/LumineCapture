@@ -60,6 +60,9 @@ pub async fn run(
     editor_state.sheet = Some(sheet);
     editor_state.selection.zone = editor_state.workspace();
     editor_state.toolbar.to = editor_state.to;
+    window.set_min_size(super::panels::toolbar::min_window_size(
+        editor_state.toolbar.size,
+    ));
 
     let mut overlay: Box<dyn ScreenOverlay> = Box::new(window);
     super::run_overlay(&conn, &mut editor_state, &mut overlay).await?;
