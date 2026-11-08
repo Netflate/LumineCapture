@@ -18,10 +18,10 @@ pub struct Picture {
 }
 
 #[derive(Clone, Copy)]
-struct Shown {
-    zoom: f32,
-    pan: (f32, f32),
-    size: (u32, u32),
+pub(super) struct Shown {
+    pub(super) zoom: f32,
+    pub(super) pan: (f32, f32),
+    pub(super) size: (u32, u32),
 }
 
 impl Picture {
@@ -48,8 +48,8 @@ impl Picture {
             self.paint(full, canvas, view.pan, view.zoom, backdrop);
             return;
         };
-        shift(canvas, dx, dy);
-        for (x, y, w, h) in exposed(size, dx, dy) {
+        crate::renderer::shift_pixels(canvas, dx, dy);
+        for (x, y, w, h) in crate::renderer::exposed_strips(size, dx, dy) {
             let Some(mut part) = Pixmap::new(w, h) else {
                 continue;
             };
@@ -123,36 +123,14 @@ fn draw(
     );
 }
 
-fn whole_shift(from: (f32, f32), to: (f32, f32), (w, h): (u32, u32)) -> Option<(i32, i32)> {
+pub(super) fn whole_shift(
+    from: (f32, f32),
+    to: (f32, f32),
+    (w, h): (u32, u32),
+) -> Option<(i32, i32)> {
     let whole = |d: f32| ((d - d.round()).abs() < 1e-3).then_some(d.round() as i32);
     let (dx, dy) = (whole(to.0 - from.0)?, whole(to.1 - from.1)?);
     (dx.unsigned_abs() < w && dy.unsigned_abs() < h).then_some((dx, dy))
-}
-
-fn shift(canvas: &mut Pixmap, dx: i32, dy: i32) {
-    let offset = (dy as isize * canvas.width() as isize + dx as isize) * 4;
-    let data = canvas.data_mut();
-    let skip = offset.unsigned_abs();
-    if offset > 0 {
-        data.copy_within(..data.len() - skip, skip);
-    } else if offset < 0 {
-        data.copy_within(skip.., 0);
-    }
-}
-
-fn exposed((w, h): (u32, u32), dx: i32, dy: i32) -> Vec<(u32, u32, u32, u32)> {
-    let mut rects = Vec::new();
-    match dy.signum() {
-        1 => rects.push((0, 0, w, dy as u32)),
-        -1 => rects.push((0, h - dy.unsigned_abs(), w, dy.unsigned_abs())),
-        _ => {}
-    }
-    match dx.signum() {
-        1 => rects.push((0, 0, dx as u32, h)),
-        -1 => rects.push((w - dx.unsigned_abs(), 0, dx.unsigned_abs(), h)),
-        _ => {}
-    }
-    rects
 }
 
 fn halve(src: &Pixmap) -> Option<Pixmap> {

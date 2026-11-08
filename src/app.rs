@@ -11,6 +11,7 @@ pub mod window;
 
 use crate::backend::ScreenOverlay;
 use crate::backend::{FRAME_FALLBACK, initialize_capture, initialize_overlay};
+use crate::edit::Follow;
 use crate::editor::dirty::{apply_damage_rects, is_dirty, mark_all_dirty, mark_dirty};
 use crate::editor::{EditorState, Layers, OcrState, TextState};
 use crate::profiler::Profiler;
@@ -643,32 +644,73 @@ fn rebuild_layer(editor_state: &mut EditorState, i: usize, frame: &Frame) {
         .as_mut()
         .filter(|s| s.monitor_idx == i)
         .is_some_and(|s| std::mem::take(&mut s.layer_stale));
+    let size = (
+        editor_state.annotations_layer[i].width(),
+        editor_state.annotations_layer[i].height(),
+    );
+    let follow = editor_state
+        .sheet
+        .as_mut()
+        .map_or(Follow::Same, |sheet| sheet.follow(size));
     let layer_dirty = if moved {
         None
     } else {
         editor_state.monitor_layer_dirty_rect(i)
     };
-    if !moved && layer_dirty.is_none() && !editor_state.annotations_dirty {
-        return;
+    // in the window edit mode the layer moves with a pan and only the strips that came into view are drawn
+    let full = moved
+        || matches!(follow, Follow::Redraw)
+        || (editor_state.annotations_dirty && layer_dirty.is_none());
+    let mut areas = Vec::new();
+    if !full {
+        let has_content =
+            !(editor_state.annotations.is_empty() && editor_state.pending_pen_baked == 0);
+        if let Follow::Shift(dx, dy) = follow
+            && has_content
+        {
+            renderer::shift_pixels(&mut editor_state.annotations_layer[i], dx, dy);
+            let ui = editor_state.placements[i].scale;
+            areas.extend(
+                renderer::exposed_strips(size, dx, dy)
+                    .into_iter()
+                    .filter_map(|(x, y, w, h)| {
+                        Rect::from_xywh(x as f32 / ui, y as f32 / ui, w as f32 / ui, h as f32 / ui)
+                    }),
+            );
+        }
+        areas.extend(layer_dirty);
+        if areas.is_empty() {
+            return;
+        }
     }
     let origin = editor_state.origin(i);
     let zoom = editor_state.zoom(i);
     let placement = &editor_state.placements[i];
-    renderer::rebuild_annotations_layer(
-        &mut renderer::Painter::new(&mut editor_state.annotations_layer[i])
-            .with_scale(placement.scale)
-            .with_zoom(zoom)
-            .with_text(
-                &mut editor_state.text.font_system,
-                &mut editor_state.text.swash_cache,
-            )
-            .with_origin(origin),
-        &editor_state.annotations,
-        &mut editor_state.text.editors,
-        &editor_state.blur.cache,
-        frame.active_text_id,
-        layer_dirty,
-    );
+    let mut painter = renderer::Painter::new(&mut editor_state.annotations_layer[i])
+        .with_scale(placement.scale)
+        .with_zoom(zoom)
+        .with_text(
+            &mut editor_state.text.font_system,
+            &mut editor_state.text.swash_cache,
+        )
+        .with_origin(origin);
+    let mut rebuild = |area: Option<Rect>| {
+        renderer::rebuild_annotations_layer(
+            &mut painter,
+            &editor_state.annotations,
+            &mut editor_state.text.editors,
+            &editor_state.blur.cache,
+            frame.active_text_id,
+            area,
+        );
+    };
+    if full {
+        rebuild(None);
+    } else {
+        for area in areas {
+            rebuild(Some(area));
+        }
+    }
 }
 
 /// Draws one monitor's canvas and returns the region that changed

@@ -201,7 +201,6 @@ pub fn paint(editor_state: &mut EditorState) -> bool {
 /// everything on the picture moved: the annotations layer is drawn anew,
 /// and the tool sees the pointer over another point of the picture
 fn view_changed(editor_state: &mut EditorState, dirty_mask: &mut u32) {
-    editor_state.annotations_dirty = true;
     let (w, h) = editor_state.placements[0].size;
     if let Some(whole) = Rect::from_xywh(0.0, 0.0, w as f32, h as f32) {
         editor_state.damage_local(0, whole);

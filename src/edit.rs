@@ -8,7 +8,7 @@ use std::io::{IsTerminal, Read};
 use tiny_skia::{Color, IntSize, Pixmap};
 
 use crate::types::Placement;
-use picture::Picture;
+use picture::{Picture, Shown, whole_shift};
 pub use view::View;
 
 pub const EDIT_ARG: &str = "--edit";
@@ -54,6 +54,13 @@ fn decode(bytes: &[u8]) -> Result<Pixmap, Box<dyn std::error::Error>> {
     Ok(Pixmap::from_vec(data, size).ok_or("invalid image")?)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Follow {
+    Same,
+    Shift(i32, i32),
+    Redraw,
+}
+
 /// picture of the editor window and how it's shown
 ///
 /// annotations are in document units, `scale` picture pixels each, like logical pixels of a monitor
@@ -66,6 +73,7 @@ pub struct Sheet {
     /// fractions not panned yet pixel : whole steps let `Picture` move the old frame
     pan_rest: (f32, f32),
     pub dragging: Option<(f64, f64)>,
+    layer: Option<Shown>,
 }
 
 impl Sheet {
@@ -84,6 +92,7 @@ impl Sheet {
             stale: true,
             pan_rest: (0.0, 0.0),
             dragging: None,
+            layer: None,
         }
     }
 
@@ -96,12 +105,37 @@ impl Sheet {
     }
 
     pub fn origin(&self) -> (f32, f32) {
-        let k = self.view.zoom * self.scale();
-        (-self.view.pan.0 / k, -self.view.pan.1 / k)
+        self.origin_at(self.view.pan, self.view.zoom)
     }
 
     pub fn zoom(&self, window_scale: f32) -> f32 {
-        self.view.zoom * self.scale() / window_scale
+        self.zoom_at(self.view.zoom, window_scale)
+    }
+
+    /// view the annotations layer holds right now; whatever draws into it directly
+    /// (pen segments, a finished shape) uses it, since the layer catches up with a pan only
+    /// at the next frame
+    pub fn layer_origin(&self) -> (f32, f32) {
+        match self.layer {
+            Some(shown) => self.origin_at(shown.pan, shown.zoom),
+            None => self.origin(),
+        }
+    }
+
+    pub fn layer_zoom(&self, window_scale: f32) -> f32 {
+        match self.layer {
+            Some(shown) => self.zoom_at(shown.zoom, window_scale),
+            None => self.zoom(window_scale),
+        }
+    }
+
+    fn origin_at(&self, pan: (f32, f32), zoom: f32) -> (f32, f32) {
+        let k = zoom * self.scale();
+        (-pan.0 / k, -pan.1 / k)
+    }
+
+    fn zoom_at(&self, zoom: f32, window_scale: f32) -> f32 {
+        zoom * self.scale() / window_scale
     }
 
     pub fn resize(&mut self, px: (u32, u32), ratio: f32) {
@@ -110,6 +144,26 @@ impl Sheet {
             self.base = base;
         }
         self.stale = true;
+        self.layer = None;
+    }
+
+    pub fn follow(&mut self, size: (u32, u32)) -> Follow {
+        let now = Shown {
+            zoom: self.view.zoom,
+            pan: self.view.pan,
+            size,
+        };
+        match self.layer.replace(now) {
+            Some(was) if was.zoom == now.zoom && was.size == size => {
+                if was.pan == now.pan {
+                    Follow::Same
+                } else {
+                    whole_shift(was.pan, now.pan, size)
+                        .map_or(Follow::Redraw, |(dx, dy)| Follow::Shift(dx, dy))
+                }
+            }
+            _ => Follow::Redraw,
+        }
     }
 
     pub fn pan(&mut self, (dx, dy): (f32, f32)) -> bool {
@@ -165,5 +219,68 @@ mod tests {
         assert_eq!(doc_scale((2001, 1500), 1.25), 1.0);
         assert_eq!(doc_scale((1000, 602), 2.5), 2.0);
         assert_eq!(doc_scale((999, 600), 0.5), 1.0);
+    }
+
+    #[test]
+    fn the_layer_follows_the_view() {
+        let image = Pixmap::new(300, 200).unwrap();
+        let mut sheet = Sheet::new(&image, 1.0);
+        sheet.resize((120, 90), 1.0);
+        let size = (120, 90);
+        let center = sheet.view.center();
+        assert!(sheet.view.zoom_to(1.0, center));
+        assert_eq!(sheet.follow(size), Follow::Redraw);
+        assert_eq!(sheet.follow(size), Follow::Same);
+
+        assert!(sheet.pan((7.0, 3.0)));
+        assert_eq!(sheet.follow(size), Follow::Shift(7, 3));
+        assert_eq!(sheet.follow(size), Follow::Same);
+
+        assert!(sheet.view.zoom_at(1.25, center));
+        assert_eq!(sheet.follow(size), Follow::Redraw);
+        assert_eq!(sheet.follow(size), Follow::Same);
+
+        assert_eq!(sheet.follow((121, 90)), Follow::Redraw);
+        assert_eq!(sheet.follow((121, 90)), Follow::Same);
+
+        sheet.resize((120, 90), 1.0);
+        assert_eq!(sheet.follow(size), Follow::Redraw);
+
+        assert!(sheet.pan((500.0, 0.0)));
+        assert_eq!(sheet.follow(size), Follow::Redraw);
+    }
+
+    #[test]
+    fn direct_writers_draw_in_the_layers_own_view() {
+        let image = Pixmap::new(300, 200).unwrap();
+        let mut sheet = Sheet::new(&image, 1.0);
+        sheet.resize((120, 90), 1.0);
+        let center = sheet.view.center();
+        assert!(sheet.view.zoom_to(1.0, center));
+        let size = (120, 90);
+        assert_eq!(sheet.layer_origin(), sheet.origin());
+        assert_eq!(sheet.layer_zoom(1.0), sheet.zoom(1.0));
+
+        assert_eq!(sheet.follow(size), Follow::Redraw);
+        let (origin, zoom) = (sheet.origin(), sheet.zoom(1.0));
+        assert_eq!(sheet.layer_origin(), origin);
+
+        assert!(sheet.pan((7.0, 3.0)));
+        assert_ne!(sheet.origin(), origin);
+        assert_eq!(sheet.layer_origin(), origin);
+        assert_eq!(sheet.layer_zoom(1.0), zoom);
+
+        assert_eq!(sheet.follow(size), Follow::Shift(7, 3));
+        assert_eq!(sheet.layer_origin(), sheet.origin());
+
+        assert!(sheet.view.zoom_at(1.25, center));
+        assert_ne!(sheet.layer_zoom(1.0), sheet.zoom(1.0));
+        assert_eq!(sheet.follow(size), Follow::Redraw);
+        assert_eq!(sheet.layer_zoom(1.0), sheet.zoom(1.0));
+
+        assert!(sheet.pan((5.0, 0.0)));
+        sheet.resize((120, 90), 1.0);
+        assert_eq!(sheet.layer_origin(), sheet.origin());
+        assert_eq!(sheet.layer_zoom(1.0), sheet.zoom(1.0));
     }
 }

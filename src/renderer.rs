@@ -702,6 +702,32 @@ fn clear_rect_transparent(layer: &mut Pixmap, rect: &Rect) {
     }
 }
 
+pub fn shift_pixels(canvas: &mut Pixmap, dx: i32, dy: i32) {
+    let offset = (dy as isize * canvas.width() as isize + dx as isize) * 4;
+    let data = canvas.data_mut();
+    let skip = offset.unsigned_abs();
+    if offset > 0 {
+        data.copy_within(..data.len() - skip, skip);
+    } else if offset < 0 {
+        data.copy_within(skip.., 0);
+    }
+}
+
+pub fn exposed_strips((w, h): (u32, u32), dx: i32, dy: i32) -> Vec<(u32, u32, u32, u32)> {
+    let mut rects = Vec::new();
+    match dy.signum() {
+        1 => rects.push((0, 0, w, dy as u32)),
+        -1 => rects.push((0, h - dy.unsigned_abs(), w, dy.unsigned_abs())),
+        _ => {}
+    }
+    match dx.signum() {
+        1 => rects.push((0, 0, dx as u32, h)),
+        -1 => rects.push((w - dx.unsigned_abs(), 0, dx.unsigned_abs(), h)),
+        _ => {}
+    }
+    rects
+}
+
 fn touches(ann: &Annotation, area: &Rect, offset: (f32, f32), zoom: f32) -> bool {
     let pad = ann.visual_pad();
     let l = (ann.bbox.left() - offset.0 - pad) * zoom;
@@ -1051,5 +1077,82 @@ mod tests {
         check(scene(&|x, y| (x, y)), &|canvas| zoomed(canvas));
         let screen = |x: f32, y: f32| ((x - ORIGIN.0) * ZOOM, (y - ORIGIN.1) * ZOOM);
         check(scene(&screen), &|canvas| Painter::new(canvas));
+    }
+
+    #[test]
+    fn shifting_the_layer_matches_a_full_rebuild() {
+        let anns = vec![
+            ann(
+                1,
+                AnnotationShape::Arrow {
+                    start: (75.0, 30.0),
+                    end: (105.0, 55.0),
+                },
+                4.0,
+            ),
+            ann(
+                2,
+                AnnotationShape::Rectangle {
+                    start: (95.0, 20.0),
+                    end: (135.0, 70.0),
+                    filled: false,
+                },
+                3.0,
+            ),
+            ann(
+                3,
+                AnnotationShape::Pen {
+                    points: (0..30)
+                        .map(|i| (20.0 + i as f32 * 4.0, 85.0 + (i as f32 * 0.7).sin() * 6.0))
+                        .collect(),
+                },
+                5.0,
+            ),
+        ];
+        let rebuild = |canvas: &mut Pixmap, origin: (f32, f32), dirty: Option<Rect>| {
+            rebuild_annotations_layer(
+                &mut Painter::new(canvas)
+                    .with_scale(UI)
+                    .with_zoom(ZOOM)
+                    .with_origin(origin),
+                &anns,
+                &mut HashMap::new(),
+                &HashMap::new(),
+                None,
+                dirty,
+            );
+        };
+
+        let (w, h) = (480, 320);
+        let mut origin = (13.25, 7.75);
+        let mut layer = Pixmap::new(w, h).unwrap();
+        rebuild(&mut layer, origin, None);
+        for (dx, dy) in [(-7, -5), (3, 11), (-40, 0), (0, -30)] {
+            origin = (
+                origin.0 - dx as f32 / (UI * ZOOM),
+                origin.1 - dy as f32 / (UI * ZOOM),
+            );
+            shift_pixels(&mut layer, dx, dy);
+            for (x, y, sw, sh) in exposed_strips((w, h), dx, dy) {
+                let strip =
+                    Rect::from_xywh(x as f32 / UI, y as f32 / UI, sw as f32 / UI, sh as f32 / UI);
+                rebuild(&mut layer, origin, strip);
+            }
+            let mut full = Pixmap::new(w, h).unwrap();
+            rebuild(&mut full, origin, None);
+            let off = layer
+                .pixels()
+                .iter()
+                .zip(full.pixels())
+                .filter(|(a, b)| {
+                    [a.red(), a.green(), a.blue(), a.alpha()]
+                        .iter()
+                        .zip([b.red(), b.green(), b.blue(), b.alpha()])
+                        .any(|(a, b)| a.abs_diff(b) > 1)
+                })
+                .count();
+            assert!(off <= 30, "step {dx}, {dy}: {off} pixels");
+            assert!(ink(&layer) > 0);
+        }
     }
 }

@@ -251,6 +251,20 @@ impl EditorState {
         }
     }
 
+    pub fn layer_origin(&self, monitor_idx: usize) -> (f32, f32) {
+        match &self.sheet {
+            Some(sheet) => sheet.layer_origin(),
+            None => self.origin(monitor_idx),
+        }
+    }
+
+    pub fn layer_zoom(&self, monitor_idx: usize) -> f32 {
+        match &self.sheet {
+            Some(sheet) => sheet.layer_zoom(self.placements[monitor_idx].scale),
+            None => self.zoom(monitor_idx),
+        }
+    }
+
     pub fn pointer_zoom(&self) -> f32 {
         self.zoom(self.input.pointer.monitor_idx)
     }
@@ -350,8 +364,8 @@ impl EditorState {
     pub fn bake_annotation(&mut self, ann: &Annotation) {
         self.cache_blur(ann, self.annotations.len());
         for (i, placement) in self.placements.iter().enumerate() {
-            let offset = self.origin(i);
-            let zoom = self.zoom(i);
+            let offset = self.layer_origin(i);
+            let zoom = self.layer_zoom(i);
             let pad = ann.visual_pad();
             let visual = Rect::from_ltrb(
                 (ann.bbox.left() - offset.0 - pad) * zoom,
@@ -429,8 +443,8 @@ impl EditorState {
 
         if let Some(path) = pb.finish() {
             for (i, placement) in self.placements.iter().enumerate() {
-                let offset = self.origin(i);
-                let zoom = self.zoom(i);
+                let offset = self.layer_origin(i);
+                let zoom = self.layer_zoom(i);
                 let visual = Rect::from_ltrb(
                     (segment_bbox.left() - offset.0) * zoom,
                     (segment_bbox.top() - offset.1) * zoom,
