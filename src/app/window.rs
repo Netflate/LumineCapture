@@ -61,7 +61,7 @@ pub async fn run(
     editor_state.selection.zone = editor_state.workspace();
     editor_state.toolbar.to = editor_state.to;
     window.set_min_size(super::panels::toolbar::min_window_size(
-        editor_state.toolbar.size,
+        editor_state.toolbar.natural_size(),
     ));
 
     let mut overlay: Box<dyn ScreenOverlay> = Box::new(window);

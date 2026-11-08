@@ -13,13 +13,14 @@ pub fn draw_toolbar(p: &mut Painter, toolbar: &mut Toolbar) {
 
     let mut cache = toolbar.toolbar_pixmap.take();
     let look = toolbar.look();
+    let k = toolbar.shrink;
     p.panel(
         &mut cache,
         (tb_rect.left(), tb_rect.top()),
         toolbar.size,
         toolbar.opacity,
         toolbar.drawn_look != Some(look),
-        |p| draw_toolbar_content(p, toolbar),
+        |p| draw_toolbar_content(&mut p.rescaled(k), toolbar),
     );
     toolbar.toolbar_pixmap = cache;
     toolbar.drawn_look = Some(look);
@@ -28,12 +29,13 @@ pub fn draw_toolbar(p: &mut Painter, toolbar: &mut Toolbar) {
 fn draw_toolbar_content(p: &mut Painter, toolbar: &Toolbar) {
     let cfg = &crate::config::get().toolbar;
     let theme = &crate::config::get().theme;
-    let (w, h) = toolbar.size;
+    let (w, h) = toolbar.natural_size();
     let Some(rect) = Rect::from_xywh(0.0, 0.0, w, h) else {
         return;
     };
 
-    p.fill_rounded(rect, radius::panel(), cfg.background.get());
+    // border around it isn't shrunk, so neither are the corners
+    p.fill_rounded(rect, radius::panel() / toolbar.shrink, cfg.background.get());
 
     let bg_h = h * cfg.highlight_height;
     let bg_y = rect.top() + (h - bg_h) / 2.0;

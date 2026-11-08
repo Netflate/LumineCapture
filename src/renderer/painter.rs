@@ -57,6 +57,20 @@ impl<'a> Painter<'a> {
         self
     }
 
+    pub fn rescaled(&mut self, k: f32) -> Painter<'_> {
+        Painter {
+            canvas: &mut *self.canvas,
+            scale: self.scale * k,
+            zoom: self.zoom,
+            origin: (self.origin.0 / k, self.origin.1 / k),
+            icons: self.icons,
+            fonts: self.fonts.as_mut().map(|fonts| Fonts {
+                system: &mut *fonts.system,
+                cache: &mut *fonts.cache,
+            }),
+        }
+    }
+
     pub fn with_origin(mut self, origin: (f32, f32)) -> Self {
         self.origin = origin;
         self

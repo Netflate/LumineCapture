@@ -44,6 +44,7 @@ pub struct Toolbar {
     pub items: &'static [ToolbarItem],
     pub position: (f32, f32),
     pub size: (f32, f32),
+    pub shrink: f32,
     pub opacity: f32,
     pub monitor_idx: usize,
 
@@ -181,6 +182,7 @@ impl Toolbar {
             drawn_look: None,
             items: ITEMS,
             size: (0.0, size::panel_height()),
+            shrink: 1.0,
             opacity: 1.0,
             monitor_idx: 0,
             position: (0.0, 0.0),
@@ -196,10 +198,19 @@ impl Toolbar {
             placement_kind: None,
         };
 
-        toolbar.size.0 = toolbar.width();
-        toolbar.size.1 = size::panel_height();
+        toolbar.size = toolbar.natural_size();
 
         toolbar
+    }
+
+    pub fn natural_size(&self) -> (f32, f32) {
+        (self.width(), size::panel_height())
+    }
+
+    pub fn set_shrink(&mut self, k: f32) {
+        let natural = self.natural_size();
+        self.shrink = k;
+        self.size = (natural.0 * k, natural.1 * k);
     }
 
     pub fn look(&self) -> ToolbarLook {
@@ -232,9 +243,9 @@ impl Toolbar {
             return (false, None);
         }
 
-        let mut current_x = rect.left() + size::padding();
+        let mut current_x = rect.left() + size::padding() * self.shrink;
         for (idx, item) in self.items.iter().enumerate() {
-            let item_w = item.size();
+            let item_w = item.size() * self.shrink;
             let item_right = current_x + item_w;
             if px >= current_x && px <= item_right {
                 return match item {
@@ -242,7 +253,7 @@ impl Toolbar {
                     ToolbarItem::Seperator => (true, None),
                 };
             }
-            current_x += item_w + item.trailing_padding();
+            current_x += item_w + item.trailing_padding() * self.shrink;
         }
 
         (true, None)
@@ -361,6 +372,45 @@ mod tests {
             }
             assert_eq!(toolbar.render_pos, toolbar.position);
             assert!(t < 1.0, "{hz} Hz took {t} s");
+        }
+    }
+
+    #[test]
+    fn shrunk_toolbar_hits_the_buttons_it_shows() {
+        let k = 0.6;
+        let natural = Toolbar::new().natural_size();
+        let mut toolbar = Toolbar::new();
+        toolbar.set_shrink(k);
+        toolbar.render_pos = (10.0, 20.0);
+        let rect = toolbar.rect().unwrap();
+        assert!((rect.width() - natural.0 * k).abs() < 1e-3);
+        assert!((rect.height() - natural.1 * k).abs() < 1e-3);
+
+        let y = rect.top() + rect.height() / 2.0;
+        let mut x = rect.left() + size::padding() * k;
+        for (idx, item) in toolbar.items.iter().enumerate() {
+            let w = item.size() * k;
+            let hit = toolbar.hit_test(((x + w / 2.0) as f64, y as f64));
+            match item {
+                ToolbarItem::Button(_) => assert_eq!(hit, (true, Some(idx)), "button {idx}"),
+                ToolbarItem::Seperator => assert_eq!(hit, (true, None), "separator {idx}"),
+            }
+            x += w + item.trailing_padding() * k;
+        }
+    }
+
+    #[test]
+    fn unshrunk_toolbar_hit_test_is_unchanged() {
+        let mut shrunk = Toolbar::new();
+        shrunk.set_shrink(1.0);
+        shrunk.render_pos = (10.0, 20.0);
+        let mut fresh = Toolbar::new();
+        fresh.render_pos = (10.0, 20.0);
+        assert_eq!(shrunk.size, fresh.size);
+        let width = fresh.size.0;
+        for step in 0..=((width + 20.0) * 4.0) as u32 {
+            let at = (step as f64 / 4.0, 30.0);
+            assert_eq!(shrunk.hit_test(at), fresh.hit_test(at), "x = {}", at.0);
         }
     }
 }

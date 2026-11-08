@@ -7,12 +7,29 @@ use crate::ui::panel::{sync_panel_hover, sync_panel_rect};
 use crate::ui::toolbar::ToolbarPlacementKind;
 use tiny_skia::Rect;
 
+const MIN_SHRINK: f32 = 0.5;
+
+fn fit_toolbar(editor_state: &EditorState) -> f32 {
+    if editor_state.sheet.is_none() {
+        return 1.0;
+    }
+    ((editor_state.placements[0].size.0 as f32 - size::margin() * 2.0)
+        / editor_state.toolbar.width())
+    .clamp(MIN_SHRINK, 1.0)
+}
+
 pub fn update_toolbar(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     let old_monitor = editor_state.toolbar.monitor_idx;
     let old_position = editor_state.toolbar.position;
     let old_rect = editor_state.toolbar.rect();
     let old_kind = editor_state.toolbar.placement_kind;
     let mut layout_changed = false;
+
+    let fit = fit_toolbar(editor_state);
+    if editor_state.toolbar.shrink != fit {
+        editor_state.toolbar.set_shrink(fit);
+        layout_changed = true;
+    }
 
     let (target_monitor, target_position, hidden) = compute_toolbar_placement(editor_state);
 
