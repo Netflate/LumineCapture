@@ -774,6 +774,7 @@ fn render_monitor(
             editor_state.placements[i].size.1 as f32,
         ),
         scale,
+        zoom: 1.0,
     });
     scroll::draw_panel(editor_state, i, dirty_rect.as_ref());
 

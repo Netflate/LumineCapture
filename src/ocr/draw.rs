@@ -32,10 +32,11 @@ pub fn draw_ocr_overlay(
     canvas: &mut Pixmap,
     view: &OcrView,
     offset: (f32, f32),
+    zoom: f32,
     clip: Option<&Rect>,
     scale: f32,
 ) {
-    let Some(mut painter) = Painter::new(canvas, offset, clip, scale) else {
+    let Some(mut painter) = Painter::new(canvas, offset, zoom, clip, scale) else {
         return;
     };
     let look = look();
@@ -81,11 +82,12 @@ pub fn draw_ocr_scan(
     region: Rect,
     phase: f32,
     offset: (f32, f32),
+    zoom: f32,
     icons_cache: &HashMap<&'static str, Tree>,
     clip: Option<&Rect>,
     scale: f32,
 ) {
-    let Some(mut painter) = Painter::new(canvas, offset, clip, scale) else {
+    let Some(mut painter) = Painter::new(canvas, offset, zoom, clip, scale) else {
         return;
     };
     let look = look();
@@ -93,10 +95,15 @@ pub fn draw_ocr_scan(
     painter.fill(region, 0.0, look.region_shade);
 
     let badge = scan_badge_rect(region);
-    painter.fill(badge, look.badge_radius, look.badge_background.get());
-
-    let left = badge.left() - offset.0;
-    let top = badge.top() - offset.1;
+    // the badge keeps its size on screen around the zoomed centre
+    let grow = (zoom - 1.0) * size / 2.0;
+    let left = (badge.left() - offset.0) * zoom + grow;
+    let top = (badge.top() - offset.1) * zoom + grow;
+    let right = (badge.right() - offset.0) * zoom - grow;
+    let bottom = (badge.bottom() - offset.1) * zoom - grow;
+    if let Some(local) = Rect::from_ltrb(left, top, right, bottom) {
+        painter.fill_local(local, look.badge_radius, look.badge_background.get());
+    }
     let mut p = painter.shared().with_icons(icons_cache);
     p.panel_border(left, top, size, size, look.badge_radius, 1.0);
     p.icon(
@@ -141,11 +148,18 @@ struct Painter {
     buf: Pixmap,
     origin: (f32, f32),
     offset: (f32, f32),
+    zoom: f32,
     scale: f32,
 }
 
 impl Painter {
-    fn new(canvas: &Pixmap, offset: (f32, f32), clip: Option<&Rect>, scale: f32) -> Option<Self> {
+    fn new(
+        canvas: &Pixmap,
+        offset: (f32, f32),
+        zoom: f32,
+        clip: Option<&Rect>,
+        scale: f32,
+    ) -> Option<Self> {
         let (w, h) = (canvas.width(), canvas.height());
         let (x, y, cw, ch) = match clip {
             Some(c) => rect_bounds(&scale_rect(c, scale)?, w, h)?,
@@ -155,6 +169,7 @@ impl Painter {
             buf: Pixmap::new(cw, ch)?,
             origin: (x as f32, y as f32),
             offset,
+            zoom,
             scale,
         })
     }
@@ -212,13 +227,7 @@ impl Painter {
     }
 
     fn to_buf_rect(&self, rect: Rect) -> Option<Rect> {
-        let (dx, dy) = self.offset;
-        let rect = self.buf_rect(Rect::from_ltrb(
-            rect.left() - dx,
-            rect.top() - dy,
-            rect.right() - dx,
-            rect.bottom() - dy,
-        )?)?;
+        let rect = self.buf_rect(self.local(rect)?)?;
         let outside = rect.right() <= 0.0
             || rect.bottom() <= 0.0
             || rect.left() >= self.buf.width() as f32
@@ -226,13 +235,18 @@ impl Painter {
         (!outside).then_some(rect)
     }
 
+    fn local(&self, rect: Rect) -> Option<Rect> {
+        let ((dx, dy), z) = (self.offset, self.zoom);
+        Rect::from_ltrb(
+            (rect.left() - dx) * z,
+            (rect.top() - dy) * z,
+            (rect.right() - dx) * z,
+            (rect.bottom() - dy) * z,
+        )
+    }
+
     fn fill(&mut self, rect: Rect, radius: f32, color: Rgba) {
-        let Some(local) = Rect::from_ltrb(
-            rect.left() - self.offset.0,
-            rect.top() - self.offset.1,
-            rect.right() - self.offset.0,
-            rect.bottom() - self.offset.1,
-        ) else {
+        let Some(local) = self.local(rect) else {
             return;
         };
         self.fill_local(local, radius, color);

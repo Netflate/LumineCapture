@@ -774,6 +774,7 @@ pub fn render_text_annotation(
     pixmap: &mut PixmapMut<'_>,
     offset: (f32, f32),
     scale: f32,
+    ui_scale: f32,
     is_editing: bool,
 ) {
     let AnnotationShape::Text {
@@ -836,6 +837,7 @@ pub fn render_text_annotation(
         font_system,
         swash_cache,
         scale,
+        ui_scale,
         [text_color, cur_col, sel_col, sel_text_color],
         |x, y, w, h, color| {
             let mut draw_w = w as f32;
@@ -903,6 +905,7 @@ fn draw_editor(
     font_system: &mut cosmic_text::FontSystem,
     swash_cache: &mut SwashCache,
     scale: f32,
+    ui_scale: f32,
     [
         text_color,
         cursor_color,
@@ -946,7 +949,7 @@ fn draw_editor(
             }
 
             if let Some(x) = run.cursor_position(&cursor) {
-                let w = scale.round().max(1.0) as u32;
+                let w = ui_scale.round().max(1.0) as u32;
                 f((x * scale) as i32, top, w, height, cursor_color);
             }
 

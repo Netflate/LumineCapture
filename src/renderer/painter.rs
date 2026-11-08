@@ -26,6 +26,9 @@ pub(super) struct Fonts<'a> {
 pub struct Painter<'a> {
     pub(super) canvas: &'a mut Pixmap,
     scale: f32,
+    // document zoom
+    // handles and carets take their sizes through `ui()` and don't grow
+    zoom: f32,
     // top-left corner position in the coorindates callers drawn in
     pub(super) origin: (f32, f32),
     pub(super) icons: Option<&'a Icons>,
@@ -37,6 +40,7 @@ impl<'a> Painter<'a> {
         Self {
             canvas,
             scale: 1.0,
+            zoom: 1.0,
             origin: (0.0, 0.0),
             icons: None,
             fonts: None,
@@ -63,35 +67,53 @@ impl<'a> Painter<'a> {
         self
     }
 
+    pub fn with_zoom(mut self, zoom: f32) -> Self {
+        self.zoom = zoom;
+        self
+    }
+
     pub fn canvas(&mut self) -> &mut Pixmap {
         self.canvas
     }
 
     pub fn scale(&self) -> f32 {
+        self.scale * self.zoom
+    }
+
+    pub fn ui_scale(&self) -> f32 {
         self.scale
+    }
+
+    pub fn zoom(&self) -> f32 {
+        self.zoom
+    }
+
+    pub fn ui(&self, len: f32) -> f32 {
+        len / self.zoom
     }
 
     pub fn size(&self) -> (f32, f32) {
         (
-            self.canvas.width() as f32 / self.scale,
-            self.canvas.height() as f32 / self.scale,
+            self.canvas.width() as f32 / self.scale(),
+            self.canvas.height() as f32 / self.scale(),
         )
     }
 
     pub fn to_px(&self, x: f32, y: f32) -> (f32, f32) {
         (
-            (x - self.origin.0) * self.scale,
-            (y - self.origin.1) * self.scale,
+            (x - self.origin.0) * self.scale(),
+            (y - self.origin.1) * self.scale(),
         )
     }
 
     pub fn transform(&self) -> Transform {
-        Transform::from_translate(-self.origin.0, -self.origin.1).post_scale(self.scale, self.scale)
+        let s = self.scale();
+        Transform::from_translate(-self.origin.0, -self.origin.1).post_scale(s, s)
     }
 
     pub fn transform_shifted(&self, dx: f32, dy: f32) -> Transform {
-        Transform::from_translate(-self.origin.0 + dx, -self.origin.1 + dy)
-            .post_scale(self.scale, self.scale)
+        let s = self.scale();
+        Transform::from_translate(-self.origin.0 + dx, -self.origin.1 + dy).post_scale(s, s)
     }
 
     /// paints into another pixmap with the same stuff (icons, fonts, and scale)
@@ -101,6 +123,7 @@ impl<'a> Painter<'a> {
         Painter {
             canvas,
             scale: self.scale,
+            zoom: self.zoom,
             origin: (0.0, 0.0),
             icons: self.icons,
             fonts: self.fonts.as_mut().map(|fonts| Fonts {
@@ -166,7 +189,7 @@ impl<'a> Painter<'a> {
         redraw: bool,
         content: impl FnOnce(&mut Painter),
     ) {
-        let s = self.scale;
+        let s = self.scale();
         let (px, py) = self.to_px(pos.0, pos.1);
         // rounding is obligatory to avoid desync and visual glitches
         let x = px.round();

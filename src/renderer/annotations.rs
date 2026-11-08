@@ -63,12 +63,13 @@ fn stroke_segment_with_shadow(
     base_shadow_color: Color,
     transform: Transform,
     shadow_transform: Transform,
+    spread: f32,
 ) {
     let shadow = &crate::config::get().annotations.shadow;
     for i in (1..=shadow.layers).rev() {
         let mut layer_stroke = stroke.clone();
 
-        let extra_width = i as f32 * shadow.spread;
+        let extra_width = i as f32 * spread;
         layer_stroke.width = stroke.width + extra_width;
 
         let alpha_factor = 1.0 / (1.0 + (i as f32 * shadow.falloff));
@@ -162,7 +163,7 @@ pub fn draw_annotation(
         }
         AnnotationShape::Text { .. } => {
             let is_editing = active_text_id == Some(ann.id);
-            let scale = p.scale();
+            let (scale, ui_scale) = (p.scale(), p.ui_scale());
             if let Some(fonts) = p.fonts.as_mut() {
                 let editor =
                     crate::tools::text::ensure_text_editor(ann, text_editors, fonts.system);
@@ -175,6 +176,7 @@ pub fn draw_annotation(
                     &mut pixmap_mut,
                     p.origin,
                     scale,
+                    ui_scale,
                     is_editing,
                 );
             }
@@ -211,7 +213,7 @@ fn draw_text_box(p: &mut Painter, bbox: &Rect) {
     paint.set_color(handles.color.get().color());
     paint.anti_alias = true;
     let mut stroke = Stroke::default();
-    stroke.width = handles.width;
+    stroke.width = p.ui(handles.width);
     stroke.line_cap = tiny_skia::LineCap::Round;
     stroke.line_join = tiny_skia::LineJoin::Round;
 
@@ -221,7 +223,7 @@ fn draw_text_box(p: &mut Painter, bbox: &Rect) {
     // better than a drop shadow on a rounded-rect outline.
     let transform = p.transform();
     let shadow_transform = transform;
-    let pad = cfg.input.handle_hit_width / 2.0;
+    let pad = p.ui(cfg.input.handle_hit_width / 2.0);
     let (l, t, ri, b) = (
         bbox.left() - pad,
         bbox.top() - pad,
@@ -230,9 +232,10 @@ fn draw_text_box(p: &mut Painter, bbox: &Rect) {
     );
 
     let (w, h) = (ri - l, b - t);
-    let corner_w = (w * handles.corner_length).clamp(handles.min_length.min(w * 0.5), w * 0.5);
-    let corner_h = (h * handles.corner_length).clamp(handles.min_length.min(h * 0.5), h * 0.5);
-    let r = handles.radius.min(corner_w * 0.5).min(corner_h * 0.5);
+    let min_length = p.ui(handles.min_length);
+    let corner_w = (w * handles.corner_length).clamp(min_length.min(w * 0.5), w * 0.5);
+    let corner_h = (h * handles.corner_length).clamp(min_length.min(h * 0.5), h * 0.5);
+    let r = p.ui(handles.radius).min(corner_w * 0.5).min(corner_h * 0.5);
     let k = 1.0 - KAPPA;
 
     let mut pb = PathBuilder::new();
@@ -263,6 +266,7 @@ fn draw_text_box(p: &mut Painter, bbox: &Rect) {
             base_shadow_color,
             transform,
             shadow_transform,
+            p.ui(cfg.annotations.shadow.spread),
         );
     }
 }
@@ -601,7 +605,7 @@ pub fn draw_highlighter_live(
     let (cw, ch) = (p.canvas.width(), p.canvas.height());
     let s = p.scale();
     let Some((x, y, w, h)) = dirty
-        .and_then(|r| scale_rect(r, s))
+        .and_then(|r| scale_rect(r, p.ui_scale()))
         .or_else(|| Rect::from_xywh(0.0, 0.0, cw as f32, ch as f32))
         .and_then(|r| rect_bounds(&r, cw, ch))
     else {
@@ -672,7 +676,7 @@ fn draw_annotation_handles(p: &mut Painter, bbox: &Rect) {
     paint.anti_alias = true;
 
     let mut stroke = Stroke::default();
-    stroke.width = handles.width;
+    stroke.width = p.ui(handles.width);
     stroke.line_cap = tiny_skia::LineCap::Round;
     stroke.line_join = tiny_skia::LineJoin::Round;
 
@@ -682,7 +686,7 @@ fn draw_annotation_handles(p: &mut Painter, bbox: &Rect) {
     let transform = p.transform();
     let shadow_transform = transform;
 
-    let out_pad = cfg.input.handle_hit_width / 2.0;
+    let out_pad = p.ui(cfg.input.handle_hit_width / 2.0);
 
     let l = bbox.left() - out_pad;
     let t = bbox.top() - out_pad;
@@ -695,14 +699,15 @@ fn draw_annotation_handles(p: &mut Painter, bbox: &Rect) {
     let mid_y = (t + b) / 2.0;
 
     // Mid handles
-    let mid_hw = (w * handles.middle_length).clamp(handles.min_length.min(w * 0.5), w * 0.5);
-    let mid_hh = (h * handles.middle_length).clamp(handles.min_length.min(h * 0.5), h * 0.5);
+    let min_length = p.ui(handles.min_length);
+    let mid_hw = (w * handles.middle_length).clamp(min_length.min(w * 0.5), w * 0.5);
+    let mid_hh = (h * handles.middle_length).clamp(min_length.min(h * 0.5), h * 0.5);
 
     // Edges
-    let corner_w = (w * handles.corner_length).clamp(handles.min_length.min(w * 0.5), w * 0.5);
-    let corner_h = (h * handles.corner_length).clamp(handles.min_length.min(h * 0.5), h * 0.5);
+    let corner_w = (w * handles.corner_length).clamp(min_length.min(w * 0.5), w * 0.5);
+    let corner_h = (h * handles.corner_length).clamp(min_length.min(h * 0.5), h * 0.5);
 
-    let r = handles.radius.min(corner_w * 0.5).min(corner_h * 0.5);
+    let r = p.ui(handles.radius).min(corner_w * 0.5).min(corner_h * 0.5);
     let k = 1.0 - KAPPA;
 
     let mut pb = PathBuilder::new();
@@ -756,6 +761,7 @@ fn draw_annotation_handles(p: &mut Painter, bbox: &Rect) {
             base_shadow_color,
             transform,
             shadow_transform,
+            p.ui(cfg.annotations.shadow.spread),
         );
     }
 }
@@ -790,6 +796,7 @@ fn stroke_with_shadow(
         base_shadow_color,
         transform,
         shadow_transform,
+        crate::config::get().annotations.shadow.spread,
     );
 }
 

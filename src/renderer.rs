@@ -82,6 +82,9 @@ pub struct RenderRequest<'a> {
     /// and the loupe would flip at another spot than its damage does
     pub size: (f32, f32),
     pub scale: f32,
+    /// screen size of a document unit, `offset` is the document point in the top left corner
+    /// the rects above are on screen, 1 on the overlay
+    pub zoom: f32,
 }
 
 /// the highest scale among monitors the region touches
@@ -164,6 +167,7 @@ pub fn composite(
 
 pub fn render_frame(req: &mut RenderRequest) {
     let s = req.scale;
+    let zoom = req.zoom;
     if req.selection_dirty {
         update_dimming_delta(
             req.dimmed,
@@ -198,9 +202,14 @@ pub fn render_frame(req: &mut RenderRequest) {
 
     // Dynamic annotations: pending (in-progress drawing or dragging)
     if let Some(pending) = req.pending {
+        let screen = (
+            req.canvas.width() as f32 / s,
+            req.canvas.height() as f32 / s,
+        );
         let text = &mut req.text;
         let mut p = Painter::new(req.canvas)
             .with_scale(s)
+            .with_zoom(zoom)
             .with_text(text.font_system, text.swash_cache)
             .with_origin(req.offset);
         if !req.is_pending_selected
@@ -238,16 +247,17 @@ pub fn render_frame(req: &mut RenderRequest) {
         // blurs above the dragged annotation are opaque, so redrawing them
         // with whatever lies on them puts it back under
         if let Some(at) = req.dragged_index {
-            let (w, h) = p.size();
-            let area = dirty_rect.copied().or(Rect::from_xywh(0.0, 0.0, w, h));
+            let area = dirty_rect
+                .copied()
+                .or(Rect::from_xywh(0.0, 0.0, screen.0, screen.1));
             for (i, ann) in req.annotations.iter().enumerate().skip(at) {
                 if let crate::types::AnnotationShape::Redact { start, end, .. } = &ann.shape
                     && let Some(rect) = paths::normalized_rect(*start, *end)
                     && let Some(local) = Rect::from_xywh(
-                        rect.x() - req.offset.0,
-                        rect.y() - req.offset.1,
-                        rect.width(),
-                        rect.height(),
+                        (rect.x() - req.offset.0) * zoom,
+                        (rect.y() - req.offset.1) * zoom,
+                        rect.width() * zoom,
+                        rect.height() * zoom,
                     )
                     && let Some(region) = area.and_then(|area| local.intersect(&area))
                 {
@@ -286,7 +296,7 @@ pub fn render_frame(req: &mut RenderRequest) {
     // so anything drawn outside the area just restored from `dimmed` would
     // stack a second layer on top of last frame's.
     if let Some(view) = req.ocr_view {
-        crate::ocr::draw::draw_ocr_overlay(req.canvas, view, req.offset, dirty_rect, s);
+        crate::ocr::draw::draw_ocr_overlay(req.canvas, view, req.offset, zoom, dirty_rect, s);
     }
 
     if let Some((region, phase)) = req.ocr_scan {
@@ -295,6 +305,7 @@ pub fn render_frame(req: &mut RenderRequest) {
             region,
             phase,
             req.offset,
+            zoom,
             req.icons_cache,
             dirty_rect,
             s,
@@ -357,6 +368,7 @@ fn draw_handles(req: &mut RenderRequest) {
         annotations::draw_annotation_handles_only(
             &mut Painter::new(req.canvas)
                 .with_scale(req.scale)
+                .with_zoom(req.zoom)
                 .with_origin(req.offset),
             pending,
         );
@@ -369,6 +381,7 @@ fn draw_handles(req: &mut RenderRequest) {
         annotations::draw_annotation_handles_only(
             &mut Painter::new(req.canvas)
                 .with_scale(req.scale)
+                .with_zoom(req.zoom)
                 .with_origin(req.offset),
             ann,
         );
@@ -687,12 +700,13 @@ pub fn rebuild_annotations_layer(
 ) {
     let offset = p.origin;
     let s = p.scale();
-    let (lw, lh) = p.size();
+    let (ui, zoom) = (p.ui_scale(), p.zoom());
+    let (lw, lh) = (p.canvas.width() as f32 / ui, p.canvas.height() as f32 / ui);
 
     let Some(base_rect) = dirty_rect.or_else(|| Rect::from_xywh(0.0, 0.0, lw, lh)) else {
         return;
     };
-    let Some(px_rect) = scale_rect(&base_rect, s) else {
+    let Some(px_rect) = scale_rect(&base_rect, ui) else {
         return;
     };
 
@@ -728,10 +742,10 @@ pub fn rebuild_annotations_layer(
 
     for ann in annotations {
         let pad = ann.visual_pad();
-        let l = ann.bbox.left() - offset.0 - pad;
-        let t = ann.bbox.top() - offset.1 - pad;
-        let r = ann.bbox.right() - offset.0 + pad;
-        let b = ann.bbox.bottom() - offset.1 + pad;
+        let l = (ann.bbox.left() - offset.0 - pad) * zoom;
+        let t = (ann.bbox.top() - offset.1 - pad) * zoom;
+        let r = (ann.bbox.right() - offset.0 + pad) * zoom;
+        let b = (ann.bbox.bottom() - offset.1 + pad) * zoom;
 
         if l < base_rect.right()
             && r > base_rect.left()
@@ -751,4 +765,186 @@ pub fn rebuild_annotations_layer(
 
     // Composite the temp pixmap back into the real layer at the correct position.
     paste(p.canvas, &tmp, x0 as i32, y0 as i32);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::AnnotationShape;
+
+    const UI: f32 = 1.25;
+    const ZOOM: f32 = 2.5;
+    const ORIGIN: (f32, f32) = (13.3, 7.7);
+
+    fn ann(id: u64, shape: AnnotationShape, stroke_width: f32) -> Annotation {
+        let color = Color::from_rgba8(230, 60, 60, 255);
+        let mut ann = Annotation {
+            id,
+            shape,
+            color,
+            shadow_color: shadow_color_for(color),
+            stroke_width,
+            bbox: Rect::from_xywh(0.0, 0.0, 1.0, 1.0).unwrap(),
+        };
+        ann.update_bbox();
+        ann
+    }
+
+    fn zoomed(canvas: &mut Pixmap) -> Painter<'_> {
+        Painter::new(canvas)
+            .with_scale(UI)
+            .with_zoom(ZOOM)
+            .with_origin(ORIGIN)
+    }
+
+    fn off_pixels(a: &Pixmap, b: &Pixmap) -> usize {
+        a.data()
+            .iter()
+            .zip(b.data())
+            .filter(|(a, b)| a.abs_diff(**b) > 1)
+            .count()
+    }
+
+    fn ink(p: &Pixmap) -> u64 {
+        p.pixels().iter().map(|p| p.alpha() as u64).sum()
+    }
+
+    fn bounds(p: &Pixmap) -> Option<(u32, u32, u32, u32)> {
+        let w = p.width();
+        let painted = p.pixels().iter().enumerate().filter(|(_, p)| p.alpha() > 0);
+        painted.fold(None, |b, (i, _)| {
+            let (x, y) = (i as u32 % w, i as u32 / w);
+            let (l, t, r, bt) = b.unwrap_or((x, y, x, y));
+            Some((l.min(x), t.min(y), r.max(x), bt.max(y)))
+        })
+    }
+
+    #[test]
+    fn partial_layer_rebuild_matches_a_full_one_when_zoomed() {
+        let scene = |dx: f32| {
+            vec![
+                ann(
+                    1,
+                    AnnotationShape::Arrow {
+                        start: (75.0 + dx, 30.0),
+                        end: (105.0 + dx, 55.0),
+                    },
+                    4.0,
+                ),
+                ann(
+                    2,
+                    AnnotationShape::Rectangle {
+                        start: (95.0, 20.0),
+                        end: (135.0, 70.0),
+                        filled: false,
+                    },
+                    3.0,
+                ),
+                ann(
+                    3,
+                    AnnotationShape::Pen {
+                        points: (0..30)
+                            .map(|i| (20.0 + i as f32 * 4.0, 85.0 + (i as f32 * 0.7).sin() * 6.0))
+                            .collect(),
+                    },
+                    5.0,
+                ),
+            ]
+        };
+        let rebuild = |canvas: &mut Pixmap, anns: &[Annotation], dirty: Option<Rect>| {
+            rebuild_annotations_layer(
+                &mut zoomed(canvas),
+                anns,
+                &mut HashMap::new(),
+                &HashMap::new(),
+                None,
+                dirty,
+            );
+        };
+        let (before, after) = (scene(0.0), scene(12.0));
+
+        let mut full = Pixmap::new(480, 320).unwrap();
+        rebuild(&mut full, &after, None);
+
+        let mut partial = Pixmap::new(480, 320).unwrap();
+        rebuild(&mut partial, &before, None);
+        let (old, new, pad) = (before[0].bbox, after[0].bbox, before[0].visual_pad());
+        let screen = |doc: f32, origin: f32| (doc - origin) * ZOOM;
+        let dirty = Rect::from_ltrb(
+            screen(old.left().min(new.left()) - pad, ORIGIN.0),
+            screen(old.top().min(new.top()) - pad, ORIGIN.1),
+            screen(old.right().max(new.right()) + pad, ORIGIN.0),
+            screen(old.bottom().max(new.bottom()) + pad, ORIGIN.1),
+        );
+        rebuild(&mut partial, &after, dirty);
+
+        assert_eq!(off_pixels(&full, &partial), 0);
+    }
+
+    #[test]
+    fn handles_keep_their_size_on_screen_when_zoomed() {
+        let mut ann = ann(
+            1,
+            AnnotationShape::Rectangle {
+                start: (40.0, 30.0),
+                end: (90.0, 70.0),
+                filled: false,
+            },
+            3.0,
+        );
+        ann.bbox = Rect::from_ltrb(40.0, 30.0, 90.0, 70.0).unwrap();
+        let mut at_zoom = Pixmap::new(300, 220).unwrap();
+        annotations::draw_annotation_handles_only(&mut zoomed(&mut at_zoom), &ann);
+
+        let screen = |x: f32, y: f32| ((x - ORIGIN.0) * ZOOM, (y - ORIGIN.1) * ZOOM);
+        let ((l, t), (r, b)) = (screen(40.0, 30.0), screen(90.0, 70.0));
+        ann.bbox = Rect::from_ltrb(l, t, r, b).unwrap();
+        let mut plain = Pixmap::new(300, 220).unwrap();
+        annotations::draw_annotation_handles_only(
+            &mut Painter::new(&mut plain).with_scale(UI),
+            &ann,
+        );
+
+        assert!((ink(&at_zoom) as f32 / ink(&plain) as f32 - 1.0).abs() < 0.01);
+        let (a, b) = (bounds(&at_zoom).unwrap(), bounds(&plain).unwrap());
+        let near = |a: u32, b: u32| a.abs_diff(b) <= 1;
+        assert!(near(a.0, b.0) && near(a.1, b.1) && near(a.2, b.2) && near(a.3, b.3));
+    }
+
+    #[test]
+    fn live_highlighter_stays_inside_its_damage_when_zoomed() {
+        let points: Vec<_> = (0..20).map(|i| (10.0 + i as f32 * 2.0, 15.0)).collect();
+        let draw = |canvas: &mut Pixmap, dirty: Option<&Rect>| {
+            annotations::draw_highlighter_live(
+                &mut zoomed(canvas),
+                &points,
+                [false, false],
+                Color::from_rgba8(250, 210, 40, 255),
+                8.0,
+                dirty,
+            );
+        };
+        let mut full = Pixmap::new(300, 200).unwrap();
+        draw(&mut full, None);
+
+        let dirty = Rect::from_xywh(20.0, 10.0, 40.0, 30.0).unwrap();
+        let mut part = Pixmap::new(300, 200).unwrap();
+        draw(&mut part, Some(&dirty));
+
+        let (x, y, w, h) = rect_bounds(&scale_rect(&dirty, UI).unwrap(), 300, 200).unwrap();
+        let inside = |i: usize| {
+            let (px, py) = ((i % 300) as u32, (i / 300) as u32);
+            px >= x && px < x + w && py >= y && py < y + h
+        };
+        let mut painted = 0;
+        for (i, (p, f)) in part.pixels().iter().zip(full.pixels()).enumerate() {
+            if inside(i) {
+                assert_eq!(p, f, "pixel {i}");
+                painted += (p.alpha() > 0) as usize;
+            } else {
+                assert_eq!(p.alpha(), 0, "pixel {i} is outside the damage");
+            }
+        }
+        assert!(painted > 0);
+    }
 }
