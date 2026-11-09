@@ -150,6 +150,8 @@ async fn make_screenshot(
     } else if editor_state.to_window {
         finish::hand_to_window(&mut editor_state).await
     } else {
+        drop(overlay);
+        let _ = scroll_conn.flush();
         finish::finish_capture(&mut editor_state).await
     }
 }
