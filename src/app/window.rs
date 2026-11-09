@@ -72,6 +72,7 @@ pub async fn run(
     let mut overlay: Box<dyn ScreenOverlay> = Box::new(window);
     super::run_overlay(&conn, &mut editor_state, &mut overlay).await?;
     drop(overlay);
+    let _ = conn.flush();
 
     crate::editor::saved::save(
         &editor_state.tool_settings,
