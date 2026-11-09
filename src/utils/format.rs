@@ -94,7 +94,8 @@ pub fn encode(png: &[u8], format: FileFormat, q: u8) -> Result<Encoded<'_>, Box<
             let enc = ravif::Encoder::new()
                 .with_quality(q as f32)
                 .with_alpha_quality(q as f32)
-                .with_speed(AVIF_SPEED);
+                .with_speed(AVIF_SPEED)
+                .with_bit_depth(ravif::BitDepth::Eight);
             let img = ravif::Img::new(pixels.as_slice(), w as usize, h as usize);
             out = enc.encode_rgba(img)?.avif_file;
         }
