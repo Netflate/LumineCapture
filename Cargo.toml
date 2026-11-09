@@ -74,6 +74,7 @@ shot-stitch = { path = "crates/shot-stitch" }
 [features]
 default = []
 ocr-gpu = ["dep:ort", "dep:lzma-rust2", "oar-ocr/webgpu"]
+asm = ["ravif/asm"]
 
 # drawing and Wayland glue pass many plain values around, and the Stroke::default()
 # + field tweaks pattern reads better than a struct literal there
