@@ -23,7 +23,7 @@ pub fn write(png: &[u8]) -> io::Result<PathBuf> {
         .create(&dir)?;
     let format = &crate::config::get().save.filename_format;
     let stem = chrono::Local::now().format(format).to_string();
-    let path = crate::utils::write_unique(&dir, &stem, png, 0o400)?;
+    let path = crate::utils::write_unique(&dir, &stem, "png", png, 0o400)?;
     prune(&dir, &path, BUDGET);
     Ok(path)
 }

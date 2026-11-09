@@ -1748,6 +1748,7 @@ dependencies = [
  "ort",
  "pico-args",
  "pipewire",
+ "ravif",
  "resvg",
  "rustix",
  "serde",

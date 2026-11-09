@@ -29,6 +29,7 @@ pub enum Notice<'a> {
     /// if the copied image was also saved to disk,
     /// otherwise the PNG itself, previewed if notif daemon can show it.
     Copied(Option<PathBuf>, Option<&'a [u8]>),
+    WebpTooBig,
     SaveFailed(String),
     CopyFailed(String),
     PinFailed(String),
@@ -61,6 +62,12 @@ impl<'a> Notice<'a> {
                 png = shot;
                 ("Screenshot copied", String::new(), false, None)
             }
+            Notice::WebpTooBig => (
+                "Saved as PNG",
+                "WebP can't hold images over 16383 px".into(),
+                false,
+                None,
+            ),
             Notice::SaveFailed(e) => ("Couldn't save the screenshot", e, true, None),
             Notice::CopyFailed(e) => ("Couldn't copy the screenshot", e, true, None),
             Notice::PinFailed(e) => ("Couldn't pin the screenshot", e, true, None),

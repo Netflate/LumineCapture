@@ -11,6 +11,7 @@ use crate::backend::OverlayShell;
 use crate::ocr::settings::{Device, Mode};
 use crate::theme::Rgba;
 use crate::types::Outputs;
+use crate::utils::format::FileFormat;
 
 /// config section: every field sits next to its default
 macro_rules! section {
@@ -246,6 +247,8 @@ section!(Save {
     directory: String = "screenshots".into(),
     month_format: String = "%Y-%m".into(),
     filename_format: String = "%Y-%m-%d_%H-%M".into(),
+    file_format: FileFormat = FileFormat::Png,
+    quality: u8 = 90,
 });
 
 section!(Notifications {
@@ -738,6 +741,11 @@ overlay = "auto"
 directory = "screenshots"
 month_format = "%Y-%m"
 filename_format = "%Y-%m-%d_%H-%M"
+# Format of the saved file only, the clipboard and stdout stay PNG.
+# png, webp (lossless), avif or jpeg. avif and jpeg are lossy and use quality (1-100).
+# avif takes a few seconds on big screenshots.
+file_format = "png"
+quality = 90
 
 [notifications]
 enabled = true
@@ -1645,6 +1653,19 @@ mod tests {
         assert_eq!(overlay("window"), OverlayShell::Window);
         assert_eq!(overlay("layer"), OverlayShell::Layer);
         assert_eq!(overlay("fullscreen"), OverlayShell::Auto);
+    }
+
+    #[test]
+    fn file_format_is_a_known_name_or_png() {
+        let format = |value: &str| {
+            read(&format!("[save]\nfile_format = \"{value}\"\n"))
+                .save
+                .file_format
+        };
+        assert_eq!(format("webp"), FileFormat::Webp);
+        assert_eq!(format("avif"), FileFormat::Avif);
+        assert_eq!(format("jpeg"), FileFormat::Jpeg);
+        assert_eq!(format("bmp"), FileFormat::Png);
     }
 
     #[test]

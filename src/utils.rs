@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use tiny_skia::Pixmap;
 use tiny_skia::Rect;
 
+pub mod format;
+
 #[inline]
 pub fn make_rect(a: (f64, f64), b: (f64, f64)) -> Option<Rect> {
     let w = (a.0 - b.0).abs();
@@ -98,7 +100,7 @@ fn encode_rgba(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
 pub fn save_to_file(
     png_data: &[u8],
     dir: Option<&std::path::Path>,
-) -> Result<PathBuf, Box<dyn std::error::Error>> {
+) -> Result<(PathBuf, bool), Box<dyn std::error::Error>> {
     let now = chrono::Local::now();
     let save = &crate::config::get().save;
 
@@ -114,14 +116,18 @@ pub fn save_to_file(
     std::fs::create_dir_all(&dir)?;
 
     let stem = now.format(&save.filename_format).to_string();
-    Ok(write_unique(&dir, &stem, png_data, 0o666)?)
+    let wanted = save.file_format;
+    let (data, format) = format::encode(png_data, wanted, save.quality)?;
+    let path = write_unique(&dir, &stem, format.ext(), &data, 0o666)?;
+    Ok((path, format != wanted))
 }
 
-/// Writes `<stem>.png`, or `<stem>_N.png` if taken, never overwriting a file.
+/// Writes `<stem>.<ext>`, or `<stem>_N.<ext>` if taken, never overwriting a file.
 /// used for usual saving screenshots, and temp file for notif preview
 pub fn write_unique(
     dir: &std::path::Path,
     stem: &str,
+    ext: &str,
     data: &[u8],
     mode: u32,
 ) -> std::io::Result<PathBuf> {
@@ -130,8 +136,8 @@ pub fn write_unique(
     let mut n = 0;
     loop {
         let filename = match n {
-            0 => format!("{stem}.png"),
-            n => format!("{stem}_{n}.png"),
+            0 => format!("{stem}.{ext}"),
+            n => format!("{stem}_{n}.{ext}"),
         };
         let path = dir.join(filename);
         let file = std::fs::OpenOptions::new()
@@ -510,8 +516,8 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("lumine-save-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
 
-        let first = write_unique(&dir, "shot", b"one", 0o666).unwrap();
-        let second = write_unique(&dir, "shot", b"two", 0o666).unwrap();
+        let first = write_unique(&dir, "shot", "png", b"one", 0o666).unwrap();
+        let second = write_unique(&dir, "shot", "png", b"two", 0o666).unwrap();
 
         assert_eq!(first.file_name().unwrap(), "shot.png");
         assert_eq!(second.file_name().unwrap(), "shot_1.png");
@@ -527,7 +533,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("lumine-mode-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
 
-        let path = write_unique(&dir, "shot", b"png", 0o400).unwrap();
+        let path = write_unique(&dir, "shot", "png", b"png", 0o400).unwrap();
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
 
         assert_eq!(mode & 0o777, 0o400);

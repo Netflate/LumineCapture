@@ -58,7 +58,12 @@ pub async fn deliver(png: Vec<u8>, scale: f32, outputs: Outputs, dir: Option<&Pa
         .then(|| initialize_clipboard().copy_image_to_clipboard(&png));
     let saved = if outputs.save {
         match save_to_file(&png, dir) {
-            Ok(path) => Some(path),
+            Ok((path, fell_back)) => {
+                if fell_back {
+                    notify::send(Notice::WebpTooBig).await;
+                }
+                Some(path)
+            }
             Err(e) => {
                 log::error!("save failed: {e}");
                 notify::send(Notice::SaveFailed(e.to_string())).await;
