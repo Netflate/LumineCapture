@@ -62,6 +62,8 @@ pub fn spawn(
         "-".into(),
         "-t".into(),
         to.letters().into(),
+        "--format".into(),
+        crate::config::get().save.file_format.name().into(),
     ];
     if let Some(dir) = dir {
         args.extend(["-o".into(), dir.into()]);

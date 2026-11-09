@@ -53,6 +53,9 @@ Options:
                        click). Screenshots ignore r, apps paste only text with the middle click
   -o, --output <DIR>   Save the shot into this directory instead of the configured
                        one, creating it if needed; implies s in --to
+  -F, --format <FORMAT>
+                       Save the file as png, webp, avif or jpeg instead of save.file_format
+                       in the config. The clipboard and stdout stay PNG
   -n, --nonotify       Disable notifications for this launch
   -s, --speed          Print how long each startup step took to stderr
       --config <PATH>  Use this config file instead of the default location
@@ -155,11 +158,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config_path: Option<PathBuf> =
         pargs.opt_value_from_os_str(config::CONFIG_ARG, |s| Ok::<_, String>(PathBuf::from(s)))?;
     let no_notify = pargs.contains(["-n", backend::notify::NO_NOTIFY_ARG]);
+    let format = match pargs.opt_value_from_fn(["-F", "--format"], utils::format::FileFormat::parse)
+    {
+        Ok(format) => format,
+        Err(e) => usage_error(e),
+    };
     let launch = match parse_launch(&mut pargs, started) {
         Ok(launch) => launch,
         Err(e) => usage_error(e),
     };
     config::init(config_path, |config| {
+        if let Some(format) = format {
+            config.save.file_format = format;
+        }
         if no_notify {
             config.notifications.enabled = false;
         }

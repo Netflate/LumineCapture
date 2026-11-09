@@ -1665,6 +1665,7 @@ mod tests {
         assert_eq!(format("webp"), FileFormat::Webp);
         assert_eq!(format("avif"), FileFormat::Avif);
         assert_eq!(format("jpeg"), FileFormat::Jpeg);
+        assert_eq!(format("jpg"), FileFormat::Jpeg);
         assert_eq!(format("bmp"), FileFormat::Png);
     }
 

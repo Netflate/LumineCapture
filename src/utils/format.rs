@@ -14,6 +14,7 @@ pub enum FileFormat {
     Png,
     Webp,
     Avif,
+    #[serde(alias = "jpg")]
     Jpeg,
 }
 
@@ -24,6 +25,23 @@ impl FileFormat {
             Self::Webp => "webp",
             Self::Avif => "avif",
             Self::Jpeg => "jpg",
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Jpeg => "jpeg",
+            other => other.ext(),
+        }
+    }
+
+    pub fn parse(s: &str) -> Result<Self, &'static str> {
+        match s.to_ascii_lowercase().as_str() {
+            "png" => Ok(Self::Png),
+            "webp" => Ok(Self::Webp),
+            "avif" => Ok(Self::Avif),
+            "jpeg" | "jpg" => Ok(Self::Jpeg),
+            _ => Err("expected png, webp, avif or jpeg"),
         }
     }
 }
@@ -86,6 +104,22 @@ pub fn encode(png: &[u8], format: FileFormat, q: u8) -> Result<Encoded<'_>, Box<
 #[cfg(test)]
 mod tests {
     use super::{FileFormat, encode, quality};
+
+    #[test]
+    fn parse_takes_the_names_and_jpg() {
+        for (name, format) in [
+            ("png", FileFormat::Png),
+            ("webp", FileFormat::Webp),
+            ("avif", FileFormat::Avif),
+            ("jpeg", FileFormat::Jpeg),
+            ("jpg", FileFormat::Jpeg),
+            ("JPG", FileFormat::Jpeg),
+        ] {
+            assert_eq!(FileFormat::parse(name), Ok(format));
+            assert_eq!(FileFormat::parse(format.name()), Ok(format));
+        }
+        assert!(FileFormat::parse("bmp").is_err());
+    }
 
     fn png(w: u32, h: u32) -> Vec<u8> {
         let img = image::RgbaImage::from_fn(w, h, |x, y| {
