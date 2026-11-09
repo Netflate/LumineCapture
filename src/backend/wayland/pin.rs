@@ -34,9 +34,9 @@ use wayland_protocols::xdg::toplevel_icon::v1::client::{
     xdg_toplevel_icon_manager_v1, xdg_toplevel_icon_v1,
 };
 
+use crate::backend::initialize_clipboard;
 use crate::backend::notify::{self, Notice};
 use crate::backend::wayland::keysym;
-use crate::backend::{ClipboardProvider, initialize_clipboard};
 use crate::keys::{self, Action, Mods};
 use crate::renderer::Painter;
 use crate::renderer::paths::rounded_rect_path;
@@ -146,7 +146,7 @@ pub fn run(image: &[u8], scale: f32) -> Result<(), Box<dyn std::error::Error>> {
         outputs: OutputState::new(&globals, &qh),
         seat: SeatState::new(&globals, &qh),
         cursor_shapes: CursorShapeManager::bind(&globals, &qh).ok(),
-        clipboard: initialize_clipboard(),
+        copying: None,
         shm,
         pool,
         window,
@@ -155,7 +155,7 @@ pub fn run(image: &[u8], scale: f32) -> Result<(), Box<dyn std::error::Error>> {
         buffer_size,
         _viewport: viewport,
         buffer: None,
-        png: image.to_vec(),
+        png: image.into(),
         pointer_seat: None,
         cursor: None,
         enter_serial: 0,
@@ -165,6 +165,12 @@ pub fn run(image: &[u8], scale: f32) -> Result<(), Box<dyn std::error::Error>> {
 
     while !pin.exit {
         queue.blocking_dispatch(&mut pin)?;
+    }
+    let copying = pin.copying.take();
+    drop(pin);
+    let _ = conn.flush();
+    if let Some(handle) = copying {
+        let _ = handle.join();
     }
     Ok(())
 }
@@ -227,7 +233,7 @@ struct Pin {
     outputs: OutputState,
     seat: SeatState,
     cursor_shapes: Option<CursorShapeManager>,
-    clipboard: Box<dyn ClipboardProvider>,
+    copying: Option<std::thread::JoinHandle<()>>,
     shm: Shm,
     pool: SlotPool,
 
@@ -237,7 +243,7 @@ struct Pin {
     buffer_size: (u32, u32),
     _viewport: Option<wp_viewport::WpViewport>,
     buffer: Option<Buffer>,
-    png: Vec<u8>,
+    png: std::sync::Arc<[u8]>,
 
     pointer_seat: Option<wl_seat::WlSeat>,
     cursor: Option<WpCursorShapeDeviceV1>,
@@ -347,16 +353,22 @@ impl KeyboardHandler for Pin {
         match chord.and_then(|c| keys::map().lookup(c)) {
             Some(Action::Cancel) => self.exit = true,
             Some(Action::Finish(Finish::Copy)) => {
-                let extra = crate::utils::format::for_clipboard(&self.png);
-                let extra = extra.as_ref().map(|(f, d)| (*f, d.as_slice()));
-                let notice = match self.clipboard.copy_image_to_clipboard(&self.png, extra) {
-                    Ok(()) => Notice::Copied(None, Some(&self.png)),
-                    Err(e) => {
-                        log::error!("copy failed: {e}");
-                        Notice::CopyFailed(e.to_string())
-                    }
-                };
-                notify::send_blocking(notice);
+                if self.copying.as_ref().is_some_and(|h| !h.is_finished()) {
+                    return;
+                }
+                let png = self.png.clone();
+                self.copying = Some(std::thread::spawn(move || {
+                    let extra = crate::utils::format::for_clipboard(&png);
+                    let extra = extra.as_ref().map(|(f, d)| (*f, d.as_slice()));
+                    let notice = match initialize_clipboard().copy_image_to_clipboard(&png, extra) {
+                        Ok(()) => Notice::Copied(None, Some(&png)),
+                        Err(e) => {
+                            log::error!("copy failed: {e}");
+                            Notice::CopyFailed(e.to_string())
+                        }
+                    };
+                    notify::send_blocking(notice);
+                }));
             }
             _ => {}
         }
