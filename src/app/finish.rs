@@ -53,6 +53,9 @@ pub async fn deliver(png: Vec<u8>, scale: f32, outputs: Outputs, dir: Option<&Pa
     if outputs.stdout {
         to_stdout(&png, true).await;
     }
+    let copied = outputs
+        .copy
+        .then(|| initialize_clipboard().copy_image_to_clipboard(&png));
     let saved = if outputs.save {
         match save_to_file(&png, dir) {
             Ok(path) => Some(path),
@@ -65,21 +68,20 @@ pub async fn deliver(png: Vec<u8>, scale: f32, outputs: Outputs, dir: Option<&Pa
     } else {
         None
     };
-    if outputs.copy {
-        match initialize_clipboard().copy_image_to_clipboard(&png) {
-            Ok(()) => {
-                let preview = saved.is_none().then_some(png.as_slice());
-                notify::send(Notice::Copied(saved, preview)).await
-            }
-            Err(e) => {
-                log::error!("copy failed: {e}");
-                notify::send(Notice::CopyFailed(e.to_string())).await
+    match copied {
+        Some(Ok(())) => {
+            let preview = saved.is_none().then_some(png.as_slice());
+            notify::send(Notice::Copied(saved, preview)).await
+        }
+        Some(Err(e)) => {
+            log::error!("copy failed: {e}");
+            notify::send(Notice::CopyFailed(e.to_string())).await
+        }
+        None => {
+            if let Some(path) = saved {
+                notify::send(Notice::Saved(path)).await;
             }
         }
-    } else if outputs.save
-        && let Some(path) = saved
-    {
-        notify::send(Notice::Saved(path)).await;
     }
 }
 
