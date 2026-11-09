@@ -2,6 +2,7 @@ pub mod notify;
 pub mod wayland;
 
 use crate::types::{Capture, CaptureResult, CursorIcon, DamageRect, Output, OverlayEvent};
+use crate::utils::format::FileFormat;
 use async_trait::async_trait;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
@@ -67,7 +68,11 @@ pub fn initialize_capture(conn: &Connection) -> Box<dyn CaptureMethod> {
 }
 
 pub trait ClipboardProvider {
-    fn copy_image_to_clipboard(&self, png_data: &[u8]) -> Result<(), Box<dyn std::error::Error>>;
+    fn copy_image_to_clipboard(
+        &self,
+        png_data: &[u8],
+        extra: Option<(FileFormat, &[u8])>,
+    ) -> Result<(), Box<dyn std::error::Error>>;
 }
 
 pub trait ScreenOverlay: Send {

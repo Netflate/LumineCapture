@@ -8,7 +8,27 @@ use std::time::Instant;
 use log::{error, info};
 use wl_clipboard_rs::copy::{ClipboardType, MimeSource, MimeType, Options, Source};
 
-use super::{PRIMARY_ARG, TEXT_ARG};
+use super::{EXTRA_ARG, PRIMARY_ARG, TEXT_ARG};
+
+type Split = (Option<(String, Vec<u8>)>, Vec<u8>);
+
+fn split_extra(args: &[String], mut buf: Vec<u8>) -> Result<Split, String> {
+    let Some(at) = args.iter().position(|a| a == EXTRA_ARG) else {
+        return Ok((None, buf));
+    };
+    let (Some(mime), Some(len)) = (args.get(at + 1), args.get(at + 2)) else {
+        return Err("the extra image needs a mime and a length".into());
+    };
+    let len: usize = len.parse().map_err(|_| format!("bad extra length {len}"))?;
+    if len > buf.len() {
+        return Err(format!(
+            "extra length {len} is past the {} bytes read",
+            buf.len()
+        ));
+    }
+    let png = buf.split_off(len);
+    Ok((Some((mime.clone(), buf)), png))
+}
 
 pub fn cli(args: impl Iterator<Item = String>) {
     let args: Vec<String> = args.collect();
@@ -20,6 +40,14 @@ pub fn cli(args: impl Iterator<Item = String>) {
         println!("can't read clipboard data: {e}");
         std::process::exit(1);
     }
+
+    let (extra, buf) = match split_extra(&args, buf) {
+        Ok(split) => split,
+        Err(e) => {
+            println!("{e}");
+            std::process::exit(1);
+        }
+    };
 
     let mut opts = Options::new();
     opts.foreground(true);
@@ -38,7 +66,14 @@ pub fn cli(args: impl Iterator<Item = String>) {
             mime_type: MimeType::Text,
         }]
     } else {
-        vec![
+        let mut sources: Vec<MimeSource> = extra
+            .into_iter()
+            .map(|(mime, data)| MimeSource {
+                source: Source::Bytes(data.into()),
+                mime_type: MimeType::Specific(mime),
+            })
+            .collect();
+        sources.extend([
             MimeSource {
                 source: Source::Bytes(buf.clone().into()),
                 mime_type: MimeType::Specific("image/png".to_string()),
@@ -51,7 +86,8 @@ pub fn cli(args: impl Iterator<Item = String>) {
                 source: Source::Bytes(buf.into()),
                 mime_type: MimeType::Specific("x-kde-force-image-copy".to_string()),
             },
-        ]
+        ]);
+        sources
     };
 
     // the parent reads this line: empty once the selection is ours
@@ -73,6 +109,42 @@ pub fn cli(args: impl Iterator<Item = String>) {
         Err(e) => {
             let _ = writeln!(stdout, "{}", e.to_string().replace('\n', " "));
             std::process::exit(1);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::split_extra;
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn no_extra_keeps_all_of_stdin() {
+        let (extra, png) = split_extra(&args(&["--clipboard-daemon"]), b"png".to_vec()).unwrap();
+        assert_eq!((extra, png), (None, b"png".to_vec()));
+    }
+
+    #[test]
+    fn extra_comes_first_in_stdin() {
+        let a = args(&["--clipboard-daemon", "extra", "image/avif", "3"]);
+        let (extra, png) = split_extra(&a, b"avfPNG".to_vec()).unwrap();
+        assert_eq!(extra, Some(("image/avif".to_string(), b"avf".to_vec())));
+        assert_eq!(png, b"PNG");
+    }
+
+    #[test]
+    fn bad_extra_args_are_errors() {
+        for list in [
+            &["extra"][..],
+            &["extra", "image/avif"],
+            &["extra", "image/avif", "x"],
+            &["extra", "image/avif", "-1"],
+            &["extra", "image/avif", "99"],
+        ] {
+            assert!(split_extra(&args(list), b"abc".to_vec()).is_err());
         }
     }
 }

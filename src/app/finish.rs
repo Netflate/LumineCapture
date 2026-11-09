@@ -7,6 +7,7 @@ use crate::backend::initialize_clipboard;
 use crate::backend::notify::{self, Notice};
 use crate::editor::EditorState;
 use crate::types::Outputs;
+use crate::utils::format::for_clipboard;
 use crate::utils::{save_to_file, write_to_stdout};
 
 pub async fn finish_capture(
@@ -53,11 +54,15 @@ pub async fn deliver(png: Vec<u8>, scale: f32, outputs: Outputs, dir: Option<&Pa
     if outputs.stdout {
         to_stdout(&png, true).await;
     }
+    let extra = outputs.copy.then(|| for_clipboard(&png)).flatten();
+    let extra = extra
+        .as_ref()
+        .map(|(format, data)| (*format, data.as_slice()));
     let copied = outputs
         .copy
-        .then(|| initialize_clipboard().copy_image_to_clipboard(&png));
+        .then(|| initialize_clipboard().copy_image_to_clipboard(&png, extra));
     let saved = if outputs.save {
-        match save_to_file(&png, dir) {
+        match save_to_file(&png, extra, dir) {
             Ok((path, fell_back)) => {
                 if fell_back {
                     notify::send(Notice::WebpTooBig).await;

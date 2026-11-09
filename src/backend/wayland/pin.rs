@@ -347,7 +347,9 @@ impl KeyboardHandler for Pin {
         match chord.and_then(|c| keys::map().lookup(c)) {
             Some(Action::Cancel) => self.exit = true,
             Some(Action::Finish(Finish::Copy)) => {
-                let notice = match self.clipboard.copy_image_to_clipboard(&self.png) {
+                let extra = crate::utils::format::for_clipboard(&self.png);
+                let extra = extra.as_ref().map(|(f, d)| (*f, d.as_slice()));
+                let notice = match self.clipboard.copy_image_to_clipboard(&self.png, extra) {
                     Ok(()) => Notice::Copied(None, Some(&self.png)),
                     Err(e) => {
                         log::error!("copy failed: {e}");

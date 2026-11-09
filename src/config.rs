@@ -248,6 +248,7 @@ section!(Save {
     month_format: String = "%Y-%m".into(),
     filename_format: String = "%Y-%m-%d_%H-%M".into(),
     file_format: FileFormat = FileFormat::Png,
+    clipboard_format: FileFormat = FileFormat::Png,
     quality: u8 = 90,
 });
 
@@ -741,10 +742,14 @@ overlay = "auto"
 directory = "screenshots"
 month_format = "%Y-%m"
 filename_format = "%Y-%m-%d_%H-%M"
-# Format of the saved file only, the clipboard and stdout stay PNG.
+# Format of the saved file only, stdout stays PNG.
 # png, webp (lossless), avif or jpeg. avif and jpeg are lossy and use quality (1-100).
 # avif takes a few seconds on big screenshots.
 file_format = "png"
+# Format offered to the clipboard. PNG is always offered next to it,
+# and most apps take the PNG. Same values and quality as above.
+# avif delays the copy by seconds on big screenshots.
+clipboard_format = "png"
 quality = 90
 
 [notifications]
@@ -1665,6 +1670,19 @@ mod tests {
         assert_eq!(format("webp"), FileFormat::Webp);
         assert_eq!(format("avif"), FileFormat::Avif);
         assert_eq!(format("jpeg"), FileFormat::Jpeg);
+        assert_eq!(format("jpg"), FileFormat::Jpeg);
+        assert_eq!(format("bmp"), FileFormat::Png);
+    }
+
+    #[test]
+    fn clipboard_format_is_a_known_name_or_png() {
+        let format = |value: &str| {
+            read(&format!("[save]\nclipboard_format = \"{value}\"\n"))
+                .save
+                .clipboard_format
+        };
+        assert_eq!(format("webp"), FileFormat::Webp);
+        assert_eq!(format("avif"), FileFormat::Avif);
         assert_eq!(format("jpg"), FileFormat::Jpeg);
         assert_eq!(format("bmp"), FileFormat::Png);
     }

@@ -99,6 +99,7 @@ fn encode_rgba(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
 
 pub fn save_to_file(
     png_data: &[u8],
+    encoded: Option<(format::FileFormat, &[u8])>,
     dir: Option<&std::path::Path>,
 ) -> Result<(PathBuf, bool), Box<dyn std::error::Error>> {
     let now = chrono::Local::now();
@@ -117,7 +118,10 @@ pub fn save_to_file(
 
     let stem = now.format(&save.filename_format).to_string();
     let wanted = save.file_format;
-    let (data, format) = format::encode(png_data, wanted, save.quality)?;
+    let (data, format) = match encoded {
+        Some((format, data)) if format == wanted => (std::borrow::Cow::Borrowed(data), format),
+        _ => format::encode(png_data, wanted, save.quality)?,
+    };
     let path = write_unique(&dir, &stem, format.ext(), &data, 0o666)?;
     Ok((path, format != wanted))
 }

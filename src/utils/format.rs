@@ -35,6 +35,15 @@ impl FileFormat {
         }
     }
 
+    pub fn mime(self) -> &'static str {
+        match self {
+            Self::Png => "image/png",
+            Self::Webp => "image/webp",
+            Self::Avif => "image/avif",
+            Self::Jpeg => "image/jpeg",
+        }
+    }
+
     pub fn parse(s: &str) -> Result<Self, &'static str> {
         match s.to_ascii_lowercase().as_str() {
             "png" => Ok(Self::Png),
@@ -101,9 +110,37 @@ pub fn encode(png: &[u8], format: FileFormat, q: u8) -> Result<Encoded<'_>, Box<
     Ok((Cow::Owned(out), format))
 }
 
+pub fn for_clipboard(png: &[u8]) -> Option<(FileFormat, Vec<u8>)> {
+    let save = &crate::config::get().save;
+    if save.clipboard_format == FileFormat::Png {
+        return None;
+    }
+    match encode(png, save.clipboard_format, save.quality) {
+        Ok((data, format)) if format == save.clipboard_format => Some((format, data.into_owned())),
+        Ok(_) => None,
+        Err(e) => {
+            log::warn!("can't encode the clipboard image: {e}");
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{FileFormat, encode, quality};
+    use super::{FileFormat, encode, for_clipboard, quality};
+
+    #[test]
+    fn mime_names_the_format() {
+        assert_eq!(FileFormat::Png.mime(), "image/png");
+        assert_eq!(FileFormat::Webp.mime(), "image/webp");
+        assert_eq!(FileFormat::Avif.mime(), "image/avif");
+        assert_eq!(FileFormat::Jpeg.mime(), "image/jpeg");
+    }
+
+    #[test]
+    fn clipboard_gets_no_extra_for_png() {
+        assert!(for_clipboard(&png(8, 8)).is_none());
+    }
 
     #[test]
     fn parse_takes_the_names_and_jpg() {
