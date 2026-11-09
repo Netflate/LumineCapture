@@ -17,6 +17,7 @@ BuildRequires:  cargo
 BuildRequires:  gcc
 BuildRequires:  gcc-c++
 BuildRequires:  clang
+BuildRequires:  nasm
 BuildRequires:  pkgconf-pkg-config
 BuildRequires:  pipewire-devel
 BuildRequires:  libxkbcommon-devel
@@ -41,7 +42,7 @@ desktop portal, whichever the compositor offers.
 # Fedora's RUSTFLAGS turn strip off and add debuginfo, overriding profile.dist
 unset RUSTFLAGS
 # the build script downloads the ONNX Runtime it links against
-cargo build --locked --profile dist
+cargo build --locked --profile dist --features asm
 
 %install
 install -D -p -m 0755 target/dist/%{name} %{buildroot}%{_bindir}/%{name}

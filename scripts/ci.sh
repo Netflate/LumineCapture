@@ -206,12 +206,12 @@ compat() {
         -w /src registry.fedoraproject.org/fedora:43 bash -euo pipefail -c "
             # mirrors drop connections now and then, so try a few times
             for try in 1 2 3; do
-                dnf install -y --setopt=install_weak_deps=False $BUILD_DEPS rust cargo rpm-build >/dev/null && break
+                dnf install -y --setopt=install_weak_deps=False $BUILD_DEPS nasm rust cargo rpm-build >/dev/null && break
                 [ \$try = 3 ] && exit 1
             done
             cargo install cargo-generate-rpm --locked --root /cargo >/dev/null
             export PATH=/cargo/bin:\$PATH
-            cargo build --profile dist --locked
+            cargo build --profile dist --locked --features asm
             cargo generate-rpm --profile dist --target-dir /src/target/compat-rpm
         "
     local rpm
@@ -225,12 +225,12 @@ compat() {
         -w /src docker.io/library/ubuntu:24.04 bash -euo pipefail -c "
             export DEBIAN_FRONTEND=noninteractive
             apt-get update -qq >/dev/null
-            apt-get install -y -qq -o Acquire::Retries=5 --no-install-recommends curl ca-certificates build-essential dpkg-dev git \
+            apt-get install -y -qq -o Acquire::Retries=5 --no-install-recommends curl ca-certificates build-essential nasm dpkg-dev git \
                 clang libclang-dev pkg-config libpipewire-0.3-dev libspa-0.2-dev libxkbcommon-dev libssl-dev >/dev/null
             [ -x /cargo/bin/rustc ] || curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --no-modify-path >/dev/null
             export PATH=/cargo/bin:\$PATH
             command -v cargo-deb >/dev/null || cargo install cargo-deb --locked >/dev/null
-            cargo deb --profile dist --locked
+            cargo deb --profile dist --locked --features asm
         "
     local deb
     deb=$(find target/compat-deb/debian -name '*.deb' -print -quit 2>/dev/null || true)

@@ -7,7 +7,7 @@ arch=(x86_64 aarch64)
 url='https://github.com/Netflate/LumineCapture'
 license=('MIT OR Apache-2.0' 'OFL-1.1')
 depends=(gcc-libs glibc libpipewire libxkbcommon openssl zlib)
-makedepends=(cargo clang)
+makedepends=(cargo clang nasm)
 options=(!debug !lto)
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('SKIP') 
@@ -24,7 +24,7 @@ build() {
     cd "$(_src)"
     export RUSTUP_TOOLCHAIN=stable
     # the build script downloads the ONNX Runtime it links against
-    cargo build --frozen --profile dist
+    cargo build --frozen --profile dist --features asm
 }
 
 package() {
