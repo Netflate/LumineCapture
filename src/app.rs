@@ -441,8 +441,12 @@ fn handle_event(editor_state: &mut EditorState, ev: OverlayEvent, dirty_mask: &m
             window::resized(editor_state, size, scale, dirty_mask);
         }
         OverlayEvent::PointerMove { monitor_idx, x, y } => {
+            editor_state.input.hovering = true;
             window::drag(editor_state, (x, y), dirty_mask);
             input::handle_pointer_move(editor_state, monitor_idx, x, y, dirty_mask);
+        }
+        OverlayEvent::PointerLeave => {
+            input::handle_pointer_leave(editor_state, dirty_mask);
         }
         OverlayEvent::PointerButton {
             button: crate::types::MouseButton::Middle,

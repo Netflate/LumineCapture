@@ -85,6 +85,12 @@ pub fn handle_pointer_move(
     apply_damage_rects(editor_state, dirty_mask);
 }
 
+pub fn handle_pointer_leave(editor_state: &mut EditorState, dirty_mask: &mut u32) {
+    editor_state.input.hovering = false;
+    update_magnifier(editor_state, dirty_mask);
+    apply_damage_rects(editor_state, dirty_mask);
+}
+
 pub fn handle_modifiers(
     editor_state: &mut EditorState,
     ctrl: bool,
@@ -547,12 +553,17 @@ fn update_pointer(
 fn update_magnifier(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     let monitor_idx = editor_state.input.pointer.monitor_idx;
     let local = editor_state.input.pointer.local;
+    let hovering = editor_state.input.hovering;
 
     if let Some(mag) = editor_state.magnifier.current.as_ref()
-        && mag.monitor_idx != monitor_idx
+        && (mag.monitor_idx != monitor_idx || !hovering)
         && editor_state.magnifier_shown()
     {
         mark_dirty(dirty_mask, mag.monitor_idx);
+    }
+    if !hovering {
+        editor_state.magnifier.current = None;
+        return;
     }
 
     let native = editor_state
@@ -815,4 +826,35 @@ fn languages_button_hit(editor_state: &EditorState) -> bool {
             ..
         })
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::editor::testing::editor;
+
+    #[test]
+    fn loupe_follows_the_pointer_only_while_it_is_over_the_window() {
+        let mut state = editor(true);
+        let mut dirty = 0;
+        handle_pointer_move(&mut state, 0, 0.0, 0.0, &mut dirty);
+        assert!(state.magnifier.current.is_none());
+
+        state.input.hovering = true;
+        handle_pointer_move(&mut state, 0, 50.0, 60.0, &mut dirty);
+        assert_eq!(
+            state.magnifier.current.as_ref().map(|m| m.pos),
+            Some((50.0, 60.0))
+        );
+
+        handle_pointer_leave(&mut state, &mut dirty);
+        assert!(state.magnifier.current.is_none());
+        assert!(!state.input.hovering);
+        handle_pointer_move(&mut state, 0, 70.0, 60.0, &mut dirty);
+        assert!(state.magnifier.current.is_none());
+
+        state.input.hovering = true;
+        handle_pointer_move(&mut state, 0, 70.0, 60.0, &mut dirty);
+        assert!(state.magnifier.current.is_some());
+    }
 }

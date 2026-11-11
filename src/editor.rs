@@ -3,6 +3,8 @@ pub mod dirty;
 pub mod edits;
 pub mod history;
 pub mod saved;
+#[cfg(test)]
+pub mod testing;
 
 use cosmic_text::{Editor, FontSystem, SwashCache};
 use std::collections::HashMap;
@@ -27,6 +29,7 @@ use crate::utils::rects_overlap;
 /// Pointer and keyboard state of the current gesture.
 pub struct InputState {
     pub pointer: PointerState,
+    pub hovering: bool,
     pub drag_start: Option<(f64, f64)>,
     pub mouse_down: bool,
     pub ctrl: bool,
@@ -40,6 +43,7 @@ impl Default for InputState {
     fn default() -> Self {
         Self {
             pointer: PointerState::default(),
+            hovering: false,
             drag_start: None,
             mouse_down: false,
             ctrl: false,

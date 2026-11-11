@@ -45,6 +45,7 @@ impl PointerHandler for OverlayState {
 
                 PointerEventKind::Leave { .. } => {
                     self.pointer_surface_idx = None;
+                    self.events.push_back(OverlayEvent::PointerLeave);
                 }
 
                 PointerEventKind::Motion { .. } => {

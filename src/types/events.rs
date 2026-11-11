@@ -31,6 +31,7 @@ pub enum OverlayEvent {
         x: f64,
         y: f64,
     },
+    PointerLeave,
     Focus {
         monitor_idx: usize,
     },
