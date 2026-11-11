@@ -7,6 +7,7 @@ const MIN_ZOOM: f32 = 0.5;
 pub struct View {
     picture: (f32, f32),
     area: (f32, f32),
+    inset: f32,
     pub zoom: f32,
     pub pan: (f32, f32),
     fitted: bool,
@@ -18,6 +19,7 @@ impl View {
         Self {
             picture: (picture.0.max(1) as f32, picture.1.max(1) as f32),
             area: (0.0, 0.0),
+            inset: 0.0,
             zoom: 1.0,
             pan: (0.0, 0.0),
             fitted: true,
@@ -26,30 +28,30 @@ impl View {
     }
 
     /// `ratio` is the new scale over the old one: the picture keeps its size on screen
-    pub fn resize(&mut self, area: (u32, u32), ratio: f32) {
+    pub fn resize(&mut self, area: (u32, u32), inset: f32, ratio: f32) {
         let area = (area.0 as f32, area.1 as f32);
         if self.area == (0.0, 0.0) || self.untouched {
             self.area = area;
+            self.inset = inset;
             self.fit();
             return;
         }
-        let center = self.picture_point((self.area.0 / 2.0, self.area.1 / 2.0));
+        let center = self.picture_point(self.center());
         self.area = area;
+        self.inset = inset;
         self.zoom = if self.fitted {
             self.fit_zoom()
         } else {
             (self.zoom * ratio).clamp(self.min_zoom(), MAX_ZOOM)
         };
-        self.pan = (
-            area.0 / 2.0 - center.0 * self.zoom,
-            area.1 / 2.0 - center.1 * self.zoom,
-        );
+        let at = self.center();
+        self.pan = (at.0 - center.0 * self.zoom, at.1 - center.1 * self.zoom);
         self.clamp();
     }
 
     pub fn fit(&mut self) {
         self.zoom = self.fit_zoom();
-        self.pan = (0.0, 0.0);
+        self.pan = (0.0, self.inset);
         self.fitted = true;
         self.untouched = true;
         self.clamp();
@@ -85,7 +87,16 @@ impl View {
     }
 
     pub fn center(&self) -> (f32, f32) {
-        (self.area.0 / 2.0, self.area.1 / 2.0)
+        let (w, h) = self.viewport();
+        (w / 2.0, self.inset + h / 2.0)
+    }
+
+    pub fn inset(&self) -> f32 {
+        self.inset
+    }
+
+    fn viewport(&self) -> (f32, f32) {
+        (self.area.0, (self.area.1 - self.inset).max(1.0))
     }
 
     pub fn picture_point(&self, (x, y): (f32, f32)) -> (f32, f32) {
@@ -94,14 +105,16 @@ impl View {
 
     fn fit_zoom(&self) -> f32 {
         let whole = self.whole_zoom();
-        let across = (self.area.0 / self.picture.0).max(self.area.1 / self.picture.1);
+        let (w, h) = self.viewport();
+        let across = (w / self.picture.0).max(h / self.picture.1);
         // for scrolled screenshots
         let zoom = if whole >= across / 2.0 { whole } else { across };
         zoom.min(1.0)
     }
 
     fn whole_zoom(&self) -> f32 {
-        (self.area.0 / self.picture.0).min(self.area.1 / self.picture.1)
+        let (w, h) = self.viewport();
+        (w / self.picture.0).min(h / self.picture.1)
     }
 
     fn min_zoom(&self) -> f32 {
@@ -109,17 +122,18 @@ impl View {
     }
 
     fn clamp(&mut self) {
-        let axis = |pan: f32, area: f32, size: f32| {
+        let axis = |pan: f32, from: f32, area: f32, size: f32| {
             let shown = size * self.zoom;
             if shown <= area {
-                (area - shown) / 2.0
+                from + (area - shown) / 2.0
             } else {
-                pan.clamp(area - shown, 0.0)
+                pan.clamp(from + area - shown, from)
             }
         };
+        let (w, h) = self.viewport();
         self.pan = (
-            axis(self.pan.0, self.area.0, self.picture.0),
-            axis(self.pan.1, self.area.1, self.picture.1),
+            axis(self.pan.0, 0.0, w, self.picture.0),
+            axis(self.pan.1, self.inset, h, self.picture.1),
         );
     }
 }
@@ -130,7 +144,7 @@ mod tests {
 
     fn view(picture: (u32, u32), area: (u32, u32)) -> View {
         let mut view = View::new(picture);
-        view.resize(area, 1.0);
+        view.resize(area, 0.0, 1.0);
         view
     }
 
@@ -198,7 +212,7 @@ mod tests {
         let mut view = view((1600, 30000), (1200, 800));
         view.pan_by((0.0, -6000.0));
         let middle = view.picture_point(view.center());
-        view.resize((800, 800), 1.0);
+        view.resize((800, 800), 0.0, 1.0);
         assert_eq!(view.zoom, 0.5);
         let moved = view.picture_point(view.center());
         assert!((middle.1 - moved.1).abs() < 1e-2);
@@ -207,18 +221,52 @@ mod tests {
     #[test]
     fn untouched_long_capture_fits_again_from_the_top() {
         let mut view = view((1600, 30000), (1200, 800));
-        view.resize((1200, 700), 1.0);
+        view.resize((1200, 700), 0.0, 1.0);
         assert_eq!(view.pan, (0.0, 0.0));
         view.pan_by((0.0, -100.0));
-        view.resize((1200, 600), 1.0);
+        view.resize((1200, 600), 0.0, 1.0);
         assert_ne!(view.pan.1, 0.0);
+    }
+
+    #[test]
+    fn picture_starts_under_the_inset() {
+        let mut view = View::new((1000, 1000));
+        view.resize((500, 600), 100.0, 1.0);
+        assert_eq!(view.zoom, 0.5);
+        assert_eq!(view.pan, (0.0, 100.0));
+        view.zoom_to(1.0, view.center());
+        assert!(view.pan_by((0.0, 1e9)));
+        assert_eq!(view.pan.1, 100.0);
+        assert!(view.pan_by((0.0, -1e9)));
+        assert_eq!(view.pan.1, 600.0 - 1000.0);
+    }
+
+    #[test]
+    fn small_picture_is_centered_below_the_inset() {
+        let mut view = View::new((200, 100));
+        view.resize((800, 600), 100.0, 1.0);
+        assert_eq!(view.pan, (300.0, 100.0 + 200.0));
+        assert_eq!(view.center(), (400.0, 350.0));
+    }
+
+    #[test]
+    fn long_capture_refits_from_below_the_inset() {
+        let mut view = View::new((1600, 30000));
+        view.resize((1200, 900), 100.0, 1.0);
+        assert_eq!(view.zoom, 0.75);
+        assert_eq!(view.pan, (0.0, 100.0));
+        view.resize((1200, 700), 80.0, 1.0);
+        assert_eq!(view.pan, (0.0, 80.0));
+        view.pan_by((0.0, -500.0));
+        view.fit();
+        assert_eq!(view.pan, (0.0, 80.0));
     }
 
     #[test]
     fn new_scale_keeps_the_size_on_screen() {
         let mut view = view((4000, 4000), (1000, 1000));
         view.zoom_to(1.0, (0.0, 0.0));
-        view.resize((2000, 2000), 2.0);
+        view.resize((2000, 2000), 0.0, 2.0);
         assert_eq!(view.zoom, 2.0);
     }
 }

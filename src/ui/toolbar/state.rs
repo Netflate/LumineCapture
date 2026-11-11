@@ -45,6 +45,7 @@ pub struct Toolbar {
     pub position: (f32, f32),
     pub size: (f32, f32),
     pub shrink: f32,
+    pub docked: bool,
     pub opacity: f32,
     pub monitor_idx: usize,
 
@@ -68,6 +69,7 @@ pub struct ToolbarLook {
     hovered: Option<usize>,
     to: Outputs,
     size: (f32, f32),
+    docked: bool,
 }
 
 impl Default for Toolbar {
@@ -183,6 +185,7 @@ impl Toolbar {
             items: ITEMS,
             size: (0.0, size::panel_height()),
             shrink: 1.0,
+            docked: false,
             opacity: 1.0,
             monitor_idx: 0,
             position: (0.0, 0.0),
@@ -219,6 +222,7 @@ impl Toolbar {
             hovered: self.hovered,
             to: self.to,
             size: self.size,
+            docked: self.docked,
         }
     }
 

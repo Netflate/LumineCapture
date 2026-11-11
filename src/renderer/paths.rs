@@ -7,6 +7,18 @@ use tiny_skia::{Color, PathBuilder, Pixmap, Rect, Stroke, Transform};
 
 use super::Painter;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Corners {
+    All,
+    Bottom,
+}
+
+impl Corners {
+    pub fn top(self) -> bool {
+        self == Corners::All
+    }
+}
+
 pub fn rounded_rect_path(
     rect: &Rect,
     r: f32,
@@ -199,13 +211,26 @@ impl Painter<'_> {
         } else {
             panel_border_color(color::panel().color())
         };
-        self.inset_border(x, y, w, h, radius, stroke_width, color);
+        self.inset_border(x, y, w, h, radius, stroke_width, color, Corners::All);
     }
 
     pub fn panel_border(&mut self, x: f32, y: f32, w: f32, h: f32, radius: f32, opacity: f32) {
+        self.panel_border_in(x, y, w, h, radius, opacity, Corners::All);
+    }
+
+    pub fn panel_border_in(
+        &mut self,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        radius: f32,
+        opacity: f32,
+        corners: Corners,
+    ) {
         let mut color = panel_border_color(color::panel().color());
         color.set_alpha(color.alpha() * opacity);
-        self.inset_border(x, y, w, h, radius, stroke::border(), color);
+        self.inset_border(x, y, w, h, radius, stroke::border(), color, corners);
     }
 
     fn inset_border(
@@ -217,13 +242,16 @@ impl Painter<'_> {
         radius: f32,
         stroke_width: f32,
         color: Color,
+        corners: Corners,
     ) {
         let inset = stroke_width / 2.0;
+        // a flat top meets the edge of the window, its line is pushed out of the picture
+        let lift = if corners.top() { 0.0 } else { stroke_width };
         let Some(inset_rect) = Rect::from_xywh(
             x + inset,
-            y + inset,
+            y + inset - lift,
             (w - stroke_width).max(0.1),
-            (h - stroke_width).max(0.1),
+            (h - stroke_width + lift).max(0.1),
         ) else {
             return;
         };
@@ -232,7 +260,9 @@ impl Painter<'_> {
             .max(0.0)
             .min(inset_rect.width() / 2.0)
             .min(inset_rect.height() / 2.0);
-        let Some(path) = rounded_rect_path(&inset_rect, r, true, true, true, true) else {
+        let Some(path) =
+            rounded_rect_path(&inset_rect, r, corners.top(), corners.top(), true, true)
+        else {
             return;
         };
 

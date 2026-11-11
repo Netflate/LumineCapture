@@ -100,8 +100,13 @@ pub fn min_window_size(toolbar: (f32, f32)) -> (u32, u32) {
     let margin = size::margin();
     (
         (toolbar.0 + margin * 2.0).ceil() as u32,
-        (toolbar.1 + margin * 2.0).ceil() as u32,
+        (toolbar.1 * 3.0).ceil() as u32,
     )
+}
+
+pub fn docked_inset(editor_state: &EditorState) -> f32 {
+    let height = editor_state.toolbar.natural_size().1 * fit_toolbar(editor_state);
+    (height * editor_state.placements[0].scale).ceil()
 }
 
 fn compute_toolbar_placement(editor_state: &EditorState) -> (usize, (f32, f32), bool) {
@@ -120,7 +125,12 @@ fn compute_toolbar_placement(editor_state: &EditorState) -> (usize, (f32, f32), 
         let monitor_idx = editor_state.input.pointer.monitor_idx;
         let placement = &editor_state.placements[monitor_idx];
         let mon_w = placement.size.0 as f32;
-        let pos = ((mon_w - editor_state.toolbar.size.0) / 2.0, size::margin());
+        let top = if editor_state.toolbar.docked {
+            0.0
+        } else {
+            size::margin()
+        };
+        let pos = ((mon_w - editor_state.toolbar.size.0) / 2.0, top);
         return (monitor_idx, pos, false);
     };
 

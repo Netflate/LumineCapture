@@ -783,6 +783,10 @@ fn render_monitor(
         canvas: &mut editor_state.canvas[i],
         capture: &editor_state.captures[i],
         base: editor_state.sheet.as_ref().map(|sheet| &sheet.base),
+        band: editor_state
+            .sheet
+            .as_ref()
+            .map_or(0, |sheet| sheet.view.inset() as u32),
         dimmed: &mut editor_state.dimmed[i],
         selection: local_sel.as_ref(),
         prev_selection: prev_local.as_ref(),

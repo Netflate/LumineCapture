@@ -169,8 +169,8 @@ impl Sheet {
         zoom * self.scale() / window_scale
     }
 
-    pub fn resize(&mut self, px: (u32, u32), ratio: f32) {
-        self.view.resize(px, ratio);
+    pub fn resize(&mut self, px: (u32, u32), inset: f32, ratio: f32) {
+        self.view.resize(px, inset, ratio);
         if let Some(base) = Pixmap::new(px.0, px.1) {
             self.base = base;
         }
@@ -229,14 +229,19 @@ fn doc_scale((w, h): (u32, u32), scale: f32) -> f32 {
 
 /// sized by the biggest monitor
 /// window's real scale only comes once it's shown
-pub fn initial_size(outputs: &[crate::types::Output], picture: (u32, u32)) -> ((u32, u32), f32) {
+pub fn initial_size(
+    outputs: &[crate::types::Output],
+    picture: (u32, u32),
+    top: f32,
+) -> ((u32, u32), f32) {
     let biggest = outputs
         .iter()
         .filter_map(|o| Some((o.info.logical_size?, o.scale())))
         .max_by_key(|((w, h), _)| w * h);
     let ((mw, mh), scale) = biggest.unwrap_or(((1280, 800), 1.0));
-    let fit = |px: u32, max: i32| (px as f32 / scale).min(max as f32 * MAX_SHARE).round() as u32;
-    ((fit(picture.0, mw), fit(picture.1, mh)), scale)
+    let fit = |px: f32, max: i32| px.min(max as f32 * MAX_SHARE).round() as u32;
+    let (w, h) = (picture.0 as f32 / scale, picture.1 as f32 / scale);
+    ((fit(w, mw), fit(h + top, mh)), scale)
 }
 
 #[cfg(test)]
@@ -253,10 +258,17 @@ mod tests {
     }
 
     #[test]
+    fn window_has_room_for_the_toolbar_over_the_picture() {
+        let size = |picture| initial_size(&[], picture, 40.0).0;
+        assert_eq!(size((800, 400)), (800, 440));
+        assert_eq!(size((4000, 4000)), (1088, 680));
+    }
+
+    #[test]
     fn the_layer_follows_the_view() {
         let image = Pixmap::new(300, 200).unwrap();
         let mut sheet = Sheet::new(&image, 1.0);
-        sheet.resize((120, 90), 1.0);
+        sheet.resize((120, 90), 0.0, 1.0);
         let size = (120, 90);
         let center = sheet.view.center();
         assert!(sheet.view.zoom_to(1.0, center));
@@ -274,7 +286,7 @@ mod tests {
         assert_eq!(sheet.follow((121, 90)), Follow::Redraw);
         assert_eq!(sheet.follow((121, 90)), Follow::Same);
 
-        sheet.resize((120, 90), 1.0);
+        sheet.resize((120, 90), 0.0, 1.0);
         assert_eq!(sheet.follow(size), Follow::Redraw);
 
         assert!(sheet.pan((500.0, 0.0)));
@@ -285,7 +297,7 @@ mod tests {
     fn direct_writers_draw_in_the_layers_own_view() {
         let image = Pixmap::new(300, 200).unwrap();
         let mut sheet = Sheet::new(&image, 1.0);
-        sheet.resize((120, 90), 1.0);
+        sheet.resize((120, 90), 0.0, 1.0);
         let center = sheet.view.center();
         assert!(sheet.view.zoom_to(1.0, center));
         let size = (120, 90);
@@ -310,7 +322,7 @@ mod tests {
         assert_eq!(sheet.layer_zoom(1.0), sheet.zoom(1.0));
 
         assert!(sheet.pan((5.0, 0.0)));
-        sheet.resize((120, 90), 1.0);
+        sheet.resize((120, 90), 0.0, 1.0);
         assert_eq!(sheet.layer_origin(), sheet.origin());
         assert_eq!(sheet.layer_zoom(1.0), sheet.zoom(1.0));
     }

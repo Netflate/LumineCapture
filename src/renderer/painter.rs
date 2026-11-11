@@ -13,7 +13,7 @@ use tiny_skia::{
 };
 use usvg::Tree;
 
-use super::paths::rounded_rect_path;
+use super::paths::{Corners, rounded_rect_path};
 use crate::theme::radius;
 
 pub type Icons = HashMap<&'static str, Tree>;
@@ -166,7 +166,18 @@ impl<'a> Painter<'a> {
     }
 
     pub fn fill_rounded(&mut self, rect: Rect, radius: f32, color: impl Into<Color>) {
-        if let Some(path) = rounded_rect_path(&rect, radius, true, true, true, true) {
+        self.fill_rounded_in(rect, radius, Corners::All, color);
+    }
+
+    pub fn fill_rounded_in(
+        &mut self,
+        rect: Rect,
+        radius: f32,
+        corners: Corners,
+        color: impl Into<Color>,
+    ) {
+        let top = corners.top();
+        if let Some(path) = rounded_rect_path(&rect, radius, top, top, true, true) {
             self.fill_path(&path, color);
         }
     }
@@ -201,6 +212,19 @@ impl<'a> Painter<'a> {
         size: (f32, f32),
         opacity: f32,
         redraw: bool,
+        content: impl FnOnce(&mut Painter),
+    ) {
+        self.panel_in(cache, pos, size, opacity, redraw, Corners::All, content);
+    }
+
+    pub fn panel_in(
+        &mut self,
+        cache: &mut Option<Pixmap>,
+        pos: (f32, f32),
+        size: (f32, f32),
+        opacity: f32,
+        redraw: bool,
+        corners: Corners,
         content: impl FnOnce(&mut Painter),
     ) {
         let s = self.scale();
@@ -241,6 +265,6 @@ impl<'a> Painter<'a> {
 
         // (border follows where the pixmap went after rounding)
         let (bx, by) = (x / s + self.origin.0, y / s + self.origin.1);
-        self.panel_border(bx, by, w, h, radius::panel(), opacity);
+        self.panel_border_in(bx, by, w, h, radius::panel(), opacity, corners);
     }
 }

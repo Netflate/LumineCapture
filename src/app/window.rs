@@ -26,17 +26,20 @@ pub async fn run(
 
     let mut window = WaylandOverlay::new(conn.clone(), false)?;
     let picture = (image.width(), image.height());
-    let (size, monitor_scale) = crate::edit::initial_size(window.discovered_outputs(), picture);
+    let (size, monitor_scale) = crate::edit::initial_size(
+        window.discovered_outputs(),
+        picture,
+        crate::theme::size::panel_height(),
+    );
     window.open_window(TITLE, size, monitor_scale)?;
     let ((w, h), scale) = window.window_size().ok_or("the window got no size")?;
 
-    let mut sheet = Sheet::new(&image, monitor_scale);
+    let sheet = Sheet::new(&image, monitor_scale);
     let placement = Placement {
         position: (0, 0),
         size: (w as i32, h as i32),
         scale,
     };
-    sheet.resize(placement.px_size(), 1.0);
     let (canvas, dimmed, annotations) = init::build_layers(&[placement]);
     let capture = Capture {
         scale: sheet.scale(),
@@ -60,7 +63,12 @@ pub async fn run(
         },
         super::build_ocr_state(),
     );
+    editor_state.toolbar.docked = true;
     editor_state.sheet = Some(sheet);
+    let inset = super::panels::toolbar::docked_inset(&editor_state);
+    if let Some(sheet) = editor_state.sheet.as_mut() {
+        sheet.resize(placement.px_size(), inset, 1.0);
+    }
     editor_state.selection.zone = editor_state.workspace();
     editor_state.to = outputs;
     editor_state.toolbar.to = outputs;
@@ -86,18 +94,22 @@ pub async fn run(
 
 /// new size or scale: the buffer is new either way and has to be fully redrawn
 pub fn resized(editor_state: &mut EditorState, size: (u32, u32), scale: f32, dirty_mask: &mut u32) {
-    let Some(sheet) = editor_state.sheet.as_mut() else {
+    if editor_state.sheet.is_none() {
         return;
-    };
+    }
     let placement = Placement {
         position: (0, 0),
         size: (size.0 as i32, size.1 as i32),
         scale,
     };
     let old = std::mem::replace(&mut editor_state.placements[0], placement);
+    let inset = super::panels::toolbar::docked_inset(editor_state);
+    let Some(sheet) = editor_state.sheet.as_mut() else {
+        return;
+    };
     if old != placement {
         let (w, h) = placement.px_size();
-        sheet.resize((w, h), scale / old.scale);
+        sheet.resize((w, h), inset, scale / old.scale);
         for layer in [
             &mut editor_state.canvas[0],
             &mut editor_state.dimmed[0],

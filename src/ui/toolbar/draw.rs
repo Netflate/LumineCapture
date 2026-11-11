@@ -1,4 +1,4 @@
-use crate::renderer::Painter;
+use crate::renderer::{Corners, Painter};
 use crate::theme::{radius, size};
 use crate::ui::icons::{get_svg_for_finish, get_svg_for_tool};
 use crate::ui::panel::PanelItem;
@@ -14,16 +14,25 @@ pub fn draw_toolbar(p: &mut Painter, toolbar: &mut Toolbar) {
     let mut cache = toolbar.toolbar_pixmap.take();
     let look = toolbar.look();
     let k = toolbar.shrink;
-    p.panel(
+    p.panel_in(
         &mut cache,
         (tb_rect.left(), tb_rect.top()),
         toolbar.size,
         toolbar.opacity,
         toolbar.drawn_look != Some(look),
+        corners(toolbar),
         |p| draw_toolbar_content(&mut p.rescaled(k), toolbar),
     );
     toolbar.toolbar_pixmap = cache;
     toolbar.drawn_look = Some(look);
+}
+
+fn corners(toolbar: &Toolbar) -> Corners {
+    if toolbar.docked {
+        Corners::Bottom
+    } else {
+        Corners::All
+    }
 }
 
 fn draw_toolbar_content(p: &mut Painter, toolbar: &Toolbar) {
@@ -35,7 +44,12 @@ fn draw_toolbar_content(p: &mut Painter, toolbar: &Toolbar) {
     };
 
     // border around it isn't shrunk, so neither are the corners
-    p.fill_rounded(rect, radius::panel() / toolbar.shrink, cfg.background.get());
+    p.fill_rounded_in(
+        rect,
+        radius::panel() / toolbar.shrink,
+        corners(toolbar),
+        cfg.background.get(),
+    );
 
     let bg_h = h * cfg.highlight_height;
     let bg_y = rect.top() + (h - bg_h) / 2.0;

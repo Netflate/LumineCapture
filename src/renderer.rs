@@ -12,7 +12,7 @@ pub use annotations::{
     draw_annotation, selection_chrome_pad, shadow_color_for, stroke_pen_segment, visual_pad,
 };
 pub use painter::{Icons, Painter};
-pub use paths::{rect_bounds, rounded_rect_path, scale_rect};
+pub use paths::{Corners, rect_bounds, rounded_rect_path, scale_rect};
 pub use text::measure_line_width;
 
 use crate::types::SelectionEdges;
@@ -40,6 +40,7 @@ pub struct RenderRequest<'a> {
     /// beneath: the picture of the editor window
     pub base: Option<&'a Pixmap>,
     pub dimmed: &'a mut Pixmap,
+    pub band: u32,
     // selection + magnifier + toolbar
     pub selection: Option<&'a Rect>,
     pub prev_selection: Option<&'a Rect>,
@@ -329,6 +330,10 @@ pub fn render_frame(req: &mut RenderRequest) {
         );
     }
 
+    if req.band > 0 {
+        fill_band(req.canvas, req.band, dirty_rect, s);
+    }
+
     let mut p = Painter::new(req.canvas)
         .with_scale(s)
         .with_icons(req.icons_cache)
@@ -376,6 +381,36 @@ pub fn render_frame(req: &mut RenderRequest) {
 
     if !req.toasts.items.is_empty() {
         crate::ui::toast::draw_toasts(&mut p, req.toasts, req.monitor_idx, dirty_rect);
+    }
+}
+
+fn fill_band(canvas: &mut Pixmap, band: u32, dirty: Option<&Rect>, scale: f32) {
+    let (w, h) = (canvas.width(), canvas.height());
+    let whole = Rect::from_xywh(0.0, 0.0, w as f32 / scale, h as f32 / scale);
+    let Some((x, y, rw, rh)) = dirty
+        .copied()
+        .or(whole)
+        .and_then(|area| scale_rect(&area, scale))
+        .and_then(|area| rect_bounds(&area, w, h))
+    else {
+        return;
+    };
+    let end = (y + rh).min(band);
+    if end <= y {
+        return;
+    }
+    let color = crate::theme::color::panel()
+        .with_alpha(255)
+        .color()
+        .to_color_u8();
+    let px = [color.red(), color.green(), color.blue(), 255];
+    let stride = (w * 4) as usize;
+    let data = canvas.data_mut();
+    for row in y..end {
+        let off = row as usize * stride + x as usize * 4;
+        for d in data[off..off + rw as usize * 4].as_chunks_mut::<4>().0 {
+            d.copy_from_slice(&px);
+        }
     }
 }
 

@@ -115,6 +115,7 @@ enum UiHit {
     ModelPopoverOutside,
     ToolbarItem(usize),
     ToolbarBackground,
+    Band,
     SettingsItem(usize),
     SettingsBackground,
     None,
@@ -158,6 +159,12 @@ fn hit_test_ui(editor_state: &EditorState, local: (f64, f64)) -> UiHit {
         }
     }
 
+    if let Some(sheet) = &editor_state.sheet
+        && local.1 < (sheet.view.inset() / editor_state.placements[0].scale) as f64
+    {
+        return UiHit::Band;
+    }
+
     UiHit::None
 }
 
@@ -186,7 +193,7 @@ pub fn compute_cursor(editor_state: &EditorState) -> CursorIcon {
                 CursorIcon::Default
             }
         }
-        UiHit::ToolbarBackground | UiHit::SettingsBackground => CursorIcon::Default,
+        UiHit::ToolbarBackground | UiHit::Band | UiHit::SettingsBackground => CursorIcon::Default,
         UiHit::ColorPopoverOutside | UiHit::ModelPopoverOutside | UiHit::None => {
             if editor_state.pick_once {
                 CursorIcon::Crosshair
@@ -263,7 +270,7 @@ pub fn handle_pointer_button(
             }
             UiHit::ModelPopoverOutside => unreachable!("popover is closed at this point"),
 
-            UiHit::ToolbarBackground => {
+            UiHit::ToolbarBackground | UiHit::Band => {
                 return;
             }
 
@@ -744,7 +751,7 @@ pub fn handle_scroll(
     }
 
     // in the window edit mode the picture takes it, Alt+wheel is left for the width
-    if matches!(hit_test_ui(editor_state, local), UiHit::None)
+    if matches!(hit_test_ui(editor_state, local), UiHit::None | UiHit::Band)
         && super::window::wheel(editor_state, (delta_x, delta_y), wheel, dirty_mask)
     {
         apply_damage_rects(editor_state, dirty_mask);
