@@ -75,6 +75,14 @@ impl ToolBehavior for SelectionTool {
                 })
                 .unwrap_or(SelectionHandle::None);
 
+            // window the crop's inside moves the picture, the crop itself has handles
+            if handle == SelectionHandle::Move && state.sheet.is_some() {
+                crate::app::window::grab(state, true);
+                state.input.mouse_down = false;
+                state.tool_active = false;
+                return;
+            }
+
             let pos = (
                 state.input.pointer.global.0 as f32,
                 state.input.pointer.global.1 as f32,
@@ -104,6 +112,7 @@ impl ToolBehavior for SelectionTool {
             }
         } else {
             state.tool_active = false;
+            crate::app::window::grab(state, false);
 
             let fresh = state.input.drag_start.is_some();
             state.input.drag_start = None;
