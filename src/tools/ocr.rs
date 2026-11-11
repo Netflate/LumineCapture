@@ -50,8 +50,14 @@ impl ToolBehavior for OcrTool {
         state: &mut EditorState,
         button: MouseButton,
         pressed: bool,
-        _dirty_mask: &mut u32,
+        dirty_mask: &mut u32,
     ) {
+        if matches!(button, MouseButton::Right) {
+            if pressed {
+                back_to_awaiting(state, dirty_mask);
+            }
+            return;
+        }
         if !matches!(button, MouseButton::Left) {
             return;
         }
@@ -238,6 +244,14 @@ fn end_region_drag(state: &mut EditorState) {
         return;
     }
 
+    restore_zone(state);
+
+    if state.ocr.await_region {
+        await_region(state);
+    }
+}
+
+fn restore_zone(state: &mut EditorState) {
     if state.selection.zone != state.ocr.redrag_from {
         for zone in [state.selection.zone, state.ocr.redrag_from]
             .into_iter()
@@ -246,10 +260,6 @@ fn end_region_drag(state: &mut EditorState) {
             state.damage_rects.push(DamageZone::Global(zone));
         }
         state.selection.zone = state.ocr.redrag_from;
-    }
-
-    if state.ocr.await_region {
-        await_region(state);
     }
 }
 
@@ -262,6 +272,32 @@ fn real_box(state: &EditorState) -> Option<Rect> {
 
 pub fn awaiting(state: &EditorState) -> bool {
     state.selected_tool == Tool::Ocr && state.ocr.await_region && !state.ocr.runtime.is_busy()
+}
+
+fn back_to_awaiting(state: &mut EditorState, dirty_mask: &mut u32) {
+    if state.ocr.redrag {
+        state.ocr.redrag = false;
+        state.tool_active = false;
+        state.input.mouse_down = false;
+        state.input.drag_start = None;
+        state.selection.set_drag(SelectionHandle::None, None, None);
+        restore_zone(state);
+    }
+    cancel_scan(state);
+    state.ocr.view.clear();
+    dismiss_scan_toasts(state);
+    if state.ocr.models.installed_count() > 0 {
+        await_region(state);
+    }
+    mark_all_dirty(dirty_mask, state.placements.len());
+}
+
+pub fn interrupt_scan(state: &mut EditorState, dirty_mask: &mut u32) -> bool {
+    if !state.ocr.runtime.is_busy() {
+        return false;
+    }
+    back_to_awaiting(state, dirty_mask);
+    true
 }
 
 pub fn scan_all(state: &mut EditorState, dirty_mask: &mut u32) {
@@ -562,4 +598,42 @@ mod tests {
         );
     }
 
+    #[test]
+    fn right_click_keeps_the_crop_and_waits() {
+        let mut state = ready(true);
+        let crop = Rect::from_xywh(10.0, 20.0, 100.0, 50.0);
+        state.selection.zone = crop;
+        OcrTool.on_button(&mut state, MouseButton::Right, true, &mut 0);
+        assert_eq!(state.selection.zone, crop);
+        assert!(state.ocr.await_region);
+        assert!(state.undo_stack.is_empty());
+    }
+
+    #[test]
+    fn right_click_during_a_drag_cancels_it() {
+        let mut state = ready(false);
+        let from = Rect::from_xywh(10.0, 20.0, 100.0, 50.0);
+        state.selection.zone = from;
+        state.ocr.redrag = true;
+        state.ocr.redrag_from = from;
+        state.input.mouse_down = true;
+        state.selection.zone = Rect::from_xywh(0.0, 0.0, 30.0, 30.0);
+        OcrTool.on_button(&mut state, MouseButton::Right, true, &mut 0);
+        assert!(!state.ocr.redrag);
+        assert!(!state.input.mouse_down);
+        assert_eq!(state.selection.zone, from);
+        assert!(state.ocr.await_region);
+    }
+
+    #[test]
+    fn esc_stops_a_running_scan_and_only_then() {
+        let mut state = ready(true);
+        assert!(!interrupt_scan(&mut state, &mut 0));
+        state.ocr.runtime.park(ocr::testing::image(4, 4));
+        assert!(state.ocr.runtime.is_busy());
+        assert!(interrupt_scan(&mut state, &mut 0));
+        assert!(!state.ocr.runtime.is_busy());
+        assert!(state.ocr.await_region);
+        assert!(!interrupt_scan(&mut state, &mut 0));
+    }
 }

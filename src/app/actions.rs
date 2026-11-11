@@ -41,7 +41,13 @@ pub fn run(editor_state: &mut EditorState, action: Action, dirty_mask: &mut u32)
             }
         }
         Action::Finish(finish) => editor_state.finish = Some(finish.into()),
-        Action::Cancel => editor_state.cancel = true,
+        Action::Cancel => {
+            if crate::tools::ocr::interrupt_scan(editor_state, dirty_mask) {
+                refresh_panels(editor_state, dirty_mask);
+            } else {
+                editor_state.cancel = true;
+            }
+        }
         Action::Undo => {
             editor_state.undo(dirty_mask);
             super::refresh_panels_after_history(editor_state, dirty_mask);
@@ -253,6 +259,12 @@ mod tests {
         run(&mut state, Action::Accept, &mut 0);
         assert_eq!(state.selection.zone, state.whole_zone(0));
         assert!(state.finish.is_none());
+
+        state.ocr.runtime.park(crate::ocr::testing::image(4, 4));
+        run(&mut state, Action::Cancel, &mut 0);
+        assert!(!state.cancel);
+        run(&mut state, Action::Cancel, &mut 0);
+        assert!(state.cancel);
     }
 
 }

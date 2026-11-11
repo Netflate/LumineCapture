@@ -118,6 +118,11 @@ impl OcrRuntime {
         (self.job.is_some() && !self.discarded) || self.queued.is_some()
     }
 
+    #[cfg(test)]
+    pub fn park(&mut self, image: OcrImage) {
+        self.queued = Some(image);
+    }
+
     pub fn needs_poll(&self) -> bool {
         self.job.is_some() || self.queued.is_some()
     }
