@@ -525,8 +525,8 @@ pub fn commit_drag_if_changed(state: &mut EditorState) {
         if actually_changed {
             let mut pre_drag = state.annotations.clone();
             pre_drag.insert(insert_idx, drag.orig);
-            state.undo_stack.push(pre_drag);
-            state.redo_stack.clear();
+            let snapshot = state.snapshot_of(pre_drag);
+            state.push_snapshot(snapshot);
         }
 
         // not baked

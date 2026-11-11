@@ -543,7 +543,7 @@ pub fn apply_stepper_arrow_step(
     dirty_mask: &mut u32,
 ) {
     if editor_state.settings_panel.pre_edit_snapshot.is_none() {
-        editor_state.settings_panel.pre_edit_snapshot = Some(editor_state.annotations.clone());
+        editor_state.settings_panel.pre_edit_snapshot = Some(editor_state.snapshot());
     }
 
     let Some(SettingsWidget::Stepper { range, .. }) =
@@ -613,7 +613,7 @@ pub fn handle_stepper_scroll(
     }
 
     if editor_state.settings_panel.pre_edit_snapshot.is_none() {
-        editor_state.settings_panel.pre_edit_snapshot = Some(editor_state.annotations.clone());
+        editor_state.settings_panel.pre_edit_snapshot = Some(editor_state.snapshot());
     }
 
     let arrow = if steps > 0 {

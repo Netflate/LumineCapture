@@ -159,7 +159,7 @@ fn begin_color_field_edit(
         commit_color_field_edit(editor_state, dirty_mask);
     }
 
-    editor_state.color_popover.pre_edit_snapshot = Some(editor_state.annotations.clone());
+    editor_state.color_popover.pre_edit_snapshot = Some(editor_state.snapshot());
 
     let current_text = editor_state.color_popover.field_text(field);
 
@@ -200,12 +200,7 @@ pub fn commit_color_field_edit(editor_state: &mut EditorState, dirty_mask: &mut 
 
     apply_color_field_text(editor_state, field, &text, true, false, dirty_mask);
 
-    if let Some(snapshot) = snapshot
-        && editor_state.annotations != snapshot
-    {
-        editor_state.undo_stack.push(snapshot);
-        editor_state.redo_stack.clear();
-    }
+    editor_state.commit_snapshot(snapshot);
 
     editor_state.color_popover.sync_field_values();
     damage_color_popover(editor_state, dirty_mask);
@@ -276,7 +271,7 @@ pub fn step_color_field(
     }
 
     if editor_state.color_popover.pre_edit_snapshot.is_none() {
-        editor_state.color_popover.pre_edit_snapshot = Some(editor_state.annotations.clone());
+        editor_state.color_popover.pre_edit_snapshot = Some(editor_state.snapshot());
     }
 
     let current_text = editor_state.color_popover.confirmed_field_text(field);
@@ -321,7 +316,7 @@ pub fn handle_color_popover_click(editor_state: &mut EditorState, dirty_mask: &m
     }
 
     if editor_state.color_popover.sv_square_hit(local) {
-        editor_state.color_popover.pre_edit_snapshot = Some(editor_state.annotations.clone());
+        editor_state.color_popover.pre_edit_snapshot = Some(editor_state.snapshot());
         editor_state.color_popover.sv_square.dragging = true;
         editor_state.color_popover.set_sv_from_local(local);
         editor_state.color_popover.sync_field_values();
@@ -333,7 +328,7 @@ pub fn handle_color_popover_click(editor_state: &mut EditorState, dirty_mask: &m
     }
 
     if editor_state.color_popover.hue_slider_hit(local) {
-        editor_state.color_popover.pre_edit_snapshot = Some(editor_state.annotations.clone());
+        editor_state.color_popover.pre_edit_snapshot = Some(editor_state.snapshot());
         editor_state.color_popover.hue_dragging = true;
         editor_state.color_popover.set_hue_from_local(local);
         editor_state.color_popover.sync_field_values();
@@ -404,12 +399,7 @@ pub fn handle_color_popover_release(editor_state: &mut EditorState, dirty_mask: 
     }
 
     let snapshot = editor_state.color_popover.pre_edit_snapshot.take();
-    if let Some(snapshot) = snapshot
-        && editor_state.annotations != snapshot
-    {
-        editor_state.undo_stack.push(snapshot);
-        editor_state.redo_stack.clear();
-    }
+    editor_state.commit_snapshot(snapshot);
 
     let color = editor_state.color_popover.sv_square.color();
     editor_state.color_popover.record_used_color(color);

@@ -1,7 +1,6 @@
 use crate::config::ColorPicker;
 use crate::interaction::ScrollAccumulator;
 use crate::theme::{anim, font};
-use crate::types::Annotation;
 use crate::types::tool_settings::default_color;
 use crate::ui::panel::{AnimatedPanel, HoverablePanel, PanelItem, UiPanel};
 use crate::ui::text_field::TextFieldGroup;
@@ -430,7 +429,7 @@ pub struct ColorPickerPopover {
     pub history: Vec<Color>,
     pub initial_history: Vec<Color>,
     pub fields: TextFieldGroup<ColorField>,
-    pub pre_edit_snapshot: Option<Vec<Annotation>>,
+    pub pre_edit_snapshot: Option<crate::editor::history::Snapshot>,
 
     /// Scroll accumulator for scrollable fields (hex/rgba)
     /// Keeps scroll fractional state separate from raw events to avoid

@@ -373,7 +373,7 @@ pub struct SettingsPanel {
     pub fields: TextFieldGroup<usize>,
     pub arrow_held: Option<ArrowHoldState>,
     pub toggled: HashMap<usize, bool>,
-    pub pre_edit_snapshot: Option<Vec<Annotation>>,
+    pub pre_edit_snapshot: Option<crate::editor::history::Snapshot>,
     /// % of download progress if any
     pub download: Option<u8>,
 

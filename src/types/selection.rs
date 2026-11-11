@@ -6,6 +6,9 @@ pub struct SelectionState {
     pub active_handle: SelectionHandle,
     pub drag_origin: Option<(f64, f64)>,
     pub selection_at_drag_start: Option<Rect>,
+    /// window's crop as it was when a gesture on it began
+    /// undo gets it back
+    pub crop_from: Option<Option<Rect>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -30,6 +33,7 @@ impl Default for SelectionState {
             active_handle: SelectionHandle::None,
             drag_origin: None,
             selection_at_drag_start: None,
+            crop_from: None,
         }
     }
 }

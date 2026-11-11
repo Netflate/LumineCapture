@@ -54,7 +54,9 @@ impl ToolBehavior for SelectionTool {
                 state.tool_active = false;
                 state.input.drag_start = None;
             }
+            let before = state.selection.zone;
             if !state.input.mouse_down && state.selection.zone.take().is_some() {
+                state.record_crop(before);
                 mark_all_dirty(dirty_mask, state.placements.len());
             }
             return;
@@ -99,6 +101,7 @@ impl ToolBehavior for SelectionTool {
                 return;
             }
 
+            state.begin_crop();
             if handle != SelectionHandle::None {
                 if let Some(sel) = state.selection.zone {
                     state
@@ -113,6 +116,7 @@ impl ToolBehavior for SelectionTool {
         } else {
             state.tool_active = false;
             crate::app::window::grab(state, false);
+            state.end_crop();
 
             let fresh = state.input.drag_start.is_some();
             state.input.drag_start = None;

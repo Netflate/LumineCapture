@@ -1,24 +1,75 @@
 use crate::editor::dirty::damage_annotation;
 use crate::editor::{DamageZone, EditorState};
 use crate::types::Annotation;
+use tiny_skia::Rect;
 
 enum Step {
     Undo,
     Redo,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct Snapshot {
+    pub annotations: Vec<Annotation>,
+    pub zone: Option<Rect>,
+}
+
+impl Snapshot {
+    // Decided not to register selection (crop) actions in history in regular overlay mode.
+    // However, window mode crops slightly differently (more like a classic crop in Photoshop)
+    // so we figured it's better to save it in history here
+    fn differs(&self, annotations: &[Annotation], zone: Option<Rect>, crop: bool) -> bool {
+        self.annotations != annotations || (crop && self.zone != zone)
+    }
+}
+
 impl EditorState {
+    pub fn snapshot(&self) -> Snapshot {
+        self.snapshot_of(self.annotations.clone())
+    }
+
+    pub fn snapshot_of(&self, annotations: Vec<Annotation>) -> Snapshot {
+        Snapshot {
+            annotations,
+            zone: self.selection.zone,
+        }
+    }
+
     pub fn push_undo(&mut self) {
-        self.undo_stack.push(self.annotations.clone());
+        let snapshot = self.snapshot();
+        self.push_snapshot(snapshot);
+    }
+
+    pub fn push_snapshot(&mut self, snapshot: Snapshot) {
+        self.undo_stack.push(snapshot);
         self.redo_stack.clear();
     }
 
-    pub fn commit_snapshot(&mut self, snapshot: Option<Vec<Annotation>>) {
+    pub fn commit_snapshot(&mut self, snapshot: Option<Snapshot>) {
         if let Some(snapshot) = snapshot
-            && self.annotations != snapshot
+            && snapshot.differs(&self.annotations, self.selection.zone, self.sheet.is_some())
         {
-            self.undo_stack.push(snapshot);
-            self.redo_stack.clear();
+            self.push_snapshot(snapshot);
+        }
+    }
+
+    pub fn record_crop(&mut self, before: Option<Rect>) {
+        if self.sheet.is_some() && self.selection.zone != before {
+            let snapshot = Snapshot {
+                annotations: self.annotations.clone(),
+                zone: before,
+            };
+            self.push_snapshot(snapshot);
+        }
+    }
+
+    pub fn begin_crop(&mut self) {
+        self.selection.crop_from = self.sheet.is_some().then_some(self.selection.zone);
+    }
+
+    pub fn end_crop(&mut self) {
+        if let Some(before) = self.selection.crop_from.take() {
+            self.record_crop(before);
         }
     }
 
@@ -85,7 +136,11 @@ impl EditorState {
             Step::Undo => self.undo_stack.pop(),
             Step::Redo => self.redo_stack.pop(),
         };
-        let Some(restored) = restored else {
+        let Some(Snapshot {
+            annotations: restored,
+            zone,
+        }) = restored
+        else {
             return;
         };
 
@@ -102,10 +157,17 @@ impl EditorState {
             &restored,
         );
 
-        let replaced = std::mem::replace(&mut self.annotations, restored);
+        let before = self.snapshot();
+        let replaced = Snapshot {
+            annotations: std::mem::replace(&mut self.annotations, restored),
+            zone: before.zone,
+        };
         match step {
             Step::Undo => self.redo_stack.push(replaced),
             Step::Redo => self.undo_stack.push(replaced),
+        }
+        if self.sheet.is_some() {
+            self.selection.zone = zone;
         }
 
         self.reselect_by_id(selected_id);
@@ -145,5 +207,61 @@ impl EditorState {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::AnnotationShape;
+    use tiny_skia::Color;
+
+    fn rect(id: u64) -> Annotation {
+        Annotation {
+            id,
+            shape: AnnotationShape::Rectangle {
+                start: (0.0, 0.0),
+                end: (10.0, 10.0),
+                filled: false,
+            },
+            color: Color::BLACK,
+            shadow_color: Color::BLACK,
+            stroke_width: 2.0,
+            bbox: Rect::from_xywh(0.0, 0.0, 10.0, 10.0).unwrap(),
+        }
+    }
+
+    fn zone(w: f32) -> Option<Rect> {
+        Rect::from_xywh(0.0, 0.0, w, 20.0)
+    }
+
+    #[test]
+    fn crop_makes_a_step_only_in_the_window() {
+        let snapshot = Snapshot {
+            annotations: vec![rect(1)],
+            zone: zone(100.0),
+        };
+        assert!(snapshot.differs(&[rect(1)], zone(50.0), true));
+        assert!(!snapshot.differs(&[rect(1)], zone(50.0), false));
+        assert!(!snapshot.differs(&[rect(1)], zone(100.0), true));
+    }
+
+    #[test]
+    fn annotations_make_a_step_everywhere() {
+        let snapshot = Snapshot {
+            annotations: vec![rect(1)],
+            zone: zone(100.0),
+        };
+        assert!(snapshot.differs(&[rect(1), rect(2)], zone(100.0), false));
+        assert!(snapshot.differs(&[], zone(100.0), true));
+    }
+
+    #[test]
+    fn lost_crop_is_a_step() {
+        let snapshot = Snapshot {
+            annotations: Vec::new(),
+            zone: zone(100.0),
+        };
+        assert!(snapshot.differs(&[], None, true));
     }
 }

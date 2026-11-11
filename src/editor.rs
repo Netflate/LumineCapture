@@ -114,8 +114,8 @@ pub struct EditorState {
     pub prev_pending: Option<Annotation>,
     pub next_id: u64,
 
-    pub undo_stack: Vec<Vec<Annotation>>,
-    pub redo_stack: Vec<Vec<Annotation>>,
+    pub undo_stack: Vec<history::Snapshot>,
+    pub redo_stack: Vec<history::Snapshot>,
 
     pub selected_annotation: Option<usize>,
     pub ann_drag: Option<AnnDragState>,
