@@ -262,6 +262,12 @@ impl OcrModels {
         detector + model.recognizer.size + model.dict.size
     }
 
+    #[cfg(test)]
+    pub fn fake_installed(&mut self) {
+        self.status[0] = ModelStatus::Installed;
+        self.active = Some(0);
+    }
+
     pub fn set_active(&mut self, idx: Option<usize>) {
         if self.active == idx {
             return;

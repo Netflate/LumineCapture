@@ -91,6 +91,11 @@ fn tool_copy(editor_state: &mut EditorState, dirty_mask: &mut u32) -> bool {
             crate::tools::ocr::copy_selection(editor_state, dirty_mask);
             true
         }
+        Tool::Ocr if crate::tools::ocr::awaiting(editor_state) => {
+            crate::tools::ocr::scan_all(editor_state, dirty_mask);
+            refresh_panels(editor_state, dirty_mask);
+            true
+        }
         _ => false,
     }
 }
@@ -228,4 +233,26 @@ fn step_size(editor_state: &mut EditorState, arrow: StepperArrow, dirty_mask: &m
     editor_state.commit_snapshot(snapshot);
     update_settings_panel(editor_state, dirty_mask);
     sync_stepper_edit_text(editor_state, widget_idx);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::editor::testing::editor;
+
+    #[test]
+    fn enter_reads_everything_only_while_awaiting() {
+        let mut state = editor(false);
+        state.ocr.models.fake_installed();
+        state.selected_tool = Tool::Ocr;
+        run(&mut state, Action::Accept, &mut 0);
+        assert_eq!(state.selection.zone, None);
+        state.finish = None;
+
+        state.ocr.await_region = true;
+        run(&mut state, Action::Accept, &mut 0);
+        assert_eq!(state.selection.zone, state.whole_zone(0));
+        assert!(state.finish.is_none());
+    }
+
 }

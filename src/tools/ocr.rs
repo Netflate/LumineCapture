@@ -38,7 +38,7 @@ impl ToolBehavior for OcrTool {
         }
 
         // if there is no selection, ask for dragging one, using notification toast
-        if state.selection.zone.is_none() {
+        if real_box(state).is_none() {
             await_region(state);
             return;
         }
@@ -253,6 +253,40 @@ fn end_region_drag(state: &mut EditorState) {
     }
 }
 
+/// box the user actually set: in the window, whole picture is just "no crop"
+fn real_box(state: &EditorState) -> Option<Rect> {
+    let zone = state.selection.zone?;
+    let whole = state.whole_zone(state.input.pointer.monitor_idx);
+    (state.sheet.is_none() || Some(zone) != whole).then_some(zone)
+}
+
+pub fn awaiting(state: &EditorState) -> bool {
+    state.selected_tool == Tool::Ocr && state.ocr.await_region && !state.ocr.runtime.is_busy()
+}
+
+pub fn scan_all(state: &mut EditorState, dirty_mask: &mut u32) {
+    if state.ocr.runtime.is_busy() {
+        return;
+    }
+    if !state.ocr.models.active_installed() {
+        ask_for_model(state);
+        return;
+    }
+    let Some(zone) = state.whole_zone(state.input.pointer.monitor_idx) else {
+        return;
+    };
+    damage_all(state);
+    if let Some(old) = state.selection.zone {
+        state.damage_rects.push(DamageZone::Global(old));
+    }
+    state.selection.zone = Some(zone);
+    state.ocr.await_region = false;
+    state.toasts.dismiss(ToastKind::OcrPickRegion);
+    state.ocr.view.clear();
+    start_ocr(state);
+    mark_all_dirty(dirty_mask, state.placements.len());
+}
+
 /// Redraw the entire overlay: all covered areas, plus the progress badge if
 /// a scan is active (since the background behind the badge must be redrawn too).
 fn damage_all(state: &mut EditorState) {
@@ -436,7 +470,7 @@ pub fn model_ready(state: &mut EditorState, idx: usize, dirty_mask: &mut u32) {
     }
     state.model_popover.open = false;
     state.toasts.dismiss(ToastKind::OcrNoModel);
-    if state.selection.zone.is_some() {
+    if real_box(state).is_some() {
         start_ocr(state);
     } else {
         await_region(state);
@@ -457,4 +491,75 @@ pub fn cancel_model_download(state: &mut EditorState, idx: usize) {
     if state.ocr.models.active() == Some(idx) {
         state.ocr.models.set_active(None);
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::editor::testing::editor;
+
+    fn ready(window: bool) -> EditorState {
+        let mut state = editor(window);
+        state.ocr.models.fake_installed();
+        state.selected_tool = Tool::Ocr;
+        state
+    }
+
+    #[test]
+    fn window_without_a_crop_waits_for_a_box() {
+        let mut state = ready(true);
+        state.selection.zone = state.workspace();
+        assert_eq!(real_box(&state), None);
+        OcrTool.on_activate(&mut state, &mut 0);
+        assert!(state.ocr.await_region);
+    }
+
+    #[test]
+    fn window_with_a_crop_scans_it() {
+        let mut state = ready(true);
+        let crop = Rect::from_xywh(10.0, 20.0, 100.0, 50.0);
+        state.selection.zone = crop;
+        assert_eq!(real_box(&state), crop);
+        OcrTool.on_activate(&mut state, &mut 0);
+        assert!(!state.ocr.await_region);
+    }
+
+    #[test]
+    fn overlay_waits_without_a_selection_and_scans_with_one() {
+        let mut state = ready(false);
+        assert_eq!(real_box(&state), None);
+        OcrTool.on_activate(&mut state, &mut 0);
+        assert!(state.ocr.await_region);
+
+        let mut state = ready(false);
+        let zone = Rect::from_xywh(10.0, 20.0, 100.0, 50.0);
+        state.selection.zone = zone;
+        assert_eq!(real_box(&state), zone);
+        OcrTool.on_activate(&mut state, &mut 0);
+        assert!(!state.ocr.await_region);
+    }
+
+    #[test]
+    fn scanning_everything_takes_the_whole_zone() {
+        let mut state = ready(true);
+        state.selection.zone = Rect::from_xywh(10.0, 20.0, 100.0, 50.0);
+        state.ocr.await_region = true;
+        assert!(awaiting(&state));
+        scan_all(&mut state, &mut 0);
+        assert_eq!(state.selection.zone, state.workspace());
+        assert_eq!(
+            state.selection.zone,
+            Rect::from_xywh(0.0, 0.0, 600.0, 400.0)
+        );
+        assert!(!state.ocr.await_region);
+
+        let mut state = ready(false);
+        state.ocr.await_region = true;
+        scan_all(&mut state, &mut 0);
+        assert_eq!(
+            state.selection.zone,
+            Rect::from_xywh(0.0, 0.0, 300.0, 200.0)
+        );
+    }
+
 }

@@ -9,10 +9,10 @@ use crate::ui::color_popover::ColorTarget;
 use crate::ui::panel::UiPanel;
 use crate::ui::panel::{emit_panel_damage, sync_panel_hover, sync_panel_rect};
 use crate::ui::settings_panel::{
-    OCR_AWAITING_WIDGETS, OCR_DOWNLOADING_WIDGETS, OCR_NO_MODEL_WIDGETS, OCR_SCANNING_WIDGETS,
-    OCR_WIDGETS, OCR_WIDGETS_DOWNLOADING, SettingsAction, SettingsSource, SettingsWidget,
-    StepperArrow, StepperRange, ToggleField, compute_settings_placement, widgets_for_annotation,
-    widgets_for_tool,
+    OCR_AWAITING_DOWNLOADING_WIDGETS, OCR_AWAITING_WIDGETS, OCR_DOWNLOADING_WIDGETS,
+    OCR_NO_MODEL_WIDGETS, OCR_SCANNING_WIDGETS, OCR_WIDGETS, OCR_WIDGETS_DOWNLOADING,
+    SettingsAction, SettingsSource, SettingsWidget, StepperArrow, StepperRange, ToggleField,
+    compute_settings_placement, widgets_for_annotation, widgets_for_tool,
 };
 use std::time::{Duration, Instant};
 
@@ -65,8 +65,8 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
         SettingsSource::OcrScanning => OCR_SCANNING_WIDGETS,
         SettingsSource::OcrNoModel { downloading: false } => OCR_NO_MODEL_WIDGETS,
         SettingsSource::OcrAwaiting { downloading: false } => OCR_AWAITING_WIDGETS,
-        SettingsSource::OcrNoModel { downloading: true }
-        | SettingsSource::OcrAwaiting { downloading: true } => OCR_DOWNLOADING_WIDGETS,
+        SettingsSource::OcrAwaiting { downloading: true } => OCR_AWAITING_DOWNLOADING_WIDGETS,
+        SettingsSource::OcrNoModel { downloading: true } => OCR_DOWNLOADING_WIDGETS,
         SettingsSource::OcrResult { downloading: false } => OCR_WIDGETS,
         SettingsSource::OcrResult { downloading: true } => OCR_WIDGETS_DOWNLOADING,
         SettingsSource::Annotation(_) => selected_ann.map_or(&[][..], widgets_for_annotation),
@@ -207,6 +207,7 @@ pub fn run_settings_action(
 ) {
     match action {
         SettingsAction::OcrRescan => crate::tools::ocr::restart_ocr(editor_state, dirty_mask),
+        SettingsAction::OcrScanAll => crate::tools::ocr::scan_all(editor_state, dirty_mask),
         SettingsAction::OcrCopyAll => crate::tools::ocr::copy_all(editor_state, dirty_mask),
         SettingsAction::OcrLanguages => {
             super::model::toggle_model_popover(editor_state, dirty_mask)

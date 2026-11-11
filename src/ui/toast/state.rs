@@ -56,7 +56,7 @@ impl ToastKind {
         };
         match self {
             ToastKind::OcrPickRegion => ToastSpec {
-                text: "Drag a box over the area you want to read",
+                text: "Drag over the text, or press Enter to read it all",
                 anchor: ToastAnchor::CursorMonitorCenter,
                 life: ToastLife::Manual,
                 fade_in,

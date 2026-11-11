@@ -49,6 +49,7 @@ pub enum ToggleVisual {
 pub enum SettingsAction {
     OcrRescan,
     OcrCopyAll,
+    OcrScanAll,
     OcrLanguages,
 }
 
@@ -271,7 +272,14 @@ pub const OCR_WIDGETS_DOWNLOADING: &[SettingsWidget] = &[
 /// region itself, this just keeps the panel from advertising dead buttons.
 pub const OCR_SCANNING_WIDGETS: &[SettingsWidget] = &[SettingsWidget::Label("Reading text...")];
 
-pub const OCR_AWAITING_WIDGETS: &[SettingsWidget] = &[OCR_LANGUAGES];
+pub const OCR_AWAITING_WIDGETS: &[SettingsWidget] = &[OCR_LANGUAGES, OCR_SCAN_ALL];
+
+pub const OCR_AWAITING_DOWNLOADING_WIDGETS: &[SettingsWidget] = &[
+    OCR_LANGUAGES,
+    OCR_SCAN_ALL,
+    SettingsWidget::Separator,
+    SettingsWidget::Download,
+];
 
 pub const OCR_NO_MODEL_WIDGETS: &[SettingsWidget] = &[
     OCR_LANGUAGES,
@@ -293,6 +301,11 @@ const OCR_LANGUAGES: SettingsWidget = SettingsWidget::Action {
 const OCR_RESCAN: SettingsWidget = SettingsWidget::Action {
     action: SettingsAction::OcrRescan,
     svg: crate::ui::icons::RETRY,
+};
+
+const OCR_SCAN_ALL: SettingsWidget = SettingsWidget::Action {
+    action: SettingsAction::OcrScanAll,
+    svg: crate::ui::icons::SELECT_ALL,
 };
 
 const OCR_COPY_ALL: SettingsWidget = SettingsWidget::Action {

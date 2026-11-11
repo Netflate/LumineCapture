@@ -19,6 +19,7 @@ pub const OCR: &str = include_str!("../../assets/icons/ocr.svg");
 pub const ITALIC: &str = include_str!("../../assets/icons/italic.svg");
 pub const BOLD: &str = include_str!("../../assets/icons/bold.svg");
 pub const RETRY: &str = include_str!("../../assets/icons/retry.svg");
+pub const SELECT_ALL: &str = include_str!("../../assets/icons/select_all.svg");
 pub const COPY: &str = include_str!("../../assets/icons/copy.svg");
 pub const GLOBE: &str = include_str!("../../assets/icons/globe.svg");
 pub const DOWNLOAD: &str = include_str!("../../assets/icons/download.svg");
@@ -66,6 +67,7 @@ pub const EXTRA_ICONS: &[&str] = &[
     BLURRED,
     PIXELATED,
     RETRY,
+    SELECT_ALL,
     COPY,
     GLOBE,
     DOWNLOAD,
