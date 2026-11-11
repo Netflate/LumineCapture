@@ -80,7 +80,8 @@ impl ToolBehavior for SelectionTool {
                 state.input.pointer.global.1 as f32,
             );
             // double click on selection is equal to saving the screenshot
-            if handle == SelectionHandle::Move
+            if state.sheet.is_none()
+                && handle == SelectionHandle::Move
                 && state.input.clicks.register(ClickTarget::Selection, pos)
                 && !state.to.is_empty()
             {
