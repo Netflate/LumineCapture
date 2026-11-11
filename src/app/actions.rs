@@ -102,13 +102,8 @@ fn select_all(editor_state: &mut EditorState, dirty_mask: &mut u32) {
         }
         return;
     }
-    let placement = &editor_state.placements[editor_state.input.pointer.monitor_idx];
-    let (x, y) = placement.offset();
     let before = editor_state.selection.zone;
-    editor_state.selection.zone = match editor_state.sheet {
-        Some(_) => editor_state.workspace(),
-        None => Rect::from_xywh(x, y, placement.size.0 as f32, placement.size.1 as f32),
-    };
+    editor_state.selection.zone = editor_state.whole_zone(editor_state.input.pointer.monitor_idx);
     editor_state.record_crop(before);
     mark_all_dirty(dirty_mask, editor_state.placements.len());
     refresh_panels(editor_state, dirty_mask);

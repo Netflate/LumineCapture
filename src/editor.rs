@@ -276,6 +276,15 @@ impl EditorState {
         }
     }
 
+    pub fn whole_zone(&self, monitor_idx: usize) -> Option<Rect> {
+        if self.sheet.is_some() {
+            return self.workspace();
+        }
+        let placement = &self.placements[monitor_idx];
+        let (x, y) = placement.offset();
+        Rect::from_xywh(x, y, placement.size.0 as f32, placement.size.1 as f32)
+    }
+
     pub fn workspace(&self) -> Option<Rect> {
         crate::utils::get_full_workspace_rect(self.sources())
     }

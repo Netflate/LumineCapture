@@ -49,13 +49,22 @@ impl ToolBehavior for SelectionTool {
     ) {
         if matches!(button, MouseButton::Right) && pressed {
             let drawing = state.input.mouse_down && state.input.drag_start.is_some();
+            let mut before = state.selection.zone;
             if drawing {
                 state.input.mouse_down = false;
                 state.tool_active = false;
                 state.input.drag_start = None;
+                if let Some(from) = state.selection.crop_from.take() {
+                    before = from;
+                }
             }
-            let before = state.selection.zone;
-            if !state.input.mouse_down && state.selection.zone.take().is_some() {
+            // window has no "no crop": it goes back to the whole picture
+            let zone = state
+                .sheet
+                .as_ref()
+                .and_then(|_| state.whole_zone(state.input.pointer.monitor_idx));
+            if !state.input.mouse_down && state.selection.zone != zone {
+                state.selection.zone = zone;
                 state.record_crop(before);
                 mark_all_dirty(dirty_mask, state.placements.len());
             }
@@ -199,6 +208,84 @@ fn keep_inside(sel: Rect, bounds: Rect, moving: bool) -> Option<Rect> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::editor::testing::editor;
+
+    fn right_click(state: &mut EditorState) {
+        let mut dirty = 0;
+        SelectionTool.on_button(state, MouseButton::Right, true, &mut dirty);
+    }
+
+    #[test]
+    fn right_click_in_the_window_takes_the_whole_picture() {
+        let mut state = editor(true);
+        let whole = state.workspace();
+        assert_eq!(whole, Rect::from_xywh(0.0, 0.0, 600.0, 400.0));
+        state.selection.zone = Rect::from_xywh(10.0, 20.0, 100.0, 50.0);
+        right_click(&mut state);
+        assert_eq!(state.selection.zone, whole);
+        assert_eq!(state.undo_stack.len(), 1);
+        state.undo(&mut 0);
+        assert_eq!(
+            state.selection.zone,
+            Rect::from_xywh(10.0, 20.0, 100.0, 50.0)
+        );
+    }
+
+    #[test]
+    fn right_click_on_the_whole_picture_is_no_step() {
+        let mut state = editor(true);
+        state.selection.zone = state.workspace();
+        right_click(&mut state);
+        assert_eq!(state.selection.zone, state.workspace());
+        assert!(state.undo_stack.is_empty());
+    }
+
+    #[test]
+    fn right_click_cancelling_a_drag_is_one_step_back_to_before_it() {
+        let mut state = editor(true);
+        let before = Rect::from_xywh(10.0, 20.0, 100.0, 50.0);
+        state.selection.zone = before;
+        state.begin_crop();
+        state.selection.zone = Rect::from_xywh(0.0, 0.0, 30.0, 30.0);
+        state.input.mouse_down = true;
+        state.input.drag_start = Some((0.0, 0.0));
+        right_click(&mut state);
+        assert_eq!(state.selection.zone, state.workspace());
+        state.end_crop();
+        assert_eq!(state.undo_stack.len(), 1);
+        state.undo(&mut 0);
+        assert_eq!(state.selection.zone, before);
+    }
+
+    #[test]
+    fn right_click_during_a_handle_drag_keeps_its_undo_step() {
+        let mut state = editor(true);
+        let before = Rect::from_xywh(10.0, 20.0, 100.0, 50.0);
+        state.selection.zone = before;
+        state.begin_crop();
+        state.selection.zone = Rect::from_xywh(10.0, 20.0, 60.0, 50.0);
+        state.input.mouse_down = true;
+        state.input.drag_start = None;
+        right_click(&mut state);
+        assert_eq!(
+            state.selection.zone,
+            Rect::from_xywh(10.0, 20.0, 60.0, 50.0)
+        );
+        assert_eq!(state.selection.crop_from, Some(before));
+        state.end_crop();
+        assert_eq!(state.undo_stack.len(), 1);
+        state.undo(&mut 0);
+        assert_eq!(state.selection.zone, before);
+    }
+
+    #[test]
+    fn right_click_in_the_overlay_still_drops_the_selection() {
+        let mut state = editor(false);
+        state.selection.zone = Rect::from_xywh(10.0, 20.0, 100.0, 50.0);
+        right_click(&mut state);
+        assert_eq!(state.selection.zone, None);
+        assert!(state.undo_stack.is_empty());
+    }
 
     #[test]
     fn selection_stays_on_the_picture() {
