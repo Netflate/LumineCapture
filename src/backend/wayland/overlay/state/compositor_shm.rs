@@ -116,7 +116,7 @@ impl OverlayState {
         let pool = &mut self.pool;
         let (bw, bh) = crate::types::px_size((w, h), sd.scale);
 
-        let shm_buffer = match create_shm_buffer(pool, bw, bh) {
+        let mut shm_buffer = match create_shm_buffer(pool, bw, bh) {
             Ok(buffer) => buffer,
             Err(e) => {
                 self.configure_error = Some(e.to_string());
@@ -152,6 +152,7 @@ impl OverlayState {
         sd.surface.attach(Some(shm_buffer.wl_buffer()), 0, 0);
         sd.surface.damage_buffer(0, 0, bw as i32, bh as i32);
         sd.surface.commit();
+        shm_buffer.fresh = false;
 
         sd.shm_buffer = Some(shm_buffer);
         sd.width = w;

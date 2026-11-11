@@ -19,7 +19,7 @@ use wayland_client::backend::WaylandError;
 pub mod state;
 
 use crate::backend::ScreenOverlay;
-use crate::backend::wayland::utils::shm::create_shm_buffer;
+use crate::backend::wayland::utils::shm::{create_shm_buffer, damage_of};
 use crate::backend::wayland::utils::surface::{Background, InputRegion, Role, SurfaceData};
 use crate::types::{CursorIcon, DamageRect, Output, OverlayEvent};
 use log::warn;
@@ -307,6 +307,7 @@ impl ScreenOverlay for WaylandOverlay {
             .ok_or("SHM buffer is not configured yet")?;
 
         let changed = buffer.sync_rect(pool, pixels, bw, damage.unwrap_or((0, 0, bw, bh)));
+        let changed = damage_of(std::mem::take(&mut buffer.fresh), (bw, bh), changed);
         if changed.is_empty() {
             // still committed: a cleared background (synchronized subsurface) applies only
             // with the parent's commit. No frame callback, nothing will be shown

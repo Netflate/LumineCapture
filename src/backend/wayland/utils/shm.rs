@@ -11,6 +11,7 @@ use smithay_client_toolkit::shm::slot::{Buffer, SlotPool};
 use wayland_client::protocol::{wl_buffer, wl_shm};
 pub struct ShmBuffer {
     pub buffer: Buffer,
+    pub fresh: bool,
 }
 
 pub fn create_shm_buffer(
@@ -26,7 +27,10 @@ pub fn create_shm_buffer(
         wl_shm::Format::Argb8888,
     )?;
 
-    Ok(ShmBuffer { buffer })
+    Ok(ShmBuffer {
+        buffer,
+        fresh: true,
+    })
 }
 
 impl ShmBuffer {
@@ -55,6 +59,16 @@ impl ShmBuffer {
         }
     }
 }
+// first frame of a new buffer is fully damaged, its slot may still hold the same pixels
+// from earlier buffer, nothing looks changed then, but the compositor has never seen this one
+pub fn damage_of(fresh: bool, size: (u32, u32), changed: Vec<DamageRect>) -> Vec<DamageRect> {
+    if fresh {
+        vec![(0, 0, size.0, size.1)]
+    } else {
+        changed
+    }
+}
+
 /// Synchronizes a specified rect of the buffer with new pixels, and then updates only the
 /// tiles that have changed, and returns an optimized list of damage rect for the compositor.
 ///
@@ -136,7 +150,21 @@ fn tile_rects(changed: &[bool], cols: usize) -> Vec<DamageRect> {
 
 #[cfg(test)]
 mod tests {
-    use super::{sync_rect, tile_rects};
+    use super::{damage_of, sync_rect, tile_rects};
+
+    #[test]
+    fn fresh_buffer_is_damaged_completely() {
+        assert_eq!(damage_of(true, (80, 50), vec![]), vec![(0, 0, 80, 50)]);
+        assert_eq!(
+            damage_of(true, (80, 50), vec![(0, 0, 32, 32)]),
+            vec![(0, 0, 80, 50)]
+        );
+        assert_eq!(damage_of(false, (80, 50), vec![]), vec![]);
+        assert_eq!(
+            damage_of(false, (80, 50), vec![(32, 0, 32, 32)]),
+            vec![(32, 0, 32, 32)]
+        );
+    }
 
     fn grid(rows: &[&str]) -> (Vec<bool>, usize) {
         let cols = rows[0].len();
