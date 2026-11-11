@@ -1191,7 +1191,8 @@ row_split_gap = 4.0
 column_gutter = 6.0
 
 [ocr.detect]
-# larger screenshots are scaled down to this before detection
+# larger screenshots are scaled down to this before detection;
+# a picture more than twice as long goes through it in overlapping strips instead
 max_side = 1920
 # padding in small selections so text at the edge isn't ignored; 0 = off
 # left here mostly only for testing

@@ -127,6 +127,132 @@ impl PaddleBackend {
     }
 }
 
+impl PaddleBackend {
+    fn detect(
+        &self,
+        img: &image::RgbImage,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<Vec<Vec<Point>>, OcrError> {
+        let (w, h) = img.dimensions();
+        let (wide, plan) = plan_strips(w, h, crate::config::get().ocr.detect.max_side);
+        if let [_] = plan[..] {
+            let detected = self.detector.predict(vec![img.clone()])?;
+            if cancelled() {
+                return Err(super::CANCELLED.into());
+            }
+            let regions = detected.detections.into_iter().next().unwrap_or_default();
+            return Ok(regions.into_iter().map(|r| r.bbox.points).collect());
+        }
+
+        let (max_x, max_y) = (w.saturating_sub(1) as f32, h.saturating_sub(1) as f32);
+        let mut quads = Vec::new();
+        for strip in plan {
+            let (x, y, sw, sh) = if wide {
+                (strip.start, 0, strip.end - strip.start, h)
+            } else {
+                (0, strip.start, w, strip.end - strip.start)
+            };
+            let piece = image::imageops::crop_imm(img, x, y, sw, sh).to_image();
+            let (piece, (left, top)) = pad_for_detection(piece);
+            let detected = self.detector.predict(vec![piece])?;
+            if cancelled() {
+                return Err(super::CANCELLED.into());
+            }
+            let regions = detected.detections.into_iter().next().unwrap_or_default();
+            let (dx, dy) = (x as f32 - left as f32, y as f32 - top as f32);
+            for region in regions {
+                let pts: Vec<Point> = region
+                    .bbox
+                    .points
+                    .iter()
+                    .map(|p| Point::new((p.x + dx).clamp(0.0, max_x), (p.y + dy).clamp(0.0, max_y)))
+                    .collect();
+                let Some(bounds) = quad_bounds(&pts) else {
+                    continue;
+                };
+                let center = if wide {
+                    bounds.left() + bounds.width() / 2.0
+                } else {
+                    bounds.top() + bounds.height() / 2.0
+                };
+                if center >= strip.own_start as f32 && center < strip.own_end as f32 {
+                    quads.push(pts);
+                }
+            }
+        }
+        Ok(quads)
+    }
+}
+
+/// what neighbouring strips share, so a line cut by one's edge is whole in the other
+const STRIP_OVERLAP: u32 = 256;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Strip {
+    start: u32,
+    end: u32,
+    own_start: u32,
+    own_end: u32,
+}
+
+/// up to twice `max_side` the detector's own shrinking is kept, one strip
+fn plan_strips(w: u32, h: u32, max_side: u32) -> (bool, Vec<Strip>) {
+    let wide = w > h;
+    let (long, short) = if wide { (w, h) } else { (h, w) };
+    if long <= max_side.saturating_mul(2) {
+        return (wide, strips(long, long, STRIP_OVERLAP));
+    }
+    (wide, strips(long, max_side.max(short), STRIP_OVERLAP))
+}
+
+fn strips(long: u32, limit: u32, overlap: u32) -> Vec<Strip> {
+    let limit = limit.max(1);
+    if long <= limit {
+        return vec![Strip {
+            start: 0,
+            end: long,
+            own_start: 0,
+            own_end: long,
+        }];
+    }
+    let step = limit - overlap.min(limit / 2);
+    let mut starts = vec![0u32];
+    while let Some(&last) = starts.last()
+        && last + limit < long
+    {
+        starts.push((last + step).min(long - limit));
+    }
+    let mut out: Vec<Strip> = starts
+        .iter()
+        .map(|&start| Strip {
+            start,
+            end: start + limit,
+            own_start: 0,
+            own_end: long,
+        })
+        .collect();
+    for i in 1..out.len() {
+        let cut = (out[i].start + out[i - 1].end) / 2;
+        out[i - 1].own_end = cut;
+        out[i].own_start = cut;
+    }
+    out
+}
+
+fn quad_bounds(pts: &[Point]) -> Option<Rect> {
+    if pts.len() != 4 {
+        return None;
+    }
+    let (mut l, mut t, mut r, mut b) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+    for p in pts {
+        l = l.min(p.x);
+        t = t.min(p.y);
+        r = r.max(p.x);
+        b = b.max(p.y);
+    }
+    Rect::from_ltrb(l, t, r, b)
+}
+
 impl OcrBackend for PaddleBackend {
     fn recognize(
         &self,
@@ -151,37 +277,19 @@ impl OcrBackend for PaddleBackend {
         let stage = Instant::now();
         // `predict` takes ownership and the adapter unwraps it, so this clone
         // is unavoidable: the pixels are needed again to cut the line crops.
-        let detected = self.detector.predict(vec![img.clone()])?;
+        let quads = self.detect(&img, cancelled)?;
         let detect_ms = ms(stage);
-        if cancelled() {
-            return Err(super::CANCELLED.into());
-        }
-        let Some(regions) = detected.detections.into_iter().next() else {
-            return Ok(OcrText::default());
-        };
 
         // Boxes in image coordinates, keeping each quad for the rotated crop.
         let stage = Instant::now();
-        let mut quads: Vec<Vec<Point>> = Vec::new();
         let mut boxes: Vec<Rect> = Vec::new();
-        for region in regions {
-            let pts = region.bbox.points;
-            if pts.len() != 4 {
-                continue;
-            }
-            let (mut l, mut t, mut r, mut b) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
-            for p in &pts {
-                l = l.min(p.x);
-                t = t.min(p.y);
-                r = r.max(p.x);
-                b = b.max(p.y);
-            }
-            let Some(rect) = Rect::from_ltrb(l, t, r, b) else {
-                continue;
-            };
-            quads.push(pts);
-            boxes.push(rect);
-        }
+        let quads: Vec<Vec<Point>> = quads
+            .into_iter()
+            .filter_map(|pts| {
+                boxes.push(quad_bounds(&pts)?);
+                Some(pts)
+            })
+            .collect();
         if boxes.is_empty() {
             return Ok(OcrText::default());
         }
@@ -679,6 +787,111 @@ mod tests {
     fn images_near_max_side_are_not_padded() {
         let (out, offset) = pad_for_detection(image::RgbImage::new(1900, 100));
         assert_eq!((out.dimensions(), offset), ((1900, 100), (0, 0)));
+    }
+
+    fn check_strips(long: u32, limit: u32, overlap: u32) -> Vec<Strip> {
+        let plan = strips(long, limit, overlap);
+        assert_eq!((plan[0].start, plan[0].own_start), (0, 0));
+        assert_eq!(
+            (plan.last().unwrap().end, plan.last().unwrap().own_end),
+            (long, long)
+        );
+        for s in &plan {
+            assert!(s.end - s.start <= limit);
+            assert!(s.start <= s.own_start && s.own_start < s.own_end && s.own_end <= s.end);
+        }
+        for pair in plan.windows(2) {
+            assert_eq!(pair[0].own_end, pair[1].own_start);
+            assert!(pair[1].start < pair[0].end);
+        }
+        plan
+    }
+
+    #[test]
+    fn short_pictures_get_one_strip() {
+        let plan = check_strips(1920, 1920, 256);
+        assert_eq!(plan.len(), 1);
+        assert_eq!((plan[0].start, plan[0].end), (0, 1920));
+        assert_eq!(check_strips(500, 1920, 256).len(), 1);
+    }
+
+    #[test]
+    fn strips_cover_and_partition_the_axis() {
+        for (long, limit) in [
+            (1921, 1920),
+            (2560, 1920),
+            (6000, 1920),
+            (6000, 1000),
+            (12160, 1920),
+            (3841, 2160),
+            (10, 4),
+            (7, 2),
+        ] {
+            let plan = check_strips(long, limit, 256);
+            assert!(plan.len() > 1);
+            assert!(plan.iter().all(|s| s.end - s.start == limit));
+            let mut owned = vec![0u32; long as usize];
+            for s in &plan {
+                for i in s.own_start..s.own_end {
+                    owned[i as usize] += 1;
+                }
+            }
+            assert!(owned.iter().all(|&n| n == 1), "{long} by {limit}");
+        }
+    }
+
+    #[test]
+    fn owned_parts_split_overlaps_in_the_middle() {
+        let plan = strips(2560, 1920, 256);
+        assert_eq!(plan.len(), 2);
+        assert_eq!((plan[1].start, plan[0].end), (640, 1920));
+        assert_eq!(plan[0].own_end, 1280);
+    }
+
+    #[test]
+    fn lines_near_a_cut_sit_whole_in_the_owner() {
+        let plan = strips(6000, 1920, 256);
+        for pair in plan.windows(2) {
+            let cut = pair[0].own_end;
+            assert!(cut - pair[1].start >= 128 && pair[0].end - cut >= 128);
+        }
+    }
+
+    #[test]
+    fn strips_follow_the_long_side() {
+        let (wide, plan) = plan_strips(1000, 6000, 1920);
+        assert!(!wide);
+        assert_eq!(plan.last().unwrap().end, 6000);
+        let (wide, plan) = plan_strips(6000, 1000, 1920);
+        assert!(wide);
+        assert_eq!(plan.last().unwrap().end, 6000);
+        let (_, plan) = plan_strips(3840, 9000, 1920);
+        assert!(plan.iter().all(|s| s.end - s.start == 3840));
+    }
+
+    #[test]
+    fn up_to_twice_max_side_is_one_pass() {
+        for (w, h) in [
+            (1920, 1080),
+            (1080, 1920),
+            (2560, 1440),
+            (3840, 2160),
+            (1040, 3040),
+            (3840, 3840),
+        ] {
+            assert_eq!(plan_strips(w, h, 1920).1.len(), 1, "{w}x{h}");
+        }
+        for (w, h) in [(5120, 1440), (1040, 6080), (1920, 4320), (1040, 3841)] {
+            assert!(plan_strips(w, h, 1920).1.len() > 1, "{w}x{h}");
+        }
+    }
+
+    #[test]
+    fn quad_bounds_wants_four_points() {
+        let p = |x, y| Point::new(x, y);
+        let quad = [p(1.0, 2.0), p(9.0, 2.0), p(9.0, 5.0), p(1.0, 5.0)];
+        assert_eq!(quad_bounds(&quad), Rect::from_ltrb(1.0, 2.0, 9.0, 5.0));
+        assert!(quad_bounds(&quad[..3]).is_none());
     }
 
     #[test]
