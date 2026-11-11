@@ -104,6 +104,8 @@ pub struct Sheet {
     /// fractions not panned yet pixel : whole steps let `Picture` move the old frame
     pan_rest: (f32, f32),
     pub dragging: Option<(f64, f64)>,
+    pub hand: bool,
+    pub hand_grab: bool,
     layer: Option<Shown>,
 }
 
@@ -123,6 +125,8 @@ impl Sheet {
             stale: true,
             pan_rest: (0.0, 0.0),
             dragging: None,
+            hand: false,
+            hand_grab: false,
             layer: None,
         }
     }

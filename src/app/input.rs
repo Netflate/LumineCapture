@@ -168,6 +168,14 @@ fn hit_test_ui(editor_state: &EditorState, local: (f64, f64)) -> UiHit {
     UiHit::None
 }
 
+pub fn hand_over_picture(editor_state: &EditorState) -> bool {
+    editor_state.sheet.as_ref().is_some_and(|sheet| sheet.hand)
+        && matches!(
+            hit_test_ui(editor_state, editor_state.input.pointer.local),
+            UiHit::None | UiHit::Band
+        )
+}
+
 pub fn compute_cursor(editor_state: &EditorState) -> CursorIcon {
     if super::window::grabbing(editor_state) {
         return CursorIcon::Grabbing;
@@ -195,7 +203,9 @@ pub fn compute_cursor(editor_state: &EditorState) -> CursorIcon {
         }
         UiHit::ToolbarBackground | UiHit::Band | UiHit::SettingsBackground => CursorIcon::Default,
         UiHit::ColorPopoverOutside | UiHit::ModelPopoverOutside | UiHit::None => {
-            if editor_state.pick_once {
+            if super::window::hand_held(editor_state) {
+                CursorIcon::Grab
+            } else if editor_state.pick_once {
                 CursorIcon::Crosshair
             } else if super::scroll::blocks_tool(editor_state) {
                 CursorIcon::Default
@@ -624,6 +634,13 @@ pub fn handle_key(
     let claimed = ((special.is_some() || text.is_some()) && typing(editor_state))
         || (matches!(special, Some(SpecialKey::Up | SpecialKey::Down))
             && hovers_stepper(editor_state));
+    // in the window edit mode Space is the hand, not toggle_ui
+    if !claimed
+        && chord.is_some_and(|c| c.key == Key::Space && c.mods == Default::default())
+        && super::window::hand(editor_state, true)
+    {
+        return;
+    }
     if !claimed && let Some(action) = chord.and_then(|c| keys::map().lookup(c)) {
         super::actions::run(editor_state, action, dirty_mask);
         return;

@@ -199,6 +199,34 @@ pub fn drag(editor_state: &mut EditorState, at: (f64, f64), dirty_mask: &mut u32
     }
 }
 
+pub fn hand(editor_state: &mut EditorState, held: bool) -> bool {
+    let Some(sheet) = editor_state.sheet.as_mut() else {
+        return false;
+    };
+    sheet.hand = held;
+    true
+}
+
+pub fn hand_button(editor_state: &mut EditorState, pressed: bool) -> bool {
+    let grabbing = editor_state
+        .sheet
+        .as_ref()
+        .is_some_and(|sheet| sheet.hand_grab);
+    let start = pressed && super::input::hand_over_picture(editor_state);
+    if !(start || (grabbing && !pressed)) {
+        return false;
+    }
+    grab(editor_state, pressed);
+    if let Some(sheet) = editor_state.sheet.as_mut() {
+        sheet.hand_grab = pressed;
+    }
+    true
+}
+
+pub fn hand_held(editor_state: &EditorState) -> bool {
+    editor_state.sheet.as_ref().is_some_and(|sheet| sheet.hand)
+}
+
 pub fn grabbing(editor_state: &EditorState) -> bool {
     editor_state
         .sheet

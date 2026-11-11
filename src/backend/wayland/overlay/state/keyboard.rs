@@ -82,8 +82,11 @@ impl KeyboardHandler for OverlayState {
         _: &QueueHandle<Self>,
         _: &wl_keyboard::WlKeyboard,
         _: u32,
-        _event: KeyEvent,
+        event: KeyEvent,
     ) {
+        if event.keysym == Keysym::space {
+            self.events.push_back(OverlayEvent::SpaceReleased);
+        }
     }
     fn update_repeat_info(
         &mut self,
@@ -101,6 +104,7 @@ impl KeyboardHandler for OverlayState {
         _: &wl_surface::WlSurface,
         _: u32,
     ) {
+        self.events.push_back(OverlayEvent::SpaceReleased);
     }
 }
 

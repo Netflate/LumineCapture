@@ -448,6 +448,13 @@ fn handle_event(editor_state: &mut EditorState, ev: OverlayEvent, dirty_mask: &m
             button: crate::types::MouseButton::Middle,
             pressed,
         } if window::grab(editor_state, pressed) => {}
+        OverlayEvent::PointerButton {
+            button: crate::types::MouseButton::Left,
+            pressed,
+        } if window::hand_button(editor_state, pressed) => {}
+        OverlayEvent::SpaceReleased => {
+            window::hand(editor_state, false);
+        }
         OverlayEvent::PointerButton { button, pressed } => {
             input::handle_pointer_button(editor_state, button, pressed, dirty_mask);
         }
