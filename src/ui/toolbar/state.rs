@@ -34,6 +34,28 @@ pub const ITEMS: &[ToolbarItem] = &[
     ToolbarItem::Button(ToolbarButton::Finish(Finish::Save)),
 ];
 
+/// window has no scroll capture: the picture is already there
+pub const WINDOW_ITEMS: &[ToolbarItem] = &[
+    ToolbarItem::Button(ToolbarButton::Tool(Tool::Selection)),
+    ToolbarItem::Button(ToolbarButton::Tool(Tool::Pick)),
+    ToolbarItem::Button(ToolbarButton::Tool(Tool::Ocr)),
+    ToolbarItem::Button(ToolbarButton::Tool(Tool::Eyedropper)),
+    ToolbarItem::Seperator,
+    ToolbarItem::Button(ToolbarButton::Tool(Tool::Text)),
+    ToolbarItem::Button(ToolbarButton::Tool(Tool::Pen)),
+    ToolbarItem::Button(ToolbarButton::Tool(Tool::Highlighter)),
+    ToolbarItem::Button(ToolbarButton::Tool(Tool::Line)),
+    ToolbarItem::Button(ToolbarButton::Tool(Tool::Arrow)),
+    ToolbarItem::Button(ToolbarButton::Tool(Tool::Rectangle)),
+    ToolbarItem::Button(ToolbarButton::Tool(Tool::Circle)),
+    ToolbarItem::Button(ToolbarButton::Tool(Tool::NumeratedArrow)),
+    ToolbarItem::Button(ToolbarButton::Tool(Tool::Redact)),
+    ToolbarItem::Seperator,
+    ToolbarItem::Button(ToolbarButton::Finish(Finish::Pin)),
+    ToolbarItem::Button(ToolbarButton::Finish(Finish::Copy)),
+    ToolbarItem::Button(ToolbarButton::Finish(Finish::Save)),
+];
+
 // ==========================================
 // 2. Component State
 // ==========================================
@@ -204,6 +226,12 @@ impl Toolbar {
         toolbar.size = toolbar.natural_size();
 
         toolbar
+    }
+
+    /// another set of buttons: the size follows, the shrink stays
+    pub fn set_items(&mut self, items: &'static [ToolbarItem]) {
+        self.items = items;
+        self.set_shrink(self.shrink);
     }
 
     pub fn natural_size(&self) -> (f32, f32) {
@@ -416,5 +444,26 @@ mod tests {
             let at = (step as f64 / 4.0, 30.0);
             assert_eq!(shrunk.hit_test(at), fresh.hit_test(at), "x = {}", at.0);
         }
+    }
+
+    #[test]
+    fn the_window_toolbar_has_no_scroll_button() {
+        let overlay = Toolbar::new();
+        let mut window = Toolbar::new();
+        window.set_items(WINDOW_ITEMS);
+        let scroll = |toolbar: &Toolbar| {
+            toolbar
+                .items
+                .iter()
+                .filter(|item| matches!(item, ToolbarItem::Button(ToolbarButton::Scroll)))
+                .count()
+        };
+        assert_eq!(scroll(&overlay), 1);
+        assert_eq!(scroll(&window), 0);
+        assert_eq!(window.items.len() + 1, overlay.items.len());
+        let button =
+            crate::config::get().toolbar.button_size + crate::config::get().toolbar.button_gap;
+        assert!((overlay.natural_size().0 - window.natural_size().0 - button).abs() < 1e-3);
+        assert_eq!(window.size, window.natural_size());
     }
 }

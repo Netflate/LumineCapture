@@ -189,6 +189,10 @@ fn toggle_ui(editor_state: &mut EditorState, dirty_mask: &mut u32) {
 
 /// Switch to scrolling capture if a region is selected, or toast otherwise.
 pub(super) fn begin_scroll_capture(editor_state: &mut EditorState, dirty_mask: &mut u32) {
+    // no screen to scroll in the window
+    if editor_state.sheet.is_some() {
+        return;
+    }
     if let Some(scroll) = editor_state.scroll.as_ref() {
         if scroll.grown() {
             editor_state.to_window = true;
@@ -303,5 +307,15 @@ mod tests {
         run(&mut state, Action::Redo, &mut 0);
         dispatch_deactivate(Tool::Ocr, &mut state, &mut 0);
         assert_eq!(state.selection.zone, new);
+    }
+
+    #[test]
+    fn scroll_capture_does_nothing_in_the_window() {
+        let mut state = editor(true);
+        state.selection.zone = state.whole_zone(0);
+        run(&mut state, Action::ScrollCapture, &mut 0);
+        assert_eq!(state.mode, Mode::Editor);
+        assert!(state.scroll.is_none());
+        assert!(state.toasts.items.is_empty());
     }
 }

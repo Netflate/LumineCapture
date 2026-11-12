@@ -65,6 +65,9 @@ pub async fn run(
         super::build_ocr_state(),
     );
     editor_state.toolbar.docked = true;
+    editor_state
+        .toolbar
+        .set_items(crate::ui::toolbar::WINDOW_ITEMS);
     editor_state.sheet = Some(sheet);
     let inset = super::panels::toolbar::docked_inset(&editor_state);
     if let Some(sheet) = editor_state.sheet.as_mut() {
