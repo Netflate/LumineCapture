@@ -419,7 +419,7 @@ impl Annotation {
                 AnnotationShape::Text {
                     start: remap(*start),
                     content: content.clone(),
-                    font_size: (*font_size * scale).clamp(text.resize_min, text.resize_max),
+                    font_size: (*font_size * scale).max(text.resize_min),
                     bold: *bold,
                     italic: *italic,
                     outline: *outline,
@@ -726,7 +726,7 @@ fn apply_text_resize_incremental(
     };
 
     let text = &crate::config::get().annotations.text;
-    let new_font_size = (*font_size * scale).clamp(text.resize_min, text.resize_max);
+    let new_font_size = (*font_size * scale).max(text.resize_min);
     let applied_scale = new_font_size / *font_size;
 
     start.0 = anchor_x + (start.0 - anchor_x) * applied_scale;

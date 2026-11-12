@@ -510,7 +510,6 @@ section!(TextBox {
     line_height: f32 = 1.2,
     min_width: f32 = 10.0,
     resize_min: f32 = 6.0,
-    resize_max: f32 = 300.0,
     outline_width: f32 = 0.04,
     selected_text: ThemeColor = ThemeColor::default(),
 });
@@ -526,14 +525,12 @@ section!(Annotations {
 section!(Stroke {
     width: f32 = 12.0,
     min: f32 = 1.0,
-    max: f32 = 40.0,
     step: f32 = 1.0,
 });
 
 section!(Font {
     size: f32 = 32.0,
     min: f32 = 8.0,
-    max: f32 = 72.0,
     step: f32 = 1.0,
     bold: bool = true,
     italic: bool = false,
@@ -1050,9 +1047,8 @@ digits_flip = 0.55
 [annotations.text]
 line_height = 1.2
 min_width = 10.0
-# font size limits while resizing a text box with the mouse
+# smallest font size while resizing a text box with the mouse
 resize_min = 6.0
-resize_max = 300.0
 # fraction of the font size
 outline_width = 0.04
 # selected_text = "#CDD6F4"     # theme.foreground
@@ -1066,13 +1062,11 @@ fill = false
 [tools.stroke]
 width = 12.0
 min = 1.0
-max = 40.0
 step = 1.0
 
 [tools.font]
 size = 32.0
 min = 8.0
-max = 72.0
 step = 1.0
 bold = true
 italic = false
@@ -1353,36 +1347,20 @@ fn validate(config: &mut Config) {
         highlighter.smoothing = Highlighter::default().smoothing;
     }
 
-    // clamp() panics when min > max, so a flipped range falls back as a whole
     let stroke = &mut config.tools.stroke;
-    if stroke.min > stroke.max || stroke.step <= 0.0 {
-        complain(
-            "config: tools.stroke needs min <= max and a positive step, using the defaults"
-                .to_string(),
-        );
+    if stroke.step <= 0.0 {
+        complain("config: tools.stroke needs a positive step, using the defaults".to_string());
         *stroke = Stroke::default();
     }
     let font = &mut config.tools.font;
-    if font.min > font.max || font.step <= 0.0 {
-        complain(
-            "config: tools.font needs min <= max and a positive step, using the defaults"
-                .to_string(),
-        );
+    if font.step <= 0.0 {
+        complain("config: tools.font needs a positive step, using the defaults".to_string());
         *font = Font::default();
     }
     let redact = &mut config.tools.redact;
     if redact.step <= 0.0 {
         complain("config: tools.redact needs a positive step, using the default".to_string());
         redact.step = Redact::default().step;
-    }
-    let text = &mut config.annotations.text;
-    if text.resize_min > text.resize_max {
-        complain(
-            "config: annotations.text.resize_min is above resize_max, using the defaults"
-                .to_string(),
-        );
-        text.resize_min = TextBox::default().resize_min;
-        text.resize_max = TextBox::default().resize_max;
     }
     if config.theme.line_height.is_nan() || config.theme.line_height <= 0.0 {
         complain("config: theme.line_height must be above 0, using the default".to_string());
@@ -1712,8 +1690,8 @@ mod tests {
     }
 
     #[test]
-    fn a_flipped_range_falls_back_to_the_default() {
-        let config = read("[tools.stroke]\nmin = 50.0\nmax = 10.0\n");
+    fn a_zero_step_falls_back_to_the_default() {
+        let config = read("[tools.stroke]\nstep = 0.0\n");
         assert_eq!(config.tools.stroke, Stroke::default());
     }
 

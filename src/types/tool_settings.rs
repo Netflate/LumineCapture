@@ -102,14 +102,14 @@ impl Default for ToolSettings {
             saved
                 .stroke(group)
                 .unwrap_or(tools.stroke.width)
-                .clamp(tools.stroke.min, tools.stroke.max)
+                .max(tools.stroke.min)
         });
         Self {
             strokes,
             font_size: saved
                 .font_size
                 .unwrap_or(tools.font.size)
-                .clamp(tools.font.min, tools.font.max),
+                .max(tools.font.min),
             strength: saved
                 .strength
                 .unwrap_or(tools.redact.strength)

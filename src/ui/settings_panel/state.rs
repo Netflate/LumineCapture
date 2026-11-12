@@ -75,8 +75,8 @@ impl StepperRange {
     pub fn get(self) -> (f32, f32, f32) {
         let tools = &crate::config::get().tools;
         match self {
-            StepperRange::Stroke => (tools.stroke.min, tools.stroke.max, tools.stroke.step),
-            StepperRange::Font => (tools.font.min, tools.font.max, tools.font.step),
+            StepperRange::Stroke => (tools.stroke.min, f32::INFINITY, tools.stroke.step),
+            StepperRange::Font => (tools.font.min, f32::INFINITY, tools.font.step),
             StepperRange::Strength => {
                 let (min, max) = crate::types::tool_settings::STRENGTH;
                 (min, max, tools.redact.step)

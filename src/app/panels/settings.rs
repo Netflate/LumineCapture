@@ -433,6 +433,9 @@ fn try_apply_stepper_text(
     let Ok(parsed) = text.parse::<f32>() else {
         return false;
     };
+    if !parsed.is_finite() {
+        return false;
+    }
     apply_stepper_field(
         editor_state,
         range,
