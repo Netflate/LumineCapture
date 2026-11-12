@@ -437,6 +437,7 @@ fn handle_event(editor_state: &mut EditorState, ev: OverlayEvent, dirty_mask: &m
         OverlayEvent::Tick
         | OverlayEvent::EscapePressed
         | OverlayEvent::Focus { .. }
+        | OverlayEvent::Ime { .. }
         | OverlayEvent::FrameDone { .. } => {}
         OverlayEvent::Resized { size, scale, .. } => {
             window::resized(editor_state, size, scale, dirty_mask);

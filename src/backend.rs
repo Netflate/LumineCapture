@@ -106,6 +106,8 @@ pub trait ScreenOverlay: Send {
         height: u32,
     ) -> Result<(), Box<dyn std::error::Error>>;
     fn set_cursor(&mut self, icon: CursorIcon);
+    /// Caret rect in surface coordinates while a text field is edited, `None` otherwise
+    fn set_ime(&mut self, area: Option<(i32, i32, i32, i32)>);
     /// Drops the static snapshot subsurface on `monitor_idx` to expose the live screen beneath.
     fn clear_background(&mut self, monitor_idx: usize) -> Result<(), Box<dyn std::error::Error>>;
     /// lets the pointer fall through `hole` to the window beneath, `None` takes all input back

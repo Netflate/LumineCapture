@@ -33,6 +33,11 @@ impl SeatHandler for OverlayState {
             Capability::Keyboard => {
                 // Initialize keyboard
                 let _ = self.seat.get_keyboard(qh, &seat, None);
+                if self.text_input.is_none()
+                    && let Some(manager) = self.text_input_manager.as_ref()
+                {
+                    self.text_input = Some(manager.get_text_input(&seat, qh, ()));
+                }
             }
             _ => {}
         }

@@ -535,6 +535,13 @@ impl ScreenOverlay for WaylandOverlay {
         self.runtime.state.apply_cursor(icon);
     }
 
+    fn set_ime(&mut self, area: Option<(i32, i32, i32, i32)>) {
+        let rt = &mut self.runtime;
+        if rt.state.set_ime(area) {
+            let _ = rt.event_queue.flush();
+        }
+    }
+
     fn clear_background(&mut self, monitor_idx: usize) -> Result<(), Box<dyn std::error::Error>> {
         let rt = &mut self.runtime;
         let Some(sd) = rt.state.surfaces.get_mut(&monitor_idx) else {

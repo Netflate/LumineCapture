@@ -49,6 +49,10 @@ pub enum OverlayEvent {
         chord: Option<Chord>,
         text: Option<String>,
     },
+    Ime {
+        preedit: Option<String>,
+        commit: Option<String>,
+    },
     /// Space went up, or the keyboard left the window with it down
     SpaceReleased,
     ModifiersChanged {

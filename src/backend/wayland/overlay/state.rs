@@ -1,6 +1,7 @@
 pub mod compositor_shm;
 pub mod cursor;
 pub mod global;
+pub mod ime;
 pub mod keyboard;
 pub mod layer;
 pub mod output;
@@ -21,6 +22,9 @@ use wayland_protocols::wp::{
 
 use wayland_client::{Connection, EventQueue};
 use wayland_protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::WpCursorShapeDeviceV1;
+use wayland_protocols::wp::text_input::zv3::client::{
+    zwp_text_input_manager_v3::ZwpTextInputManagerV3, zwp_text_input_v3::ZwpTextInputV3,
+};
 
 // new smithay
 use smithay_client_toolkit::output::OutputState;
@@ -45,6 +49,9 @@ pub struct OverlayState {
     pub subcompositor: Option<smithay_client_toolkit::subcompositor::SubcompositorState>,
     pub layer_shell: Option<smithay_client_toolkit::shell::wlr_layer::LayerShell>,
     pub probe: Option<Probe>,
+    pub text_input_manager: Option<ZwpTextInputManagerV3>,
+    pub text_input: Option<ZwpTextInputV3>,
+    pub ime: ime::Ime,
     // ── pointer ──────────────────────────────────────────────────────────────────
     pub cursor_shape_device: Option<WpCursorShapeDeviceV1>,
     pub pointer_enter_serial: u32,
@@ -106,6 +113,10 @@ impl OverlayRunTime {
             .bind::<wp_viewporter::WpViewporter, _, _>(&qh, 1..=1, ())
             .ok();
 
+        let text_input_manager = globals
+            .bind::<ZwpTextInputManagerV3, _, _>(&qh, 1..=1, ())
+            .ok();
+
         // ───── construction
         let mut state = OverlayState::new(
             compositor_state,
@@ -119,6 +130,7 @@ impl OverlayRunTime {
             frac,
             viewporter,
         );
+        state.text_input_manager = text_input_manager;
         state.subcompositor = smithay_client_toolkit::subcompositor::SubcompositorState::bind(
             state.compositor_state.wl_compositor().clone(),
             &globals,
@@ -165,6 +177,9 @@ impl OverlayState {
             subcompositor: None,
             layer_shell: None,
             probe: None,
+            text_input_manager: None,
+            text_input: None,
+            ime: ime::Ime::default(),
 
             cursor_shape_device: None,
             current_cursor_icon: CursorIcon::default(),
