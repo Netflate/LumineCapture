@@ -100,13 +100,16 @@ pub fn min_window_size(toolbar: (f32, f32)) -> (u32, u32) {
     let margin = size::margin();
     (
         (toolbar.0 + margin * 2.0).ceil() as u32,
-        (toolbar.1 * 3.0).ceil() as u32,
+        // header + two toolbars of the picture under it
+        (toolbar.1 * 3.0 + crate::ui::settings_panel::height()).ceil() as u32,
     )
 }
 
 pub fn docked_inset(editor_state: &EditorState) -> f32 {
-    let height = editor_state.toolbar.natural_size().1 * fit_toolbar(editor_state);
-    (height * editor_state.placements[0].scale).ceil()
+    let scale = editor_state.placements[0].scale;
+    let toolbar = editor_state.toolbar.natural_size().1 * fit_toolbar(editor_state);
+    // panel starts where the toolbar's rounded edge does
+    (toolbar * scale).round() + (crate::ui::settings_panel::height() * scale).ceil()
 }
 
 fn compute_toolbar_placement(editor_state: &EditorState) -> (usize, (f32, f32), bool) {
@@ -168,4 +171,67 @@ fn compute_toolbar_placement(editor_state: &EditorState) -> (usize, (f32, f32), 
     });
 
     (monitor_idx, (pos_x, pos_y), in_frames)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::editor::testing::editor;
+    use crate::tools::Tool;
+    use crate::ui::settings_panel::height;
+
+    fn window(width: i32) -> EditorState {
+        let mut state = editor(true);
+        state.placements[0].size = (width, 600);
+        state.toolbar.docked = true;
+        state.toolbar.set_items(crate::ui::toolbar::WINDOW_ITEMS);
+        state
+    }
+
+    #[test]
+    fn the_header_is_the_toolbar_and_a_row_for_the_settings() {
+        let state = window(1600);
+        let toolbar = state.toolbar.natural_size().1;
+        assert_eq!(docked_inset(&state), toolbar + height());
+    }
+
+    #[test]
+    fn a_shrunk_toolbar_leaves_the_settings_row_whole() {
+        let mut state = window(300);
+        let fit = fit_toolbar(&state);
+        assert!(fit < 1.0);
+        let toolbar = state.toolbar.natural_size().1 * fit;
+        assert_eq!(docked_inset(&state), toolbar.round() + height());
+        state.placements[0].scale = 2.0;
+        assert_eq!(
+            docked_inset(&state),
+            (toolbar * 2.0).round() + height() * 2.0
+        );
+    }
+
+    #[test]
+    fn the_panel_ends_where_the_picture_begins_for_every_tool() {
+        let mut state = window(1600);
+        let inset = docked_inset(&state);
+        let natural = state.toolbar.natural_size().1;
+        for tool in [Tool::Selection, Tool::Pen, Tool::Text, Tool::Ocr] {
+            state.selected_tool = tool;
+            update_toolbar(&mut state, &mut 0);
+            state.toolbar.render_pos = state.toolbar.position;
+            crate::app::panels::settings::update_settings_panel(&mut state, &mut 0);
+            let panel = &state.settings_panel;
+            if panel.visible {
+                assert_eq!(panel.render_pos.1 + panel.size.1, inset, "{tool:?}");
+                assert_eq!(panel.size.1, height());
+            }
+            assert_eq!(docked_inset(&state), natural + height(), "{tool:?}");
+        }
+    }
+
+    #[test]
+    fn the_window_is_never_smaller_than_the_header_and_some_picture() {
+        let toolbar = (600.0, 42.0);
+        let (_, h) = min_window_size(toolbar);
+        assert_eq!(h as f32, toolbar.1 * 3.0 + height());
+    }
 }

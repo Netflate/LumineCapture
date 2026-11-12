@@ -29,7 +29,7 @@ pub async fn run(
     let (size, monitor_scale) = crate::edit::initial_size(
         window.discovered_outputs(),
         picture,
-        crate::theme::size::panel_height(),
+        crate::theme::size::panel_height() + crate::ui::settings_panel::height(),
     );
     window.open_window(TITLE, size, monitor_scale)?;
     let ((w, h), scale) = window.window_size().ok_or("the window got no size")?;

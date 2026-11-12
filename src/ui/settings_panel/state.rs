@@ -373,6 +373,10 @@ impl PanelItem for SettingsWidget {
     }
 }
 
+pub fn height() -> f32 {
+    size::panel_height()
+}
+
 pub struct SettingsPanel {
     pub widgets: &'static [SettingsWidget],
     pub active_source: Option<SettingsSource>,
@@ -421,7 +425,7 @@ impl SettingsPanel {
             active_source: None,
             position: (0.0, 0.0),
             render_pos: (0.0, 0.0),
-            size: (0.0, size::panel_height()),
+            size: (0.0, height()),
             monitor_idx: 0,
             visible: false,
             attached: false,
