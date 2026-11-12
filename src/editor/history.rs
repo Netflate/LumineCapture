@@ -31,7 +31,7 @@ impl EditorState {
     pub fn snapshot_of(&self, annotations: Vec<Annotation>) -> Snapshot {
         Snapshot {
             annotations,
-            zone: self.selection.zone,
+            zone: self.crop(),
         }
     }
 
@@ -47,7 +47,7 @@ impl EditorState {
 
     pub fn commit_snapshot(&mut self, snapshot: Option<Snapshot>) {
         if let Some(snapshot) = snapshot
-            && snapshot.differs(&self.annotations, self.selection.zone, self.sheet.is_some())
+            && snapshot.differs(&self.annotations, self.crop(), self.sheet.is_some())
         {
             self.push_snapshot(snapshot);
         }

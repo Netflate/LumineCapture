@@ -48,14 +48,8 @@ pub fn run(editor_state: &mut EditorState, action: Action, dirty_mask: &mut u32)
                 editor_state.cancel = true;
             }
         }
-        Action::Undo => {
-            editor_state.undo(dirty_mask);
-            super::refresh_panels_after_history(editor_state, dirty_mask);
-        }
-        Action::Redo => {
-            editor_state.redo(dirty_mask);
-            super::refresh_panels_after_history(editor_state, dirty_mask);
-        }
+        Action::Undo => step_history(editor_state, EditorState::undo, dirty_mask),
+        Action::Redo => step_history(editor_state, EditorState::redo, dirty_mask),
         Action::Delete => {
             if editor_state.selected_tool == Tool::Pick {
                 crate::tools::pick::delete_selected(editor_state, dirty_mask);
@@ -84,6 +78,19 @@ pub fn run(editor_state: &mut EditorState, action: Action, dirty_mask: &mut u32)
         }
     }
     apply_damage_rects(editor_state, dirty_mask);
+}
+
+fn step_history(
+    editor_state: &mut EditorState,
+    step: fn(&mut EditorState, &mut u32),
+    dirty_mask: &mut u32,
+) {
+    let ocr = crate::tools::ocr::release_crop_for_history(editor_state, dirty_mask);
+    step(editor_state, dirty_mask);
+    if ocr {
+        crate::tools::ocr::retake_crop(editor_state, dirty_mask);
+    }
+    super::refresh_panels_after_history(editor_state, dirty_mask);
 }
 
 fn tool_copy(editor_state: &mut EditorState, dirty_mask: &mut u32) -> bool {
@@ -267,4 +274,34 @@ mod tests {
         assert!(state.cancel);
     }
 
+    #[test]
+    fn undo_with_the_ocr_tool_steps_the_real_crop() {
+        use crate::tools::{dispatch_activate, dispatch_deactivate};
+
+        let mut state = editor(true);
+        state.ocr.models.fake_installed();
+        let old = Rect::from_xywh(0.0, 0.0, 200.0, 100.0);
+        let new = Rect::from_xywh(10.0, 20.0, 100.0, 50.0);
+        state.selection.zone = old;
+        state.selection.zone = new;
+        state.record_crop(old);
+        state.selected_tool = Tool::Ocr;
+        dispatch_activate(Tool::Ocr, &mut state, &mut 0);
+        state.selection.zone = Rect::from_xywh(30.0, 30.0, 40.0, 40.0);
+        assert_eq!(state.crop(), new);
+
+        run(&mut state, Action::Undo, &mut 0);
+        assert_eq!(state.crop(), old);
+        assert_eq!(state.selection.zone, old);
+        assert!(state.ocr.await_region);
+        dispatch_deactivate(Tool::Ocr, &mut state, &mut 0);
+        assert_eq!(state.selection.zone, old);
+        assert!(state.ocr.crop.is_none());
+
+        state.selected_tool = Tool::Ocr;
+        dispatch_activate(Tool::Ocr, &mut state, &mut 0);
+        run(&mut state, Action::Redo, &mut 0);
+        dispatch_deactivate(Tool::Ocr, &mut state, &mut 0);
+        assert_eq!(state.selection.zone, new);
+    }
 }

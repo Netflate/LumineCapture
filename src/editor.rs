@@ -89,6 +89,8 @@ pub struct OcrState {
     pub redrag: bool,
     pub redrag_from: Option<Rect>,
     pub await_region: bool,
+    /// window's crop while ocr tool borrows `selection.zone` as its area
+    pub crop: Option<Option<Rect>>,
     /// When the running recognition started, driving the progress badge's spin.
     /// `None` whenever nothing is in flight.
     pub scan_started: Option<Instant>,
@@ -283,6 +285,10 @@ impl EditorState {
         let placement = &self.placements[monitor_idx];
         let (x, y) = placement.offset();
         Rect::from_xywh(x, y, placement.size.0 as f32, placement.size.1 as f32)
+    }
+
+    pub fn crop(&self) -> Option<Rect> {
+        self.ocr.crop.unwrap_or(self.selection.zone)
     }
 
     pub fn workspace(&self) -> Option<Rect> {

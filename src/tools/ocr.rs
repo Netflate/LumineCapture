@@ -19,6 +19,7 @@ impl ToolBehavior for OcrTool {
     // there. The work runs on a background thread; `app` polls for the result
     // and calls `finish_ocr`.
     fn on_activate(&self, state: &mut EditorState, _dirty_mask: &mut u32) {
+        hold_crop(state);
         state.ocr.runtime.prepare();
         if state.ocr.runtime.is_busy() {
             return;
@@ -127,7 +128,7 @@ impl ToolBehavior for OcrTool {
 
     // on deactivate we cancel scan in progress, or cache scanned text if it was done.
     // and in both cases clear the visuals
-    fn on_deactivate(&self, state: &mut EditorState, _dirty_mask: &mut u32) {
+    fn on_deactivate(&self, state: &mut EditorState, dirty_mask: &mut u32) {
         let scanning = state.ocr.runtime.is_busy();
         cancel_scan(state);
         if scanning {
@@ -142,6 +143,10 @@ impl ToolBehavior for OcrTool {
         state.toasts.dismiss(ToastKind::OcrPickRegion);
         state.toasts.dismiss(ToastKind::OcrNoModel);
         dismiss_scan_toasts(state);
+        if state.ocr.crop.is_some() {
+            release_crop(state);
+            mark_all_dirty(dirty_mask, state.placements.len());
+        }
     }
 
     fn cursor(&self, state: &EditorState) -> CursorIcon {
@@ -265,9 +270,45 @@ fn restore_zone(state: &mut EditorState) {
 
 /// box the user actually set: in the window, whole picture is just "no crop"
 fn real_box(state: &EditorState) -> Option<Rect> {
-    let zone = state.selection.zone?;
+    let zone = state.crop()?;
     let whole = state.whole_zone(state.input.pointer.monitor_idx);
     (state.sheet.is_none() || Some(zone) != whole).then_some(zone)
+}
+
+fn hold_crop(state: &mut EditorState) {
+    if state.sheet.is_some() && state.ocr.crop.is_none() {
+        state.ocr.crop = Some(state.selection.zone);
+    }
+}
+
+fn restore_crop(state: &mut EditorState) {
+    let Some(crop) = state.ocr.crop else { return };
+    if state.selection.zone != crop {
+        for zone in [state.selection.zone, crop].into_iter().flatten() {
+            state.damage_rects.push(DamageZone::Global(zone));
+        }
+        state.selection.zone = crop;
+    }
+}
+
+fn release_crop(state: &mut EditorState) {
+    restore_crop(state);
+    state.ocr.crop = None;
+}
+
+/// undo and redo move the crop; true when the tool had it and must take it back after
+pub fn release_crop_for_history(state: &mut EditorState, dirty_mask: &mut u32) -> bool {
+    if state.ocr.crop.is_none() {
+        return false;
+    }
+    back_to_awaiting(state, dirty_mask);
+    release_crop(state);
+    true
+}
+
+pub fn retake_crop(state: &mut EditorState, dirty_mask: &mut u32) {
+    hold_crop(state);
+    back_to_awaiting(state, dirty_mask);
 }
 
 pub fn awaiting(state: &EditorState) -> bool {
@@ -283,6 +324,7 @@ fn back_to_awaiting(state: &mut EditorState, dirty_mask: &mut u32) {
         state.selection.set_drag(SelectionHandle::None, None, None);
         restore_zone(state);
     }
+    restore_crop(state);
     cancel_scan(state);
     state.ocr.view.clear();
     dismiss_scan_toasts(state);
@@ -308,7 +350,12 @@ pub fn scan_all(state: &mut EditorState, dirty_mask: &mut u32) {
         ask_for_model(state);
         return;
     }
-    let Some(zone) = state.whole_zone(state.input.pointer.monitor_idx) else {
+    let whole = state.whole_zone(state.input.pointer.monitor_idx);
+    let Some(zone) = (if state.sheet.is_some() {
+        state.crop().or(whole)
+    } else {
+        whole
+    }) else {
         return;
     };
     damage_all(state);
@@ -576,18 +623,23 @@ mod tests {
     }
 
     #[test]
-    fn scanning_everything_takes_the_whole_zone() {
+    fn scanning_everything_takes_the_crop_in_the_window_and_the_monitor_in_the_overlay() {
         let mut state = ready(true);
-        state.selection.zone = Rect::from_xywh(10.0, 20.0, 100.0, 50.0);
-        state.ocr.await_region = true;
+        let crop = Rect::from_xywh(10.0, 20.0, 100.0, 50.0);
+        state.selection.zone = crop;
+        OcrTool.on_activate(&mut state, &mut 0);
+        OcrTool.on_button(&mut state, MouseButton::Right, true, &mut 0);
         assert!(awaiting(&state));
         scan_all(&mut state, &mut 0);
-        assert_eq!(state.selection.zone, state.workspace());
-        assert_eq!(
-            state.selection.zone,
-            Rect::from_xywh(0.0, 0.0, 600.0, 400.0)
-        );
+        assert_eq!(state.selection.zone, crop);
         assert!(!state.ocr.await_region);
+        OcrTool.on_deactivate(&mut state, &mut 0);
+        assert_eq!(state.selection.zone, crop);
+
+        let mut state = ready(true);
+        OcrTool.on_activate(&mut state, &mut 0);
+        scan_all(&mut state, &mut 0);
+        assert_eq!(state.selection.zone, state.workspace());
 
         let mut state = ready(false);
         state.ocr.await_region = true;
@@ -596,6 +648,45 @@ mod tests {
             state.selection.zone,
             Rect::from_xywh(0.0, 0.0, 300.0, 200.0)
         );
+    }
+
+    #[test]
+    fn window_ocr_area_never_replaces_the_crop() {
+        let mut state = ready(true);
+        let crop = Rect::from_xywh(10.0, 20.0, 100.0, 50.0);
+        state.selection.zone = crop;
+        OcrTool.on_activate(&mut state, &mut 0);
+        OcrTool.on_button(&mut state, MouseButton::Right, true, &mut 0);
+
+        state.input.pointer = crate::types::PointerState::new(0, (150.0, 100.0), (150.0, 100.0));
+        OcrTool.on_button(&mut state, MouseButton::Left, true, &mut 0);
+        OcrTool.on_move(&mut state, (250.0, 180.0), &mut 0);
+        OcrTool.on_button(&mut state, MouseButton::Left, false, &mut 0);
+        let area = Rect::from_ltrb(150.0, 100.0, 250.0, 180.0);
+        assert_eq!(state.selection.zone, area);
+        assert_eq!(state.crop(), crop);
+        assert!(state.undo_stack.is_empty());
+
+        let (png, origin, _) = crate::app::render_final(&mut state).unwrap();
+        assert!(!png.is_empty());
+        assert_eq!(origin, (10, 20));
+
+        OcrTool.on_deactivate(&mut state, &mut 0);
+        assert_eq!(state.selection.zone, crop);
+        assert_eq!(state.crop(), crop);
+        assert!(state.undo_stack.is_empty());
+    }
+
+    #[test]
+    fn right_click_in_the_window_shows_the_crop_again() {
+        let mut state = ready(true);
+        let crop = Rect::from_xywh(10.0, 20.0, 100.0, 50.0);
+        state.selection.zone = crop;
+        OcrTool.on_activate(&mut state, &mut 0);
+        state.selection.zone = Rect::from_xywh(0.0, 0.0, 30.0, 30.0);
+        OcrTool.on_button(&mut state, MouseButton::Right, true, &mut 0);
+        assert_eq!(state.selection.zone, crop);
+        assert!(state.ocr.await_region);
     }
 
     #[test]

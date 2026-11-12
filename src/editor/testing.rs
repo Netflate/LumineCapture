@@ -40,6 +40,7 @@ pub fn editor(window: bool) -> EditorState {
             redrag: false,
             redrag_from: None,
             await_region: false,
+            crop: None,
             scan_started: None,
         },
     );

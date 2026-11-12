@@ -292,6 +292,7 @@ fn build_ocr_state() -> OcrState {
         redrag: false,
         redrag_from: None,
         await_region: false,
+        crop: None,
         scan_started: None,
     }
 }
@@ -935,7 +936,7 @@ pub(crate) fn render_final(editor_state: &mut EditorState) -> Option<(Vec<u8>, (
     if editor_state.scroll.is_some() {
         return scroll::render_final(editor_state);
     }
-    let sel = match editor_state.selection.zone {
+    let sel = match editor_state.crop() {
         Some(s) => s,
         None => editor_state.workspace()?,
     };
