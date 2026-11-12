@@ -540,6 +540,22 @@ pub fn apply_toggle_field(
     update_settings_panel(editor_state, dirty_mask);
 }
 
+fn next_on_grid(current: f32, step: f32, up: bool) -> f32 {
+    let cells = current / step;
+    let nearest = cells.round();
+    let cells = if (cells - nearest).abs() < 1e-4 {
+        nearest
+    } else {
+        cells
+    };
+    let next = if up {
+        cells.floor() + 1.0
+    } else {
+        cells.ceil() - 1.0
+    };
+    next * step
+}
+
 pub fn apply_stepper_arrow_step(
     editor_state: &mut EditorState,
     widget_idx: usize,
@@ -559,12 +575,7 @@ pub fn apply_stepper_arrow_step(
     let (min, max, step) = range.get();
     let current = stepper_value(editor_state, range);
 
-    let delta = if arrow == StepperArrow::Up {
-        step
-    } else {
-        -step
-    };
-    let new_value = (current + delta).clamp(min, max);
+    let new_value = next_on_grid(current, step, arrow == StepperArrow::Up).clamp(min, max);
 
     apply_stepper_field(editor_state, range, new_value, false, dirty_mask);
 }
@@ -656,5 +667,39 @@ fn format_stepper_number(v: f32) -> String {
         format!("{}", v as i32)
     } else {
         format!("{:.1}", v)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::next_on_grid;
+
+    #[test]
+    fn whole_values_move_by_a_step() {
+        assert_eq!(next_on_grid(12.0, 1.0, true), 13.0);
+        assert_eq!(next_on_grid(12.0, 1.0, false), 11.0);
+    }
+
+    #[test]
+    fn a_fraction_lands_on_the_next_whole_one() {
+        assert_eq!(next_on_grid(37.4, 1.0, true), 38.0);
+        assert_eq!(next_on_grid(37.4, 1.0, false), 37.0);
+        assert_eq!(next_on_grid(37.9, 1.0, true), 38.0);
+    }
+
+    #[test]
+    fn a_big_step_keeps_to_its_grid() {
+        assert_eq!(next_on_grid(12.0, 5.0, true), 15.0);
+        assert_eq!(next_on_grid(12.0, 5.0, false), 10.0);
+        assert_eq!(next_on_grid(10.0, 5.0, false), 5.0);
+    }
+
+    #[test]
+    fn a_float_step_does_not_drift() {
+        let mut value = 0.0;
+        for _ in 0..30 {
+            value = next_on_grid(value, 0.1, true);
+        }
+        assert!((value - 3.0).abs() < 1e-4);
     }
 }
