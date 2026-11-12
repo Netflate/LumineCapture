@@ -56,6 +56,14 @@ pub const WINDOW_ITEMS: &[ToolbarItem] = &[
     ToolbarItem::Button(ToolbarButton::Finish(Finish::Save)),
 ];
 
+/// how much of the bottom edge a panel hangs from
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Attached {
+    No,
+    Part,
+    Full,
+}
+
 // ==========================================
 // 2. Component State
 // ==========================================
@@ -68,6 +76,7 @@ pub struct Toolbar {
     pub size: (f32, f32),
     pub shrink: f32,
     pub docked: bool,
+    pub attached: Attached,
     pub opacity: f32,
     pub monitor_idx: usize,
 
@@ -92,6 +101,7 @@ pub struct ToolbarLook {
     to: Outputs,
     size: (f32, f32),
     docked: bool,
+    attached: Attached,
 }
 
 impl Default for Toolbar {
@@ -208,6 +218,7 @@ impl Toolbar {
             size: (0.0, size::panel_height()),
             shrink: 1.0,
             docked: false,
+            attached: Attached::No,
             opacity: 1.0,
             monitor_idx: 0,
             position: (0.0, 0.0),
@@ -251,6 +262,7 @@ impl Toolbar {
             to: self.to,
             size: self.size,
             docked: self.docked,
+            attached: self.attached,
         }
     }
 

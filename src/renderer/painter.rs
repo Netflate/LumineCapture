@@ -14,7 +14,7 @@ use tiny_skia::{
 use usvg::Tree;
 
 use super::paths::{Corners, rounded_rect_path};
-use crate::theme::radius;
+use crate::theme::{color, radius, stroke};
 
 pub type Icons = HashMap<&'static str, Tree>;
 
@@ -177,7 +177,8 @@ impl<'a> Painter<'a> {
         color: impl Into<Color>,
     ) {
         let top = corners.top();
-        if let Some(path) = rounded_rect_path(&rect, radius, top, top, true, true) {
+        let (bl, br) = (corners.bottom_left(), corners.bottom_right());
+        if let Some(path) = rounded_rect_path(&rect, radius, top, top, br, bl) {
             self.fill_path(&path, color);
         }
     }
@@ -248,6 +249,16 @@ impl<'a> Painter<'a> {
         if fresh || redraw {
             pixmap.fill(Color::TRANSPARENT);
             content(&mut self.sub(pixmap));
+        }
+
+        if corners == Corners::Hanging {
+            let rows = (stroke::border() * s).ceil();
+            let mut paint = Paint::default();
+            paint.set_color(color::backdrop().fade(opacity));
+            if let Some(strip) = Rect::from_xywh(x, y - rows, pw as f32, rows) {
+                self.canvas
+                    .fill_rect(strip, &paint, Transform::identity(), None);
+            }
         }
 
         self.canvas.draw_pixmap(

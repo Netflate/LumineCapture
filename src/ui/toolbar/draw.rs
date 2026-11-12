@@ -3,7 +3,7 @@ use crate::theme::{radius, size};
 use crate::ui::icons::{get_svg_for_finish, get_svg_for_tool};
 use crate::ui::panel::PanelItem;
 use crate::ui::panel::UiPanel;
-use crate::ui::toolbar::{Toolbar, ToolbarButton, ToolbarItem};
+use crate::ui::toolbar::{Attached, Toolbar, ToolbarButton, ToolbarItem};
 use tiny_skia::Rect;
 
 pub fn draw_toolbar(p: &mut Painter, toolbar: &mut Toolbar) {
@@ -28,10 +28,11 @@ pub fn draw_toolbar(p: &mut Painter, toolbar: &mut Toolbar) {
 }
 
 fn corners(toolbar: &Toolbar) -> Corners {
-    if toolbar.docked {
-        Corners::Bottom
-    } else {
-        Corners::All
+    match (toolbar.docked, toolbar.attached) {
+        (false, _) => Corners::All,
+        (true, Attached::No) => Corners::Bottom,
+        (true, Attached::Part) => Corners::BottomRight,
+        (true, Attached::Full) => Corners::Flat,
     }
 }
 

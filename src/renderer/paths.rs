@@ -11,11 +11,22 @@ use super::Painter;
 pub enum Corners {
     All,
     Bottom,
+    BottomRight,
+    Flat,
+    Hanging,
 }
 
 impl Corners {
     pub fn top(self) -> bool {
         self == Corners::All
+    }
+
+    pub fn bottom_left(self) -> bool {
+        matches!(self, Corners::All | Corners::Bottom | Corners::Hanging)
+    }
+
+    pub fn bottom_right(self) -> bool {
+        self != Corners::Flat
     }
 }
 
@@ -245,6 +256,10 @@ impl Painter<'_> {
         corners: Corners,
     ) {
         let inset = stroke_width / 2.0;
+        if corners == Corners::Hanging {
+            self.hanging_border(x, y, w, h, radius, stroke_width, color);
+            return;
+        }
         // a flat top meets the edge of the window, its line is pushed out of the picture
         let lift = if corners.top() { 0.0 } else { stroke_width };
         let Some(inset_rect) = Rect::from_xywh(
@@ -260,12 +275,59 @@ impl Painter<'_> {
             .max(0.0)
             .min(inset_rect.width() / 2.0)
             .min(inset_rect.height() / 2.0);
-        let Some(path) =
-            rounded_rect_path(&inset_rect, r, corners.top(), corners.top(), true, true)
-        else {
+        let Some(path) = rounded_rect_path(
+            &inset_rect,
+            r,
+            corners.top(),
+            corners.top(),
+            corners.bottom_right(),
+            corners.bottom_left(),
+        ) else {
             return;
         };
 
+        let stroke = Stroke {
+            width: stroke_width,
+            ..Default::default()
+        };
+        self.stroke_path(&path, color, &stroke);
+    }
+
+    fn hanging_border(
+        &mut self,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        radius: f32,
+        stroke_width: f32,
+        color: Color,
+    ) {
+        let inset = stroke_width / 2.0;
+        let (left, right, bottom) = (x + inset, x + w - inset, y + h - inset);
+        let top = y - stroke_width;
+        let r = (radius - inset)
+            .max(0.0)
+            .min((right - left) / 2.0)
+            .min((bottom - top) / 2.0);
+        let k = 1.0 - KAPPA;
+        let mut pb = PathBuilder::new();
+        pb.move_to(left, top);
+        pb.line_to(left, bottom - r);
+        pb.cubic_to(left, bottom - r * k, left + r * k, bottom, left + r, bottom);
+        pb.line_to(right - r, bottom);
+        pb.cubic_to(
+            right - r * k,
+            bottom,
+            right,
+            bottom - r * k,
+            right,
+            bottom - r,
+        );
+        pb.line_to(right, top);
+        let Some(path) = pb.finish() else {
+            return;
+        };
         let stroke = Stroke {
             width: stroke_width,
             ..Default::default()

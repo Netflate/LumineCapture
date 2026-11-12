@@ -381,6 +381,7 @@ pub struct SettingsPanel {
     pub size: (f32, f32),
     pub monitor_idx: usize,
     pub visible: bool,
+    pub attached: bool,
     pub dirty: bool,
     pub hovered: Option<usize>,
     pub hovered_arrow: Option<(usize, StepperArrow)>,
@@ -423,6 +424,7 @@ impl SettingsPanel {
             size: (0.0, size::panel_height()),
             monitor_idx: 0,
             visible: false,
+            attached: false,
             dirty: true,
             hovered: None,
             hovered_arrow: None,
@@ -652,6 +654,12 @@ impl HoverablePanel for SettingsPanel {
 
 pub fn compute_settings_placement(editor_state: &EditorState) -> ((f32, f32), usize) {
     let tb = &editor_state.toolbar;
+    if editor_state.sheet.is_some() {
+        return (
+            (tb.render_pos.0, tb.render_pos.1 + tb.size.1),
+            tb.monitor_idx,
+        );
+    }
     let panel_h = editor_state.settings_panel.size.1;
     let tb_h = tb.size.1;
 

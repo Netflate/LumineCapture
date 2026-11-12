@@ -1,5 +1,5 @@
-use crate::renderer::Painter;
 use crate::renderer::text::TextStyle;
+use crate::renderer::{Corners, Painter};
 use crate::theme::{color, font, radius, size, stroke};
 use crate::ui::color_popover::ColorTarget;
 use crate::ui::panel::{PanelItem, UiPanel};
@@ -21,13 +21,19 @@ pub fn draw_settings_panel(
         return;
     };
 
+    let corners = if panel.attached {
+        Corners::Hanging
+    } else {
+        Corners::All
+    };
     let mut cache = panel.panel_pixmap.take();
-    p.panel(
+    p.panel_in(
         &mut cache,
         (panel_rect.left(), panel_rect.top()),
         panel.size,
         panel.opacity,
         true,
+        corners,
         |p| draw_settings_content(p, panel, current_color, outline_color),
     );
     panel.panel_pixmap = cache;
@@ -46,7 +52,11 @@ fn draw_settings_content(
         return;
     };
 
-    p.fill_rounded(rect, radius::panel(), cfg.background.get());
+    if panel.attached {
+        p.fill_rounded_in(rect, radius::panel(), Corners::Bottom, color::backdrop());
+    } else {
+        p.fill_rounded(rect, radius::panel(), cfg.background.get());
+    }
 
     let item_h = panel.item_height();
     let item_y = rect.top() + (h - item_h) / 2.0;

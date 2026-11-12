@@ -14,6 +14,7 @@ use crate::ui::settings_panel::{
     SettingsAction, SettingsSource, SettingsWidget, StepperArrow, StepperRange, ToggleField,
     compute_settings_placement, widgets_for_annotation, widgets_for_tool,
 };
+use crate::ui::toolbar::Attached;
 use std::time::{Duration, Instant};
 
 pub fn current_color(editor_state: &EditorState) -> tiny_skia::Color {
@@ -133,8 +134,9 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
         close_color_popover(editor_state, dirty_mask);
     }
 
+    let window = editor_state.sheet.is_some();
     let should_be_visible = !new_widgets.is_empty()
-        && !editor_state.tool_active
+        && (!editor_state.tool_active || window)
         && !editor_state.ui_hidden
         && editor_state.scroll.is_none();
 
@@ -148,6 +150,9 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
         editor_state.settings_panel.visible = false;
         editor_state.settings_panel.arrow_held = None;
     }
+
+    editor_state.settings_panel.attached = window;
+    sync_toolbar_attachment(editor_state, dirty_mask);
 
     let download = editor_state.ocr.models.download_progress();
     let download_changed = editor_state.settings_panel.download != download;
@@ -195,6 +200,33 @@ pub fn update_settings_panel(editor_state: &mut EditorState, dirty_mask: &mut u3
     } else if !editor_state.settings_panel.is_editing() {
         let snapshot = editor_state.settings_panel.pre_edit_snapshot.take();
         editor_state.commit_snapshot(snapshot);
+    }
+}
+
+/// (toolbar's corners follow the panel hanging from it)
+fn sync_toolbar_attachment(editor_state: &mut EditorState, dirty_mask: &mut u32) {
+    let panel = &editor_state.settings_panel;
+    let toolbar = &mut editor_state.toolbar;
+    let attached = match (
+        panel.visible && panel.attached,
+        panel.size.0 >= toolbar.size.0,
+    ) {
+        (false, _) => Attached::No,
+        (true, false) => Attached::Part,
+        (true, true) => Attached::Full,
+    };
+    if toolbar.attached == attached {
+        return;
+    }
+    toolbar.attached = attached;
+    toolbar.dirty = true;
+    if let Some(rect) = toolbar.rect() {
+        emit_panel_damage(
+            rect,
+            toolbar.monitor_idx,
+            &mut editor_state.damage_rects,
+            dirty_mask,
+        );
     }
 }
 
@@ -719,7 +751,131 @@ fn format_stepper_number(v: f32) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::next_on_grid;
+    use super::*;
+    use crate::editor::testing::editor;
+    use crate::renderer::Painter;
+    use crate::ui::settings_panel::draw_settings_panel;
+    use crate::ui::toolbar::draw_toolbar;
+    use tiny_skia::Pixmap;
+
+    fn pen_window() -> EditorState {
+        let mut state = editor(true);
+        state.placements[0].size = (1600, 900);
+        state.toolbar.docked = true;
+        state.toolbar.set_items(crate::ui::toolbar::WINDOW_ITEMS);
+        let x = (1600.0 - state.toolbar.size.0) / 2.0;
+        state.toolbar.position = (x, 0.0);
+        state.toolbar.render_pos = (x, 0.0);
+        state.selected_tool = Tool::Pen;
+        update_settings_panel(&mut state, &mut 0);
+        state
+    }
+
+    #[test]
+    fn the_panel_hangs_right_under_the_toolbar_in_the_window() {
+        let state = pen_window();
+        let (tb, sp) = (&state.toolbar, &state.settings_panel);
+        assert!(sp.visible && sp.attached);
+        assert_eq!(
+            sp.render_pos,
+            (tb.render_pos.0, tb.render_pos.1 + tb.size.1)
+        );
+        assert_eq!(state.toolbar.attached, Attached::Part);
+    }
+
+    #[test]
+    fn the_overlay_panel_floats_off_the_toolbar() {
+        let mut state = editor(false);
+        state.placements[0].size = (1600, 900);
+        state.toolbar.position = (300.0, 10.0);
+        state.toolbar.render_pos = (300.0, 10.0);
+        state.selected_tool = Tool::Pen;
+        update_settings_panel(&mut state, &mut 0);
+        let (tb, sp) = (&state.toolbar, &state.settings_panel);
+        assert!(sp.visible && !sp.attached);
+        assert_eq!(
+            sp.render_pos.1,
+            tb.render_pos.1 + tb.size.1 + crate::theme::size::margin()
+        );
+        assert_eq!(state.toolbar.attached, Attached::No);
+    }
+
+    #[test]
+    fn the_panel_stays_while_drawing_in_the_window_only() {
+        let mut window = pen_window();
+        window.tool_active = true;
+        update_settings_panel(&mut window, &mut 0);
+        assert!(window.settings_panel.visible);
+
+        let mut overlay = editor(false);
+        overlay.selected_tool = Tool::Pen;
+        update_settings_panel(&mut overlay, &mut 0);
+        assert!(overlay.settings_panel.visible);
+        overlay.tool_active = true;
+        update_settings_panel(&mut overlay, &mut 0);
+        assert!(!overlay.settings_panel.visible);
+    }
+
+    #[test]
+    fn the_toolbar_follows_the_panel_under_it() {
+        let mut state = pen_window();
+        assert_eq!(state.toolbar.attached, Attached::Part);
+        state.toolbar.dirty = false;
+
+        state.settings_panel.size.0 = state.toolbar.size.0 + 40.0;
+        sync_toolbar_attachment(&mut state, &mut 0);
+        assert_eq!(state.toolbar.attached, Attached::Full);
+
+        state.selected_tool = Tool::Selection;
+        update_settings_panel(&mut state, &mut 0);
+        assert_eq!(state.toolbar.attached, Attached::No);
+        assert!(state.toolbar.dirty);
+    }
+
+    fn pixel(pixmap: &Pixmap, x: u32, y: u32) -> [u8; 4] {
+        let p = pixmap.pixel(x, y).unwrap();
+        [p.red(), p.green(), p.blue(), p.alpha()]
+    }
+
+    #[test]
+    fn no_line_where_the_panel_meets_the_toolbar() {
+        let mut state = pen_window();
+        let (left, bottom, width) = {
+            let tb = &state.toolbar;
+            (
+                tb.render_pos.0 as u32,
+                tb.size.1 as u32,
+                state.settings_panel.size.0 as u32,
+            )
+        };
+        let mut canvas = Pixmap::new(1600, 400).unwrap();
+        {
+            let text = &mut state.text;
+            let mut p =
+                Painter::new(&mut canvas).with_text(&mut text.font_system, &mut text.swash_cache);
+            draw_toolbar(&mut p, &mut state.toolbar);
+            draw_settings_panel(
+                &mut p,
+                &mut state.settings_panel,
+                tiny_skia::Color::WHITE,
+                tiny_skia::Color::WHITE,
+            );
+        }
+        let header = {
+            let c = crate::theme::color::backdrop();
+            [c.0, c.1, c.2, 255]
+        };
+        for y in bottom - 3..bottom + 3 {
+            for x in left + 4..left + width - 4 {
+                assert_eq!(pixel(&canvas, x, y), header, "({x}, {y})");
+            }
+        }
+        let side = pixel(&canvas, left, bottom + 5);
+        assert_ne!(side, header);
+        for y in 4..bottom + 5 {
+            assert_eq!(pixel(&canvas, left, y), side, "left edge at {y}");
+        }
+    }
 
     #[test]
     fn whole_values_move_by_a_step() {
