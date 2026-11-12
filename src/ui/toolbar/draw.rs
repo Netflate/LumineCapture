@@ -44,17 +44,12 @@ fn draw_toolbar_content(p: &mut Painter, toolbar: &Toolbar) {
         return;
     };
 
-    let background = if toolbar.docked {
-        crate::theme::color::backdrop()
-    } else {
-        cfg.background.get()
-    };
     // border around it isn't shrunk, so neither are the corners
     p.fill_rounded_in(
         rect,
         radius::panel() / toolbar.shrink,
         corners(toolbar),
-        background,
+        cfg.background.get(),
     );
 
     let bg_h = h * cfg.highlight_height;

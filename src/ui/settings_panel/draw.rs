@@ -26,6 +26,19 @@ pub fn draw_settings_panel(
     } else {
         Corners::All
     };
+    if panel.attached {
+        // toolbar's bottom line is covered over the panel's width, as if it had none
+        p.restore_above(
+            (panel_rect.left(), panel_rect.top()),
+            panel.size.0,
+            color::backdrop().color(),
+            crate::config::get()
+                .toolbar
+                .background
+                .get()
+                .fade(panel.opacity),
+        );
+    }
     let mut cache = panel.panel_pixmap.take();
     p.panel_in(
         &mut cache,
@@ -52,11 +65,12 @@ fn draw_settings_content(
         return;
     };
 
-    if panel.attached {
-        p.fill_rounded_in(rect, radius::panel(), Corners::Bottom, color::backdrop());
+    let corners = if panel.attached {
+        Corners::Bottom
     } else {
-        p.fill_rounded(rect, radius::panel(), cfg.background.get());
-    }
+        Corners::All
+    };
+    p.fill_rounded_in(rect, radius::panel(), corners, cfg.background.get());
 
     let item_h = panel.item_height();
     let item_y = rect.top() + (h - item_h) / 2.0;

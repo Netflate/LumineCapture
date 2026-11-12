@@ -863,6 +863,8 @@ mod tests {
             )
         };
         let mut canvas = Pixmap::new(1600, 400).unwrap();
+        let backdrop = crate::theme::color::backdrop().color();
+        canvas.fill(backdrop);
         {
             let text = &mut state.text;
             let mut p =
@@ -875,17 +877,16 @@ mod tests {
                 tiny_skia::Color::WHITE,
             );
         }
-        let header = {
-            let c = crate::theme::color::backdrop();
-            [c.0, c.1, c.2, 255]
-        };
+        let fill = pixel(&canvas, left + 4, bottom - 3);
+        let band = backdrop.to_color_u8();
+        assert_ne!(fill, [band.red(), band.green(), band.blue(), 255]);
         for y in bottom - 3..bottom + 3 {
             for x in left + 4..left + width - 4 {
-                assert_eq!(pixel(&canvas, x, y), header, "({x}, {y})");
+                assert_eq!(pixel(&canvas, x, y), fill, "({x}, {y})");
             }
         }
         let side = pixel(&canvas, left, bottom + 5);
-        assert_ne!(side, header);
+        assert_ne!(side, fill);
         for y in 4..bottom + 5 {
             assert_eq!(pixel(&canvas, left, y), side, "left edge at {y}");
         }

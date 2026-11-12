@@ -14,7 +14,7 @@ use tiny_skia::{
 use usvg::Tree;
 
 use super::paths::{Corners, rounded_rect_path};
-use crate::theme::{color, radius, stroke};
+use crate::theme::{radius, stroke};
 
 pub type Icons = HashMap<&'static str, Tree>;
 
@@ -218,6 +218,26 @@ impl<'a> Painter<'a> {
         self.panel_in(cache, pos, size, opacity, redraw, Corners::All, content);
     }
 
+    pub fn restore_above(&mut self, pos: (f32, f32), width: f32, under: Color, over: Color) {
+        let s = self.scale();
+        let (px, py) = self.to_px(pos.0, pos.1);
+        let rows = (stroke::border() * s).ceil();
+        let (x, y) = (px.round(), py.round() - rows);
+        let Some(strip) = Rect::from_xywh(x, y, (width * s).ceil(), rows) else {
+            return;
+        };
+        let mut paint = Paint::default();
+        paint.set_color(under);
+        self.canvas
+            .fill_rect(strip, &paint, Transform::identity(), None);
+        // laid on as a picture, like the panel itself, so the rounding is the same
+        let Some(mut layer) = Pixmap::new(strip.width() as u32, rows as u32) else {
+            return;
+        };
+        layer.fill(over);
+        self.draw_pixmap(x as i32, y as i32, &layer);
+    }
+
     pub fn panel_in(
         &mut self,
         cache: &mut Option<Pixmap>,
@@ -249,16 +269,6 @@ impl<'a> Painter<'a> {
         if fresh || redraw {
             pixmap.fill(Color::TRANSPARENT);
             content(&mut self.sub(pixmap));
-        }
-
-        if corners == Corners::Hanging {
-            let rows = (stroke::border() * s).ceil();
-            let mut paint = Paint::default();
-            paint.set_color(color::backdrop().fade(opacity));
-            if let Some(strip) = Rect::from_xywh(x, y - rows, pw as f32, rows) {
-                self.canvas
-                    .fill_rect(strip, &paint, Transform::identity(), None);
-            }
         }
 
         self.canvas.draw_pixmap(
