@@ -1,4 +1,4 @@
-use super::settings::{compute_popover_placement, swatch_color};
+use super::settings::{compute_dropdown_placement, compute_popover_placement, swatch_color};
 use crate::editor::EditorState;
 use crate::editor::edits::{apply_color_selection, damage_color_popover, use_color};
 use crate::interaction::ClickTarget;
@@ -8,7 +8,7 @@ use crate::ui::color_popover::{
     ColorField, ColorPopoverElement, ColorTarget, field_font_size, step_hex_text,
 };
 use crate::ui::panel::{UiPanel, sync_panel_hover, sync_panel_rect};
-use crate::ui::settings_panel::char_index_for_x;
+use crate::ui::settings_panel::{SettingsWidget, char_index_for_x};
 use crate::ui::text_field::{CursorInit, is_hex_char, is_rgba_channel_char};
 
 pub fn update_color_popover(editor_state: &mut EditorState, dirty_mask: &mut u32) {
@@ -20,11 +20,18 @@ pub fn update_color_popover(editor_state: &mut EditorState, dirty_mask: &mut u32
     // popover travel with the toolbar. It keeps tracking while fading out too,
     // otherwise it would detach and sit there for the length of the fade.
     if editor_state.color_popover.is_visible() {
-        let (pos, monitor_idx) = compute_popover_placement(
-            editor_state,
-            (color_popover::width(), color_popover::height()),
-            crate::theme::size::margin(),
-        );
+        let size = (color_popover::width(), color_popover::height());
+        let offset = crate::theme::size::margin();
+        let (pos, monitor_idx) = if editor_state.sheet.is_some() {
+            let panel = &editor_state.settings_panel;
+            let target = editor_state.color_popover.target;
+            let anchor = panel
+                .widget_left(|w| matches!(w, SettingsWidget::ColorSwatch(t) if *t == target))
+                .unwrap_or(panel.render_pos.0);
+            compute_dropdown_placement(editor_state, size, offset, anchor)
+        } else {
+            compute_popover_placement(editor_state, size, offset)
+        };
         editor_state.color_popover.position = pos;
         editor_state.color_popover.render_pos = pos;
         editor_state.color_popover.monitor_idx = monitor_idx;

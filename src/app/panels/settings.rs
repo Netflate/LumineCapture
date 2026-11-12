@@ -832,6 +832,20 @@ mod tests {
         assert!(state.toolbar.dirty);
     }
 
+    #[test]
+    fn the_color_list_drops_from_its_swatch_in_the_window() {
+        let mut state = pen_window();
+        state.color_popover.open = true;
+        crate::app::panels::color::update_color_popover(&mut state, &mut 0);
+        let panel = &state.settings_panel;
+        let (x, y) = state.color_popover.position;
+        assert_eq!(x, panel.render_pos.0 + crate::theme::size::padding());
+        assert_eq!(
+            y,
+            panel.render_pos.1 + panel.size.1 + crate::theme::size::margin()
+        );
+    }
+
     fn pixel(pixmap: &Pixmap, x: u32, y: u32) -> [u8; 4] {
         let p = pixmap.pixel(x, y).unwrap();
         [p.red(), p.green(), p.blue(), p.alpha()]
