@@ -8,7 +8,7 @@ use crate::ui::panel::{UiPanel, emit_panel_damage, sync_panel_hover, sync_panel_
 use crate::ui::settings_panel::{SettingsAction, SettingsWidget};
 use crate::ui::toast::ToastKind;
 
-use super::settings::{compute_popover_placement, update_settings_panel};
+use super::settings::{compute_dropdown_placement, update_settings_panel};
 
 pub fn update_model_popover(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     let old_rect = editor_state.model_popover.rect();
@@ -16,8 +16,20 @@ pub fn update_model_popover(editor_state: &mut EditorState, dirty_mask: &mut u32
 
     if editor_state.model_popover.is_visible() {
         let size = editor_state.model_popover.size;
+        let panel = &editor_state.settings_panel;
+        let anchor = panel
+            .widget_left(|w| {
+                matches!(
+                    w,
+                    SettingsWidget::Action {
+                        action: SettingsAction::OcrLanguages,
+                        ..
+                    }
+                )
+            })
+            .unwrap_or(panel.render_pos.0);
         let (pos, monitor_idx) =
-            compute_popover_placement(editor_state, size, crate::theme::size::margin());
+            compute_dropdown_placement(editor_state, size, crate::theme::size::margin(), anchor);
         editor_state.model_popover.position = pos;
         editor_state.model_popover.render_pos = pos;
         editor_state.model_popover.monitor_idx = monitor_idx;
@@ -153,4 +165,123 @@ pub fn tick_model_downloads(editor_state: &mut EditorState, dirty_mask: &mut u32
         update_model_popover(editor_state, dirty_mask);
     }
     apply_damage_rects(editor_state, dirty_mask);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::editor::testing::editor;
+    use crate::tools::Tool;
+    use crate::ui::settings_panel::{OCR_SCANNING_WIDGETS, OCR_WIDGETS};
+
+    fn ocr_state(window: bool) -> EditorState {
+        let mut state = editor(window);
+        state.placements[0].size = (1600, 900);
+        state.ocr.models.fake_installed();
+        state.selected_tool = Tool::Ocr;
+        state.toolbar.position = (300.0, 10.0);
+        state.toolbar.render_pos = (300.0, 10.0);
+        state.ocr.await_region = true;
+        update_settings_panel(&mut state, &mut 0);
+        toggle_model_popover(&mut state, &mut 0);
+        state
+    }
+
+    #[test]
+    fn the_list_stays_under_its_button_while_the_panel_changes_width() {
+        let mut state = ocr_state(false);
+        let at = state.model_popover.position;
+        let panel = &state.settings_panel;
+        let button = panel.render_pos.0 + crate::theme::size::padding();
+        assert_eq!(at.0, button);
+        assert_eq!(
+            at.1,
+            panel.render_pos.1 + panel.size.1 + crate::theme::size::margin()
+        );
+
+        let mut widths = vec![state.settings_panel.size.0];
+        state.ocr.await_region = false;
+        update_settings_panel(&mut state, &mut 0);
+        update_model_popover(&mut state, &mut 0);
+        widths.push(state.settings_panel.size.0);
+        assert_eq!(state.model_popover.position, at);
+
+        state.ocr.runtime.park(crate::ocr::testing::image(4, 4));
+        update_settings_panel(&mut state, &mut 0);
+        update_model_popover(&mut state, &mut 0);
+        widths.push(state.settings_panel.size.0);
+        assert_eq!(state.model_popover.position, at);
+        assert!(widths[0] != widths[1] && widths[1] != widths[2]);
+    }
+
+    #[test]
+    fn the_list_opens_upward_when_the_panel_is_above_the_toolbar() {
+        let mut state = ocr_state(false);
+        state.toolbar.position = (300.0, 840.0);
+        state.toolbar.render_pos = (300.0, 840.0);
+        update_settings_panel(&mut state, &mut 0);
+        update_model_popover(&mut state, &mut 0);
+        let panel = &state.settings_panel;
+        assert!(panel.render_pos.1 < state.toolbar.render_pos.1);
+        let (_, y) = state.model_popover.position;
+        assert_eq!(
+            y,
+            panel.render_pos.1 - crate::theme::size::margin() - state.model_popover.size.1
+        );
+    }
+
+    #[test]
+    fn the_list_goes_under_the_toolbar_when_there_is_no_room_above_the_panel() {
+        let mut state = ocr_state(false);
+        state.toolbar.position = (300.0, 100.0);
+        state.toolbar.render_pos = (300.0, 100.0);
+        update_settings_panel(&mut state, &mut 0);
+        update_model_popover(&mut state, &mut 0);
+        let (tb, panel) = (&state.toolbar, &state.settings_panel);
+        assert!(panel.render_pos.1 < tb.render_pos.1);
+        assert_eq!(
+            state.model_popover.position.1,
+            tb.render_pos.1 + tb.size.1 + crate::theme::size::margin()
+        );
+    }
+
+    #[test]
+    fn the_list_hangs_from_its_button_in_the_window_too() {
+        let mut state = ocr_state(true);
+        state.placements[0].size = (1600, 900);
+        state.toolbar.docked = true;
+        state.toolbar.position = (300.0, 0.0);
+        state.toolbar.render_pos = (300.0, 0.0);
+        update_settings_panel(&mut state, &mut 0);
+        update_model_popover(&mut state, &mut 0);
+        let panel = &state.settings_panel;
+        assert_eq!(
+            state.model_popover.position.0,
+            panel.render_pos.0 + crate::theme::size::padding()
+        );
+    }
+
+    #[test]
+    fn a_scan_keeps_the_languages_button() {
+        let has_button = |widgets: &[SettingsWidget]| {
+            widgets.iter().any(|w| {
+                matches!(
+                    w,
+                    SettingsWidget::Action {
+                        action: SettingsAction::OcrLanguages,
+                        ..
+                    }
+                )
+            })
+        };
+        assert!(has_button(OCR_WIDGETS));
+        assert!(has_button(OCR_SCANNING_WIDGETS));
+        assert!(matches!(
+            OCR_SCANNING_WIDGETS[0],
+            SettingsWidget::Action {
+                action: SettingsAction::OcrLanguages,
+                ..
+            }
+        ));
+    }
 }

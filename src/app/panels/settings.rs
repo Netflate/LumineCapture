@@ -292,6 +292,53 @@ pub fn compute_popover_placement(
     ((final_x, final_y), monitor_idx)
 }
 
+/// hangs from `anchor_x`: on the side of the settings panel that faces
+/// away from the toolbar, on the other side of the toolbar when there is no room there
+pub fn compute_dropdown_placement(
+    editor_state: &EditorState,
+    (width, height): (f32, f32),
+    offset: f32,
+    anchor_x: f32,
+) -> ((f32, f32), usize) {
+    let sp = &editor_state.settings_panel;
+    let tb = &editor_state.toolbar;
+    let monitor_idx = sp.monitor_idx;
+
+    let monitor_width = editor_state.placements[monitor_idx].size.0 as f32;
+    let monitor_height = editor_state.placements[monitor_idx].size.1 as f32;
+
+    let x = anchor_x.min(monitor_width - width - offset).max(offset);
+
+    let sp_bottom = sp.render_pos.1 + sp.size.1;
+    let tb_bottom = tb.render_pos.1 + tb.size.1;
+    let fits_below = |y: f32| y + height <= monitor_height;
+    let fits_above = |y: f32| y >= 0.0;
+
+    let y = if sp.render_pos.1 >= tb.render_pos.1 {
+        let below = sp_bottom + offset;
+        let above = tb.render_pos.1 - offset - height;
+        if fits_below(below) {
+            below
+        } else if fits_above(above) {
+            above
+        } else {
+            monitor_height - height - offset
+        }
+    } else {
+        let above = sp.render_pos.1 - offset - height;
+        let below = tb_bottom + offset;
+        if fits_above(above) {
+            above
+        } else if fits_below(below) {
+            below
+        } else {
+            offset
+        }
+    };
+
+    ((x, y), monitor_idx)
+}
+
 pub fn tick_stepper_arrow_hold(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     let Some(hold) = editor_state.settings_panel.arrow_held else {
         return;

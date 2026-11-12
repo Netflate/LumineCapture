@@ -270,7 +270,11 @@ pub const OCR_WIDGETS_DOWNLOADING: &[SettingsWidget] = &[
 
 /// Shown while the worker thread is busy; the progress badge sits over the
 /// region itself, this just keeps the panel from advertising dead buttons.
-pub const OCR_SCANNING_WIDGETS: &[SettingsWidget] = &[SettingsWidget::Label("Reading text...")];
+pub const OCR_SCANNING_WIDGETS: &[SettingsWidget] = &[
+    OCR_LANGUAGES,
+    SettingsWidget::Separator,
+    SettingsWidget::Label("Reading text..."),
+];
 
 pub const OCR_AWAITING_WIDGETS: &[SettingsWidget] = &[OCR_LANGUAGES, OCR_SCAN_ALL];
 
@@ -463,6 +467,11 @@ impl SettingsPanel {
 
     pub fn item_height(&self) -> f32 {
         self.size.1 * crate::config::get().settings_panel.item_height
+    }
+
+    pub fn widget_left(&self, wanted: impl Fn(&SettingsWidget) -> bool) -> Option<f32> {
+        let idx = self.widgets.iter().position(wanted)?;
+        self.widget_local_rect(idx).map(|(x, ..)| x)
     }
 
     fn widget_local_rect(&self, widget_idx: usize) -> Option<(f32, f32, f32, f32)> {
