@@ -60,6 +60,7 @@ pub async fn run(
             swash_cache: SwashCache::new(),
             editors: HashMap::new(),
             editing: None,
+            preedit: None,
         },
         super::build_ocr_state(),
     );

@@ -22,6 +22,8 @@ use tiny_skia::{
     Stroke, Transform,
 };
 
+pub mod ime;
+
 pub struct TextTool;
 
 // ── key -> Action ─────────────────────────────────────────────────────────────

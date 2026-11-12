@@ -32,6 +32,7 @@ pub fn editor(window: bool) -> EditorState {
             swash_cache: cosmic_text::SwashCache::new(),
             editors: HashMap::new(),
             editing: None,
+            preedit: None,
         },
         OcrState {
             runtime: crate::ocr::OcrRuntime::new(crate::ocr::settings::Mode::OnDemand),

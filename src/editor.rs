@@ -74,6 +74,7 @@ pub struct TextState {
     pub swash_cache: SwashCache,
     pub editors: HashMap<u64, Editor<'static>>,
     pub editing: Option<TextEditState>,
+    pub preedit: Option<crate::tools::text::ime::Preedit>,
 }
 
 /// The OCR engine, the installed models and the result on screen.

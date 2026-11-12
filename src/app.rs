@@ -254,6 +254,7 @@ async fn start_capture(
             swash_cache: SwashCache::new(),
             editors: HashMap::new(),
             editing: None,
+            preedit: None,
         },
         build_ocr_state(),
     );
@@ -369,6 +370,7 @@ async fn run_overlay(
         scroll::capture_step(editor_state, overlay.as_ref(), &mut dirty_mask).await;
 
         overlay.set_cursor(input::compute_cursor(editor_state));
+        overlay.set_ime(crate::tools::text::ime::sync(editor_state, &mut dirty_mask));
         tick_panels(editor_state, &mut dirty_mask);
 
         let annotations_hidden = editor_state.selected_tool == Tool::Ocr;
@@ -437,7 +439,6 @@ fn handle_event(editor_state: &mut EditorState, ev: OverlayEvent, dirty_mask: &m
         OverlayEvent::Tick
         | OverlayEvent::EscapePressed
         | OverlayEvent::Focus { .. }
-        | OverlayEvent::Ime { .. }
         | OverlayEvent::FrameDone { .. } => {}
         OverlayEvent::Resized { size, scale, .. } => {
             window::resized(editor_state, size, scale, dirty_mask);
@@ -466,6 +467,10 @@ fn handle_event(editor_state: &mut EditorState, ev: OverlayEvent, dirty_mask: &m
         }
         OverlayEvent::Key { chord, text } => {
             input::handle_key(editor_state, chord, text, dirty_mask);
+        }
+        OverlayEvent::Ime { preedit, commit } => {
+            crate::tools::text::ime::apply(editor_state, preedit, commit);
+            apply_damage_rects(editor_state, dirty_mask);
         }
         OverlayEvent::ModifiersChanged { ctrl, shift, alt } => {
             input::handle_modifiers(editor_state, ctrl, shift, alt, dirty_mask);
