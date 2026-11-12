@@ -399,10 +399,7 @@ fn fill_band(canvas: &mut Pixmap, band: u32, dirty: Option<&Rect>, scale: f32) {
     if end <= y {
         return;
     }
-    let color = crate::theme::color::panel()
-        .with_alpha(255)
-        .color()
-        .to_color_u8();
+    let color = crate::theme::color::backdrop().color().to_color_u8();
     let px = [color.red(), color.green(), color.blue(), 255];
     let stride = (w * 4) as usize;
     let data = canvas.data_mut();

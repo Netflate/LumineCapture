@@ -75,6 +75,20 @@ pub mod color {
     pub fn panel() -> Rgba {
         theme().background
     }
+    pub fn backdrop() -> Rgba {
+        let Rgba(r, g, b, a) = crate::config::get().selection.dim;
+        let dim = tiny_skia::ColorU8::from_rgba(r, g, b, a).premultiply();
+        let under = panel();
+        let inv = 255 - dim.alpha() as u32;
+        let over =
+            |dim: u8, under: u8| (dim as u32 + (under as u32 * inv + 127) / 255).min(255) as u8;
+        Rgba(
+            over(dim.red(), under.0),
+            over(dim.green(), under.1),
+            over(dim.blue(), under.2),
+            255,
+        )
+    }
     /// main color of elements on the panel, like text, seperators and etc
     pub fn foreground() -> Rgba {
         theme().foreground
@@ -218,5 +232,17 @@ pub mod shadow {
     pub fn width_bonus() -> f32 {
         let shadow = &crate::config::get().annotations.shadow;
         shadow.layers as f32 * shadow.spread + 1.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backdrop_is_the_panel_under_the_dim_layer() {
+        assert_eq!(color::panel().with_alpha(255), Rgba(0x1E, 0x1E, 0x2E, 255));
+        assert_eq!(crate::config::get().selection.dim, Rgba(0, 0, 0, 0x8C));
+        assert_eq!(color::backdrop(), Rgba(0x0E, 0x0E, 0x15, 255));
     }
 }
