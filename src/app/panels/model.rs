@@ -16,18 +16,8 @@ pub fn update_model_popover(editor_state: &mut EditorState, dirty_mask: &mut u32
 
     if editor_state.model_popover.is_visible() {
         let size = editor_state.model_popover.size;
-        let panel = &editor_state.settings_panel;
-        let anchor = panel
-            .widget_left(|w| {
-                matches!(
-                    w,
-                    SettingsWidget::Action {
-                        action: SettingsAction::OcrLanguages,
-                        ..
-                    }
-                )
-            })
-            .unwrap_or(panel.render_pos.0);
+        // list hangs from the left edge of the panel, not from its button
+        let anchor = editor_state.settings_panel.render_pos.0;
         let (pos, monitor_idx) =
             compute_dropdown_placement(editor_state, size, crate::theme::size::margin(), anchor);
         editor_state.model_popover.position = pos;
@@ -188,12 +178,11 @@ mod tests {
     }
 
     #[test]
-    fn the_list_stays_under_its_button_while_the_panel_changes_width() {
+    fn the_list_stays_at_the_panel_edge_while_the_panel_changes_width() {
         let mut state = ocr_state(false);
         let at = state.model_popover.position;
         let panel = &state.settings_panel;
-        let button = panel.render_pos.0 + crate::theme::size::padding();
-        assert_eq!(at.0, button);
+        assert_eq!(at.0, panel.render_pos.0);
         assert_eq!(
             at.1,
             panel.render_pos.1 + panel.size.1 + crate::theme::size::margin()
@@ -246,7 +235,7 @@ mod tests {
     }
 
     #[test]
-    fn the_list_hangs_from_its_button_in_the_window_too() {
+    fn the_list_lines_up_with_the_panel_in_the_window_too() {
         let mut state = ocr_state(true);
         state.placements[0].size = (1600, 900);
         state.toolbar.docked = true;
@@ -255,10 +244,7 @@ mod tests {
         update_settings_panel(&mut state, &mut 0);
         update_model_popover(&mut state, &mut 0);
         let panel = &state.settings_panel;
-        assert_eq!(
-            state.model_popover.position.0,
-            panel.render_pos.0 + crate::theme::size::padding()
-        );
+        assert_eq!(state.model_popover.position.0, panel.render_pos.0);
     }
 
     #[test]

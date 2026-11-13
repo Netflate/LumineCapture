@@ -475,11 +475,6 @@ impl SettingsPanel {
         self.size.1 * crate::config::get().settings_panel.item_height
     }
 
-    pub fn widget_left(&self, wanted: impl Fn(&SettingsWidget) -> bool) -> Option<f32> {
-        let idx = self.widgets.iter().position(wanted)?;
-        self.widget_local_rect(idx).map(|(x, ..)| x)
-    }
-
     fn widget_local_rect(&self, widget_idx: usize) -> Option<(f32, f32, f32, f32)> {
         let rect = self.rect()?;
         let h = self.size.1;

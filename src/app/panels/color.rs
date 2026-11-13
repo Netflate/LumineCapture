@@ -8,7 +8,7 @@ use crate::ui::color_popover::{
     ColorField, ColorPopoverElement, ColorTarget, field_font_size, step_hex_text,
 };
 use crate::ui::panel::{UiPanel, sync_panel_hover, sync_panel_rect};
-use crate::ui::settings_panel::{SettingsWidget, char_index_for_x};
+use crate::ui::settings_panel::char_index_for_x;
 use crate::ui::text_field::{CursorInit, is_hex_char, is_rgba_channel_char};
 
 pub fn update_color_popover(editor_state: &mut EditorState, dirty_mask: &mut u32) {
@@ -23,11 +23,8 @@ pub fn update_color_popover(editor_state: &mut EditorState, dirty_mask: &mut u32
         let size = (color_popover::width(), color_popover::height());
         let offset = crate::theme::size::margin();
         let (pos, monitor_idx) = if editor_state.sheet.is_some() {
-            let panel = &editor_state.settings_panel;
-            let target = editor_state.color_popover.target;
-            let anchor = panel
-                .widget_left(|w| matches!(w, SettingsWidget::ColorSwatch(t) if *t == target))
-                .unwrap_or(panel.render_pos.0);
+            // in the window edit mode it drops down from the left edge of the settings panel
+            let anchor = editor_state.settings_panel.render_pos.0;
             compute_dropdown_placement(editor_state, size, offset, anchor)
         } else {
             compute_popover_placement(editor_state, size, offset)
