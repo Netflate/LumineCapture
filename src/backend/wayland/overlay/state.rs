@@ -68,6 +68,7 @@ pub struct OverlayState {
     pub mods: crate::keys::Mods,
     pub toplevel: bool,
     pub min_size: Option<(u32, u32)>,
+    pub resize: Option<(usize, (u32, u32))>,
 }
 
 pub struct Probe {
@@ -187,6 +188,7 @@ impl OverlayState {
             outputs: Vec::new(),
             surfaces: HashMap::new(),
             events: VecDeque::new(),
+            resize: None,
             frac_scale: None,
             pointer_surface_idx: None,
             scale: 0.0,

@@ -348,6 +348,7 @@ impl ScreenOverlay for WaylandOverlay {
                 }
             }
             rt.event_queue.dispatch_pending(&mut rt.state)?;
+            rt.state.apply_resize();
 
             if rt.state.pending_flush {
                 rt.state.pending_flush = false;

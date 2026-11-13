@@ -8,6 +8,8 @@ use smithay_client_toolkit::compositor::CompositorHandler;
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shm::ShmHandler;
 
+use std::collections::VecDeque;
+
 use wayland_client::protocol::{wl_output, wl_surface};
 use wayland_client::{Connection, QueueHandle};
 
@@ -107,6 +109,11 @@ impl OverlayState {
         // we just use ours
         let (w, h) = size.unwrap_or((sd.width, sd.height));
 
+        // drag sends hundreds of configures: only the last size gets a buffer, in `apply_resize`
+        if self.toplevel && sd.shm_buffer.is_some() {
+            self.resize = ((sd.width, sd.height) != (w, h)).then_some((monitor_idx, (w, h)));
+            return;
+        }
         // if its already configured, and sizes weren't changed
         // there is no point of continuing
         if sd.shm_buffer.is_some() && sd.width == w && sd.height == h {
@@ -159,6 +166,37 @@ impl OverlayState {
         sd.height = h;
     }
 
+    pub fn apply_resize(&mut self) {
+        let Some((monitor_idx, (w, h))) = self.resize.take() else {
+            return;
+        };
+        let Some(sd) = self.surfaces.get_mut(&monitor_idx) else {
+            return;
+        };
+        let (bw, bh) = crate::types::px_size((w, h), sd.scale);
+        let shm_buffer = match create_shm_buffer(&mut self.pool, bw, bh) {
+            Ok(buffer) => buffer,
+            Err(e) => {
+                self.configure_error = Some(e.to_string());
+                return;
+            }
+        };
+        if let Some(viewport) = &sd.viewport {
+            viewport.set_destination(w as i32, h as i32);
+        }
+        sd.shm_buffer = Some(shm_buffer);
+        sd.width = w;
+        sd.height = h;
+        resize_first(
+            &mut self.events,
+            OverlayEvent::Resized {
+                monitor_idx,
+                size: (w, h),
+                scale: sd.scale,
+            },
+        );
+    }
+
     pub fn rescale_window(&mut self, scale: f32) {
         if !self.toplevel || self.viewporter.is_none() || scale <= 0.0 {
             return;
@@ -173,7 +211,54 @@ impl OverlayState {
         // before the first configure the scale is just picked up by it
         if sd.shm_buffer.take().is_some() {
             let surface = sd.surface.clone();
-            self.configure_surface(&surface, None);
+            let latest = self.resize.take().map(|(_, size)| size);
+            self.configure_surface(&surface, latest);
         }
+    }
+}
+
+/// app must meet only the newest `Resized`
+/// an older one would draw a size that has no buffer
+fn resize_first(events: &mut VecDeque<OverlayEvent>, resized: OverlayEvent) {
+    if let OverlayEvent::Resized { monitor_idx, .. } = resized {
+        events.retain(
+            |e| !matches!(e, OverlayEvent::Resized { monitor_idx: m, .. } if *m == monitor_idx),
+        );
+    }
+    events.push_front(resized);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn resized(monitor_idx: usize, w: u32, scale: f32) -> OverlayEvent {
+        OverlayEvent::Resized {
+            monitor_idx,
+            size: (w, 100),
+            scale,
+        }
+    }
+
+    #[test]
+    fn newest_resize_replaces_queued_ones_and_goes_first() {
+        let mut events = VecDeque::from([
+            OverlayEvent::PointerLeave,
+            resized(0, 300, 1.0),
+            resized(1, 500, 1.0),
+        ]);
+        resize_first(&mut events, resized(0, 400, 2.0));
+        let order: Vec<_> = events
+            .iter()
+            .map(|e| match e {
+                OverlayEvent::Resized {
+                    monitor_idx,
+                    size,
+                    scale,
+                } => Some((*monitor_idx, size.0, *scale)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(order, [Some((0, 400, 2.0)), None, Some((1, 500, 1.0))]);
     }
 }
