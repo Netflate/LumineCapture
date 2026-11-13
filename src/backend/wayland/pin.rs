@@ -153,6 +153,8 @@ pub fn run(image: &[u8], scale: f32) -> Result<(), Box<dyn std::error::Error>> {
         mapped: false,
         frame: Some(frame),
         buffer_size,
+        base_size: size,
+        zoom: 1.0,
         _viewport: viewport,
         buffer: None,
         png: image.to_vec(),
@@ -235,6 +237,8 @@ struct Pin {
     mapped: bool,
     frame: Option<Pixmap>,
     buffer_size: (u32, u32),
+    base_size: (u32, u32),
+    zoom: f32,
     _viewport: Option<wp_viewport::WpViewport>,
     buffer: Option<Buffer>,
     png: Vec<u8>,
@@ -325,6 +329,25 @@ impl PointerHandler for Pin {
                 } => {
                     if let Some(seat) = &self.pointer_seat {
                         self.window.move_(seat, serial);
+                    }
+                }
+                PointerEventKind::Axis { vertical, .. } => {
+                    let scroll_amount = if vertical.value120 != 0 {
+                        vertical.value120 as f64
+                    } else {
+                        vertical.absolute
+                    };
+                    if scroll_amount != 0.0 {
+                        let delta = if scroll_amount > 0.0 { 0.1 } else { -0.1 };
+                        self.zoom = (self.zoom + delta).clamp(0.5, 5.0);
+                        let new_w = (self.base_size.0 as f32 * self.zoom).round() as u32;
+                        let new_h = (self.base_size.1 as f32 * self.zoom).round() as u32;
+                        if let Some(vp) = &self._viewport {
+                            vp.set_destination(new_w as i32, new_h as i32);
+                        }
+                        self.window.set_min_size(Some((new_w, new_h)));
+                        self.window.set_max_size(Some((new_w, new_h)));
+                        self.window.commit();
                     }
                 }
                 _ => {}
