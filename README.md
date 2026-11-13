@@ -194,7 +194,14 @@ sudo dnf install https://github.com/Netflate/LumineCapture/releases/download/v0.
 wget https://github.com/Netflate/LumineCapture/releases/download/v0.3.0/lumine-capture_0.3.0-1_$(dpkg --print-architecture).deb
 sudo apt install ./lumine-capture_0.3.0-1_$(dpkg --print-architecture).deb
 ```
+**openSUSE Tumbleweed**
 
+Community package from the [openSUSE Build Service](https://build.opensuse.org/project/show/home:itachi_re) (x86_64 only, unofficial repack of the release RPM):
+```sh
+sudo zypper addrepo https://download.opensuse.org/repositories/home:itachi_re/openSUSE_Tumbleweed/home:itachi_re.repo
+sudo zypper refresh
+sudo zypper install lumine-capture
+```
 **Arch Linux**
 ```sh
 curl -LO https://github.com/Netflate/LumineCapture/releases/download/v0.3.0/lumine-capture-0.3.0-1-x86_64.pkg.tar.zst
