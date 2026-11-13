@@ -254,7 +254,7 @@ mod tests {
         for zoom in [0.3, 0.8, 1.0, 1.5, 3.0] {
             let mut picture = Picture::new(&image);
             let mut view = View::new((300, 200));
-            view.resize((120, 90), 0.0, 1.0);
+            view.resize((120, 90), 0.0, 0.0, 1.0);
             view.zoom_to(zoom, (17.0, 9.0));
             let mut canvas = Pixmap::new(120, 90).unwrap();
             picture.draw(&image, &mut canvas, &view, backdrop);

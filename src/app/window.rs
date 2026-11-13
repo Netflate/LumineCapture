@@ -30,6 +30,7 @@ pub async fn run(
         window.discovered_outputs(),
         picture,
         crate::theme::size::panel_height() + crate::ui::settings_panel::height(),
+        crate::edit::frame_pad(1.0),
     );
     window.open_window(TITLE, size, monitor_scale)?;
     let ((w, h), scale) = window.window_size().ok_or("the window got no size")?;
@@ -71,7 +72,12 @@ pub async fn run(
     editor_state.sheet = Some(sheet);
     let inset = super::panels::toolbar::docked_inset(&editor_state);
     if let Some(sheet) = editor_state.sheet.as_mut() {
-        sheet.resize(placement.px_size(), inset, 1.0);
+        sheet.resize(
+            placement.px_size(),
+            inset,
+            crate::edit::frame_pad(scale),
+            1.0,
+        );
     }
     editor_state.selection.zone = editor_state.workspace();
     editor_state.to = outputs;
@@ -113,7 +119,12 @@ pub fn resized(editor_state: &mut EditorState, size: (u32, u32), scale: f32, dir
     };
     if old != placement {
         let (w, h) = placement.px_size();
-        sheet.resize((w, h), inset, scale / old.scale);
+        sheet.resize(
+            (w, h),
+            inset,
+            crate::edit::frame_pad(scale),
+            scale / old.scale,
+        );
         for layer in [
             &mut editor_state.canvas[0],
             &mut editor_state.dimmed[0],

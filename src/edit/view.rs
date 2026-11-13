@@ -8,6 +8,7 @@ pub struct View {
     picture: (f32, f32),
     area: (f32, f32),
     inset: f32,
+    pad: f32,
     pub zoom: f32,
     pub pan: (f32, f32),
     fitted: bool,
@@ -20,6 +21,7 @@ impl View {
             picture: (picture.0.max(1) as f32, picture.1.max(1) as f32),
             area: (0.0, 0.0),
             inset: 0.0,
+            pad: 0.0,
             zoom: 1.0,
             pan: (0.0, 0.0),
             fitted: true,
@@ -28,17 +30,19 @@ impl View {
     }
 
     /// `ratio` is the new scale over the old one: the picture keeps its size on screen
-    pub fn resize(&mut self, area: (u32, u32), inset: f32, ratio: f32) {
+    pub fn resize(&mut self, area: (u32, u32), inset: f32, pad: f32, ratio: f32) {
         let area = (area.0 as f32, area.1 as f32);
         if self.area == (0.0, 0.0) || self.untouched {
             self.area = area;
             self.inset = inset;
+            self.pad = pad;
             self.fit();
             return;
         }
         let center = self.picture_point(self.center());
         self.area = area;
         self.inset = inset;
+        self.pad = pad;
         self.zoom = if self.fitted {
             self.fit_zoom()
         } else {
@@ -51,7 +55,7 @@ impl View {
 
     pub fn fit(&mut self) {
         self.zoom = self.fit_zoom();
-        self.pan = (0.0, self.inset);
+        self.pan = (self.pad, self.inset + self.pad);
         self.fitted = true;
         self.untouched = true;
         self.clamp();
@@ -99,13 +103,18 @@ impl View {
         (self.area.0, (self.area.1 - self.inset).max(1.0))
     }
 
+    fn room(&self) -> (f32, f32) {
+        let (w, h) = self.viewport();
+        ((w - self.pad * 2.0).max(1.0), (h - self.pad * 2.0).max(1.0))
+    }
+
     pub fn picture_point(&self, (x, y): (f32, f32)) -> (f32, f32) {
         ((x - self.pan.0) / self.zoom, (y - self.pan.1) / self.zoom)
     }
 
     fn fit_zoom(&self) -> f32 {
         let whole = self.whole_zoom();
-        let (w, h) = self.viewport();
+        let (w, h) = self.room();
         let across = (w / self.picture.0).max(h / self.picture.1);
         // for scrolled screenshots
         let zoom = if whole >= across / 2.0 { whole } else { across };
@@ -113,7 +122,7 @@ impl View {
     }
 
     fn whole_zoom(&self) -> f32 {
-        let (w, h) = self.viewport();
+        let (w, h) = self.room();
         (w / self.picture.0).min(h / self.picture.1)
     }
 
@@ -121,13 +130,16 @@ impl View {
         self.whole_zoom().clamp(f32::EPSILON, MIN_ZOOM)
     }
 
+    // a picture smaller than the window stays centered, a bigger one never leaves
+    // a gap at its edges wider than the pad, which is the room for its frame
     fn clamp(&mut self) {
+        let pad = self.pad;
         let axis = |pan: f32, from: f32, area: f32, size: f32| {
             let shown = size * self.zoom;
-            if shown <= area {
+            if shown <= area - pad * 2.0 {
                 from + (area - shown) / 2.0
             } else {
-                pan.clamp(from + area - shown, from)
+                pan.clamp(from + area - pad - shown, from + pad)
             }
         };
         let (w, h) = self.viewport();
@@ -144,7 +156,7 @@ mod tests {
 
     fn view(picture: (u32, u32), area: (u32, u32)) -> View {
         let mut view = View::new(picture);
-        view.resize(area, 0.0, 1.0);
+        view.resize(area, 0.0, 0.0, 1.0);
         view
     }
 
@@ -212,7 +224,7 @@ mod tests {
         let mut view = view((1600, 30000), (1200, 800));
         view.pan_by((0.0, -6000.0));
         let middle = view.picture_point(view.center());
-        view.resize((800, 800), 0.0, 1.0);
+        view.resize((800, 800), 0.0, 0.0, 1.0);
         assert_eq!(view.zoom, 0.5);
         let moved = view.picture_point(view.center());
         assert!((middle.1 - moved.1).abs() < 1e-2);
@@ -221,17 +233,17 @@ mod tests {
     #[test]
     fn untouched_long_capture_fits_again_from_the_top() {
         let mut view = view((1600, 30000), (1200, 800));
-        view.resize((1200, 700), 0.0, 1.0);
+        view.resize((1200, 700), 0.0, 0.0, 1.0);
         assert_eq!(view.pan, (0.0, 0.0));
         view.pan_by((0.0, -100.0));
-        view.resize((1200, 600), 0.0, 1.0);
+        view.resize((1200, 600), 0.0, 0.0, 1.0);
         assert_ne!(view.pan.1, 0.0);
     }
 
     #[test]
     fn picture_starts_under_the_inset() {
         let mut view = View::new((1000, 1000));
-        view.resize((500, 600), 100.0, 1.0);
+        view.resize((500, 600), 100.0, 0.0, 1.0);
         assert_eq!(view.zoom, 0.5);
         assert_eq!(view.pan, (0.0, 100.0));
         view.zoom_to(1.0, view.center());
@@ -244,7 +256,7 @@ mod tests {
     #[test]
     fn small_picture_is_centered_below_the_inset() {
         let mut view = View::new((200, 100));
-        view.resize((800, 600), 100.0, 1.0);
+        view.resize((800, 600), 100.0, 0.0, 1.0);
         assert_eq!(view.pan, (300.0, 100.0 + 200.0));
         assert_eq!(view.center(), (400.0, 350.0));
     }
@@ -252,10 +264,10 @@ mod tests {
     #[test]
     fn long_capture_refits_from_below_the_inset() {
         let mut view = View::new((1600, 30000));
-        view.resize((1200, 900), 100.0, 1.0);
+        view.resize((1200, 900), 100.0, 0.0, 1.0);
         assert_eq!(view.zoom, 0.75);
         assert_eq!(view.pan, (0.0, 100.0));
-        view.resize((1200, 700), 80.0, 1.0);
+        view.resize((1200, 700), 80.0, 0.0, 1.0);
         assert_eq!(view.pan, (0.0, 80.0));
         view.pan_by((0.0, -500.0));
         view.fit();
@@ -266,7 +278,84 @@ mod tests {
     fn new_scale_keeps_the_size_on_screen() {
         let mut view = view((4000, 4000), (1000, 1000));
         view.zoom_to(1.0, (0.0, 0.0));
-        view.resize((2000, 2000), 0.0, 2.0);
+        view.resize((2000, 2000), 0.0, 0.0, 2.0);
         assert_eq!(view.zoom, 2.0);
+    }
+
+    fn frame(view: &View, picture: (f32, f32)) -> (f32, f32, f32, f32) {
+        let (w, h) = (picture.0 * view.zoom, picture.1 * view.zoom);
+        (view.pan.0, view.pan.1, view.pan.0 + w, view.pan.1 + h)
+    }
+
+    #[test]
+    fn a_fitted_screenshot_leaves_the_pad_on_the_side_that_limits_it() {
+        let mut view = View::new((1000, 1500));
+        view.resize((1000, 1000), 100.0, 10.0, 1.0);
+        let (l, t, r, b) = frame(&view, (1000.0, 1500.0));
+        assert!((t - 110.0).abs() < 1e-3 && (b - 990.0).abs() < 1e-3);
+        assert!(l >= 10.0 && r <= 990.0);
+        assert!((l - (1000.0 - r)).abs() < 1e-3);
+    }
+
+    #[test]
+    fn a_wide_screenshot_leaves_the_pad_left_and_right() {
+        let mut view = View::new((2000, 1000));
+        view.resize((1000, 1000), 100.0, 10.0, 1.0);
+        let (l, t, r, b) = frame(&view, (2000.0, 1000.0));
+        assert!((l - 10.0).abs() < 1e-3 && (r - 990.0).abs() < 1e-3);
+        assert!(t >= 110.0 && b <= 990.0);
+        assert!((t - 100.0 - (1000.0 - b)).abs() < 1e-3);
+    }
+
+    #[test]
+    fn a_fitted_long_capture_starts_and_ends_a_pad_inside() {
+        let mut view = View::new((1600, 30000));
+        view.resize((1200, 900), 100.0, 10.0, 1.0);
+        assert!((view.zoom - 1180.0 / 1600.0).abs() < 1e-6);
+        assert_eq!(view.pan, (10.0, 110.0));
+        assert!(!view.pan_by((0.0, 500.0)));
+        assert!(view.pan_by((0.0, -1e9)));
+        let (_, _, _, bottom) = frame(&view, (1600.0, 30000.0));
+        assert!((bottom - 890.0).abs() < 1e-2);
+        assert!(!view.pan_by((300.0, 0.0)));
+        assert_eq!(view.pan.0, 10.0);
+    }
+
+    #[test]
+    fn zooming_in_stops_a_pad_from_every_edge() {
+        let mut view = View::new((4000, 4000));
+        view.resize((1000, 1000), 100.0, 10.0, 1.0);
+        view.zoom_to(1.0, view.center());
+        assert!(view.pan_by((1e9, 1e9)));
+        assert_eq!(view.pan, (10.0, 110.0));
+        assert!(view.pan_by((-1e9, -1e9)));
+        assert_eq!(view.pan, (1000.0 - 10.0 - 4000.0, 1000.0 - 10.0 - 4000.0));
+    }
+
+    #[test]
+    fn a_resize_keeps_the_pad() {
+        let mut view = View::new((1000, 1200));
+        view.resize((1000, 1000), 100.0, 10.0, 1.0);
+        view.resize((800, 700), 100.0, 10.0, 1.0);
+        let (l, t, r, b) = frame(&view, (1000.0, 1200.0));
+        assert!(l >= 10.0 - 1e-3 && r <= 790.0 + 1e-3);
+        assert!(t >= 110.0 - 1e-3 && b <= 690.0 + 1e-3);
+    }
+
+    #[test]
+    fn the_crop_frame_is_whole_inside_the_viewport_at_fit() {
+        let pad = crate::edit::frame_pad(1.0);
+        let line = crate::config::get().selection.border_width;
+        assert!(pad >= line);
+        for picture in [(947, 1024), (1600, 12000), (2000, 1000)] {
+            let mut view = View::new(picture);
+            view.resize((947, 1030), 84.0, pad, 1.0);
+            let (l, t, r, b) = frame(&view, (picture.0 as f32, picture.1 as f32));
+            assert!(l - line >= 0.0 && t - line >= 84.0, "{picture:?}");
+            assert!(
+                r + line <= 947.0 && b + line <= 1030.0 || picture.1 == 12000,
+                "{picture:?}"
+            );
+        }
     }
 }
