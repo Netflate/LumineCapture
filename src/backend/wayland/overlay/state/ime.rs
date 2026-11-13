@@ -155,9 +155,7 @@ impl Dispatch<ZwpTextInputV3, ()> for OverlayState {
         match event {
             zwp_text_input_v3::Event::Enter { .. } => {
                 let request = state.ime.enter();
-                if state.send_ime(request) {
-                    state.pending_flush = true;
-                }
+                state.send_ime(request);
             }
             zwp_text_input_v3::Event::Leave { .. } => {
                 if let Some(update) = state.ime.leave() {

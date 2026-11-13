@@ -350,9 +350,12 @@ impl ScreenOverlay for WaylandOverlay {
             rt.event_queue.dispatch_pending(&mut rt.state)?;
             rt.state.apply_resize();
 
-            if rt.state.pending_flush {
-                rt.state.pending_flush = false;
-                rt.event_queue.flush()?;
+            // flush before sleeping (pongs and other replies queued in dispatch must leave now)
+            // otherwise kde will mark the window as freezed
+            match rt.event_queue.flush() {
+                Ok(()) => {}
+                Err(WaylandError::Io(e)) if e.kind() == ErrorKind::WouldBlock => {}
+                Err(e) => return Err(e.into()),
             }
 
             if let Some(ev) = rt.state.events.pop_front() {
