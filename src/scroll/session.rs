@@ -49,7 +49,7 @@ impl ScrollSession {
         let stitcher = Stitcher::new(Config::default()).map_err(|e| e.to_string())?;
         Ok(Self {
             paused: false,
-            status: "Waiting for scroll".into(),
+            status: "Scroll slowly to capture".into(),
             stitcher,
             region,
             monitor_idx,
@@ -103,7 +103,7 @@ impl ScrollSession {
         let signature = frame::signature(&image, SIGNATURE_COLS, SIGNATURE_ROWS);
         if frame::is_duplicate(&self.last_signature, &signature) {
             if self.settled {
-                self.status = "Waiting for scroll".into();
+                self.status = "Scroll slowly to capture".into();
                 return None;
             }
             self.settled = true;
@@ -137,9 +137,9 @@ impl ScrollSession {
         self.status = match outcome.status {
             Status::FirstFrame => "Capturing".into(),
             Status::Appended => "Capturing".into(),
-            Status::NoProgress => "Waiting for scroll".into(),
+            Status::NoProgress => "Scroll slowly to capture".into(),
             // the page went further than one frame to the next can follow
-            Status::NoMatch => "Lost it, scroll back".into(),
+            Status::NoMatch => "Too fast, scroll back".into(),
         };
     }
 
@@ -176,7 +176,7 @@ impl ScrollSession {
             Ok(true) => {
                 self.focus = (0, i32::MAX);
                 self.last_signature.clear();
-                self.status = "Waiting for scroll".into();
+                self.status = "Scroll slowly to capture".into();
                 info!("scrolling capture switched axis to {next:?}");
                 true
             }
