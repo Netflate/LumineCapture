@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use crate::backend::{Notifier, initialize_notifier};
 
 /// duration to wait for the desktop notification daemon via DBus.
-const TIMEOUT: Duration = Duration::from_millis(500);
+const TIMEOUT: Duration = Duration::from_secs(5);
 
 pub const NO_NOTIFY_ARG: &str = "--nonotify";
 
