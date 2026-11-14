@@ -40,6 +40,8 @@ pub enum Notice<'a> {
     NoText,
     TextFailed(String),
     TextCopyFailed(String),
+    ColorCopied(String, String),
+    ColorInPrimary(String, String),
 }
 
 impl<'a> Notice<'a> {
@@ -83,6 +85,15 @@ impl<'a> Notice<'a> {
             Notice::NoText => ("No text found", String::new(), false, None),
             Notice::TextFailed(e) => ("Couldn't read the text", e, true, None),
             Notice::TextCopyFailed(e) => ("Couldn't copy the text", e, true, None),
+            Notice::ColorCopied(hex, rgb) => {
+                ("Color copied", format!("{hex} · rgb({rgb})"), false, None)
+            }
+            Notice::ColorInPrimary(hex, rgb) => (
+                "Color ready to paste with the middle click",
+                format!("{hex} · rgb({rgb})"),
+                false,
+                None,
+            ),
         };
         Notification {
             summary,

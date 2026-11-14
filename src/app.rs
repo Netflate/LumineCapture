@@ -54,7 +54,7 @@ impl Launch {
     pub fn outputs(&self) -> Outputs {
         let mut outputs = self.to.unwrap_or(crate::config::get().general.to);
         outputs.save |= self.output.is_some();
-        if self.mode == Mode::Ocr {
+        if matches!(self.mode, Mode::Ocr | Mode::Pick) {
             outputs.pin = false;
             outputs.save = false;
         } else {
@@ -65,17 +65,23 @@ impl Launch {
 
     fn warn_ignored(&self) {
         let to = self.to.unwrap_or_default();
-        if self.mode != Mode::Ocr {
-            if to.primary {
-                log::warn!("r (primary selection) works only with -r ocr, ignoring it");
+        let name = match self.mode {
+            Mode::Ocr => "-r ocr",
+            Mode::Pick => "--pick",
+            _ => {
+                if to.primary {
+                    log::warn!(
+                        "r (primary selection) works only with -r ocr and --pick, ignoring it"
+                    );
+                }
+                return;
             }
-            return;
-        }
+        };
         if to.pin || to.save {
-            log::warn!("p and s don't apply to -r ocr, ignoring them");
+            log::warn!("p and s don't apply to {name}, ignoring them");
         }
         if self.output.is_some() {
-            log::warn!("--output has no effect with -r ocr, ignoring it, use stdout");
+            log::warn!("--output has no effect with {name}, ignoring it, use stdout");
         }
     }
 }
@@ -94,7 +100,7 @@ pub async fn run(
         );
     }
     match launch.mode {
-        Mode::Editor | Mode::Region | Mode::Ocr | Mode::Scroll => {
+        Mode::Editor | Mode::Region | Mode::Ocr | Mode::Scroll | Mode::Pick => {
             make_screenshot(conn, launch).await
         }
         Mode::Full => instant::full(conn, launch).await,
@@ -119,6 +125,24 @@ async fn make_screenshot(
         editor_state.ui_hidden = true;
         editor_state.toolbar.start_hidden();
     }
+    if launch.mode == Mode::Pick {
+        editor_state.ui_hidden = true;
+        editor_state.toolbar.start_hidden();
+        for dimmed in &mut editor_state.dimmed {
+            dimmed.fill(tiny_skia::Color::TRANSPARENT);
+        }
+        for canvas in &mut editor_state.canvas {
+            canvas.fill(tiny_skia::Color::TRANSPARENT);
+        }
+        let mut dirty_mask = 0;
+        crate::tools::dispatch_deactivate(
+            editor_state.selected_tool,
+            &mut editor_state,
+            &mut dirty_mask,
+        );
+        editor_state.selected_tool = Tool::Eyedropper;
+        crate::tools::dispatch_activate(Tool::Eyedropper, &mut editor_state, &mut dirty_mask);
+    }
     // when launched with -S, let the user select a region first; scrolling takes over once ready
     if launch.mode == Mode::Scroll {
         editor_state.toasts.show(
@@ -137,16 +161,23 @@ async fn make_screenshot(
 
     run_overlay(&scroll_conn, &mut editor_state, &mut overlay).await?;
     // (saving what user chose)
-    crate::editor::saved::save(
-        &editor_state.tool_settings,
-        &editor_state.color_popover.history,
-        &editor_state.color_popover.initial_history,
-        !editor_state.magnifier.hidden,
-    );
+    if launch.mode != Mode::Pick {
+        crate::editor::saved::save(
+            &editor_state.tool_settings,
+            &editor_state.color_popover.history,
+            &editor_state.color_popover.initial_history,
+            !editor_state.magnifier.hidden,
+        );
+    }
 
     editor_state.ocr.models.shutdown();
     if launch.mode == Mode::Ocr {
         ocr::finish(&mut editor_state).await
+    } else if launch.mode == Mode::Pick {
+        drop(overlay);
+        let _ = scroll_conn.flush();
+        finish::pick(&editor_state).await;
+        Ok(())
     } else if editor_state.to_window {
         finish::hand_to_window(&mut editor_state).await
     } else {

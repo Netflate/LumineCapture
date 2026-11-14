@@ -34,6 +34,7 @@ Modes (without one, the editor opens):
                        it doesn't show any scanning progress: it closes, and when the scan
                        finishes, shows a notification with the outcome.
                        Recommended to use with -t, see below
+  -p, --pick           Click a pixel to copy its color as hex, no editor
   -S, --scroll         Start in scrolling capture: pick a region, scroll the page, and
                        the frames are stitched into one long image. Enter saves it,
                        Escape cancels
@@ -49,8 +50,9 @@ Options:
                        to stdout, in any order and mix, e.g. -t pc. Defaults to general.to
                        in the config. In the editor, Enter and a double click do this, and
                        any other finish adds it. A bare -t means nothing by default.
-                       Only for -r ocr: r copies the text to the primary selection (middle
-                       click). Screenshots ignore r, apps paste only text with the middle click
+                       Only for -r ocr and --pick: r copies the text to the primary selection
+                       (middle click). Screenshots ignore r, apps paste only text with the
+                       middle click
   -o, --output <DIR>   Save the shot into this directory instead of the configured
                        one, creating it if needed; implies s in --to
   -F, --format <FORMAT>
@@ -94,11 +96,12 @@ fn parse_launch(
         (pargs.contains(["-w", "--window"]), types::Mode::Window),
         (pargs.contains(["-r", "--region"]), types::Mode::Region),
         (pargs.contains(["-S", "--scroll"]), types::Mode::Scroll),
+        (pargs.contains(["-p", "--pick"]), types::Mode::Pick),
     ];
     let mut picked = modes.iter().filter(|(on, _)| *on).map(|(_, mode)| *mode);
     let mode = picked.next().unwrap_or_default();
     if picked.next().is_some() {
-        return Err("pick one mode: --full, --window, --region or --scroll".into());
+        return Err("pick one mode: --full, --window, --region, --scroll or --pick".into());
     }
     let one_monitor = pargs.contains(["-m", "--monitor"]);
     let output =
@@ -248,6 +251,9 @@ mod tests {
         assert_eq!(mode(&["-rm", "ocr"]), Ok(types::Mode::Ocr));
         assert_eq!(mode(&["-r", "-t", "c", "ocr"]), Ok(types::Mode::Ocr));
         assert_eq!(mode(&["-r", "-o", "ocr"]), Ok(types::Mode::Region));
+        assert_eq!(mode(&["-p"]), Ok(types::Mode::Pick));
+        assert_eq!(mode(&["--pick"]), Ok(types::Mode::Pick));
+        assert!(mode(&["-p", "-r"]).is_err());
     }
 
     fn edit_launch(list: &[&str]) -> (Option<types::Outputs>, Option<PathBuf>, Vec<String>) {

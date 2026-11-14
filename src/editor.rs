@@ -142,6 +142,7 @@ pub struct EditorState {
 
     /// Set to true when the user is about to pick a color from the palette, since the action is a one-time thing
     pub pick_once: bool,
+    pub picked: Option<tiny_skia::Color>,
     pub finish: Option<crate::types::Outputs>,
     /// What to do with the screenshot
     /// in the ui, finish adds it alongside the user chioce
@@ -226,6 +227,7 @@ impl EditorState {
 
             tool_settings: ToolSettings::default(),
             pick_once: false,
+            picked: None,
             finish: None,
             to: crate::config::get().general.to,
             cancel: false,

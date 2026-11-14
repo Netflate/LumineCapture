@@ -11,11 +11,9 @@ use crate::backend::notify::{self, Notice};
 use crate::editor::EditorState;
 use crate::ocr::{self, StartOutcome};
 use crate::theme::anim;
-use crate::types::Outputs;
-use crate::utils::{copy_to_clipboard, copy_to_primary};
 use log::{error, info};
 
-use super::finish::to_stdout;
+use super::finish::deliver_text;
 
 type Result = std::result::Result<(), Box<dyn std::error::Error>>;
 
@@ -61,27 +59,12 @@ pub async fn finish(editor_state: &mut EditorState) -> Result {
     let view = &mut editor_state.ocr.view;
     view.set_lines(text.lines);
     info!("ocr: {} line(s)", view.lines.len());
-    deliver(view.text_to_copy(), outputs).await;
+    deliver_text(
+        view.text_to_copy(),
+        outputs,
+        Notice::TextCopied,
+        Notice::TextInPrimary,
+    )
+    .await;
     Ok(())
-}
-
-async fn deliver(text: String, outputs: Outputs) {
-    if outputs.stdout {
-        to_stdout(format!("{text}\n").as_bytes(), false).await;
-    }
-    let in_clipboard = outputs.copy && copied(copy_to_clipboard(&text)).await;
-    let in_primary = outputs.primary && copied(copy_to_primary(&text)).await;
-    if in_clipboard {
-        notify::send(Notice::TextCopied(text)).await;
-    } else if in_primary {
-        notify::send(Notice::TextInPrimary(text)).await;
-    }
-}
-
-async fn copied(result: Result) -> bool {
-    if let Err(e) = &result {
-        error!("ocr: copy failed: {e}");
-        notify::send(Notice::TextCopyFailed(e.to_string())).await;
-    }
-    result.is_ok()
 }

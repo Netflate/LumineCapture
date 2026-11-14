@@ -7,8 +7,9 @@ use crate::backend::initialize_clipboard;
 use crate::backend::notify::{self, Notice};
 use crate::editor::EditorState;
 use crate::types::Outputs;
+use crate::ui::settings_panel::ValueField;
 use crate::utils::format::for_clipboard;
-use crate::utils::{save_to_file, write_to_stdout};
+use crate::utils::{copy_to_clipboard, copy_to_primary, save_to_file, write_to_stdout};
 
 pub async fn finish_capture(
     editor_state: &mut EditorState,
@@ -100,4 +101,46 @@ pub(crate) async fn to_stdout(data: &[u8], binary: bool) {
         log::error!("can't write to stdout: {e}");
         notify::send(Notice::StdoutFailed(e.to_string())).await;
     }
+}
+
+pub async fn pick(editor_state: &EditorState) {
+    let (Some(outputs), Some(color)) = (editor_state.finish, editor_state.picked) else {
+        return;
+    };
+    let hex = ValueField::Hex.text(color);
+    let rgb = ValueField::Rgb.text(color);
+    let rgb2 = rgb.clone();
+    deliver_text(
+        hex,
+        outputs,
+        move |hex| Notice::ColorCopied(hex, rgb),
+        move |hex| Notice::ColorInPrimary(hex, rgb2),
+    )
+    .await;
+}
+
+pub async fn deliver_text(
+    text: String,
+    outputs: Outputs,
+    copied: impl FnOnce(String) -> Notice<'static>,
+    in_primary: impl FnOnce(String) -> Notice<'static>,
+) {
+    if outputs.stdout {
+        to_stdout(format!("{text}\n").as_bytes(), false).await;
+    }
+    let in_clipboard = outputs.copy && copy_ok(copy_to_clipboard(&text)).await;
+    let in_primary_sel = outputs.primary && copy_ok(copy_to_primary(&text)).await;
+    if in_clipboard {
+        notify::send(copied(text)).await;
+    } else if in_primary_sel {
+        notify::send(in_primary(text)).await;
+    }
+}
+
+async fn copy_ok(result: Result<(), Box<dyn std::error::Error>>) -> bool {
+    if let Err(e) = &result {
+        log::error!("copy failed: {e}");
+        notify::send(Notice::TextCopyFailed(e.to_string())).await;
+    }
+    result.is_ok()
 }

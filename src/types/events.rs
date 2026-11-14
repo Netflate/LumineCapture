@@ -83,6 +83,7 @@ pub enum Mode {
     Region,
     Ocr,
     Scroll,
+    Pick,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -24,6 +24,9 @@ pub fn run(editor_state: &mut EditorState, action: Action, dirty_mask: &mut u32)
     {
         return;
     }
+    if editor_state.mode == Mode::Pick && !matches!(action, Action::Cancel) {
+        return;
+    }
     editor_state.settings_panel.cancel_scroll();
     editor_state.color_popover.cancel_scroll();
 

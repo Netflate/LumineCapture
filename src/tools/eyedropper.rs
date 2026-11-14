@@ -12,7 +12,7 @@ use tiny_skia::Color;
 
 use crate::editor::{DamageZone, EditorState};
 use crate::tools::ToolBehavior;
-use crate::types::{MouseButton, SpecialKey};
+use crate::types::{Mode, MouseButton, SpecialKey};
 use crate::ui::magnifier::{magnifier_rect, sample_pixel};
 use crate::ui::settings_panel::ValueField;
 use crate::ui::toast::ToastKind;
@@ -27,6 +27,16 @@ impl ToolBehavior for EyedropperTool {
         pressed: bool,
         dirty_mask: &mut u32,
     ) {
+        if state.mode == Mode::Pick {
+            if pressed
+                && matches!(button, MouseButton::Left)
+                && let Some(color) = color_under_pointer(state)
+            {
+                state.picked = Some(color);
+                state.finish = Some(state.to);
+            }
+            return;
+        }
         if pressed && matches!(button, MouseButton::Left) {
             pick(state, dirty_mask);
         }
@@ -35,7 +45,7 @@ impl ToolBehavior for EyedropperTool {
     fn on_move(&self, _state: &mut EditorState, _global: (f64, f64), _dirty_mask: &mut u32) {}
 
     fn on_key(&self, state: &mut EditorState, key: SpecialKey, _dirty_mask: &mut u32) {
-        if state.input.ctrl && matches!(key, SpecialKey::KeyC) {
+        if state.mode != Mode::Pick && state.input.ctrl && matches!(key, SpecialKey::KeyC) {
             let color = state.tool_settings.color;
             copy_value(state, ValueField::Hex, color);
         }
