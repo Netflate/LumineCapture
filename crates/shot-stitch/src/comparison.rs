@@ -45,12 +45,14 @@ fn textured(cols: &Signature, y: usize, weights: &Weights) -> bool {
 struct Sums {
     sums: [f32; BAND_COUNT],
     counts: [i32; BAND_COUNT],
+    seen: i32,
     rows: i32,
     textured: i32,
 }
 
 impl Sums {
     fn add(&mut self, a: &[f32; BAND_COUNT], b: &[f32; BAND_COUNT], skip: u8, weights: &Weights) {
+        self.seen += 1;
         let mut used = false;
         for g in 0..BAND_COUNT {
             if skip >> g & 1 == 0 && weights[g] > 0.0 {
@@ -63,7 +65,8 @@ impl Sums {
     }
 
     fn finish(&self, weights: &Weights, minimum: i32) -> f32 {
-        if self.rows < minimum || self.textured < 8 {
+        let compared = (minimum / 4).max(24).min(minimum);
+        if self.seen < minimum || self.rows < compared || self.textured < 8 {
             return NO_MATCH;
         }
         let enough = (self.rows / 4).max(8);
