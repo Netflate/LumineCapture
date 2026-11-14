@@ -156,7 +156,7 @@ pub struct EditorState {
 
     pub ocr: OcrState,
     pub scroll: Option<crate::scroll::Scroll>,
-    pub scroll_left: Option<(usize, bool)>,
+    pub scroll_left: Option<(usize, Vec<usize>)>,
     pub sheet: Option<crate::edit::Sheet>,
 }
 

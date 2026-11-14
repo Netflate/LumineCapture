@@ -1,6 +1,6 @@
 use crate::backend::CaptureMethod;
 use crate::scroll::{Scroll, ScrollSession, frame};
-use crate::types::{Capture, CaptureResult, MonitorFrame, Output, StreamInfo};
+use crate::types::{CaptureResult, MonitorFrame, Output, StreamInfo};
 use tiny_skia::{IntRect, Pixmap, Rect};
 
 struct NoCapture;
@@ -53,6 +53,7 @@ fn scroll() -> Scroll {
         1.0,
         (400.0, 400.0),
         Box::new(NoCapture),
+        1,
     )
 }
 
@@ -66,14 +67,6 @@ fn show(scroll: &mut Scroll, origin: i32) {
 fn row(pixmap: &Pixmap, y: u32) -> Vec<u8> {
     let start = (y * pixmap.width() * 4) as usize;
     pixmap.data()[start..start + (W * 4) as usize].to_vec()
-}
-
-fn screen() -> (Capture, Pixmap) {
-    let capture = Capture {
-        pixmap: Pixmap::new(400, 400).unwrap(),
-        scale: 1.0,
-    };
-    (capture, Pixmap::new(400, 400).unwrap())
 }
 
 #[test]
@@ -100,12 +93,11 @@ fn grown_once_the_page_has_moved() {
 fn live_region_is_a_hole_in_the_base() {
     let mut scroll = scroll();
     show(&mut scroll, 0);
-    let (mut capture, mut dimmed) = screen();
-    capture.pixmap.fill(tiny_skia::Color::WHITE);
-    scroll.paint_base(&capture, &mut dimmed, 1.0);
+    let mut dimmed = Pixmap::new(400, 400).unwrap();
+    scroll.paint_base(&mut dimmed, 1.0);
 
     assert!(row(&dimmed, 0).iter().all(|&b| b == 0));
     let outside = dimmed.pixel(W + 5, 0).unwrap();
-    assert_eq!(outside.alpha(), 255);
-    assert!(outside.red() < 255, "the snapshot outside is dimmed");
+    assert_eq!(outside.alpha(), crate::config::get().selection.scroll_dim.3);
+    assert!(outside.alpha() < 255, "the live screen shows through");
 }

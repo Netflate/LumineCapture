@@ -1,14 +1,11 @@
 // Scrolling capture inside the editor: the live page shows through the region
 
 use shot_stitch::{Axis, Edge, Status, StitchResult};
-use tiny_skia::{
-    BlendMode, FilterQuality, IntRect, Paint, Pattern, Pixmap, Rect, SpreadMode, Transform,
-};
+use tiny_skia::{IntRect, Pixmap, Rect};
 
 use crate::backend::{CaptureMethod, InputHole};
 use crate::scroll::panel::{self, PanelButton, PanelLayout};
 use crate::scroll::session::{ScrollSession, to_pixmap};
-use crate::types::Capture;
 
 pub struct Scroll {
     pub session: ScrollSession,
@@ -26,7 +23,7 @@ pub struct Scroll {
     pub layout: PanelLayout,
     pub hovered: Option<PanelButton>,
     pub capture: Box<dyn CaptureMethod>,
-    pub background: bool,
+    pub backgrounds: Vec<bool>,
     pub input: Option<Option<InputHole>>,
     long: Option<(u64, Pixmap)>,
 }
@@ -39,6 +36,7 @@ impl Scroll {
         scale: f32,
         monitor_size: (f32, f32),
         capture: Box<dyn CaptureMethod>,
+        monitors: usize,
     ) -> Self {
         let region = session.region;
         Self {
@@ -52,7 +50,7 @@ impl Scroll {
             lead: 0,
             hovered: None,
             capture,
-            background: true,
+            backgrounds: vec![true; monitors],
             input: None,
             long: None,
         }
@@ -116,18 +114,8 @@ impl Scroll {
         }
     }
 
-    pub fn paint_base(&self, capture: &Capture, dimmed: &mut Pixmap, canvas_scale: f32) {
-        let (cw, ch) = (capture.pixmap.width(), capture.pixmap.height());
-        let (dw, dh) = (dimmed.width(), dimmed.height());
-        if let (Some(from), Some(at)) = (
-            IntRect::from_xywh(0, 0, cw, ch),
-            IntRect::from_xywh(0, 0, dw, dh),
-        ) {
-            paste(dimmed, at, &capture.pixmap, from);
-            let mut paint = Paint::default();
-            paint.set_color(crate::config::get().selection.dim.color());
-            dimmed.fill_rect(at.to_rect(), &paint, Transform::identity(), None);
-        }
+    pub fn paint_base(&self, dimmed: &mut Pixmap, canvas_scale: f32) {
+        fill_live(dimmed);
         self.paint_region(dimmed, canvas_scale);
     }
 
@@ -145,6 +133,10 @@ impl Scroll {
         self.layout = layout;
         moved
     }
+}
+
+pub fn fill_live(dimmed: &mut Pixmap) {
+    dimmed.fill(crate::config::get().selection.scroll_dim.color());
 }
 
 pub fn inside(rect: &Rect, (x, y): (f64, f64)) -> bool {
@@ -176,56 +168,5 @@ fn clear(pixmap: &mut Pixmap, at: IntRect) {
     for row in at.y()..at.y() + at.height() as i32 {
         let start = row as usize * stride + at.x() as usize * 4;
         pixmap.data_mut()[start..start + len].fill(0);
-    }
-}
-
-/// `from` of `src` stretched over `at` of `dst`, replacing what was there.
-fn paste(dst: &mut Pixmap, at: IntRect, src: &Pixmap, from: IntRect) {
-    if (at.width(), at.height()) == (from.width(), from.height()) {
-        copy(dst, (at.x(), at.y()), src, from);
-        return;
-    }
-    let sx = at.width() as f32 / from.width() as f32;
-    let sy = at.height() as f32 / from.height() as f32;
-    let transform = Transform::from_row(
-        sx,
-        0.0,
-        0.0,
-        sy,
-        at.x() as f32 - from.x() as f32 * sx,
-        at.y() as f32 - from.y() as f32 * sy,
-    );
-    let paint = Paint {
-        shader: Pattern::new(
-            src.as_ref(),
-            SpreadMode::Pad,
-            FilterQuality::Bilinear,
-            1.0,
-            transform,
-        ),
-        blend_mode: BlendMode::Source,
-        anti_alias: false,
-        ..Paint::default()
-    };
-    dst.fill_rect(at.to_rect(), &paint, Transform::identity(), None);
-}
-
-fn copy(dst: &mut Pixmap, at: (i32, i32), src: &Pixmap, from: IntRect) {
-    let (dw, dh) = (dst.width() as i32, dst.height() as i32);
-    let (sw, sh) = (src.width() as i32, src.height() as i32);
-    let x0 = (-at.0).max(-from.x()).max(0);
-    let x1 = (from.width() as i32).min(dw - at.0).min(sw - from.x());
-    if x1 <= x0 {
-        return;
-    }
-    let len = (x1 - x0) as usize * 4;
-    for row in 0..from.height() as i32 {
-        let (sy, dy) = (from.y() + row, at.1 + row);
-        if sy < 0 || sy >= sh || dy < 0 || dy >= dh {
-            continue;
-        }
-        let s = (sy * sw + from.x() + x0) as usize * 4;
-        let d = (dy * dw + at.0 + x0) as usize * 4;
-        dst.data_mut()[d..d + len].copy_from_slice(&src.data()[s..s + len]);
     }
 }

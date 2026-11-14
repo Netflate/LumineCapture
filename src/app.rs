@@ -765,9 +765,11 @@ fn render_monitor(
         selection_dirty = false;
     }
     let mut clip = None;
+    if editor_state.scroll.is_some() {
+        selection_dirty = false;
+    }
     if let Some(scroll) = editor_state.scroll.as_ref().filter(|s| s.monitor_idx == i) {
         // scroll paints this base itself, and with square corner
-        selection_dirty = false;
         edges = edges.map(|_| SelectionEdges {
             left: false,
             right: false,

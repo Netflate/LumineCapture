@@ -464,6 +464,7 @@ impl Magnifier {
 
 section!(Selection {
     dim: Rgba = rgb(0, 0, 0).with_alpha(140),
+    scroll_dim: Rgba = rgb(0, 0, 0).with_alpha(32),
     border: ThemeColor = ThemeColor::default(),
     border_width: f32 = 2.0,
     border_radius: f32 = 8.0,
@@ -995,6 +996,8 @@ crosshair = "#9399B250"
 [selection]
 # over everything outside the selection
 dim = "#0000008c"
+# outside the region while a scrolling capture runs, over the live screen
+scroll_dim = "#00000020"
 border_width = 2.0
 border_radius = 8.0
 # arrow keys move and resize it by this much, Shift by the fast one

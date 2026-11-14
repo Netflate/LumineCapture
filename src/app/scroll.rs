@@ -14,7 +14,7 @@ use crate::editor::EditorState;
 use crate::editor::dirty::{expand_rect, mark_dirty};
 use crate::renderer::Painter;
 use crate::scroll::panel::{self, PanelButton};
-use crate::scroll::state::inside;
+use crate::scroll::state::{fill_live, inside};
 use crate::scroll::{Scroll, ScrollSession, frame};
 use crate::tools::Tool;
 use crate::tools::selection::global_selection_to_local;
@@ -79,19 +79,21 @@ pub async fn start(
     editor_state.tool_active = false;
     editor_state.selection.zone = Some(zone);
 
-    let scroll = Scroll::new(session, zone, crop, scale, size, capture);
-    scroll.paint_base(
-        &editor_state.captures[monitor_idx],
-        &mut editor_state.dimmed[monitor_idx],
-        canvas_scale,
-    );
+    let monitors = editor_state.placements.len();
+    let scroll = Scroll::new(session, zone, crop, scale, size, capture, monitors);
+    for i in (0..monitors).filter(|&i| i != monitor_idx) {
+        fill_live(&mut editor_state.dimmed[i]);
+    }
+    scroll.paint_base(&mut editor_state.dimmed[monitor_idx], canvas_scale);
     editor_state.scroll = Some(scroll);
     info!("scrolling capture started on monitor {monitor_idx}");
 
     super::panels::color::close_color_popover(editor_state, dirty_mask);
     super::panels::model::close_model_popover(editor_state, dirty_mask);
     highlight(editor_state);
-    redraw_monitor(editor_state, monitor_idx, dirty_mask);
+    for i in 0..monitors {
+        redraw_monitor(editor_state, i, dirty_mask);
+    }
     super::input::refresh_panels(editor_state, dirty_mask);
     Ok(())
 }
@@ -179,23 +181,21 @@ pub fn sync(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let Some(scroll) = editor_state.scroll.as_mut() else {
         if let Some((idx, restore)) = editor_state.scroll_left.take() {
-            if restore {
-                let snapshot = &editor_state.captures[idx].pixmap;
-                overlay.set_background(
-                    idx,
-                    snapshot.data(),
-                    snapshot.width(),
-                    snapshot.height(),
-                )?;
+            for i in restore {
+                let snapshot = &editor_state.captures[i].pixmap;
+                overlay.set_background(i, snapshot.data(), snapshot.width(), snapshot.height())?;
+                overlay.set_input_hole(i, None);
             }
             overlay.set_input_hole(idx, None);
         }
         return Ok(());
     };
     let idx = scroll.monitor_idx;
-    if scroll.background && drawn(idx) {
-        overlay.clear_background(idx)?;
-        scroll.background = false;
+    for (i, background) in scroll.backgrounds.iter_mut().enumerate() {
+        if *background && drawn(i) {
+            overlay.clear_background(i)?;
+            *background = false;
+        }
     }
     let hole = scroll.input_hole();
     if scroll.input != Some(hole) {
@@ -211,20 +211,31 @@ pub fn stop(editor_state: &mut EditorState, dirty_mask: &mut u32) {
         return;
     };
     let idx = scroll.monitor_idx;
-    editor_state.scroll_left = Some((idx, !scroll.background));
+    let restore = scroll
+        .backgrounds
+        .iter()
+        .enumerate()
+        .filter(|(_, kept)| !**kept)
+        .map(|(i, _)| i)
+        .collect();
+    editor_state.scroll_left = Some((idx, restore));
     editor_state.mode = Mode::Editor;
 
     let zone = editor_state.selection.zone;
-    let (local, _, edges) = super::selection_render_info(editor_state, idx, &zone, &None);
-    crate::renderer::init_dimming(
-        &mut editor_state.dimmed[idx],
-        local.as_ref(),
-        edges.as_ref(),
-        editor_state.placements[idx].scale,
-    );
+    for i in 0..editor_state.placements.len() {
+        let (local, _, edges) = super::selection_render_info(editor_state, i, &zone, &None);
+        crate::renderer::init_dimming(
+            &mut editor_state.dimmed[i],
+            local.as_ref(),
+            edges.as_ref(),
+            editor_state.placements[i].scale,
+        );
+    }
     crate::tools::dispatch_activate(editor_state.selected_tool, editor_state, dirty_mask);
     highlight(editor_state);
-    redraw_monitor(editor_state, idx, dirty_mask);
+    for i in 0..editor_state.placements.len() {
+        redraw_monitor(editor_state, i, dirty_mask);
+    }
     super::input::refresh_panels(editor_state, dirty_mask);
 }
 
