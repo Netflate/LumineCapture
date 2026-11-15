@@ -15,6 +15,15 @@ pub struct View {
     untouched: bool,
 }
 
+/// 100% is never skipped over, it's the one pixel-exact level
+pub fn step_zoom(old: f32, factor: f32, min: f32, max: f32) -> f32 {
+    let zoom = (old * factor).clamp(min, max);
+    if (old < 1.0 && zoom > 1.0) || (old > 1.0 && zoom < 1.0) {
+        return 1.0;
+    }
+    zoom
+}
+
 impl View {
     pub fn new(picture: (u32, u32)) -> Self {
         Self {
@@ -63,11 +72,7 @@ impl View {
 
     pub fn zoom_at(&mut self, factor: f32, at: (f32, f32)) -> bool {
         let old = self.zoom;
-        let mut zoom = (old * factor).clamp(self.min_zoom(), MAX_ZOOM);
-        // 100% is never skipped over, it's the one pixel-exact level
-        if (old < 1.0 && zoom > 1.0) || (old > 1.0 && zoom < 1.0) {
-            zoom = 1.0;
-        }
+        let zoom = step_zoom(old, factor, self.min_zoom(), MAX_ZOOM);
         self.zoom_to(zoom, at)
     }
 
@@ -201,6 +206,15 @@ mod tests {
         assert_eq!(view.zoom, 1.0);
         view.zoom_at(1.25, (0.0, 0.0));
         assert_eq!(view.zoom, 1.25);
+    }
+
+    #[test]
+    fn step_zoom_snaps_to_100_percent_and_clamps() {
+        assert_eq!(step_zoom(0.9, 1.25, 0.25, 8.0), 1.0);
+        assert_eq!(step_zoom(1.1, 0.8, 0.25, 8.0), 1.0);
+        assert_eq!(step_zoom(1.0, 1.25, 0.25, 8.0), 1.25);
+        assert_eq!(step_zoom(0.3, 0.5, 0.25, 8.0), 0.25);
+        assert_eq!(step_zoom(6.0, 2.0, 0.25, 8.0), 8.0);
     }
 
     #[test]

@@ -32,6 +32,11 @@ pub enum Notice<'a> {
     WebpTooBig,
     SaveFailed(String),
     CopyFailed(String),
+    Pinned {
+        copy: String,
+        close: String,
+        big: bool,
+    },
     PinFailed(String),
     StdoutFailed(String),
     Failed(String),
@@ -72,6 +77,19 @@ impl<'a> Notice<'a> {
             ),
             Notice::SaveFailed(e) => ("Couldn't save the screenshot", e, true, None),
             Notice::CopyFailed(e) => ("Couldn't copy the screenshot", e, true, None),
+            Notice::Pinned { copy, close, big } => {
+                let mut body = format!(
+                    "Scroll to zoom, Ctrl+Scroll for opacity\n\
+                     {copy} copies, {close} closes\n\
+                     Click the pin first, keys and Ctrl reach only the focused window"
+                );
+                if big {
+                    body.push_str(
+                        "\nBigger than the screen, the pin may break and act unpredictably",
+                    );
+                }
+                ("Screenshot pinned", body, false, None)
+            }
             Notice::PinFailed(e) => ("Couldn't pin the screenshot", e, true, None),
             Notice::StdoutFailed(e) => ("Couldn't write to stdout", e, true, None),
             Notice::Failed(e) => ("Screenshot failed", e, true, None),
@@ -154,5 +172,42 @@ pub fn send_blocking(notice: Notice<'_>) {
             let n = notice.spec();
             eprintln!("{}: {}", n.summary, n.body);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pinned(big: bool) -> Notification<'static> {
+        Notice::Pinned {
+            copy: "Ctrl+C".into(),
+            close: "Escape".into(),
+            big,
+        }
+        .spec()
+    }
+
+    #[test]
+    fn pinned_lists_the_controls() {
+        let n = pinned(false);
+        assert_eq!(n.summary, "Screenshot pinned");
+        assert!(!n.error && n.file.is_none() && n.png.is_none());
+        assert_eq!(
+            n.body,
+            "Scroll to zoom, Ctrl+Scroll for opacity\n\
+             Ctrl+C copies, Escape closes\n\
+             Click the pin first, keys and Ctrl reach only the focused window"
+        );
+    }
+
+    #[test]
+    fn pinned_warns_when_bigger_than_the_screen() {
+        let n = pinned(true);
+        assert!(n.body.starts_with(&pinned(false).body));
+        assert!(
+            n.body
+                .ends_with("\nBigger than the screen, the pin may break and act unpredictably")
+        );
     }
 }

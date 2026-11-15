@@ -366,6 +366,29 @@ impl Keymap {
     }
 }
 
+pub fn shown(name: &str) -> String {
+    shown_in(name, &crate::config::get().keys.0)
+}
+
+fn shown_in(name: &str, overrides: &BTreeMap<String, Binding>) -> String {
+    let own = overrides.get(name).and_then(|binding| {
+        let chords = binding.chords();
+        chords
+            .iter()
+            .all(|c| parse(c).is_ok())
+            .then(|| chords.first().map(|c| c.trim().to_string()))
+            .flatten()
+    });
+    own.or_else(|| {
+        ACTIONS
+            .iter()
+            .find(|(n, ..)| *n == name)
+            .and_then(|(_, _, defaults)| defaults.first())
+            .map(|c| c.to_string())
+    })
+    .unwrap_or_default()
+}
+
 fn parse_all(chords: &[&str]) -> Vec<Chord> {
     chords
         .iter()
@@ -489,5 +512,36 @@ mod tests {
             map.lookup(chord(CTRL, Key::Char('c'))),
             Some(Action::Finish(Finish::Copy))
         );
+    }
+
+    #[test]
+    fn shown_chord_is_the_default() {
+        let none = BTreeMap::new();
+        assert_eq!(shown_in("copy", &none), "Ctrl+C");
+        assert_eq!(shown_in("cancel", &none), "Escape");
+    }
+
+    #[test]
+    fn shown_chord_follows_a_valid_override() {
+        let overrides = BTreeMap::from([("copy".into(), Binding::One("Ctrl+Shift+C".into()))]);
+        assert_eq!(shown_in("copy", &overrides), "Ctrl+Shift+C");
+    }
+
+    #[test]
+    fn shown_chord_falls_back_on_a_bad_override() {
+        let overrides = BTreeMap::from([(
+            "copy".into(),
+            Binding::Many(vec!["Ctrl+K".into(), "Nonsense+".into()]),
+        )]);
+        assert_eq!(shown_in("copy", &overrides), "Ctrl+C");
+    }
+
+    #[test]
+    fn shown_chord_is_the_first_of_many() {
+        let overrides = BTreeMap::from([(
+            "copy".into(),
+            Binding::Many(vec!["Alt+C".into(), "Ctrl+K".into()]),
+        )]);
+        assert_eq!(shown_in("copy", &overrides), "Alt+C");
     }
 }

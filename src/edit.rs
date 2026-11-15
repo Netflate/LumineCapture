@@ -8,8 +8,9 @@ use std::io::{IsTerminal, Read};
 use tiny_skia::{Color, IntSize, Pixmap};
 
 use crate::types::Placement;
-use picture::{Picture, Shown, whole_shift};
-pub use view::View;
+pub use picture::Picture;
+use picture::{Shown, whole_shift};
+pub use view::{View, step_zoom};
 
 pub const EDIT_ARG: &str = "--edit";
 pub const TITLE: &str = "LumineCapture";
