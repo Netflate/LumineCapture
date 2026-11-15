@@ -1289,6 +1289,13 @@ fn parse(text: &str, origin: &str) -> Config {
 /// Options without a default value
 const UNSET_BY_DEFAULT: &[&str] = &["log.level"];
 
+/// Removed options, to bypass unknown options warning on launch
+const REMOVED: &[&str] = &[
+    "annotations.text.resize_max",
+    "tools.font.max",
+    "tools.stroke.max",
+];
+
 fn warn_unknown_keys(text: &str, origin: &str) {
     let (Ok(user), Ok(known)) = (
         text.parse::<toml::Table>(),
@@ -1304,7 +1311,9 @@ fn warn_unknown_keys(text: &str, origin: &str) {
                 format!("{path}.{key}")
             };
             match (known.get(key), value) {
-                (None, _) if UNSET_BY_DEFAULT.contains(&full.as_str()) => {}
+                (None, _)
+                    if UNSET_BY_DEFAULT.contains(&full.as_str())
+                        || REMOVED.contains(&full.as_str()) => {}
                 (None, _) => complain(format!("config: {origin}: unknown key {full}, ignoring it")),
                 // keys.rs names the unknown actions itself
                 (Some(_), _) if full == "keys" => {}
