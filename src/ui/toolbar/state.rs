@@ -15,6 +15,7 @@ const POSITION_EPSILON: f32 = 0.5;
 pub const ITEMS: &[ToolbarItem] = &[
     ToolbarItem::Button(ToolbarButton::Tool(Tool::Selection)),
     ToolbarItem::Button(ToolbarButton::Tool(Tool::Pick)),
+    ToolbarItem::Button(ToolbarButton::Scroll),
     ToolbarItem::Button(ToolbarButton::Tool(Tool::Ocr)),
     ToolbarItem::Button(ToolbarButton::Tool(Tool::Eyedropper)),
     ToolbarItem::Seperator,
@@ -27,7 +28,6 @@ pub const ITEMS: &[ToolbarItem] = &[
     ToolbarItem::Button(ToolbarButton::Tool(Tool::Circle)),
     ToolbarItem::Button(ToolbarButton::Tool(Tool::NumeratedArrow)),
     ToolbarItem::Button(ToolbarButton::Tool(Tool::Redact)),
-    ToolbarItem::Button(ToolbarButton::Scroll),
     ToolbarItem::Seperator,
     ToolbarItem::Button(ToolbarButton::Finish(Finish::Pin)),
     ToolbarItem::Button(ToolbarButton::Finish(Finish::Copy)),
