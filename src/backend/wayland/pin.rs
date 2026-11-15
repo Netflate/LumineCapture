@@ -144,6 +144,7 @@ pub fn run(png: &[u8], scale: f32) -> Result<(), Box<dyn std::error::Error>> {
         seat: SeatState::new(&globals, &qh),
         cursor_shapes: CursorShapeManager::bind(&globals, &qh).ok(),
         copying: None,
+        announcing: None,
         shm,
         pool,
         window,
@@ -179,9 +180,13 @@ pub fn run(png: &[u8], scale: f32) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     let copying = pin.copying.take();
+    let announcing = pin.announcing.take();
     drop(pin);
     let _ = conn.flush();
     if let Some(handle) = copying {
+        let _ = handle.join();
+    }
+    if let Some(handle) = announcing {
         let _ = handle.join();
     }
     Ok(())
@@ -287,6 +292,7 @@ struct Pin {
     seat: SeatState,
     cursor_shapes: Option<CursorShapeManager>,
     copying: Option<std::thread::JoinHandle<()>>,
+    announcing: Option<std::thread::JoinHandle<()>>,
     shm: Shm,
     pool: SlotPool,
 
@@ -318,6 +324,19 @@ impl Pin {
         if let Some(device) = &self.cursor {
             device.set_shape(self.enter_serial, shape);
         }
+    }
+
+    fn announce(&mut self) {
+        let size = layout((self.image.width(), self.image.height()), 1.0, self.scale).visible;
+        let big = self
+            .monitor()
+            .is_some_and(|(w, h)| size.0 > w || size.1 > h);
+        let notice = Notice::Pinned {
+            copy: keys::shown("copy"),
+            close: keys::shown("cancel"),
+            big,
+        };
+        self.announcing = Some(std::thread::spawn(move || notify::send_blocking(notice)));
     }
 
     fn monitor(&self) -> Option<(u32, u32)> {
@@ -421,6 +440,9 @@ impl WindowHandler for Pin {
         }
         self.draw();
         self.mapped = !self.exit;
+        if self.mapped {
+            self.announce();
+        }
     }
 }
 
