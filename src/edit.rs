@@ -10,7 +10,7 @@ use tiny_skia::{Color, IntSize, Pixmap};
 use crate::types::Placement;
 pub use picture::Picture;
 use picture::{Shown, whole_shift};
-pub use view::View;
+pub use view::{View, step_zoom};
 
 pub const EDIT_ARG: &str = "--edit";
 pub const TITLE: &str = "LumineCapture";

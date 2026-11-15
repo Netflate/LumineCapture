@@ -4,6 +4,7 @@
 
 use crate::backend::InputHole;
 use smithay_client_toolkit::compositor::{CompositorState, Region};
+use smithay_client_toolkit::seat::pointer::AxisScroll;
 use wayland_client::protocol::wl_surface;
 
 pub fn apply_input_hole(
@@ -22,4 +23,12 @@ pub fn apply_input_hole(
         region.add(x, y, w, h);
     }
     surface.set_input_region(Some(region.wl_region()));
+}
+
+/// Wheel notches of one axis event, 0 for touchpads and on-button scrolling.
+pub fn wheel_clicks(axis: &AxisScroll) -> f32 {
+    match axis.value120 {
+        0 => axis.discrete as f32,
+        v => v as f32 / 120.0,
+    }
 }

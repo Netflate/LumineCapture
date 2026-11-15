@@ -37,7 +37,8 @@ use wayland_protocols::xdg::toplevel_icon::v1::client::{
 use crate::backend::initialize_clipboard;
 use crate::backend::notify::{self, Notice};
 use crate::backend::wayland::keysym;
-use crate::edit::Picture;
+use crate::backend::wayland::utils::input::wheel_clicks;
+use crate::edit::{Picture, TOUCHPAD_ZOOM, ZOOM_STEP, step_zoom};
 use crate::keys::{self, Action, Mods};
 use crate::renderer::Painter;
 use crate::renderer::paths::rounded_rect_path;
@@ -206,6 +207,7 @@ fn whole_size(n: u32, scale: f32) -> u32 {
 // but kwin is breaking if the window gets too big
 // 3/4 of it still leaves room to move the window
 const MAX_SHARE: f32 = 0.75;
+const MIN_ZOOM: f32 = 0.25;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Layout {
@@ -388,6 +390,7 @@ impl PointerHandler for Pin {
         _: &wl_pointer::WlPointer,
         events: &[PointerEvent],
     ) {
+        let mut clicks = 0.0_f32;
         for event in events {
             if self.window.wl_surface() != &event.surface {
                 continue;
@@ -408,19 +411,24 @@ impl PointerHandler for Pin {
                     }
                 }
                 PointerEventKind::Axis { vertical, .. } => {
-                    let scroll_amount = if vertical.value120 != 0 {
-                        vertical.value120 as f64
-                    } else {
-                        vertical.absolute
-                    };
-                    if scroll_amount != 0.0 {
-                        let delta = if scroll_amount > 0.0 { 0.1 } else { -0.1 };
-                        self.zoom = (self.zoom + delta).clamp(0.5, self.zoom_limit());
-                        self.redraw = true;
+                    let mut axis = -wheel_clicks(&vertical);
+                    if axis == 0.0 {
+                        let sensitivity = crate::config::get().input.scroll_sensitivity;
+                        axis = -(vertical.absolute as f32) * sensitivity / TOUCHPAD_ZOOM;
                     }
+                    clicks += axis;
                 }
                 _ => {}
             }
+        }
+        if clicks != 0.0 {
+            let limit = self.zoom_limit();
+            let mut zoom = step_zoom(self.zoom, ZOOM_STEP.powf(clicks), MIN_ZOOM, limit);
+            if clicks > 0.0 {
+                zoom = zoom.max(self.zoom);
+            }
+            self.redraw |= zoom != self.zoom;
+            self.zoom = zoom;
         }
     }
 }
