@@ -74,6 +74,10 @@ pub fn update_toolbar(editor_state: &mut EditorState, dirty_mask: &mut u32) {
 
     editor_state.toolbar.placement_kind = Some(new_kind);
 
+    if hidden && editor_state.scroll.is_some() {
+        editor_state.toolbar.opacity = 0.0;
+    }
+
     sync_panel_rect(
         &mut editor_state.toolbar,
         old_rect,
@@ -166,8 +170,10 @@ fn compute_toolbar_placement(editor_state: &EditorState) -> (usize, (f32, f32), 
     // inside the live region it would end up in the frames
     let in_frames = editor_state.scroll.as_ref().is_some_and(|scroll| {
         scroll.grown()
-            || Rect::from_xywh(pos_x, pos_y, tb_w, tb_h)
-                .is_some_and(|rect| crate::utils::rects_overlap(&rect, &scroll.region))
+            || Rect::from_xywh(pos_x, pos_y, tb_w, tb_h).is_some_and(|rect| {
+                crate::utils::rects_overlap(&rect, &scroll.region)
+                    || crate::utils::rects_overlap(&rect, &scroll.layout.rect)
+            })
     });
 
     (monitor_idx, (pos_x, pos_y), in_frames)
