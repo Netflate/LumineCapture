@@ -92,6 +92,11 @@ pub enum SettingsWidget {
         action: SettingsAction,
         svg: &'static str,
     },
+    LabeledAction {
+        action: SettingsAction,
+        svg: &'static str,
+        label: &'static str,
+    },
     Stepper {
         label: &'static str,
         range: StepperRange,
@@ -307,9 +312,10 @@ const OCR_RESCAN: SettingsWidget = SettingsWidget::Action {
     svg: crate::ui::icons::RETRY,
 };
 
-const OCR_SCAN_ALL: SettingsWidget = SettingsWidget::Action {
+const OCR_SCAN_ALL: SettingsWidget = SettingsWidget::LabeledAction {
     action: SettingsAction::OcrScanAll,
-    svg: crate::ui::icons::SELECT_ALL,
+    svg: crate::ui::icons::OCR,
+    label: "Scan all",
 };
 
 const OCR_COPY_ALL: SettingsWidget = SettingsWidget::Action {
@@ -338,6 +344,12 @@ impl PanelItem for SettingsWidget {
         match self {
             SettingsWidget::ColorSwatch(_) => cfg.swatch_size,
             SettingsWidget::Action { .. } => cfg.icon_button_size,
+            SettingsWidget::LabeledAction { label, .. } => {
+                cfg.labeled_padding * 2.0
+                    + cfg.labeled_icon_size
+                    + cfg.labeled_gap
+                    + label.chars().count() as f32 * cfg.char_width
+            }
             SettingsWidget::Stepper { .. } => cfg.stepper_width,
             SettingsWidget::Toggle { visual, .. } => match visual {
                 ToggleVisual::Icon { .. } => cfg.icon_button_size,
@@ -366,6 +378,7 @@ impl PanelItem for SettingsWidget {
             self,
             SettingsWidget::ColorSwatch(_)
                 | SettingsWidget::Action { .. }
+                | SettingsWidget::LabeledAction { .. }
                 | SettingsWidget::Stepper { .. }
                 | SettingsWidget::Toggle { .. }
                 | SettingsWidget::Value { .. }

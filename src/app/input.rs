@@ -409,7 +409,8 @@ pub fn handle_pointer_button(
                         editor_state.color_popover.open =
                             other_swatch || !editor_state.color_popover.open;
                     }
-                    SettingsWidget::Action { action, .. } => {
+                    SettingsWidget::Action { action, .. }
+                    | SettingsWidget::LabeledAction { action, .. } => {
                         editor_state.settings_panel.selected = None;
                         run_settings_action(editor_state, action, dirty_mask);
                     }

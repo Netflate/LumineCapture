@@ -124,6 +124,42 @@ fn draw_settings_content(
                     tint,
                 );
             }
+            SettingsWidget::LabeledAction { svg, label, .. } => {
+                p.item_border(
+                    current_x,
+                    item_y,
+                    item_w,
+                    item_h,
+                    radius::item(),
+                    stroke::border(),
+                    is_hovered,
+                    is_selected,
+                );
+                let tint = if is_hovered {
+                    cfg.icon_hovered.get()
+                } else {
+                    cfg.icon.get()
+                };
+                let pad = cfg.labeled_padding;
+                let icon_size = cfg.labeled_icon_size;
+                p.icon(
+                    svg,
+                    icon_size,
+                    current_x + pad,
+                    item_y + (item_h - icon_size) / 2.0,
+                    tint,
+                );
+                let text_x = current_x + pad + icon_size + cfg.labeled_gap;
+                if let Some(text_rect) =
+                    Rect::from_xywh(text_x, item_y, current_x + item_w - pad - text_x, item_h)
+                {
+                    p.text(
+                        text_rect,
+                        label,
+                        TextStyle::new(font::label(), text_color).center(),
+                    );
+                }
+            }
             SettingsWidget::Stepper { label, unit, .. } => {
                 let display_text = stepper_display_text(panel, index, label, unit);
                 draw_stepper(
