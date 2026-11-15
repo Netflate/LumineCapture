@@ -59,7 +59,7 @@ impl Picture {
         }
     }
 
-    fn paint(
+    pub(crate) fn paint(
         &mut self,
         full: &Pixmap,
         canvas: &mut Pixmap,

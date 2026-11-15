@@ -25,7 +25,7 @@ use smithay_client_toolkit::shell::xdg::window::{
 use smithay_client_toolkit::shm::slot::{Buffer, SlotPool};
 use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_dispatch2, delegate_registry, registry_handlers};
-use tiny_skia::{FillRule, IntSize, Mask, Pixmap, Rect, Transform};
+use tiny_skia::{Color, FillRule, IntSize, Mask, Pixmap, Rect, Transform};
 use wayland_client::globals::registry_queue_init;
 use wayland_client::protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface};
 use wayland_client::{Connection, Dispatch, QueueHandle};
@@ -37,6 +37,7 @@ use wayland_protocols::xdg::toplevel_icon::v1::client::{
 use crate::backend::initialize_clipboard;
 use crate::backend::notify::{self, Notice};
 use crate::backend::wayland::keysym;
+use crate::edit::Picture;
 use crate::keys::{self, Action, Mods};
 use crate::renderer::Painter;
 use crate::renderer::paths::rounded_rect_path;
@@ -90,29 +91,21 @@ pub fn spawn(png: &[u8], scale: f32) -> Result<(), Box<dyn std::error::Error>> {
     crate::utils::spawn_self(&args, png)
 }
 
-pub fn run(image: &[u8], scale: f32) -> Result<(), Box<dyn std::error::Error>> {
-    let (frame, image_size) = render_pin(image, scale)?;
-    let buffer_size = (frame.width(), frame.height());
+pub fn run(png: &[u8], scale: f32) -> Result<(), Box<dyn std::error::Error>> {
+    let image = decode(png)?;
+    let picture = Picture::new(&image);
 
     let conn = Connection::connect_to_env()?;
     let (globals, mut queue) = registry_queue_init(&conn)?;
     let qh = queue.handle();
 
     let shm = Shm::bind(&globals, &qh)?;
-    let pool = SlotPool::new((buffer_size.0 * buffer_size.1 * 4) as usize, &shm)?;
     let viewporter = globals
         .bind::<wp_viewporter::WpViewporter, _, _>(&qh, 1..=1, ())
         .ok();
-    // buffer in native resolution, while the window uses logical size.
-    // otherwise pinned pciture will be low quality when changed scales
-
-    let size = match viewporter {
-        Some(_) => (
-            ((buffer_size.0 as f32 / scale).round() as u32).max(1),
-            ((buffer_size.1 as f32 / scale).round() as u32).max(1),
-        ),
-        None => buffer_size,
-    };
+    let layout_scale = if viewporter.is_some() { scale } else { 1.0 };
+    let layout = layout((image.width(), image.height()), 1.0, layout_scale);
+    let pool = SlotPool::new((layout.buffer.0 * layout.buffer.1 * 4) as usize, &shm)?;
     let compositor = CompositorState::bind(&globals, &qh)?;
     let xdg_shell = XdgShell::bind(&globals, &qh)?;
     let icon_manager = globals
@@ -123,19 +116,16 @@ pub fn run(image: &[u8], scale: f32) -> Result<(), Box<dyn std::error::Error>> {
     let window = xdg_shell.create_window(surface, WindowDecorations::RequestClient, &qh);
     window.set_title(APP_ID);
     window.set_app_id(APP_ID);
+    // buffer in native resolution, while the window uses logical size.
+    // otherwise pinned pciture will be low quality when changed scales
     let viewport = viewporter.as_ref().map(|viewporter| {
         let viewport = viewporter.get_viewport(window.wl_surface(), &qh, ());
-        viewport.set_destination(size.0 as i32, size.1 as i32);
+        viewport.set_destination(layout.dest.0 as i32, layout.dest.1 as i32);
         viewport
     });
-    let region_scale = if viewport.is_some() { scale } else { 1.0 };
-    let visible = (
-        (image_size.0 as f32 / region_scale).ceil() as u32,
-        (image_size.1 as f32 / region_scale).ceil() as u32,
-    );
     // xdg min/max size count the window geometry, not the padded surface
-    window.set_min_size(Some(visible));
-    window.set_max_size(Some(visible));
+    window.set_min_size(Some(layout.visible));
+    window.set_max_size(Some(layout.visible));
     window.commit();
 
     // no .desktop entry ties this app_id to an icon, so ask the compositor
@@ -157,15 +147,17 @@ pub fn run(image: &[u8], scale: f32) -> Result<(), Box<dyn std::error::Error>> {
         pool,
         window,
         compositor,
-        visible,
         mapped: false,
-        frame: Some(frame),
-        buffer_size,
-        base_size: size,
+        image,
+        picture,
+        scale: layout_scale,
         zoom: 1.0,
-        _viewport: viewport,
+        frame: None,
+        viewport,
+        redraw: false,
+        output: None,
         buffer: None,
-        png: image.into(),
+        png: png.into(),
         pointer_seat: None,
         cursor: None,
         enter_serial: 0,
@@ -175,6 +167,9 @@ pub fn run(image: &[u8], scale: f32) -> Result<(), Box<dyn std::error::Error>> {
 
     while !pin.exit {
         queue.blocking_dispatch(&mut pin)?;
+        if pin.redraw && pin.mapped {
+            pin.draw();
+        }
     }
     let copying = pin.copying.take();
     drop(pin);
@@ -185,30 +180,18 @@ pub fn run(image: &[u8], scale: f32) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn render_pin(
-    image: &[u8],
-    scale: f32,
-) -> Result<(Pixmap, (u32, u32)), Box<dyn std::error::Error>> {
-    let rgba = image::load_from_memory(image)?.into_rgba8();
+fn decode(png: &[u8]) -> Result<Pixmap, Box<dyn std::error::Error>> {
+    let rgba = image::load_from_memory(png)?.into_rgba8();
     let (w, h) = rgba.dimensions();
     let mut data = rgba.into_raw();
     premultiply(&mut data);
-    let (data, pw, ph) = pad_to_whole_pixels(data, w, h, scale);
-    let size = IntSize::from_wh(pw, ph).ok_or("empty image")?;
-    let mut pin = Pixmap::from_vec(data, size).ok_or("invalid image")?;
-
-    // border style and radius similar to panels one
-    let (fw, fh) = (w as f32, h as f32);
-    let rect = Rect::from_xywh(0.0, 0.0, fw, fh).ok_or("empty image")?;
-    let shape = rounded_rect_path(&rect, radius::panel() * scale, true, true, true, true)
-        .ok_or("empty image")?;
-    let mut mask = Mask::new(pw, ph).ok_or("image is too large")?;
-    mask.fill_path(&shape, FillRule::Winding, true, Transform::identity());
-    pin.apply_mask(&mask);
-    Painter::new(&mut pin).panel_border(0.0, 0.0, fw, fh, radius::panel() * scale, 1.0);
-    Ok((pin, (w, h)))
+    let size = IntSize::from_wh(w, h).ok_or("empty image")?;
+    Pixmap::from_vec(data, size).ok_or_else(|| "invalid image".into())
 }
 
+/// Pads image dimensions with transparent pixels
+///
+/// prevents KWin rendering artifacts when dragging on a monitor with scale less than 100%
 fn whole_size(n: u32, scale: f32) -> u32 {
     let scale = scale as f64;
     (n..n + 256)
@@ -219,21 +202,65 @@ fn whole_size(n: u32, scale: f32) -> u32 {
         .unwrap_or(n)
 }
 
-/// Pads image dimensions with transparent pixels
-///
-/// prevents KWin rendering artifacts when dragging on a monitor with scale less than 100%
-fn pad_to_whole_pixels(data: Vec<u8>, w: u32, h: u32, scale: f32) -> (Vec<u8>, u32, u32) {
-    let (pw, ph) = (whole_size(w, scale), whole_size(h, scale));
-    if (pw, ph) == (w, h) || w == 0 || h == 0 {
-        return (data, w, h);
-    }
+// At first thought it will be fine to make unlimited size of pin windows
+// but kwin is breaking if the window gets too big
+// 3/4 of it still leaves room to move the window
+const MAX_SHARE: f32 = 0.75;
 
-    let (w, h, pw, ph) = (w as usize, h as usize, pw as usize, ph as usize);
-    let mut out = vec![0; pw * ph * 4];
-    for y in 0..h {
-        out[y * pw * 4..][..w * 4].copy_from_slice(&data[y * w * 4..][..w * 4]);
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Layout {
+    buffer: (u32, u32),
+    dest: (u32, u32),
+    visible: (u32, u32),
+}
+
+fn layout(image: (u32, u32), zoom: f32, scale: f32) -> Layout {
+    let side = |n: u32| ((n.max(1) as f32 * zoom).round() as u32).max(1);
+    let shown = (side(image.0), side(image.1));
+    let buffer = (whole_size(shown.0, scale), whole_size(shown.1, scale));
+    Layout {
+        buffer,
+        dest: (
+            (buffer.0 as f64 / scale as f64).round() as u32,
+            (buffer.1 as f64 / scale as f64).round() as u32,
+        ),
+        visible: (
+            (shown.0 as f32 / scale).ceil() as u32,
+            (shown.1 as f32 / scale).ceil() as u32,
+        ),
     }
-    (out, pw as u32, ph as u32)
+}
+
+fn zoom_limit(image: (u32, u32), scale: f32, monitor: Option<(u32, u32)>) -> f32 {
+    let Some((mw, mh)) = monitor else {
+        return 1.0;
+    };
+    let fit = |m: u32, n: u32| MAX_SHARE * m as f32 * scale / n.max(1) as f32;
+    fit(mw, image.0).min(fit(mh, image.1)).max(1.0)
+}
+
+fn render(
+    image: &Pixmap,
+    picture: &mut Picture,
+    layout: &Layout,
+    zoom: f32,
+    scale: f32,
+) -> Option<Pixmap> {
+    let mut canvas = Pixmap::new(layout.buffer.0, layout.buffer.1)?;
+    picture.paint(image, &mut canvas, (0.0, 0.0), zoom, Color::TRANSPARENT);
+
+    // border style and radius similar to panels one
+    let fw = image.width() as f32 * zoom;
+    let fh = image.height() as f32 * zoom;
+    let rect = Rect::from_xywh(0.0, 0.0, fw, fh)?;
+    // not scaled by zoom, the border keeps the look it has at 1x
+    let radius = radius::panel() * scale;
+    let shape = rounded_rect_path(&rect, radius, true, true, true, true)?;
+    let mut mask = Mask::new(canvas.width(), canvas.height())?;
+    mask.fill_path(&shape, FillRule::Winding, true, Transform::identity());
+    canvas.apply_mask(&mask);
+    Painter::new(&mut canvas).panel_border(0.0, 0.0, fw, fh, radius, 1.0);
+    Some(canvas)
 }
 
 struct Pin {
@@ -247,13 +274,15 @@ struct Pin {
 
     window: Window,
     compositor: CompositorState,
-    visible: (u32, u32),
     mapped: bool,
-    frame: Option<Pixmap>,
-    buffer_size: (u32, u32),
-    base_size: (u32, u32),
+    image: Pixmap,
+    picture: Picture,
+    scale: f32,
     zoom: f32,
-    _viewport: Option<wp_viewport::WpViewport>,
+    frame: Option<Pixmap>,
+    viewport: Option<wp_viewport::WpViewport>,
+    redraw: bool,
+    output: Option<wl_output::WlOutput>,
     buffer: Option<Buffer>,
     png: std::sync::Arc<[u8]>,
 
@@ -270,6 +299,64 @@ impl Pin {
             device.set_shape(self.enter_serial, shape);
         }
     }
+
+    fn monitor(&self) -> Option<(u32, u32)> {
+        let size = |output: &wl_output::WlOutput| {
+            let (w, h) = self.outputs.info(output)?.logical_size?;
+            Some((w.max(0) as u32, h.max(0) as u32))
+        };
+        self.output.as_ref().and_then(size).or_else(|| {
+            self.outputs
+                .outputs()
+                .filter_map(|o| size(&o))
+                .max_by_key(|(w, h)| *w as u64 * *h as u64)
+        })
+    }
+
+    fn zoom_limit(&self) -> f32 {
+        let image = (self.image.width(), self.image.height());
+        zoom_limit(image, self.scale, self.monitor())
+    }
+
+    fn draw(&mut self) {
+        self.redraw = false;
+        let scale = self.scale;
+        let layout = layout((self.image.width(), self.image.height()), self.zoom, scale);
+        let Some(frame) = render(&self.image, &mut self.picture, &layout, self.zoom, scale) else {
+            self.exit = true;
+            return;
+        };
+        let (w, h) = (frame.width() as i32, frame.height() as i32);
+        let Ok((buffer, canvas)) = self
+            .pool
+            .create_buffer(w, h, w * 4, wl_shm::Format::Argb8888)
+        else {
+            self.exit = true;
+            return;
+        };
+        copy_swizzled(canvas, frame.data());
+        self.frame = Some(frame);
+
+        let surface = self.window.wl_surface();
+        self.window.set_min_size(Some(layout.visible));
+        self.window.set_max_size(Some(layout.visible));
+        if let Ok(region) = Region::new(&self.compositor) {
+            region.add(0, 0, layout.visible.0 as i32, layout.visible.1 as i32);
+            surface.set_input_region(Some(region.wl_region()));
+        }
+        // the padding stays outside the window, snapping and focus borders follow the picture
+        // it sure thing looks like a unelegant workaround, but currently it looks like the only way
+        // to fix strecthed pin on weird fractional scales
+        self.window
+            .set_window_geometry(0, 0, layout.visible.0, layout.visible.1);
+        if let Some(viewport) = &self.viewport {
+            viewport.set_destination(layout.dest.0 as i32, layout.dest.1 as i32);
+        }
+        self.window.attach(Some(buffer.wl_buffer()), 0, 0);
+        surface.damage_buffer(0, 0, w, h);
+        self.window.commit();
+        self.buffer = Some(buffer);
+    }
 }
 
 impl WindowHandler for Pin {
@@ -281,50 +368,15 @@ impl WindowHandler for Pin {
         &mut self,
         _: &Connection,
         _: &QueueHandle<Self>,
-        window: &Window,
+        _: &Window,
         _: WindowConfigure,
         _: u32,
     ) {
         if self.mapped {
             return;
         }
-        if self.buffer.is_none() {
-            let Some(frame) = self.frame.take() else {
-                return;
-            };
-            let (w, h) = (frame.width() as i32, frame.height() as i32);
-            let Ok((buffer, canvas)) =
-                self.pool
-                    .create_buffer(w, h, w * 4, wl_shm::Format::Argb8888)
-            else {
-                self.exit = true;
-                return;
-            };
-            copy_swizzled(canvas, frame.data());
-            self.buffer = Some(buffer);
-        }
-        let Some(buffer) = &self.buffer else {
-            return;
-        };
-        if let Ok(region) = Region::new(&self.compositor) {
-            region.add(0, 0, self.visible.0 as i32, self.visible.1 as i32);
-            window
-                .wl_surface()
-                .set_input_region(Some(region.wl_region()));
-        }
-        // the padding stays outside the window, snapping and focus borders follow the picture
-        // it sure thing looks like a unelegant workaround, but currently it looks like the only way
-        // to fix strecthed pin on weird fractional scales
-        window.set_window_geometry(0, 0, self.visible.0, self.visible.1);
-        window.attach(Some(buffer.wl_buffer()), 0, 0);
-        window.wl_surface().damage_buffer(
-            0,
-            0,
-            self.buffer_size.0 as i32,
-            self.buffer_size.1 as i32,
-        );
-        window.commit();
-        self.mapped = true;
+        self.draw();
+        self.mapped = !self.exit;
     }
 }
 
@@ -363,15 +415,8 @@ impl PointerHandler for Pin {
                     };
                     if scroll_amount != 0.0 {
                         let delta = if scroll_amount > 0.0 { 0.1 } else { -0.1 };
-                        self.zoom = (self.zoom + delta).clamp(0.5, 5.0);
-                        let new_w = (self.base_size.0 as f32 * self.zoom).round() as u32;
-                        let new_h = (self.base_size.1 as f32 * self.zoom).round() as u32;
-                        if let Some(vp) = &self._viewport {
-                            vp.set_destination(new_w as i32, new_h as i32);
-                        }
-                        self.window.set_min_size(Some((new_w, new_h)));
-                        self.window.set_max_size(Some((new_w, new_h)));
-                        self.window.commit();
+                        self.zoom = (self.zoom + delta).clamp(0.5, self.zoom_limit());
+                        self.redraw = true;
                     }
                 }
                 _ => {}
@@ -542,8 +587,9 @@ impl CompositorHandler for Pin {
         _: &Connection,
         _: &QueueHandle<Self>,
         _: &wl_surface::WlSurface,
-        _: &wl_output::WlOutput,
+        output: &wl_output::WlOutput,
     ) {
+        self.output = Some(output.clone());
     }
     fn surface_leave(
         &mut self,
@@ -632,40 +678,97 @@ delegate_dispatch2!(Pin);
 mod tests {
     use super::*;
 
+    fn pixmap(w: u32, h: u32) -> Pixmap {
+        let mut image = Pixmap::new(w, h).unwrap();
+        image.fill(Color::from_rgba8(10, 20, 30, 255));
+        image
+    }
+
     #[test]
-    fn pads_with_transparent_pixels() {
-        let (w, h, scale) = (406u32, 203u32, 1.35f32);
-        let data = vec![255u8; (w * h * 4) as usize];
-        let (out, pw, ph) = pad_to_whole_pixels(data, w, h, scale);
-        for n in [pw, ph] {
-            let logical = n as f64 / scale as f64;
-            assert!((logical - logical.round()).abs() < 1e-4);
+    fn layout_at_100_percent_pads_to_whole_pixels() {
+        let old = |n: u32, scale: f32| {
+            let target = whole_size(n, scale);
+            (
+                target,
+                (target as f32 / scale).round() as u32,
+                (n as f32 / scale).ceil() as u32,
+            )
+        };
+        for scale in [1.0, 1.35, 1.25, 1.5] {
+            let l = layout((406, 203), 1.0, scale);
+            let (bw, dw, vw) = old(406, scale);
+            let (bh, dh, vh) = old(203, scale);
+            assert_eq!(l.buffer, (bw, bh));
+            assert_eq!(l.dest, (dw, dh));
+            assert_eq!(l.visible, (vw, vh));
         }
-        assert!(pw >= w && ph >= h && (pw, ph) != (w, h));
-        assert_eq!(out.len(), (pw * ph * 4) as usize);
-        for y in 0..ph {
-            for x in 0..pw {
-                let px = &out[((y * pw + x) * 4) as usize..][..4];
-                if x < w && y < h {
-                    assert_eq!(px, [255; 4]);
-                } else {
-                    assert_eq!(px, [0; 4]);
+        let l = layout((406, 203), 1.0, 1.0);
+        assert_eq!(
+            (l.buffer, l.dest, l.visible),
+            ((406, 203), (406, 203), (406, 203))
+        );
+        let l = layout((406, 203), 1.0, 1.35);
+        assert_eq!(l.buffer, (whole_size(406, 1.35), whole_size(203, 1.35)));
+        assert!(l.buffer.0 > 406);
+    }
+
+    #[test]
+    fn destination_is_whole_in_both_units() {
+        for scale in [1.0f32, 1.25, 1.35, 1.5, 1.75] {
+            for zoom in [0.25, 0.5, 0.77, 1.0, 1.25, 3.3] {
+                let l = layout((406, 203), zoom, scale);
+                for (b, d) in [(l.buffer.0, l.dest.0), (l.buffer.1, l.dest.1)] {
+                    let logical = b as f64 / scale as f64;
+                    assert!((logical - d as f64).abs() < 1e-4, "{scale} {zoom}");
                 }
+                assert!(l.visible.0 <= l.dest.0 && l.visible.1 <= l.dest.1);
             }
         }
     }
 
     #[test]
-    fn render_keeps_image_size() {
-        let img = image::RgbaImage::from_pixel(406, 203, image::Rgba([10, 20, 30, 255]));
-        let mut png = Vec::new();
-        img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
-            .unwrap();
-        let (pin, size) = render_pin(&png, 1.35).unwrap();
-        assert_eq!(size, (406, 203));
-        assert!(pin.width() > 406);
-        let (w, h) = (pin.width() as usize, pin.height() as usize);
-        assert_eq!(pin.data()[(h - 1) * w * 4 + (w - 1) * 4 + 3], 0);
-        assert_eq!(&pin.data()[(100 * w + 200) * 4..][..4], [10, 20, 30, 255]);
+    fn small_pin_can_grow_to_three_quarters_of_the_monitor() {
+        let limit = zoom_limit((406, 203), 1.0, Some((1920, 1080)));
+        let (by_width, by_height) = (0.75_f32 * 1920.0 / 406.0, 0.75_f32 * 1080.0 / 203.0);
+        assert!(by_width < by_height);
+        assert_eq!(limit, by_width);
+    }
+
+    #[test]
+    fn big_pins_cannot_zoom_in() {
+        assert_eq!(zoom_limit((1920, 1080), 1.0, Some((1920, 1080))), 1.0);
+        assert_eq!(zoom_limit((1080, 20000), 1.0, Some((1920, 1080))), 1.0);
+        assert_eq!(zoom_limit((406, 203), 1.0, None), 1.0);
+    }
+
+    #[test]
+    fn zoom_limit_follows_the_scale() {
+        let limit = zoom_limit((406, 203), 1.35, Some((1422, 800)));
+        let expected = (0.75_f32 * 800.0 * 1.35 / 203.0).min(0.75 * 1422.0 * 1.35 / 406.0);
+        assert_eq!(limit, expected);
+    }
+
+    #[test]
+    fn render_keeps_padding_transparent() {
+        let image = pixmap(406, 203);
+        let mut picture = Picture::new(&image);
+        let l = layout((406, 203), 1.0, 1.35);
+        let frame = render(&image, &mut picture, &l, 1.0, 1.35).unwrap();
+        assert_eq!((frame.width(), frame.height()), l.buffer);
+        assert!(frame.width() > 406);
+        let (w, h) = (frame.width() as usize, frame.height() as usize);
+        assert_eq!(frame.data()[(h - 1) * w * 4 + (w - 1) * 4 + 3], 0);
+        assert_eq!(&frame.data()[(100 * w + 200) * 4..][..4], [10, 20, 30, 255]);
+    }
+
+    #[test]
+    fn zoomed_render_fills_the_picture_rect() {
+        let image = pixmap(100, 50);
+        let mut picture = Picture::new(&image);
+        let l = layout((100, 50), 2.0, 1.0);
+        let frame = render(&image, &mut picture, &l, 2.0, 1.0).unwrap();
+        assert_eq!((frame.width(), frame.height()), (200, 100));
+        let w = frame.width() as usize;
+        assert_eq!(&frame.data()[(50 * w + 100) * 4..][..4], [10, 20, 30, 255]);
     }
 }
