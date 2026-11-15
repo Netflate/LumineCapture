@@ -156,6 +156,8 @@ pub fn run(png: &[u8], scale: f32) -> Result<(), Box<dyn std::error::Error>> {
         frame: None,
         viewport,
         redraw: false,
+        shade: false,
+        opacity: 1.0,
         output: None,
         buffer: None,
         png: png.into(),
@@ -168,8 +170,12 @@ pub fn run(png: &[u8], scale: f32) -> Result<(), Box<dyn std::error::Error>> {
 
     while !pin.exit {
         queue.blocking_dispatch(&mut pin)?;
-        if pin.redraw && pin.mapped {
-            pin.draw();
+        if pin.mapped {
+            if pin.redraw {
+                pin.draw();
+            } else if pin.shade {
+                pin.reshade();
+            }
         }
     }
     let copying = pin.copying.take();
@@ -188,6 +194,16 @@ fn decode(png: &[u8]) -> Result<Pixmap, Box<dyn std::error::Error>> {
     premultiply(&mut data);
     let size = IntSize::from_wh(w, h).ok_or("empty image")?;
     Pixmap::from_vec(data, size).ok_or_else(|| "invalid image".into())
+}
+
+fn fade(data: &mut [u8], opacity: f32) {
+    if opacity >= 1.0 {
+        return;
+    }
+    let k = (opacity.clamp(0.0, 1.0) * 255.0).round() as u32;
+    for byte in data {
+        *byte = ((*byte as u32 * k + 127) / 255) as u8;
+    }
 }
 
 /// Pads image dimensions with transparent pixels
@@ -284,6 +300,8 @@ struct Pin {
     frame: Option<Pixmap>,
     viewport: Option<wp_viewport::WpViewport>,
     redraw: bool,
+    shade: bool,
+    opacity: f32,
     output: Option<wl_output::WlOutput>,
     buffer: Option<Buffer>,
     png: std::sync::Arc<[u8]>,
@@ -320,8 +338,31 @@ impl Pin {
         zoom_limit(image, self.scale, self.monitor())
     }
 
+    // opacity re-copies the last frame, premultiplied pixels scale in all four channels alike
+    fn reshade(&mut self) {
+        self.shade = false;
+        let Some(frame) = &self.frame else {
+            return;
+        };
+        let (w, h) = (frame.width() as i32, frame.height() as i32);
+        let Ok((buffer, canvas)) = self
+            .pool
+            .create_buffer(w, h, w * 4, wl_shm::Format::Argb8888)
+        else {
+            self.exit = true;
+            return;
+        };
+        copy_swizzled(canvas, frame.data());
+        fade(canvas, self.opacity);
+        self.window.attach(Some(buffer.wl_buffer()), 0, 0);
+        self.window.wl_surface().damage_buffer(0, 0, w, h);
+        self.window.commit();
+        self.buffer = Some(buffer);
+    }
+
     fn draw(&mut self) {
         self.redraw = false;
+        self.shade = false;
         let scale = self.scale;
         let layout = layout((self.image.width(), self.image.height()), self.zoom, scale);
         let Some(frame) = render(&self.image, &mut self.picture, &layout, self.zoom, scale) else {
@@ -337,6 +378,7 @@ impl Pin {
             return;
         };
         copy_swizzled(canvas, frame.data());
+        fade(canvas, self.opacity);
         self.frame = Some(frame);
 
         let surface = self.window.wl_surface();
@@ -421,7 +463,11 @@ impl PointerHandler for Pin {
                 _ => {}
             }
         }
-        if clicks != 0.0 {
+        if clicks != 0.0 && self.mods.ctrl {
+            let opacity = (self.opacity + 0.1 * clicks).clamp(0.1, 1.0);
+            self.shade |= opacity != self.opacity;
+            self.opacity = opacity;
+        } else if clicks != 0.0 {
             let limit = self.zoom_limit();
             let mut zoom = step_zoom(self.zoom, ZOOM_STEP.powf(clicks), MIN_ZOOM, limit);
             if clicks > 0.0 {
@@ -767,6 +813,16 @@ mod tests {
         let (w, h) = (frame.width() as usize, frame.height() as usize);
         assert_eq!(frame.data()[(h - 1) * w * 4 + (w - 1) * 4 + 3], 0);
         assert_eq!(&frame.data()[(100 * w + 200) * 4..][..4], [10, 20, 30, 255]);
+    }
+
+    #[test]
+    fn fade_scales_every_channel() {
+        let mut data = vec![200, 100, 50, 255, 0, 10, 20, 30];
+        fade(&mut data, 0.5);
+        assert_eq!(data, [100, 50, 25, 128, 0, 5, 10, 15]);
+        let mut same = vec![1, 2, 3, 4];
+        fade(&mut same, 1.0);
+        assert_eq!(same, [1, 2, 3, 4]);
     }
 
     #[test]
