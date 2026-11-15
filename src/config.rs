@@ -701,6 +701,8 @@ pub const TEMPLATE: &str = r##"# LumineCapture config.
 # Commented or empty color follows the [theme] role written next to it
 # Uncomment to deliberately set a specific color separate from theme
 
+# This file is written once, on the first launch, so options added by later versions won't show up
+# here and simply use their defaults. `lumine-capture --print-default-config` prints every option.
 # Deleting a line or the whole file will rollback to default.
 # A line with a mistake is skipped with a warning in ~/.local/state/LumineCapture/lumine.log,
 # the rest of the file still applies.
