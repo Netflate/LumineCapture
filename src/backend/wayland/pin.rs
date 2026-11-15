@@ -18,7 +18,7 @@ use smithay_client_toolkit::seat::pointer::cursor_shape::CursorShapeManager;
 use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind, PointerHandler};
 use smithay_client_toolkit::seat::{Capability, SeatHandler, SeatState};
 use smithay_client_toolkit::shell::WaylandSurface;
-use smithay_client_toolkit::shell::xdg::XdgShell;
+use smithay_client_toolkit::shell::xdg::{XdgShell, XdgSurface};
 use smithay_client_toolkit::shell::xdg::window::{
     Window, WindowConfigure, WindowDecorations, WindowHandler,
 };
@@ -123,18 +123,19 @@ pub fn run(image: &[u8], scale: f32) -> Result<(), Box<dyn std::error::Error>> {
     let window = xdg_shell.create_window(surface, WindowDecorations::RequestClient, &qh);
     window.set_title(APP_ID);
     window.set_app_id(APP_ID);
-    window.set_min_size(Some(size));
-    window.set_max_size(Some(size));
     let viewport = viewporter.as_ref().map(|viewporter| {
         let viewport = viewporter.get_viewport(window.wl_surface(), &qh, ());
         viewport.set_destination(size.0 as i32, size.1 as i32);
         viewport
     });
     let region_scale = if viewport.is_some() { scale } else { 1.0 };
-    let input_size = (
-        (image_size.0 as f32 / region_scale).ceil() as i32,
-        (image_size.1 as f32 / region_scale).ceil() as i32,
+    let visible = (
+        (image_size.0 as f32 / region_scale).ceil() as u32,
+        (image_size.1 as f32 / region_scale).ceil() as u32,
     );
+    // xdg min/max size count the window geometry, not the padded surface
+    window.set_min_size(Some(visible));
+    window.set_max_size(Some(visible));
     window.commit();
 
     // no .desktop entry ties this app_id to an icon, so ask the compositor
@@ -156,7 +157,7 @@ pub fn run(image: &[u8], scale: f32) -> Result<(), Box<dyn std::error::Error>> {
         pool,
         window,
         compositor,
-        input_size,
+        visible,
         mapped: false,
         frame: Some(frame),
         buffer_size,
@@ -244,7 +245,7 @@ struct Pin {
 
     window: Window,
     compositor: CompositorState,
-    input_size: (i32, i32),
+    visible: (u32, u32),
     mapped: bool,
     frame: Option<Pixmap>,
     buffer_size: (u32, u32),
@@ -302,11 +303,15 @@ impl WindowHandler for Pin {
             return;
         };
         if let Ok(region) = Region::new(&self.compositor) {
-            region.add(0, 0, self.input_size.0, self.input_size.1);
+            region.add(0, 0, self.visible.0 as i32, self.visible.1 as i32);
             window
                 .wl_surface()
                 .set_input_region(Some(region.wl_region()));
         }
+        // the padding stays outside the window, snapping and focus borders follow the picture
+        // it sure thing looks like a unelegant workaround, but currently it looks like the only way
+        // to fix strecthed pin on weird fractional scales
+        window.set_window_geometry(0, 0, self.visible.0, self.visible.1);
         window.attach(Some(buffer.wl_buffer()), 0, 0);
         window.wl_surface().damage_buffer(
             0,
