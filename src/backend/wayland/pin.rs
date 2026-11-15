@@ -8,7 +8,7 @@
 use smithay_client_toolkit::reexports::protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::{
     Shape, WpCursorShapeDeviceV1,
 };
-use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState};
+use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState, Region};
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
 use smithay_client_toolkit::registry::{ProvidesRegistryState, RegistryState};
 use smithay_client_toolkit::seat::keyboard::{
@@ -91,7 +91,7 @@ pub fn spawn(png: &[u8], scale: f32) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 pub fn run(image: &[u8], scale: f32) -> Result<(), Box<dyn std::error::Error>> {
-    let frame = render_pin(image, scale)?;
+    let (frame, image_size) = render_pin(image, scale)?;
     let buffer_size = (frame.width(), frame.height());
 
     let conn = Connection::connect_to_env()?;
@@ -130,6 +130,11 @@ pub fn run(image: &[u8], scale: f32) -> Result<(), Box<dyn std::error::Error>> {
         viewport.set_destination(size.0 as i32, size.1 as i32);
         viewport
     });
+    let region_scale = if viewport.is_some() { scale } else { 1.0 };
+    let input_size = (
+        (image_size.0 as f32 / region_scale).ceil() as i32,
+        (image_size.1 as f32 / region_scale).ceil() as i32,
+    );
     window.commit();
 
     // no .desktop entry ties this app_id to an icon, so ask the compositor
@@ -150,6 +155,8 @@ pub fn run(image: &[u8], scale: f32) -> Result<(), Box<dyn std::error::Error>> {
         shm,
         pool,
         window,
+        compositor,
+        input_size,
         mapped: false,
         frame: Some(frame),
         buffer_size,
@@ -175,13 +182,16 @@ pub fn run(image: &[u8], scale: f32) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn render_pin(image: &[u8], scale: f32) -> Result<Pixmap, Box<dyn std::error::Error>> {
+fn render_pin(
+    image: &[u8],
+    scale: f32,
+) -> Result<(Pixmap, (u32, u32)), Box<dyn std::error::Error>> {
     let rgba = image::load_from_memory(image)?.into_rgba8();
     let (w, h) = rgba.dimensions();
     let mut data = rgba.into_raw();
     premultiply(&mut data);
-    let (data, w, h) = pad_to_whole_pixels(data, w, h, scale);
-    let size = IntSize::from_wh(w, h).ok_or("empty image")?;
+    let (data, pw, ph) = pad_to_whole_pixels(data, w, h, scale);
+    let size = IntSize::from_wh(pw, ph).ok_or("empty image")?;
     let mut pin = Pixmap::from_vec(data, size).ok_or("invalid image")?;
 
     // border style and radius similar to panels one
@@ -189,11 +199,11 @@ fn render_pin(image: &[u8], scale: f32) -> Result<Pixmap, Box<dyn std::error::Er
     let rect = Rect::from_xywh(0.0, 0.0, fw, fh).ok_or("empty image")?;
     let shape = rounded_rect_path(&rect, radius::panel() * scale, true, true, true, true)
         .ok_or("empty image")?;
-    let mut mask = Mask::new(w, h).ok_or("image is too large")?;
+    let mut mask = Mask::new(pw, ph).ok_or("image is too large")?;
     mask.fill_path(&shape, FillRule::Winding, true, Transform::identity());
     pin.apply_mask(&mask);
     Painter::new(&mut pin).panel_border(0.0, 0.0, fw, fh, radius::panel() * scale, 1.0);
-    Ok(pin)
+    Ok((pin, (w, h)))
 }
 
 fn whole_size(n: u32, scale: f32) -> u32 {
@@ -206,7 +216,7 @@ fn whole_size(n: u32, scale: f32) -> u32 {
         .unwrap_or(n)
 }
 
-/// Pads image dimensions by repeating edge pixels
+/// Pads image dimensions with transparent pixels
 ///
 /// prevents KWin rendering artifacts when dragging on a monitor with scale less than 100%
 fn pad_to_whole_pixels(data: Vec<u8>, w: u32, h: u32, scale: f32) -> (Vec<u8>, u32, u32) {
@@ -216,14 +226,9 @@ fn pad_to_whole_pixels(data: Vec<u8>, w: u32, h: u32, scale: f32) -> (Vec<u8>, u
     }
 
     let (w, h, pw, ph) = (w as usize, h as usize, pw as usize, ph as usize);
-    let mut out = Vec::with_capacity(pw * ph * 4);
-    for y in 0..ph {
-        let row = &data[y.min(h - 1) * w * 4..][..w * 4];
-        out.extend_from_slice(row);
-        let last = &row[(w - 1) * 4..];
-        for _ in w..pw {
-            out.extend_from_slice(last);
-        }
+    let mut out = vec![0; pw * ph * 4];
+    for y in 0..h {
+        out[y * pw * 4..][..w * 4].copy_from_slice(&data[y * w * 4..][..w * 4]);
     }
     (out, pw as u32, ph as u32)
 }
@@ -238,6 +243,8 @@ struct Pin {
     pool: SlotPool,
 
     window: Window,
+    compositor: CompositorState,
+    input_size: (i32, i32),
     mapped: bool,
     frame: Option<Pixmap>,
     buffer_size: (u32, u32),
@@ -294,6 +301,12 @@ impl WindowHandler for Pin {
         let Some(buffer) = &self.buffer else {
             return;
         };
+        if let Ok(region) = Region::new(&self.compositor) {
+            region.add(0, 0, self.input_size.0, self.input_size.1);
+            window
+                .wl_surface()
+                .set_input_region(Some(region.wl_region()));
+        }
         window.attach(Some(buffer.wl_buffer()), 0, 0);
         window.wl_surface().damage_buffer(
             0,
@@ -586,3 +599,45 @@ impl ProvidesRegistryState for Pin {
 
 delegate_registry!(Pin);
 delegate_dispatch2!(Pin);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pads_with_transparent_pixels() {
+        let (w, h, scale) = (406u32, 203u32, 1.35f32);
+        let data = vec![255u8; (w * h * 4) as usize];
+        let (out, pw, ph) = pad_to_whole_pixels(data, w, h, scale);
+        for n in [pw, ph] {
+            let logical = n as f64 / scale as f64;
+            assert!((logical - logical.round()).abs() < 1e-4);
+        }
+        assert!(pw >= w && ph >= h && (pw, ph) != (w, h));
+        assert_eq!(out.len(), (pw * ph * 4) as usize);
+        for y in 0..ph {
+            for x in 0..pw {
+                let px = &out[((y * pw + x) * 4) as usize..][..4];
+                if x < w && y < h {
+                    assert_eq!(px, [255; 4]);
+                } else {
+                    assert_eq!(px, [0; 4]);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn render_keeps_image_size() {
+        let img = image::RgbaImage::from_pixel(406, 203, image::Rgba([10, 20, 30, 255]));
+        let mut png = Vec::new();
+        img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        let (pin, size) = render_pin(&png, 1.35).unwrap();
+        assert_eq!(size, (406, 203));
+        assert!(pin.width() > 406);
+        let (w, h) = (pin.width() as usize, pin.height() as usize);
+        assert_eq!(pin.data()[(h - 1) * w * 4 + (w - 1) * 4 + 3], 0);
+        assert_eq!(&pin.data()[(100 * w + 200) * 4..][..4], [10, 20, 30, 255]);
+    }
+}
