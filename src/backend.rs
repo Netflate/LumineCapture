@@ -148,11 +148,13 @@ pub enum OverlayShell {
 /// COSMIC gets layer_shell too since a full-screen window there flashes gray while it opens,
 /// and there is few focus grabbing issues.
 /// Make sense to return to Window if these issues get fixed
+///
+/// Hyprland doesn't draw what's under a fullscreen window, which breaks scrolling screenshot.
 pub fn initialize_overlay(
     conn: Connection,
 ) -> Result<Box<dyn ScreenOverlay>, Box<dyn std::error::Error>> {
     let layer = match crate::config::get().general.overlay {
-        OverlayShell::Auto => on_niri() || on_umbriel() || on_cosmic(),
+        OverlayShell::Auto => on_niri() || on_umbriel() || on_cosmic() || on_hyprland(),
         shell => shell == OverlayShell::Layer,
     };
     info!(
@@ -175,6 +177,10 @@ fn on_umbriel() -> bool {
 
 fn on_cosmic() -> bool {
     desktop_is("COSMIC")
+}
+
+fn on_hyprland() -> bool {
+    desktop_is("Hyprland") || std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some()
 }
 
 fn desktop_is(name: &str) -> bool {

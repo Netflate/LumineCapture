@@ -737,7 +737,8 @@ to = "cs"
 # window  a fullscreen window: can be sent to another desktop or minimized (Recommended)
 # layer   drawn above everything else until the capture is finished, so to check something
 #         outside the screenshot you'd have to cancel the capture.
-# auto    layer on niri and umbriel, where a window would be tiled into the layout, and on COSMIC;
+# auto    layer on niri and umbriel, where a window would be tiled into the layout, on COSMIC,
+#         and on Hyprland, where window mode breaks scrolling capture;
 #         a fullscreen window everywhere else
 overlay = "auto"
 
