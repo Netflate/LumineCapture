@@ -15,6 +15,7 @@ use shot_stitch::Axis;
 pub enum PanelButton {
     Edit,
     ToggleAxis,
+    Reset,
     Finish,
     Cancel,
 }
@@ -44,6 +45,7 @@ const PREVIEW_MAX_HEIGHT: f32 = 220.0;
 const SHEET: &[PanelButton] = &[
     PanelButton::Edit,
     PanelButton::ToggleAxis,
+    PanelButton::Reset,
     PanelButton::Finish,
     PanelButton::Cancel,
 ];
@@ -336,7 +338,7 @@ fn draw_preview(p: &mut Painter, session: &mut ScrollSession, rect: Rect) {
 pub fn is_button_enabled(button: PanelButton, session: &ScrollSession) -> bool {
     match button {
         PanelButton::ToggleAxis => session.can_toggle_axis(),
-        PanelButton::Edit | PanelButton::Finish | PanelButton::Cancel => true,
+        PanelButton::Edit | PanelButton::Reset | PanelButton::Finish | PanelButton::Cancel => true,
     }
 }
 
@@ -348,6 +350,7 @@ pub fn button_icon(button: PanelButton, session: &ScrollSession) -> &'static str
             Axis::Vertical => icons::SCROLL,
             Axis::Horizontal => icons::SCROLL_HORIZONTAL,
         },
+        PanelButton::Reset => icons::RETRY,
         PanelButton::Finish => icons::CHECK,
         PanelButton::Cancel => icons::CLOSE,
     }

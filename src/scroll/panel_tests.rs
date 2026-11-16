@@ -206,3 +206,12 @@ fn compact_panel_has_no_preview() {
     assert!(compact.preview.is_none());
     assert_eq!(compact.rect, plain.rect);
 }
+
+#[test]
+fn every_button_fits_the_panel() {
+    let layout = place(region(400.0, 300.0), (1920.0, 1080.0), None);
+    assert_eq!(layout.buttons.len(), 5);
+    for (_, rect) in &layout.buttons {
+        assert!(rect.right() <= layout.rect.right());
+    }
+}
