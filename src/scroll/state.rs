@@ -143,6 +143,14 @@ impl Scroll {
 
     pub fn reset(&mut self) {
         self.lead = 0;
+        self.long = None;
+    }
+
+    pub fn restart(&mut self) {
+        if self.session.restart(self.axis()) {
+            self.session.paused = false;
+            self.reset();
+        }
     }
 
     /// long image in global coordinates, as when shot started

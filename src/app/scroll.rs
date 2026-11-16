@@ -336,12 +336,12 @@ pub fn click(editor_state: &mut EditorState, dirty_mask: &mut u32) -> bool {
         PanelButton::ToggleAxis => {
             scroll.toggle_axis();
         }
-        PanelButton::Reset => {
+        PanelButton::Reset => scroll.restart(),
+        PanelButton::Finish => editor_state.finish = Some(Outputs::default()),
+        PanelButton::Cancel => {
             stop(editor_state, dirty_mask);
             return true;
         }
-        PanelButton::Finish => editor_state.finish = Some(Outputs::default()),
-        PanelButton::Cancel => editor_state.cancel = true,
     }
     refresh_panel(editor_state, dirty_mask);
     true
