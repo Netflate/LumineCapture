@@ -31,10 +31,31 @@
 - **Speed.** Starts instantly. The project is built with a focus on speed and optimization and avoids heavy libraries. You can see the comparison with Flameshot & Spectacle with benchmarks [here](#speed-comparison-luminecapture-vs-flameshot-vs-spectacle).
 - **Functionality.** :
   - OCR: fast text scanning, with the option to download and choose a specific model
+  - Scrolling capture: select a region and scroll, the long screenshot is stitched as you go
   - Pin
   - Color picker
   - Basic annotations: pen, highlighter, line, arrow, rectangle, circle, numbered arrows, text, redact (blur or pixelate)
+  - Editor for existing images: `lumine-capture --edit file.png`
+  - Saving as PNG, WebP, AVIF or JPEG
 - **Native on Wayland.**
+
+<table>
+<tr>
+<td width="45%">
+
+### Scrolling capture
+
+- Select a region and press the scroll button in the toolbar, or start with `lumine-capture -S`
+- Scroll: the frames are stitched while you scroll
+- Works both vertically and horizontally
+- Annotate the result in the editor, or finish it like any other screenshot
+
+</td>
+<td width="55%">
+<video src="https://github.com/user-attachments/assets/36f11895-9eb7-4fbd-965e-1160af008933" controls muted></video>
+</td>
+</tr>
+</table>
 
 
 ## Usage
@@ -50,6 +71,15 @@ LumineCapture supports different launch options, here is the most basic one:
 * `lumine-capture -r`  
    ╰─> No editor and no annotations, just drag a region; the screenshot is taken as soon as you release the mouse button (by default it is both saved and copied).
 
+* `lumine-capture -S`  
+   ╰─> Scrolling capture: drag a region, then scroll the page, and the frames are stitched into one long screenshot.
+
+* `lumine-capture -p`  
+   ╰─> Color picker: click a pixel to copy its color as hex.
+
+* `lumine-capture --edit file.png`  
+   ╰─> Opens an existing image in the editor window instead of taking a screenshot (reads it from stdin without a file).
+
 ### without GUI : 
 * `lumine-capture -f` (full workspace)  
 * `lumine-capture -f -m` (current monitor)  
@@ -64,7 +94,7 @@ even if in the editor you only chose to copy or pin it. There are two ways to ch
     * `c` copies it to the clipboard
     * `p` pins it to the screen
     * `o` writes the PNG to stdout for piping to utilities and other tools
-    * `r` copies the recognized text to the primary selection (middle click). **It works only with `-r ocr`**: screenshot ignores `r`, since vast majority of apps paste only text with the middle click
+    * `r` copies the recognized text (or the picked color) to the primary selection (middle click). **It works only with `-r ocr` and `-p`**: screenshot ignores `r`, since vast majority of apps paste only text with the middle click
 
     The letters can be used in any order, even `scp`; they don't get in each other's way.
     A bare `-t` means nothing on its own, only what you pick in the editor.
@@ -83,6 +113,7 @@ even if in the editor you only chose to copy or pin it. There are two ways to ch
 
 ```text
 lumine-capture [MODE] [OPTIONS]
+lumine-capture --edit [FILE]
 lumine-capture --ocr-daemon [serve|status|stop|calibrate]
 
 Modes (without one, the editor opens):
@@ -93,6 +124,15 @@ Modes (without one, the editor opens):
                        it doesn't show any scanning progress: it closes, and when the scan
                        finishes, shows a notification with the outcome.
                        Recommended to use with -t, see below
+  -p, --pick           Click a pixel to copy its color as hex, no editor
+  -S, --scroll         Start in scrolling capture: pick a region, scroll the page, and
+                       the frames are stitched into one long image. Enter saves it,
+                       Escape cancels
+      --edit [FILE]    Open an image in the editor window instead of taking a shot,
+                       reads it from stdin without FILE. The wheel scrolls it, Ctrl+wheel
+                       zooms, the middle button drags it
+                       For now this window editor mode is used to edit long pictures from
+                       scrolling screenshots
 
 Options:
   -m, --monitor        Only the monitor under the pointer
@@ -102,10 +142,15 @@ Options:
                        to stdout, in any order and mix, e.g. -t pc. Defaults to general.to
                        in the config. In the editor, Enter and a double click do this, and
                        any other finish adds it. A bare -t means nothing by default.
-                       Only for -r ocr: r copies the text to the primary selection (middle
-                       click). Screenshots ignore r, apps paste only text with the middle click
+                       Only for -r ocr and --pick: r copies the text to the primary selection
+                       (middle click). Screenshots ignore r, apps paste only text with the
+                       middle click
   -o, --output <DIR>   Save the shot into this directory instead of the configured
                        one, creating it if needed; implies s in --to
+  -F, --format <FORMAT>
+                       Save and copy the shot as png, webp, avif or jpeg instead of
+                       save.file_format in the config. The clipboard offers PNG too,
+                       stdout stays PNG
   -n, --nonotify       Disable notifications for this launch
   -s, --speed          Print how long each startup step took to stderr
       --config <PATH>  Use this config file instead of the default location
@@ -245,7 +290,15 @@ Script: [`scripts/bench.sh`](scripts/bench.sh)
 
 ## Config
 
-The config lives at `~/.config/LumineCapture/config.toml`.
+The config lives at `~/.config/LumineCapture/config.toml`. It's written once, on the first launch, so options added in later versions don't appear in it and just use their defaults. To see every option with its default value:
+
+```sh
+lumine-capture --print-default-config
+# or compare it with yours
+diff <(lumine-capture --print-default-config) ~/.config/LumineCapture/config.toml
+```
+
+Deleting a line, or the whole file, brings back the default.
 
 ## AI policy & Contributing
 
@@ -255,6 +308,8 @@ Contributors are expected to take an equally responsible approach, more in [CONT
 
 
 ## Acknowledgments
+
+Scrolling capture comes from [jswysnemc](https://github.com/jswysnemc), the author of [mark-shot](https://github.com/jswysnemc/mark-shot) and [wayscrollshot](https://github.com/jswysnemc/wayscrollshot). He contributed the stitching engine and the first implementation of the feature ([#24](https://github.com/Netflate/LumineCapture/pull/24)). Thank you!
 
 A lot of the reference for this project, including the layout of this README, was taken from [Spectacle](https://invent.kde.org/graphics/spectacle) and [Flameshot](https://github.com/flameshot-org/flameshot). Thanks to both projects and everyone who works on them.
 
@@ -267,8 +322,7 @@ OCR runs [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) PP-OCRv5 models 
 - [ ] Screen recording
 - [ ] GNOME support ([#21](https://github.com/Netflate/LumineCapture/issues/21))
 - [ ] On-screen translation
-- [ ] Scrolling screenshots, if they can be done well ([#17](https://github.com/Netflate/LumineCapture/issues/17))
-
+- [x] Scrolling screenshots
 ## License
 
 Licensed under either of

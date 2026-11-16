@@ -41,6 +41,8 @@ Modes (without one, the editor opens):
       --edit [FILE]    Open an image in the editor window instead of taking a shot,
                        reads it from stdin without FILE. The wheel scrolls it, Ctrl+wheel
                        zooms, the middle button drags it
+                       For now this window editor mode is used to edit long pictures from
+                       scrolling screenshots
 
 Options:
   -m, --monitor        Only the monitor under the pointer
@@ -56,8 +58,9 @@ Options:
   -o, --output <DIR>   Save the shot into this directory instead of the configured
                        one, creating it if needed; implies s in --to
   -F, --format <FORMAT>
-                       Save the file as png, webp, avif or jpeg instead of save.file_format
-                       in the config. The clipboard and stdout stay PNG
+                       Save and copy the shot as png, webp, avif or jpeg instead of
+                       save.file_format in the config. The clipboard offers PNG too,
+                       stdout stays PNG
   -n, --nonotify       Disable notifications for this launch
   -s, --speed          Print how long each startup step took to stderr
       --config <PATH>  Use this config file instead of the default location

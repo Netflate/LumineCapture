@@ -251,6 +251,7 @@ async fn capture_one(
 
 #[async_trait]
 impl CaptureMethod for KdeMethod {
+    // Because KWin leaves our own windows out of CaptureScreen, 6.8
     fn captures_overlay(&self) -> bool {
         false
     }

@@ -248,7 +248,7 @@ section!(Save {
     month_format: String = "%Y-%m".into(),
     filename_format: String = "%Y-%m-%d_%H-%M".into(),
     file_format: FileFormat = FileFormat::Png,
-    clipboard_format: FileFormat = FileFormat::Png,
+    clipboard_format: Option<FileFormat> = None,
     quality: u8 = 90,
 });
 
@@ -746,14 +746,13 @@ overlay = "auto"
 directory = "screenshots"
 month_format = "%Y-%m"
 filename_format = "%Y-%m-%d_%H-%M"
-# Format of the saved file only, stdout stays PNG.
+# Format of the saved file and of the clipboard, stdout stays PNG.
 # png, webp (lossless), avif or jpeg. avif and jpeg are lossy and use quality (1-100).
-# avif takes a few seconds on big screenshots.
+# avif takes a few seconds on big screenshots, and delays the copy as long.
+# The clipboard always offers PNG next to it, since most apps take only PNG.
 file_format = "png"
-# Format offered to the clipboard. PNG is always offered next to it,
-# and most apps take the PNG. Same values and quality as above.
-# avif delays the copy by seconds on big screenshots.
-clipboard_format = "png"
+# A different format for the clipboard only, same values as above.
+# clipboard_format = "png"
 quality = 90
 
 [notifications]
@@ -1296,7 +1295,7 @@ fn parse(text: &str, origin: &str) -> Config {
 }
 
 /// Options without a default value
-const UNSET_BY_DEFAULT: &[&str] = &["log.level"];
+const UNSET_BY_DEFAULT: &[&str] = &["log.level", "save.clipboard_format"];
 
 /// Removed options, to bypass unknown options warning on launch
 const REMOVED: &[&str] = &[
@@ -1675,16 +1674,17 @@ mod tests {
     }
 
     #[test]
-    fn clipboard_format_is_a_known_name_or_png() {
+    fn clipboard_format_is_a_known_name_or_unset() {
         let format = |value: &str| {
             read(&format!("[save]\nclipboard_format = \"{value}\"\n"))
                 .save
                 .clipboard_format
         };
-        assert_eq!(format("webp"), FileFormat::Webp);
-        assert_eq!(format("avif"), FileFormat::Avif);
-        assert_eq!(format("jpg"), FileFormat::Jpeg);
-        assert_eq!(format("bmp"), FileFormat::Png);
+        assert_eq!(format("webp"), Some(FileFormat::Webp));
+        assert_eq!(format("avif"), Some(FileFormat::Avif));
+        assert_eq!(format("jpg"), Some(FileFormat::Jpeg));
+        assert_eq!(format("bmp"), None);
+        assert_eq!(read("").save.clipboard_format, None);
     }
 
     #[test]

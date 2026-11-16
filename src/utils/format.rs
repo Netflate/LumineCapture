@@ -112,11 +112,12 @@ pub fn encode(png: &[u8], format: FileFormat, q: u8) -> Result<Encoded<'_>, Box<
 
 pub fn for_clipboard(png: &[u8]) -> Option<(FileFormat, Vec<u8>)> {
     let save = &crate::config::get().save;
-    if save.clipboard_format == FileFormat::Png {
+    let wanted = save.clipboard_format.unwrap_or(save.file_format);
+    if wanted == FileFormat::Png {
         return None;
     }
-    match encode(png, save.clipboard_format, save.quality) {
-        Ok((data, format)) if format == save.clipboard_format => Some((format, data.into_owned())),
+    match encode(png, wanted, save.quality) {
+        Ok((data, format)) if format == wanted => Some((format, data.into_owned())),
         Ok(_) => None,
         Err(e) => {
             log::warn!("can't encode the clipboard image: {e}");
