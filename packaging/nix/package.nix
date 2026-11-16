@@ -14,11 +14,11 @@
 
 let
   pname = "lumine-capture";
-  version = "0.3.0";
+  version = "0.4.0";
 
   src = fetchurl {
     url = "https://github.com/Netflate/LumineCapture/releases/download/v${version}/lumine-capture_${version}-1_amd64.deb";
-    hash = "sha256-w97zkBbBquCn2Oetrix2arFs+YYcAbeUzvg/AzGE5Yg=";
+    hash = "sha256-JH/5fnJREfHeSaQvZUbev/rt4UvAA8Y/+tTNmdalY28=";
   };
 in
 stdenv.mkDerivation {
