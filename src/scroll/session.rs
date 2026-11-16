@@ -188,6 +188,31 @@ impl ScrollSession {
         }
     }
 
+    pub fn restart(&mut self, axis: Axis) -> bool {
+        let mut stitcher = match Stitcher::new(Config::default()) {
+            Ok(stitcher) => stitcher,
+            Err(e) => {
+                log::error!("failed to restart stitching: {e}");
+                return false;
+            }
+        };
+        if !matches!(stitcher.set_axis(axis), Ok(true)) {
+            return false;
+        }
+        self.stitcher = stitcher;
+        self.focus = (0, 0);
+        self.last_signature.clear();
+        self.settled = false;
+        self.preview = None;
+        self.preview_revision = u64::MAX;
+        self.frame_count = 0;
+        self.total_height = 0;
+        self.last_append = 0;
+        self.status = "Scroll slowly to capture".into();
+        info!("scrolling capture restarted along {axis:?}");
+        true
+    }
+
     pub fn preview(&mut self) -> Option<&Pixmap> {
         let revision = self.stitcher.revision();
         if self.preview.is_none() || revision != self.preview_revision {

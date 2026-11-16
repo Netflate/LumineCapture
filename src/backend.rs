@@ -22,6 +22,10 @@ pub trait CaptureMethod: Send + Sync {
         Ok(())
     }
 
+    fn captures_overlay(&self) -> bool {
+        true
+    }
+
     // im not super sure how it works on cosmic
     // maybe i'll implement it later
     async fn capture_active_window(&self) -> Result<Capture, Box<dyn std::error::Error>> {

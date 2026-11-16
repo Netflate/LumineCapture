@@ -19,6 +19,15 @@ pub enum PanelButton {
     Cancel,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Slot {
+    Right,
+    Left,
+    Below,
+    Above,
+    Inside,
+}
+
 pub struct PanelLayout {
     pub rect: Rect,
     pub preview: Option<Rect>,
@@ -27,7 +36,7 @@ pub struct PanelLayout {
     pub buttons: Vec<(PanelButton, Rect)>,
 }
 
-const PANEL_WIDTH: f32 = 168.0;
+const MIN_WIDTH: f32 = 168.0;
 const BUTTON_SIZE: f32 = 26.0;
 const BUTTON_GAP: f32 = 6.0;
 const LINE_HEIGHT: f32 = 16.0;
@@ -39,37 +48,86 @@ const SHEET: &[PanelButton] = &[
     PanelButton::Cancel,
 ];
 
+fn panel_width() -> f32 {
+    let n = SHEET.len() as f32;
+    (size::padding() * 2.0 + n * BUTTON_SIZE + (n - 1.0) * BUTTON_GAP).max(MIN_WIDTH)
+}
+
+fn panel_height(preview_h: f32) -> f32 {
+    let gap = size::margin();
+    let preview_gap = if preview_h > 0.0 { gap } else { 0.0 };
+    size::padding() * 2.0 + preview_h + preview_gap + LINE_HEIGHT * 2.0 + gap + BUTTON_SIZE
+}
+
+pub fn choose_slot(region: Rect, monitor_size: (f32, f32)) -> Slot {
+    let gap = size::margin();
+    let (mon_w, mon_h) = monitor_size;
+    let width = panel_width() + gap * 2.0;
+    let height = panel_height(PREVIEW_MAX_HEIGHT) + gap * 2.0;
+    if mon_h >= height && mon_w - region.right() >= width {
+        Slot::Right
+    } else if mon_h >= height && region.left() >= width {
+        Slot::Left
+    } else if mon_w >= width && mon_h - region.bottom() >= height {
+        Slot::Below
+    } else if mon_w >= width && region.top() >= height {
+        Slot::Above
+    } else {
+        Slot::Inside
+    }
+}
+
 /// Computes panel layout and geometry for sub-elements in monitor local coordinates.
 pub fn layout(
     local_region: Rect,
     monitor_size: (f32, f32),
     preview_size: Option<(u32, u32)>,
+    slot: Slot,
+    compact: bool,
 ) -> PanelLayout {
     let padding = size::padding();
     let gap = size::margin();
 
-    let preview_h = preview_size
-        .map(|(_, h)| (h as f32).min(PREVIEW_MAX_HEIGHT))
-        .unwrap_or(0.0);
-    let preview_gap = if preview_h > 0.0 { gap } else { 0.0 };
-    let height = padding * 2.0 + preview_h + preview_gap + LINE_HEIGHT * 2.0 + gap + BUTTON_SIZE;
-
-    // prefer placing panel on the right side of the selection; flip to left if space is tight
-    let (mon_w, mon_h) = monitor_size;
-    let right_room = mon_w - local_region.right() - gap * 2.0;
-    let preferred_x = if right_room >= PANEL_WIDTH {
-        local_region.right() + gap
+    let preview_h = if compact {
+        0.0
     } else {
-        local_region.left() - gap - PANEL_WIDTH
+        preview_size
+            .map(|(_, h)| (h as f32).min(PREVIEW_MAX_HEIGHT))
+            .unwrap_or(0.0)
     };
-    let x_limit = (mon_w - PANEL_WIDTH - gap).max(gap);
-    let x = preferred_x.clamp(gap, x_limit);
-    let y_limit = (mon_h - height - gap).max(gap);
-    let y = local_region.top().clamp(gap, y_limit);
+    let preview_gap = if preview_h > 0.0 { gap } else { 0.0 };
+    let width = panel_width();
+    let height = panel_height(preview_h);
 
-    let Some(rect) = Rect::from_xywh(x, y, PANEL_WIDTH, height) else {
+    let (mon_w, mon_h) = monitor_size;
+    let x_limit = (mon_w - width - gap).max(gap);
+    let y_limit = (mon_h - height - gap).max(gap);
+    let (x, y) = match slot {
+        Slot::Right => (
+            (local_region.right() + gap).clamp(gap, x_limit),
+            local_region.top().clamp(gap, y_limit),
+        ),
+        Slot::Left => (
+            (local_region.left() - gap - width).clamp(gap, x_limit),
+            local_region.top().clamp(gap, y_limit),
+        ),
+        Slot::Below => (
+            (local_region.right() - width).clamp(gap, x_limit),
+            local_region.bottom() + gap,
+        ),
+        Slot::Above => (
+            (local_region.right() - width).clamp(gap, x_limit),
+            local_region.top() - gap - height,
+        ),
+        Slot::Inside => (
+            local_region.right() - gap - width,
+            local_region.bottom() - gap - height,
+        ),
+    };
+
+    let Some(rect) = Rect::from_xywh(x, y, width, height) else {
         return PanelLayout {
-            rect: Rect::from_xywh(0.0, 0.0, PANEL_WIDTH, height).unwrap(),
+            rect: Rect::from_xywh(0.0, 0.0, width, height).unwrap(),
             preview: None,
             status: Rect::from_xywh(0.0, 0.0, 1.0, 1.0).unwrap(),
             length: Rect::from_xywh(0.0, 0.0, 1.0, 1.0).unwrap(),

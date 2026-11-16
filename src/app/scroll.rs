@@ -334,9 +334,7 @@ pub fn click(editor_state: &mut EditorState, dirty_mask: &mut u32) -> bool {
     match button {
         PanelButton::Edit => editor_state.to_window = true,
         PanelButton::ToggleAxis => {
-            if scroll.session.toggle_axis() {
-                scroll.reset();
-            }
+            scroll.toggle_axis();
         }
         PanelButton::Finish => editor_state.finish = Some(Outputs::default()),
         PanelButton::Cancel => editor_state.cancel = true,

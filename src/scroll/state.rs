@@ -4,7 +4,7 @@ use shot_stitch::{Axis, Edge, Status, StitchResult};
 use tiny_skia::{IntRect, Pixmap, Rect};
 
 use crate::backend::{CaptureMethod, InputHole};
-use crate::scroll::panel::{self, PanelButton, PanelLayout};
+use crate::scroll::panel::{self, PanelButton, PanelLayout, Slot};
 use crate::scroll::session::{ScrollSession, to_pixmap};
 
 pub struct Scroll {
@@ -15,12 +15,15 @@ pub struct Scroll {
     /// same region in global coordinates
     pub zone: Rect,
     /// region in pixels of captured frames
+    pub full_crop: IntRect,
     pub crop: IntRect,
     /// pixels of captured frames per logical one
     pub scale: f32,
     /// rows the long image grew above the first frame
     lead: i32,
     pub layout: PanelLayout,
+    slot: Slot,
+    compact: bool,
     pub hovered: Option<PanelButton>,
     pub capture: Box<dyn CaptureMethod>,
     pub backgrounds: Vec<bool>,
@@ -39,12 +42,18 @@ impl Scroll {
         monitors: usize,
     ) -> Self {
         let region = session.region;
-        Self {
+        let slot = panel::choose_slot(region, monitor_size);
+        let compact = slot == Slot::Inside && capture.captures_overlay();
+        let layout = panel::layout(region, monitor_size, None, slot, compact);
+        let mut scroll = Self {
             monitor_idx: session.monitor_idx,
-            layout: panel::layout(region, monitor_size, None),
+            layout,
+            slot,
+            compact,
             session,
             region,
             zone,
+            full_crop: crop,
             crop,
             scale,
             lead: 0,
@@ -53,7 +62,55 @@ impl Scroll {
             backgrounds: vec![true; monitors],
             input: None,
             long: None,
+        };
+        scroll.crop = scroll.crop_for(scroll.axis());
+        scroll
+    }
+
+    fn crop_for(&self, axis: Axis) -> IntRect {
+        let full = self.full_crop;
+        if !self.compact {
+            return full;
         }
+        let gap = crate::theme::size::margin();
+        let panel = self.layout.rect;
+        let (shrunk, kept, whole) = match axis {
+            Axis::Vertical => {
+                let bottom = ((panel.top() - gap - 2.0) * self.scale).floor() as i32;
+                (
+                    IntRect::from_ltrb(full.left(), full.top(), full.right(), bottom),
+                    bottom - full.top(),
+                    full.height() as i32,
+                )
+            }
+            Axis::Horizontal => {
+                let right = ((panel.left() - gap - 2.0) * self.scale).floor() as i32;
+                (
+                    IntRect::from_ltrb(full.left(), full.top(), right, full.bottom()),
+                    right - full.left(),
+                    full.width() as i32,
+                )
+            }
+        };
+        shrunk.filter(|_| kept * 2 >= whole).unwrap_or(full)
+    }
+
+    pub fn toggle_axis(&mut self) -> bool {
+        let next = match self.axis() {
+            Axis::Vertical => Axis::Horizontal,
+            Axis::Horizontal => Axis::Vertical,
+        };
+        let crop = self.crop_for(next);
+        let switched = if crop == self.crop {
+            self.session.toggle_axis()
+        } else {
+            self.session.restart(next)
+        };
+        if switched {
+            self.crop = crop;
+            self.reset();
+        }
+        switched
     }
 
     pub fn live(&self) -> bool {
@@ -128,7 +185,7 @@ impl Scroll {
 
     pub fn relayout(&mut self, monitor_size: (f32, f32)) -> bool {
         let preview = self.session.preview().map(|p| (p.width(), p.height()));
-        let layout = panel::layout(self.region, monitor_size, preview);
+        let layout = panel::layout(self.region, monitor_size, preview, self.slot, self.compact);
         let moved = layout.rect != self.layout.rect;
         self.layout = layout;
         moved

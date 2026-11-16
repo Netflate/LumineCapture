@@ -251,6 +251,10 @@ async fn capture_one(
 
 #[async_trait]
 impl CaptureMethod for KdeMethod {
+    fn captures_overlay(&self) -> bool {
+        false
+    }
+
     async fn capture_frame(&self, outputs: &[Output]) -> Result<CaptureResult, Box<dyn Error>> {
         let inner = async {
             let proxy = ScreenShot2Proxy::new(self.session_bus().await?).await?;
