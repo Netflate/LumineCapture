@@ -32,6 +32,7 @@ pub enum Slot {
 pub struct PanelLayout {
     pub rect: Rect,
     pub preview: Option<Rect>,
+    pub axis: Rect,
     pub status: Rect,
     pub length: Rect,
     pub buttons: Vec<(PanelButton, Rect)>,
@@ -58,7 +59,7 @@ fn panel_width() -> f32 {
 fn panel_height(preview_h: f32) -> f32 {
     let gap = size::margin();
     let preview_gap = if preview_h > 0.0 { gap } else { 0.0 };
-    size::padding() * 2.0 + preview_h + preview_gap + LINE_HEIGHT * 2.0 + gap + BUTTON_SIZE
+    size::padding() * 2.0 + preview_h + preview_gap + LINE_HEIGHT * 3.0 + gap + BUTTON_SIZE
 }
 
 pub fn choose_slot(region: Rect, monitor_size: (f32, f32)) -> Slot {
@@ -131,6 +132,7 @@ pub fn layout(
         return PanelLayout {
             rect: Rect::from_xywh(0.0, 0.0, width, height).unwrap(),
             preview: None,
+            axis: Rect::from_xywh(0.0, 0.0, 1.0, 1.0).unwrap(),
             status: Rect::from_xywh(0.0, 0.0, 1.0, 1.0).unwrap(),
             length: Rect::from_xywh(0.0, 0.0, 1.0, 1.0).unwrap(),
             buttons: Vec::new(),
@@ -148,6 +150,8 @@ pub fn layout(
         cursor_y += preview_h + preview_gap;
     }
 
+    let axis = Rect::from_xywh(rect.left() + padding, cursor_y, inner_w, LINE_HEIGHT);
+    cursor_y += LINE_HEIGHT;
     // separate lines for status and length so labels don't collide
     let status = Rect::from_xywh(rect.left() + padding, cursor_y, inner_w, LINE_HEIGHT);
     cursor_y += LINE_HEIGHT;
@@ -167,6 +171,7 @@ pub fn layout(
     PanelLayout {
         rect,
         preview,
+        axis: axis.unwrap_or(rect),
         status: status.unwrap_or(rect),
         length: length.unwrap_or(rect),
         buttons,
@@ -202,6 +207,16 @@ pub fn draw(
 
     // draw status and length lines
     let small = font::small();
+    let axis = match session.axis() {
+        Axis::Vertical => "Vertical scrolling",
+        Axis::Horizontal => "Horizontal scrolling",
+    };
+    let axis = fit_text(p, axis, layout.axis.width(), small);
+    p.text(
+        layout.axis,
+        &axis,
+        TextStyle::new(small, color::foreground()),
+    );
     let status = fit_text(p, &session.status, layout.status.width(), small);
     p.text(
         layout.status,
