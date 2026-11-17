@@ -33,31 +33,51 @@ pub trait CaptureMethod: Send + Sync {
     }
 }
 
-pub fn initialize_capture(conn: &Connection) -> Box<dyn CaptureMethod> {
+/// Backends that can be picked from the environment alone, without probing the compositor
+fn env_method() -> Option<&'static str> {
     let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
     let forced = std::env::var("LUMINE_CAPTURE").unwrap_or_default();
-    let method = match forced.as_str() {
-        "kde" | "mutter" | "image-copy" | "screencopy" | "portal" => forced.as_str(),
-        other => {
-            if !other.is_empty() {
-                warn!(
-                    "Unknown LUMINE_CAPTURE={other}, expected kde, mutter, image-copy, screencopy or portal"
-                );
-            }
-            // portal is the one asking for permission and monitor choice
-            // kinda annoying, and kde protocol / image-copy seems to be faster than through portal
-            if desktop == "KDE" {
-                "kde"
-            } else if desktop.split(':').any(|d| d == "GNOME") {
-                "mutter"
-            } else if wayland::capture::image_copy::supported(conn) {
-                "image-copy"
-            } else if wayland::capture::screencopy::supported(conn) {
-                "screencopy"
-            } else {
-                "portal"
-            }
-        }
+    match forced.as_str() {
+        "kde" => Some("kde"),
+        "mutter" => Some("mutter"),
+        "image-copy" => Some("image-copy"),
+        "screencopy" => Some("screencopy"),
+        "portal" => Some("portal"),
+        // portal is the one asking for permission and monitor choice
+        // kinda annoying, and kde protocol / image-copy seems to be faster than through portal
+        _ if desktop == "KDE" => Some("kde"),
+        _ if desktop.split(':').any(|d| d == "GNOME") => Some("mutter"),
+        _ => None,
+    }
+}
+
+/// we commit full screen window creation before getting the shot itself,
+/// this does nothing on other DEs, but on gnome it hides panels
+/// so spefically for it we create the window only after
+///
+/// creating window wihtout fullscreen first, and making it full screen after
+/// the shot has no optimization gain.
+pub fn window_after_shot() -> bool {
+    env_method() == Some("mutter")
+}
+
+pub fn initialize_capture(conn: &Connection) -> Box<dyn CaptureMethod> {
+    let forced = std::env::var("LUMINE_CAPTURE").unwrap_or_default();
+    if !forced.is_empty()
+        && !matches!(
+            forced.as_str(),
+            "kde" | "mutter" | "image-copy" | "screencopy" | "portal"
+        )
+    {
+        warn!(
+            "Unknown LUMINE_CAPTURE={forced}, expected kde, mutter, image-copy, screencopy or portal"
+        );
+    }
+    let method = match env_method() {
+        Some(method) => method,
+        None if wayland::capture::image_copy::supported(conn) => "image-copy",
+        None if wayland::capture::screencopy::supported(conn) => "screencopy",
+        None => "portal",
     };
     info!("capture backend: {method}");
 

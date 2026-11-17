@@ -236,9 +236,10 @@ async fn start_capture(
     // kwin puts a new window into the taskbar and pins it to the current
     // virtual desktop right at creation, while doing it before capturing
     // doesn't really gain anything, less than 1ms, and might be unstable
+    let after_shot = delayed || crate::backend::window_after_shot();
     let (shot_tx, shot_rx) = std::sync::mpsc::channel::<()>();
     let present_handle = std::thread::spawn(move || {
-        if delayed {
+        if after_shot {
             let _ = shot_rx.recv();
         }
         let t = std::time::Instant::now();
