@@ -22,14 +22,16 @@ const FRAME_TIMEOUT: Duration = Duration::from_secs(5);
 
 type FrameResult = Result<PipewireFrame, String>;
 
+/// `fd` is the portal's private PipeWire remote, `None` connects to the user's own instance
 pub fn capture_frame(
     node_id: u32,
-    fd: BorrowedFd<'_>,
+    fd: Option<BorrowedFd<'_>>,
 ) -> Result<PipewireFrame, Box<dyn std::error::Error>> {
     let (tx, rx) = mpsc::sync_channel::<FrameResult>(1);
 
-    let owned_fd: OwnedFd = fd
-        .try_clone_to_owned()
+    let owned_fd: Option<OwnedFd> = fd
+        .map(|fd| fd.try_clone_to_owned())
+        .transpose()
         .map_err(|e| format!("Failed to clone file descriptor: {}", e))?;
 
     std::thread::spawn(move || {
@@ -47,7 +49,11 @@ pub fn capture_frame(
     }
 }
 
-fn run_stream(node_id: u32, fd: OwnedFd, tx: SyncSender<FrameResult>) -> Result<(), String> {
+fn run_stream(
+    node_id: u32,
+    fd: Option<OwnedFd>,
+    tx: SyncSender<FrameResult>,
+) -> Result<(), String> {
     pw::init();
 
     let mainloop = pw::main_loop::MainLoopRc::new(None)
@@ -55,9 +61,11 @@ fn run_stream(node_id: u32, fd: OwnedFd, tx: SyncSender<FrameResult>) -> Result<
     let context = pw::context::ContextRc::new(&mainloop, None)
         .map_err(|e| format!("Failed to create context: {e}"))?;
 
-    let core = context
-        .connect_fd_rc(fd, None)
-        .map_err(|e| format!("Failed to connect via FD: {e}"))?;
+    let core = match fd {
+        Some(fd) => context.connect_fd_rc(fd, None),
+        None => context.connect_rc(None),
+    }
+    .map_err(|e| format!("Failed to connect to PipeWire: {e}"))?;
 
     let data = UserData {
         format: Default::default(),
