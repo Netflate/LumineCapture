@@ -2,10 +2,16 @@
 //
 // Bypasses xdg-desktop-portal, talks to mutter's private org.gnome.Mutter.ScreenCast directly
 // The interface has no stability promise and can be locked down
-pub struct MutterMethod;
+#[derive(Default)]
+pub struct MutterMethod {
+    hold: AtomicBool,
+    held: Mutex<Option<SessionProxy<'static>>>,
+}
 
 use std::collections::HashMap;
 use std::error::Error;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -117,20 +123,39 @@ async fn record(
     Ok(CaptureResult { frames })
 }
 
-async fn capture(outputs: &[Output]) -> Result<CaptureResult, BoxErr> {
+async fn stop(session: &SessionProxy<'_>) {
+    if let Err(e) = session.stop().await {
+        warn!("Can't stop mutter screencast session: {e}");
+    }
+}
+
+async fn capture(
+    outputs: &[Output],
+    hold: bool,
+) -> Result<(CaptureResult, Option<SessionProxy<'static>>), BoxErr> {
     let conn = Connection::session().await?;
+    // while this started session lives gnome-shell turns animations off
+    // the app stops it once the window is gone
+    let props = if hold {
+        HashMap::from([("disable-animations", Value::Bool(true))])
+    } else {
+        HashMap::new()
+    };
     let path = ScreenCastProxy::new(&conn)
         .await?
-        .create_session(HashMap::new())
+        .create_session(props)
         .await?;
     let session = SessionProxy::builder(&conn).path(path)?.build().await?;
 
     let result = record(&conn, &session, outputs).await;
 
-    if let Err(e) = session.stop().await {
-        warn!("Can't stop mutter screencast session: {e}");
+    match result {
+        Ok(frames) if hold => Ok((frames, Some(session))),
+        result => {
+            stop(&session).await;
+            Ok((result?, None))
+        }
     }
-    result
 }
 
 #[async_trait]
@@ -139,12 +164,27 @@ impl CaptureMethod for MutterMethod {
         &self,
         outputs: &[Output],
     ) -> Result<CaptureResult, Box<dyn std::error::Error>> {
-        match capture(outputs).await {
-            Ok(result) => Ok(result),
+        let hold = self.hold.swap(false, Ordering::Relaxed);
+        match capture(outputs, hold).await {
+            Ok((result, held)) => {
+                *self.held.lock().unwrap() = held;
+                Ok(result)
+            }
             Err(e) => {
                 warn!("Mutter screencast failed ({e}), falling back to the portal");
                 PortalMethod.capture_frame(outputs).await
             }
+        }
+    }
+
+    fn hold_session(&self) {
+        self.hold.store(true, Ordering::Relaxed);
+    }
+
+    async fn release(&self) {
+        let held = self.held.lock().unwrap().take();
+        if let Some(session) = held {
+            stop(&session).await;
         }
     }
 }

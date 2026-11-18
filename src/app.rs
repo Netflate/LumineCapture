@@ -10,7 +10,7 @@ mod scroll;
 pub mod window;
 
 use crate::backend::ScreenOverlay;
-use crate::backend::{FRAME_FALLBACK, initialize_capture, initialize_overlay};
+use crate::backend::{CaptureMethod, FRAME_FALLBACK, initialize_capture, initialize_overlay};
 use crate::edit::Follow;
 use crate::editor::dirty::{apply_damage_rects, is_dirty, mark_all_dirty, mark_dirty};
 use crate::editor::{EditorState, Layers, OcrState, TextState};
@@ -116,7 +116,7 @@ async fn make_screenshot(
 
     // scrolling capture needs its own connection to grab frames
     let scroll_conn = conn.clone();
-    let (mut editor_state, mut overlay) = start_capture(conn, &launch, &mut prof).await?;
+    let (mut editor_state, mut overlay, capture) = start_capture(conn, &launch, &mut prof).await?;
     editor_state.to = launch.outputs();
     editor_state.toolbar.to = editor_state.to;
     editor_state.output = launch.output.clone();
@@ -172,17 +172,19 @@ async fn make_screenshot(
 
     editor_state.ocr.models.shutdown();
     if launch.mode == Mode::Ocr {
-        ocr::finish(&mut editor_state).await
+        let result = ocr::finish(&mut editor_state).await;
+        close(overlay, &scroll_conn, &*capture).await;
+        result
     } else if launch.mode == Mode::Pick {
-        drop(overlay);
-        let _ = scroll_conn.flush();
+        close(overlay, &scroll_conn, &*capture).await;
         finish::pick(&editor_state).await;
         Ok(())
     } else if editor_state.to_window {
-        finish::hand_to_window(&mut editor_state).await
+        let result = finish::hand_to_window(&mut editor_state).await;
+        close(overlay, &scroll_conn, &*capture).await;
+        result
     } else {
-        drop(overlay);
-        let _ = scroll_conn.flush();
+        close(overlay, &scroll_conn, &*capture).await;
         finish::finish_capture(&mut editor_state).await
     }
 }
@@ -193,7 +195,8 @@ async fn start_capture(
     conn: wayland_client::Connection,
     launch: &Launch,
     prof: &mut Profiler,
-) -> Result<(EditorState, Box<dyn ScreenOverlay>), Box<dyn std::error::Error>> {
+) -> Result<(EditorState, Box<dyn ScreenOverlay>, Box<dyn CaptureMethod>), Box<dyn std::error::Error>>
+{
     let icons_handle = std::thread::spawn(init::load_icons_cache);
     let system_fonts = std::thread::spawn(crate::fonts::system);
 
@@ -248,6 +251,7 @@ async fn start_capture(
     });
 
     let capture = early.unwrap_or_else(|| initialize_capture(&conn));
+    capture.hold_session();
     let screenshots = capture.capture_frame(&outputs).await?;
     drop(shot_tx);
     prof.mark("capture");
@@ -307,7 +311,19 @@ async fn start_capture(
     prof.mark("present() joined");
     prof.mark_external("  ^ present_dt (thread-internal duration)", present_dt);
 
-    Ok((editor_state, overlay))
+    Ok((editor_state, overlay, capture))
+}
+
+async fn close(
+    overlay: Box<dyn ScreenOverlay>,
+    conn: &wayland_client::Connection,
+    capture: &dyn CaptureMethod,
+) {
+    drop(overlay);
+    // window goes first and the roundtrip makes the compositor process it on purpose
+    // otherwise gnome-shell turns animations back on before the window is gone and plays the close animation
+    let _ = conn.roundtrip();
+    capture.release().await;
 }
 
 fn build_ocr_state() -> OcrState {

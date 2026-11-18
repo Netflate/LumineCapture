@@ -26,6 +26,11 @@ pub trait CaptureMethod: Send + Sync {
         true
     }
 
+    /// keep the session of the next shot open until `release`
+    fn hold_session(&self) {}
+
+    async fn release(&self) {}
+
     // im not super sure how it works on cosmic
     // maybe i'll implement it later
     async fn capture_active_window(&self) -> Result<Capture, Box<dyn std::error::Error>> {
@@ -83,7 +88,7 @@ pub fn initialize_capture(conn: &Connection) -> Box<dyn CaptureMethod> {
 
     match method {
         "kde" => Box::new(wayland::capture::kde::KdeMethod::new()),
-        "mutter" => Box::new(wayland::capture::mutter::MutterMethod),
+        "mutter" => Box::new(wayland::capture::mutter::MutterMethod::default()),
         "image-copy" => Box::new(wayland::capture::image_copy::ImageCopyMethod::new(
             conn.clone(),
         )),
