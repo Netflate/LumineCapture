@@ -399,7 +399,7 @@ async fn run_overlay(
             log::error!("can't start scrolling capture: {e}");
             editor_state.mode = Mode::Editor;
         }
-        scroll::capture_step(editor_state, overlay.as_ref(), &mut dirty_mask).await;
+        scroll::capture_step(editor_state, overlay.as_mut(), &mut dirty_mask).await;
 
         overlay.set_cursor(input::compute_cursor(editor_state));
         overlay.set_ime(crate::tools::text::ime::sync(editor_state, &mut dirty_mask));
@@ -424,8 +424,9 @@ async fn run_overlay(
             )?;
             clear_frame_state(editor_state, &mut dirty_mask, &pacing);
         }
-        scroll::sync(editor_state, overlay.as_mut(), |i| {
-            !is_dirty(dirty_mask, i) && !pacing.owes_to(i)
+        let settled = dirty_mask;
+        scroll::sync(editor_state, overlay.as_mut(), &mut dirty_mask, |i| {
+            !is_dirty(settled, i) && !pacing.owes_to(i)
         })?;
     }
 
@@ -892,6 +893,7 @@ fn render_monitor(
         zoom,
     });
     scroll::draw_panel(editor_state, i, dirty_rect.as_ref());
+    scroll::draw_marker(editor_state, i);
 
     damage
 }

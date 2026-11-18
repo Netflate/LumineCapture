@@ -1,11 +1,36 @@
 // Scrolling capture inside the editor: the live page shows through the region
 
+use std::time::Instant;
+
 use shot_stitch::{Axis, Edge, Status, StitchResult};
 use tiny_skia::{IntRect, Pixmap, Rect};
 
 use crate::backend::{CaptureMethod, InputHole};
 use crate::scroll::panel::{self, PanelButton, PanelLayout, Slot};
 use crate::scroll::session::{ScrollSession, to_pixmap};
+
+/// Clear: frozen screenshot still to drop once the canvas has the dimmed one;
+/// Cleared: dropped, put back when scrolling stops; Keep: never touched.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Snapshot {
+    Clear,
+    Cleared,
+    Keep,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Locate {
+    Off,
+    Pending,
+    Measuring {
+        window: (u32, u32),
+        origin: (i32, i32),
+        attempts: u32,
+        since: Instant,
+        painted: bool,
+    },
+    Done,
+}
 
 pub struct Scroll {
     pub session: ScrollSession,
@@ -26,7 +51,9 @@ pub struct Scroll {
     compact: bool,
     pub hovered: Option<PanelButton>,
     pub capture: Box<dyn CaptureMethod>,
-    pub backgrounds: Vec<bool>,
+    pub snapshots: Vec<Snapshot>,
+    pub bounds: Rect,
+    pub locate: Locate,
     pub input: Option<Option<InputHole>>,
     long: Option<(u64, Pixmap)>,
 }
@@ -59,7 +86,9 @@ impl Scroll {
             lead: 0,
             hovered: None,
             capture,
-            backgrounds: vec![true; monitors],
+            snapshots: vec![Snapshot::Clear; monitors],
+            bounds: Rect::from_xywh(0.0, 0.0, monitor_size.0, monitor_size.1).unwrap_or(region),
+            locate: Locate::Off,
             input: None,
             long: None,
         };
@@ -191,12 +220,33 @@ impl Scroll {
         })
     }
 
-    pub fn relayout(&mut self, monitor_size: (f32, f32)) -> bool {
+    pub fn relayout(&mut self) -> bool {
         let preview = self.session.preview().map(|p| (p.width(), p.height()));
-        let layout = panel::layout(self.region, monitor_size, preview, self.slot, self.compact);
+        let layout = self.bounded_layout(self.slot, preview, self.compact);
         let moved = layout.rect != self.layout.rect;
         self.layout = layout;
         moved
+    }
+
+    pub fn set_bounds(&mut self, bounds: Rect) {
+        self.bounds = bounds;
+        let local = shift(self.region, -bounds.left(), -bounds.top());
+        self.slot = panel::choose_slot(local, (bounds.width(), bounds.height()));
+        self.compact = self.slot == Slot::Inside && self.capture.captures_overlay();
+        self.relayout();
+        self.crop = self.crop_for(self.axis());
+    }
+
+    fn bounded_layout(
+        &self,
+        slot: Slot,
+        preview: Option<(u32, u32)>,
+        compact: bool,
+    ) -> PanelLayout {
+        let bounds = self.bounds;
+        let local = shift(self.region, -bounds.left(), -bounds.top());
+        let size = (bounds.width(), bounds.height());
+        panel::layout(local, size, preview, slot, compact).translated(bounds.left(), bounds.top())
     }
 }
 
@@ -207,6 +257,16 @@ pub fn fill_live(dimmed: &mut Pixmap) {
 pub fn inside(rect: &Rect, (x, y): (f64, f64)) -> bool {
     let (x, y) = (x as f32, y as f32);
     x >= rect.left() && x < rect.right() && y >= rect.top() && y < rect.bottom()
+}
+
+fn shift(rect: Rect, dx: f32, dy: f32) -> Rect {
+    Rect::from_xywh(
+        rect.left() + dx,
+        rect.top() + dy,
+        rect.width(),
+        rect.height(),
+    )
+    .unwrap_or(rect)
 }
 
 fn logical_rect(rect: Rect) -> (i32, i32, i32, i32) {

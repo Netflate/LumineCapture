@@ -22,6 +22,13 @@ impl WindowHandler for OverlayState {
             (Some(width), Some(height)) => Some((width.get(), height.get())),
             _ => None,
         };
+        if let Some(sd) = self
+            .surfaces
+            .values_mut()
+            .find(|sd| &sd.surface == window.wl_surface())
+        {
+            sd.states = (configure.is_maximized(), configure.is_fullscreen());
+        }
         self.configure_surface(window.wl_surface(), size);
     }
 

@@ -1,6 +1,7 @@
 // Scrolling capture: frame cropping, preview thumbnails, panel and session state.
 
 pub mod frame;
+pub mod locate;
 pub mod panel;
 pub mod preview;
 pub mod session;
@@ -8,6 +9,8 @@ pub mod state;
 
 #[cfg(test)]
 mod frame_tests;
+#[cfg(test)]
+mod locate_tests;
 #[cfg(test)]
 mod panel_tests;
 #[cfg(test)]

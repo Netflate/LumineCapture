@@ -139,6 +139,15 @@ pub trait ScreenOverlay: Send {
     fn clear_background(&mut self, monitor_idx: usize) -> Result<(), Box<dyn std::error::Error>>;
     /// lets the pointer fall through `hole` to the window beneath, `None` takes all input back
     fn set_input_hole(&mut self, monitor_idx: usize, hole: Option<InputHole>);
+    /// maximized instead of fullscreen; returns the window's logical size while maximized
+    /// used only for GNOME
+    fn set_maximized(
+        &mut self,
+        monitor_idx: usize,
+        on: bool,
+    ) -> Result<Option<(u32, u32)>, Box<dyn std::error::Error>>;
+    /// monitor-local logical position of the maximized window; the overlay shows the canvas part there
+    fn set_window_origin(&mut self, monitor_idx: usize, origin: (i32, i32));
 }
 
 /// `keep` stays with the overlay even inside the hole (a panel squeezed into the region)
@@ -204,6 +213,11 @@ fn on_cosmic() -> bool {
 
 fn on_hyprland() -> bool {
     desktop_is("Hyprland") || std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some()
+}
+
+/// Mutter puts an opaque black window under fullscreen windows, so scrolling runs in a maximized one.
+pub fn scroll_maximized() -> bool {
+    desktop_is("GNOME")
 }
 
 pub fn desktop_is(name: &str) -> bool {

@@ -11,10 +11,11 @@ use wayland_client::Connection;
 
 use crate::backend::ScreenOverlay;
 use crate::editor::EditorState;
-use crate::editor::dirty::{expand_rect, mark_dirty};
+use crate::editor::dirty::{expand_rect, is_dirty, mark_dirty};
 use crate::renderer::Painter;
+use crate::scroll::locate;
 use crate::scroll::panel::{self, PanelButton};
-use crate::scroll::state::{fill_live, inside};
+use crate::scroll::state::{Locate, Snapshot, fill_live, inside};
 use crate::scroll::{Scroll, ScrollSession, frame};
 use crate::tools::Tool;
 use crate::tools::selection::global_selection_to_local;
@@ -80,9 +81,18 @@ pub async fn start(
     editor_state.selection.zone = Some(zone);
 
     let monitors = editor_state.placements.len();
-    let scroll = Scroll::new(session, zone, crop, scale, size, capture, monitors);
-    for i in (0..monitors).filter(|&i| i != monitor_idx) {
-        fill_live(&mut editor_state.dimmed[i]);
+    let mut scroll = Scroll::new(session, zone, crop, scale, size, capture, monitors);
+    if crate::backend::scroll_maximized() {
+        scroll.locate = Locate::Pending;
+        for (i, snapshot) in scroll.snapshots.iter_mut().enumerate() {
+            if i != monitor_idx {
+                *snapshot = Snapshot::Keep;
+            }
+        }
+    } else {
+        for i in (0..monitors).filter(|&i| i != monitor_idx) {
+            fill_live(&mut editor_state.dimmed[i]);
+        }
     }
     scroll.paint_base(&mut editor_state.dimmed[monitor_idx], canvas_scale);
     editor_state.scroll = Some(scroll);
@@ -99,7 +109,13 @@ pub async fn start(
 }
 
 pub fn next_capture(editor_state: &EditorState) -> Option<Duration> {
-    let scroll = editor_state.scroll.as_ref().filter(|s| s.live())?;
+    let scroll = editor_state.scroll.as_ref()?;
+    if locating(scroll) {
+        return Some(LOCATE_TICK);
+    }
+    if !scroll.live() {
+        return None;
+    }
     Some(
         scroll
             .session
@@ -108,11 +124,28 @@ pub fn next_capture(editor_state: &EditorState) -> Option<Duration> {
     )
 }
 
+const LOCATE_TICK: Duration = Duration::from_millis(16);
+
+fn locating(scroll: &Scroll) -> bool {
+    matches!(scroll.locate, Locate::Pending | Locate::Measuring { .. })
+}
+
 pub async fn capture_step(
     editor_state: &mut EditorState,
-    overlay: &dyn ScreenOverlay,
+    overlay: &mut dyn ScreenOverlay,
     dirty_mask: &mut u32,
 ) {
+    match editor_state.scroll.as_ref().map(|s| s.locate) {
+        Some(Locate::Pending) => {
+            start_locating(editor_state, overlay, dirty_mask);
+            return;
+        }
+        Some(Locate::Measuring { .. }) => {
+            measure(editor_state, overlay, dirty_mask).await;
+            return;
+        }
+        _ => {}
+    }
     let Some(scroll) = editor_state.scroll.as_mut() else {
         return;
     };
@@ -172,29 +205,185 @@ pub async fn capture_step(
     }
 }
 
+fn start_locating(
+    editor_state: &mut EditorState,
+    overlay: &mut dyn ScreenOverlay,
+    dirty_mask: &mut u32,
+) {
+    let Some(scroll) = editor_state.scroll.as_mut() else {
+        return;
+    };
+    let idx = scroll.monitor_idx;
+    if scroll.snapshots[idx] != Snapshot::Cleared {
+        return;
+    }
+    let window = match overlay.set_maximized(idx, true) {
+        Ok(Some(window)) => window,
+        Ok(None) => {
+            log::warn!("overlay didn't maximize, scrolling keeps it fullscreen");
+            scroll.locate = Locate::Off;
+            return;
+        }
+        Err(e) => {
+            log::warn!("can't maximize the overlay for scrolling: {e}");
+            scroll.locate = Locate::Off;
+            return;
+        }
+    };
+    let (mw, mh) = editor_state.placements[idx].size;
+    // bottom-right corner is where the window usually sits, measured below
+    let guess = (mw - window.0 as i32, mh - window.1 as i32);
+    overlay.set_window_origin(idx, guess);
+    scroll.locate = Locate::Measuring {
+        window,
+        origin: guess,
+        attempts: 0,
+        since: Instant::now(),
+        painted: false,
+    };
+    redraw_monitor(editor_state, idx, dirty_mask);
+}
+
+async fn measure(
+    editor_state: &mut EditorState,
+    overlay: &mut dyn ScreenOverlay,
+    dirty_mask: &mut u32,
+) {
+    let Some(scroll) = editor_state.scroll.as_mut() else {
+        return;
+    };
+    let Locate::Measuring {
+        window,
+        origin,
+        attempts,
+        since,
+        painted,
+    } = scroll.locate
+    else {
+        return;
+    };
+    let idx = scroll.monitor_idx;
+    if !painted || is_dirty(*dirty_mask, idx) || !overlay.ready(idx) {
+        return;
+    }
+
+    let found = match overlay.discovered_outputs().get(idx).cloned() {
+        Some(output) => match scroll.capture.capture_frame(&[output]).await {
+            Ok(shot) => shot
+                .frames
+                .first()
+                .and_then(|frame| locate::find(frame, window, scroll.scale)),
+            Err(e) => {
+                log::debug!("locating capture failed: {e}");
+                None
+            }
+        },
+        None => None,
+    };
+
+    match found {
+        Some(found) => {
+            info!("maximized overlay at {found:?}");
+            finish_locating(editor_state, overlay, dirty_mask, idx, window, found);
+        }
+        None => {
+            let attempts = attempts + 1;
+            if attempts >= 15 || since.elapsed() > Duration::from_secs(3) {
+                log::warn!("maximized overlay not found, using {origin:?}");
+                finish_locating(editor_state, overlay, dirty_mask, idx, window, origin);
+            } else if let Some(scroll) = editor_state.scroll.as_mut()
+                && let Locate::Measuring {
+                    attempts: count, ..
+                } = &mut scroll.locate
+            {
+                *count = attempts;
+            }
+        }
+    }
+}
+
+fn finish_locating(
+    editor_state: &mut EditorState,
+    overlay: &mut dyn ScreenOverlay,
+    dirty_mask: &mut u32,
+    idx: usize,
+    window: (u32, u32),
+    origin: (i32, i32),
+) {
+    overlay.set_window_origin(idx, origin);
+    if let Some(scroll) = editor_state.scroll.as_mut() {
+        if let Some(bounds) = Rect::from_xywh(
+            origin.0 as f32,
+            origin.1 as f32,
+            window.0 as f32,
+            window.1 as f32,
+        ) {
+            scroll.set_bounds(bounds);
+        }
+        scroll.locate = Locate::Done;
+    }
+    redraw_monitor(editor_state, idx, dirty_mask);
+    super::input::refresh_panels(editor_state, dirty_mask);
+}
+
+pub fn draw_marker(editor_state: &mut EditorState, monitor_idx: usize) {
+    let Some(scroll) = editor_state
+        .scroll
+        .as_mut()
+        .filter(|s| s.monitor_idx == monitor_idx)
+    else {
+        return;
+    };
+    let Locate::Measuring {
+        window,
+        origin,
+        painted,
+        ..
+    } = &mut scroll.locate
+    else {
+        return;
+    };
+    let scale = editor_state.placements[monitor_idx].scale;
+    locate::draw(
+        &mut editor_state.canvas[monitor_idx],
+        *origin,
+        *window,
+        scale,
+    );
+    *painted = true;
+}
+
 /// Backend side of the mode: input passes through the region while live,
 /// and the snapshot subsurface goes once the canvas has the dimmed one.
 pub fn sync(
     editor_state: &mut EditorState,
     overlay: &mut dyn ScreenOverlay,
+    dirty_mask: &mut u32,
     drawn: impl Fn(usize) -> bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let Some(scroll) = editor_state.scroll.as_mut() else {
-        if let Some((idx, restore)) = editor_state.scroll_left.take() {
-            for i in restore {
+        if let Some((idx, restore, maximized)) = editor_state.scroll_left.take() {
+            if maximized && let Err(e) = overlay.set_maximized(idx, false) {
+                log::warn!("can't restore the fullscreen overlay: {e}");
+            }
+            for &i in &restore {
                 let snapshot = &editor_state.captures[i].pixmap;
                 overlay.set_background(i, snapshot.data(), snapshot.width(), snapshot.height())?;
                 overlay.set_input_hole(i, None);
             }
             overlay.set_input_hole(idx, None);
+            // fullscreen window comes back with a blank buffer, the canvas must be staged again
+            for i in restore.into_iter().chain(std::iter::once(idx)) {
+                redraw_monitor(editor_state, i, dirty_mask);
+            }
         }
         return Ok(());
     };
     let idx = scroll.monitor_idx;
-    for (i, background) in scroll.backgrounds.iter_mut().enumerate() {
-        if *background && drawn(i) {
+    for (i, snapshot) in scroll.snapshots.iter_mut().enumerate() {
+        if *snapshot == Snapshot::Clear && drawn(i) {
             overlay.clear_background(i)?;
-            *background = false;
+            *snapshot = Snapshot::Cleared;
         }
     }
     let hole = scroll.input_hole();
@@ -211,14 +400,15 @@ pub fn stop(editor_state: &mut EditorState, dirty_mask: &mut u32) {
         return;
     };
     let idx = scroll.monitor_idx;
+    let maximized = matches!(scroll.locate, Locate::Measuring { .. } | Locate::Done);
     let restore = scroll
-        .backgrounds
+        .snapshots
         .iter()
         .enumerate()
-        .filter(|(_, kept)| !**kept)
+        .filter(|(_, snapshot)| **snapshot == Snapshot::Cleared)
         .map(|(i, _)| i)
         .collect();
-    editor_state.scroll_left = Some((idx, restore));
+    editor_state.scroll_left = Some((idx, restore, maximized));
     editor_state.mode = Mode::Editor;
 
     let zone = editor_state.selection.zone;
@@ -287,8 +477,7 @@ fn refresh_panel(editor_state: &mut EditorState, dirty_mask: &mut u32) {
         return;
     };
     let idx = scroll.monitor_idx;
-    let size = editor_state.placements[idx].size;
-    scroll.relayout((size.0 as f32, size.1 as f32));
+    scroll.relayout();
     editor_state.damage_local(idx, old);
     if let Some(new) = panel_rect(editor_state, idx) {
         editor_state.damage_local(idx, new);

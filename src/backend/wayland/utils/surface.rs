@@ -10,7 +10,7 @@ use crate::backend::wayland::utils::input;
 use crate::backend::wayland::utils::shm::ShmBuffer;
 use smithay_client_toolkit::compositor::CompositorState;
 use std::time::Instant;
-use wayland_client::protocol::{wl_subsurface, wl_surface};
+use wayland_client::protocol::{wl_output, wl_subsurface, wl_surface};
 use wayland_protocols::wp::viewporter::client::wp_viewport;
 
 /// screenshot under overlay is with Native resolution, for it to be Rendered 1:1 while the overlay
@@ -50,6 +50,12 @@ pub enum InputRegion {
     Hole(crate::backend::InputHole),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Inset {
+    pub canvas: (u32, u32),
+    pub origin: (i32, i32),
+}
+
 pub struct SurfaceData {
     pub background: Option<Background>,
     pub role: Role,
@@ -66,6 +72,9 @@ pub struct SurfaceData {
     pub height: u32,
     pub scale: f32,
     pub frame_sent: Option<Instant>,
+    pub inset: Option<Inset>,
+    pub output: Option<wl_output::WlOutput>,
+    pub states: (bool, bool),
 }
 
 impl SurfaceData {
@@ -77,10 +86,19 @@ impl SurfaceData {
     pub fn apply_input(&self, compositor: &CompositorState) {
         match self.input {
             InputRegion::Full => self.surface.set_input_region(None),
-            InputRegion::Hole(hole) => {
+            InputRegion::Hole(mut hole) => {
                 let size = (self.width as i32, self.height as i32);
+                if let Some(inset) = self.inset {
+                    let (dx, dy) = (-inset.origin.0, -inset.origin.1);
+                    hole.hole = shift(hole.hole, dx, dy);
+                    hole.keep = hole.keep.map(|keep| shift(keep, dx, dy));
+                }
                 input::apply_input_hole(compositor, &self.surface, size, hole)
             }
         }
     }
+}
+
+fn shift((x, y, w, h): (i32, i32, i32, i32), dx: i32, dy: i32) -> (i32, i32, i32, i32) {
+    (x + dx, y + dy, w, h)
 }

@@ -20,7 +20,7 @@ pub mod state;
 
 use crate::backend::ScreenOverlay;
 use crate::backend::wayland::utils::shm::{create_shm_buffer, damage_of};
-use crate::backend::wayland::utils::surface::{Background, InputRegion, Role, SurfaceData};
+use crate::backend::wayland::utils::surface::{Background, InputRegion, Inset, Role, SurfaceData};
 use crate::types::{CursorIcon, DamageRect, Output, OverlayEvent};
 use log::warn;
 use smithay_client_toolkit::compositor::{FrameCallbackData, Region};
@@ -102,6 +102,9 @@ impl WaylandOverlay {
                 scale: if viewport.is_some() { scale } else { 1.0 },
                 viewport,
                 frame_sent: None,
+                inset: None,
+                output: None,
+                states: (false, false),
             },
         );
 
@@ -245,6 +248,9 @@ impl ScreenOverlay for WaylandOverlay {
                     height: h,
                     scale,
                     frame_sent: None,
+                    inset: None,
+                    output: Some(wl_output),
+                    states: (false, false),
                 },
             );
         }
@@ -301,12 +307,26 @@ impl ScreenOverlay for WaylandOverlay {
             return Ok(());
         }
 
+        let inset = sd.inset;
+        let scale = sd.scale;
         let buffer = sd
             .shm_buffer
             .as_mut()
             .ok_or("SHM buffer is not configured yet")?;
 
-        let changed = buffer.sync_rect(pool, pixels, bw, damage.unwrap_or((0, 0, bw, bh)));
+        let changed = match inset {
+            None => buffer.sync_rect(pool, pixels, bw, damage.unwrap_or((0, 0, bw, bh))),
+            Some(inset) => {
+                let (sw, sh) = crate::types::px_size(inset.canvas, scale);
+                if pixels.len() != sw as usize * sh as usize * 4 {
+                    return Ok(());
+                }
+                let px = |v: i32| (v as f32 * scale).round().max(0.0) as u32;
+                let origin = (px(inset.origin.0), px(inset.origin.1));
+                let damage = damage.unwrap_or((0, 0, sw, sh));
+                buffer.sync_window(pool, pixels, (bw, sw), origin, damage)
+            }
+        };
         let changed = damage_of(std::mem::take(&mut buffer.fresh), (bw, bh), changed);
         if changed.is_empty() {
             // still committed: a cleared background (synchronized subsurface) applies only
@@ -535,6 +555,92 @@ impl ScreenOverlay for WaylandOverlay {
         Ok(())
     }
 
+    /// Used for GNOME, since it hides everything under a fullscreen window
+    /// so transparent fullscreen window we use for scrolling screenshots doesn't work there
+    fn set_maximized(
+        &mut self,
+        monitor_idx: usize,
+        on: bool,
+    ) -> Result<Option<(u32, u32)>, Box<dyn std::error::Error>> {
+        let rt = &mut self.runtime;
+        let sd = rt
+            .state
+            .surfaces
+            .get_mut(&monitor_idx)
+            .ok_or("surface not found")?;
+        let Role::Window(window) = &sd.role else {
+            return Err("only a window can be maximized".into());
+        };
+
+        if !on {
+            if sd.inset.is_none() {
+                return Ok(None);
+            }
+            window.unset_maximized();
+            window.set_fullscreen(sd.output.as_ref());
+            sd.surface.commit();
+            rt.event_queue.flush()?;
+            await_states(rt, monitor_idx, (false, true), "fullscreen")?;
+
+            let sd = rt
+                .state
+                .surfaces
+                .get_mut(&monitor_idx)
+                .ok_or("surface not found")?;
+            sd.inset = None;
+            sd.apply_input(&rt.state.compositor_state);
+            sd.surface.commit();
+            rt.event_queue.flush()?;
+            return Ok(None);
+        }
+
+        if sd.inset.is_some() {
+            return Ok(Some((sd.width, sd.height)));
+        }
+        let canvas = (sd.width, sd.height);
+        window.unset_fullscreen();
+        window.set_maximized();
+        sd.surface.commit();
+        rt.event_queue.flush()?;
+        await_states(rt, monitor_idx, (true, false), "maximize")?;
+
+        // after switching from fullscreen to maxsimized, screenshot position changes to wrong
+        // a guess, the app measures the real position and corrects it with `set_window_origin`
+        let sd = rt
+            .state
+            .surfaces
+            .get_mut(&monitor_idx)
+            .ok_or("surface not found")?;
+        let origin = (
+            canvas.0 as i32 - sd.width as i32,
+            canvas.1 as i32 - sd.height as i32,
+        );
+        sd.inset = Some(Inset { canvas, origin });
+        let size = (sd.width, sd.height);
+        sd.apply_input(&rt.state.compositor_state);
+        sd.surface.commit();
+        rt.event_queue.flush()?;
+        Ok(Some(size))
+    }
+
+    fn set_window_origin(&mut self, monitor_idx: usize, origin: (i32, i32)) {
+        let rt = &mut self.runtime;
+        let Some(sd) = rt.state.surfaces.get_mut(&monitor_idx) else {
+            return;
+        };
+        let Some(inset) = sd.inset.as_mut() else {
+            return;
+        };
+        inset.origin = origin;
+        if let Some(buffer) = sd.shm_buffer.as_mut() {
+            // window now shows other pixels, nothing may be skipped as unchanged
+            buffer.fresh = true;
+        }
+        sd.apply_input(&rt.state.compositor_state);
+        sd.surface.commit();
+        let _ = rt.event_queue.flush();
+    }
+
     fn set_cursor(&mut self, icon: CursorIcon) {
         self.runtime.state.apply_cursor(icon);
     }
@@ -575,6 +681,32 @@ impl ScreenOverlay for WaylandOverlay {
         sd.surface.commit();
         let _ = rt.event_queue.flush();
     }
+}
+
+fn await_states(
+    rt: &mut state::OverlayRunTime,
+    monitor_idx: usize,
+    want: (bool, bool),
+    what: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let deadline = Instant::now() + CONFIGURE_TIMEOUT;
+    while rt
+        .state
+        .surfaces
+        .get(&monitor_idx)
+        .ok_or("surface not found")?
+        .states
+        != want
+    {
+        rt.event_queue.roundtrip(&mut rt.state)?;
+        if let Some(e) = rt.state.configure_error.take() {
+            return Err(format!("can't allocate the overlay buffer: {e}").into());
+        }
+        if Instant::now() > deadline {
+            return Err(format!("compositor didn't {what} the overlay").into());
+        }
+    }
+    Ok(())
 }
 
 fn prefault_size<'a>(outputs: impl Iterator<Item = &'a Output>, hidpi: bool) -> usize {

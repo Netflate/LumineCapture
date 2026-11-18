@@ -10,6 +10,15 @@ use wayland_client::{Connection, QueueHandle};
 use crate::backend::wayland::overlay::state::OverlayState;
 use crate::backend::wayland::utils::input::wheel_clicks;
 use crate::types::{MouseButton, OverlayEvent};
+impl OverlayState {
+    fn monitor_point(&self, idx: usize, (x, y): (f64, f64)) -> (f64, f64) {
+        match self.surfaces.get(&idx).and_then(|sd| sd.inset) {
+            Some(inset) => (x + inset.origin.0 as f64, y + inset.origin.1 as f64),
+            None => (x, y),
+        }
+    }
+}
+
 impl PointerHandler for OverlayState {
     fn pointer_frame(
         &mut self,
@@ -34,10 +43,11 @@ impl PointerHandler for OverlayState {
                     self.apply_cursor(self.current_cursor_icon);
 
                     if let Some(idx) = monitor_idx {
+                        let (x, y) = self.monitor_point(idx, event.position);
                         self.events.push_back(OverlayEvent::PointerMove {
                             monitor_idx: idx,
-                            x: event.position.0,
-                            y: event.position.1,
+                            x,
+                            y,
                         });
                     }
                 }
@@ -49,10 +59,11 @@ impl PointerHandler for OverlayState {
 
                 PointerEventKind::Motion { .. } => {
                     if let Some(idx) = self.pointer_surface_idx {
+                        let (x, y) = self.monitor_point(idx, event.position);
                         self.events.push_back(OverlayEvent::PointerMove {
                             monitor_idx: idx,
-                            x: event.position.0,
-                            y: event.position.1,
+                            x,
+                            y,
                         });
                     }
                 }

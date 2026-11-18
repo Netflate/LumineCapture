@@ -62,6 +62,26 @@ fn panel_height(preview_h: f32) -> f32 {
     size::padding() * 2.0 + preview_h + preview_gap + LINE_HEIGHT * 3.0 + gap + BUTTON_SIZE
 }
 
+impl PanelLayout {
+    pub fn translated(self, dx: f32, dy: f32) -> PanelLayout {
+        let shift = |r: Rect| {
+            Rect::from_xywh(r.left() + dx, r.top() + dy, r.width(), r.height()).unwrap_or(r)
+        };
+        PanelLayout {
+            rect: shift(self.rect),
+            preview: self.preview.map(shift),
+            axis: shift(self.axis),
+            status: shift(self.status),
+            length: shift(self.length),
+            buttons: self
+                .buttons
+                .into_iter()
+                .map(|(b, r)| (b, shift(r)))
+                .collect(),
+        }
+    }
+}
+
 pub fn choose_slot(region: Rect, monitor_size: (f32, f32)) -> Slot {
     let gap = size::margin();
     let (mon_w, mon_h) = monitor_size;

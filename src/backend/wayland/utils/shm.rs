@@ -58,6 +58,20 @@ impl ShmBuffer {
             None => Vec::new(),
         }
     }
+
+    pub fn sync_window(
+        &mut self,
+        pool: &mut SlotPool,
+        pixels: &[u8],
+        (dst_width, src_width): (u32, u32),
+        origin: (u32, u32),
+        rect: DamageRect,
+    ) -> Vec<DamageRect> {
+        match pool.canvas(&self.buffer) {
+            Some(dst) => sync_window(dst, dst_width, pixels, src_width, origin, rect),
+            None => Vec::new(),
+        }
+    }
 }
 // first frame of a new buffer is fully damaged, its slot may still hold the same pixels
 // from earlier buffer, nothing looks changed then, but the compositor has never seen this one
@@ -80,20 +94,54 @@ pub fn damage_of(fresh: bool, size: (u32, u32), changed: Vec<DamageRect>) -> Vec
 ///    Submitting too many small updates to the compositor (at least kwin) becomes more expensive
 ///    than updating a single larger area.
 pub fn sync_rect(dst: &mut [u8], pixels: &[u8], width: u32, rect: DamageRect) -> Vec<DamageRect> {
-    let stride = (width * 4) as usize;
-    let rows = (dst.len().min(pixels.len()) / stride.max(1)) as u32;
-    let (x, y) = (rect.0.min(width), rect.1.min(rows));
-    let (w, h) = (rect.2.min(width - x), rect.3.min(rows - y));
+    sync_window(dst, width, pixels, width, (0, 0), rect)
+}
+
+/// `rect` is in source pixels, the damage comes back in `dst` ones, since `pixels` is the whole canvas.
+pub fn sync_window(
+    dst: &mut [u8],
+    dst_width: u32,
+    pixels: &[u8],
+    src_width: u32,
+    (ox, oy): (u32, u32),
+    rect: DamageRect,
+) -> Vec<DamageRect> {
+    let dst_stride = (dst_width * 4) as usize;
+    let src_stride = (src_width * 4) as usize;
+    let dst_rows = (dst.len() / dst_stride.max(1)) as u32;
+    let src_rows = (pixels.len() / src_stride.max(1)) as u32;
+
+    let left = rect.0.max(ox);
+    let top = rect.1.max(oy);
+    let right = rect
+        .0
+        .saturating_add(rect.2)
+        .min(ox.saturating_add(dst_width))
+        .min(src_width);
+    let bottom = rect
+        .1
+        .saturating_add(rect.3)
+        .min(oy.saturating_add(dst_rows))
+        .min(src_rows);
+    if left >= right || top >= bottom {
+        return Vec::new();
+    }
+    let (x, y) = (left - ox, top - oy);
+    let (w, h) = (right - left, bottom - top);
+
     let cols = w.div_ceil(TILE) as usize;
     let mut changed = vec![false; cols * h.div_ceil(TILE) as usize];
 
     for row in 0..h {
         let line = &mut changed[(row / TILE) as usize * cols..][..cols];
-        let start = (y + row) as usize * stride + x as usize * 4;
+        let start_dst = (y + row) as usize * dst_stride + x as usize * 4;
+        let start_src = (top + row) as usize * src_stride + left as usize * 4;
         for (tx, tile) in line.iter_mut().enumerate() {
-            let from = start + tx * TILE as usize * 4;
-            let to = (from + TILE as usize * 4).min(start + w as usize * 4);
-            *tile |= sync_swizzled(&mut dst[from..to], &pixels[from..to]);
+            let from = tx * TILE as usize * 4;
+            let to = (from + TILE as usize * 4).min(w as usize * 4);
+            let d = start_dst + from..start_dst + to;
+            let s = start_src + from..start_src + to;
+            *tile |= sync_swizzled(&mut dst[d], &pixels[s]);
         }
     }
 
@@ -150,7 +198,7 @@ fn tile_rects(changed: &[bool], cols: usize) -> Vec<DamageRect> {
 
 #[cfg(test)]
 mod tests {
-    use super::{damage_of, sync_rect, tile_rects};
+    use super::{damage_of, sync_rect, sync_window, tile_rects};
 
     #[test]
     fn fresh_buffer_is_damaged_completely() {
@@ -231,5 +279,58 @@ mod tests {
                 assert_eq!(new, [s[2], s[1], s[0], s[3]]);
             }
         }
+    }
+
+    fn ramp(w: u32, h: u32) -> Vec<u8> {
+        (0..w * h * 4).map(|i| (i % 251 + 1) as u8).collect()
+    }
+
+    fn swizzled(src: &[u8], w: u32, x: u32, y: u32) -> [u8; 4] {
+        let i = (y * w + x) as usize * 4;
+        [src[i + 2], src[i + 1], src[i], src[i + 3]]
+    }
+
+    #[test]
+    fn window_copies_the_part_at_origin() {
+        let (sw, sh, dw, dh) = (40u32, 30u32, 20u32, 10u32);
+        let (ox, oy) = (5u32, 7u32);
+        let src = ramp(sw, sh);
+        let mut dst = vec![0; (dw * dh * 4) as usize];
+        let rects = sync_window(&mut dst, dw, &src, sw, (ox, oy), (0, 0, sw, sh));
+        assert_eq!(rects, vec![(0, 0, dw, dh)]);
+        for y in 0..dh {
+            for x in 0..dw {
+                let i = (y * dw + x) as usize * 4;
+                assert_eq!(dst[i..i + 4], swizzled(&src, sw, x + ox, y + oy));
+            }
+        }
+    }
+
+    #[test]
+    fn damage_outside_the_window_is_ignored() {
+        let (sw, sh) = (40u32, 30u32);
+        let src = ramp(sw, sh);
+        let mut dst = vec![0; 20 * 10 * 4];
+        let outside = [(0, 0, 5, 7), (25, 0, 10, 30), (0, 17, 40, 5), (40, 0, 3, 3)];
+        for rect in outside {
+            assert!(sync_window(&mut dst, 20, &src, sw, (5, 7), rect).is_empty());
+        }
+        assert!(dst.iter().all(|&b| b == 0));
+    }
+
+    #[test]
+    fn partial_damage_is_clipped_and_moved_to_window_coords() {
+        let (sw, sh) = (40u32, 30u32);
+        let src = ramp(sw, sh);
+        let mut dst = vec![0; 20 * 10 * 4];
+        let rects = sync_window(&mut dst, 20, &src, sw, (5, 7), (0, 0, 10, 10));
+        assert_eq!(rects, vec![(0, 0, 5, 3)]);
+        for y in 0..3 {
+            for x in 0..5 {
+                let i = (y * 20 + x) as usize * 4;
+                assert_eq!(dst[i..i + 4], swizzled(&src, sw, x + 5, y + 7));
+            }
+        }
+        assert_eq!(dst[(3 * 20 * 4) as usize], 0);
     }
 }
