@@ -2,12 +2,15 @@
 // so the overlay re-execs itself here and this one stays alive to serve the
 // data until something else takes the clipboard over.
 
+use std::cell::Cell;
 use std::io::{Read, Write};
+use std::sync::Arc;
 use std::time::Instant;
 
 use log::{error, info};
 use wl_clipboard_rs::copy::{ClipboardType, MimeSource, MimeType, Options, Source};
 
+use super::mutter;
 use super::{EXTRA_ARG, PRIMARY_ARG, TEXT_ARG};
 
 type Split = (Option<(String, Vec<u8>)>, Vec<u8>);
@@ -60,6 +63,57 @@ pub fn cli(args: impl Iterator<Item = String>) {
     let len = buf.len();
     let kind = if text { "text" } else { "image" };
     let target = if primary { "primary" } else { "clipboard" };
+
+    if crate::backend::desktop_is("GNOME") {
+        if primary {
+            println!("the primary selection isn't supported on GNOME");
+            std::process::exit(1);
+        }
+        let offers: Vec<(String, Arc<[u8]>)> = if text {
+            let data: Arc<[u8]> = buf.into();
+            mutter::TEXT_MIMES
+                .iter()
+                .map(|m| (m.to_string(), data.clone()))
+                .collect()
+        } else {
+            let png: Arc<[u8]> = buf.into();
+            let mut offers: Vec<(String, Arc<[u8]>)> = extra
+                .into_iter()
+                .map(|(mime, data)| (mime, data.into()))
+                .collect();
+            offers.extend(
+                [
+                    "image/png",
+                    "application/x-qt-image",
+                    "x-kde-force-image-copy",
+                ]
+                .map(|m| (m.to_string(), png.clone())),
+            );
+            offers
+        };
+
+        let ready = Cell::new(false);
+        let started = Instant::now();
+        match mutter::serve(offers, || {
+            ready.set(true);
+            let mut out = std::io::stdout();
+            let _ = writeln!(out);
+            let _ = out.flush();
+            info!("serving {len} bytes of {kind} to {target}");
+        }) {
+            Ok(()) => info!("taken over after {:.1?}", started.elapsed()),
+            Err(e) if !ready.get() => {
+                println!("{}", e.to_string().replace('\n', " "));
+                std::process::exit(1);
+            }
+            Err(e) => {
+                error!("stopped serving after {:.1?}: {e}", started.elapsed());
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
     let sources = if text {
         vec![MimeSource {
             source: Source::Bytes(buf.into()),

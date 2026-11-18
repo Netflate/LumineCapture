@@ -206,7 +206,7 @@ fn on_hyprland() -> bool {
     desktop_is("Hyprland") || std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some()
 }
 
-fn desktop_is(name: &str) -> bool {
+pub fn desktop_is(name: &str) -> bool {
     std::env::var("XDG_CURRENT_DESKTOP").is_ok_and(|d| d.split(':').any(|s| s == name))
 }
 

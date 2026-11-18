@@ -1,5 +1,6 @@
 pub mod daemon;
 pub mod ext_data_control;
+pub mod mutter;
 
 use std::time::Duration;
 

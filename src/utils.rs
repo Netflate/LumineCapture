@@ -501,6 +501,9 @@ pub fn copy_to_primary(text: &str) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 pub fn paste_from_clipboard() -> Option<String> {
+    if crate::backend::desktop_is("GNOME") {
+        return crate::backend::wayland::clipboard::mutter::read_text();
+    }
     use std::io::Read;
     use wl_clipboard_rs::paste::{ClipboardType, MimeType, Seat, get_contents};
 
