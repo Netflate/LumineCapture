@@ -73,9 +73,14 @@ async fn record(
             .ok_or("the output has no connector name")?;
 
         // cursor-mode 0 is hidden, same as the portal path, where it stays out of the pixels
-        let path = session
-            .record_monitor(connector, HashMap::from([("cursor-mode", Value::U32(0))]))
-            .await?;
+        //
+        // is-recording swaps the sharing pill, which gnome-shell keeps for at least 5 s,
+        // for a small dot that goes away with the session
+        let props = HashMap::from([
+            ("cursor-mode", Value::U32(0)),
+            ("is-recording", Value::Bool(true)),
+        ]);
+        let path = session.record_monitor(connector, props).await?;
         let stream = StreamProxy::builder(conn).path(path)?.build().await?;
 
         // mutter announces the node once, right after Start, so listen first
