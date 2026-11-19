@@ -1,0 +1,7 @@
+{
+    "uuid": "lumine-capture@netflate.github.io",
+    "name": "Lumine Capture",
+    "description": "Helper for LumineCapture screenshot tool: enable focused window screenshot, force pinned screenshots above other windows, see through its fullscreen scroll overlay (scroll screenshots works without it, but unreliably), and stops recording indicator from appearing; does nothing for other apps.",
+    "shell-version": ["45", "46", "47", "48", "49", "50", "51"],
+    "url": "https://github.com/Netflate/LumineCapture"
+}
