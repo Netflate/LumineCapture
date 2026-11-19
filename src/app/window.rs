@@ -2,6 +2,7 @@
 // the window, which shows the picture of `EditorState.sheet` under the ui
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use cosmic_text::SwashCache;
 use tiny_skia::{Pixmap, Rect};
@@ -13,7 +14,18 @@ use crate::edit::{Sheet, TITLE, TOUCHPAD_ZOOM, WHEEL_STEP, ZOOM_STEP};
 use crate::editor::dirty::{apply_damage_rects, mark_dirty};
 use crate::editor::{EditorState, Layers, TextState};
 use crate::keys::Action;
-use crate::types::{Capture, Outputs, Placement};
+use crate::types::{Capture, Outputs, Placement, WindowFrame, WindowRequest};
+use crate::ui::window_controls;
+
+/// the window's own frame, drawn only where the compositor gave none
+#[derive(Default)]
+pub struct FrameState {
+    /// `Some` while the window draws its own frame
+    pub client: Option<WindowFrame>,
+    pub request: Option<WindowRequest>,
+    pub close_hovered: bool,
+    last_click: Option<Instant>,
+}
 
 pub async fn run(
     conn: wayland_client::Connection,
@@ -33,6 +45,14 @@ pub async fn run(
         crate::edit::frame_pad(1.0),
     );
     window.open_window(TITLE, size, monitor_scale)?;
+    let client = window.client_frame();
+    let bg = crate::theme::color::backdrop();
+    let (r, g, b) = (
+        bg.0 as f32 / 255.0,
+        bg.1 as f32 / 255.0,
+        bg.2 as f32 / 255.0,
+    );
+    window.set_frame_dark(0.2126 * r + 0.7152 * g + 0.0722 * b < 0.5);
     let ((w, h), scale) = window.window_size().ok_or("the window got no size")?;
 
     let sheet = Sheet::new(&image, monitor_scale);
@@ -65,6 +85,7 @@ pub async fn run(
         },
         super::build_ocr_state(),
     );
+    editor_state.frame.client = client;
     editor_state.toolbar.docked = true;
     editor_state
         .toolbar
@@ -85,6 +106,7 @@ pub async fn run(
     editor_state.output = output;
     window.set_min_size(super::panels::toolbar::min_window_size(
         editor_state.toolbar.natural_size(),
+        client.is_some(),
     ));
 
     let mut overlay: Box<dyn ScreenOverlay> = Box::new(window);
@@ -188,6 +210,86 @@ pub fn zoom_key(editor_state: &mut EditorState, action: Action, dirty_mask: &mut
     if sheet.moved(moved) {
         view_changed(editor_state, dirty_mask);
     }
+}
+
+/// left press on the window's border starts a resize, before any ui sees it
+pub fn frame_edge_press(editor_state: &mut EditorState) -> bool {
+    if editor_state.sheet.is_none()
+        || editor_state.frame.client != Some(WindowFrame { resizable: true })
+    {
+        return false;
+    }
+    let (w, h) = editor_state.placements[0].size;
+    let Some(edge) =
+        window_controls::edge_at(editor_state.input.pointer.local, (w as f32, h as f32))
+    else {
+        return false;
+    };
+    editor_state.frame.request = Some(WindowRequest::Resize(edge));
+    true
+}
+
+/// the header is dragged by its empty space, a quick second press maximizes it
+pub fn header_press(editor_state: &mut EditorState) {
+    if editor_state.sheet.is_none() || editor_state.frame.client.is_none() {
+        return;
+    }
+    let frame = &mut editor_state.frame;
+    let now = Instant::now();
+    let double_click = Duration::from_millis(crate::config::get().input.double_click_ms);
+    if frame
+        .last_click
+        .is_some_and(|at| now.duration_since(at) < double_click)
+    {
+        frame.last_click = None;
+        frame.request = Some(WindowRequest::ToggleMaximized);
+    } else {
+        frame.last_click = Some(now);
+        frame.request = Some(WindowRequest::Move);
+    }
+}
+
+/// the window menu of the compositor, opened by a right press on the header
+pub fn menu_press(editor_state: &mut EditorState) {
+    let (x, y) = editor_state.input.pointer.local;
+    editor_state.frame.request = Some(WindowRequest::Menu((x as i32, y as i32)));
+}
+
+/// the close button lights up under the pointer, and only then is it redrawn
+pub fn close_hover(editor_state: &mut EditorState, hovered: bool, dirty_mask: &mut u32) {
+    if editor_state.frame.close_hovered == hovered {
+        return;
+    }
+    editor_state.frame.close_hovered = hovered;
+    if let Some(rect) = close_rect(editor_state) {
+        editor_state.damage_local(0, rect);
+        mark_dirty(dirty_mask, 0);
+    }
+}
+
+pub fn update_close_hover(editor_state: &mut EditorState, dirty_mask: &mut u32) {
+    let hovered = editor_state.frame.client.is_some()
+        && !editor_state.color_popover.open
+        && !editor_state.model_popover.open
+        && close_rect(editor_state)
+            .is_some_and(|rect| window_controls::contains(rect, editor_state.input.pointer.local));
+    close_hover(editor_state, hovered, dirty_mask);
+}
+
+/// `Some` only for a window that draws its own frame
+pub fn close_rect(editor_state: &EditorState) -> Option<tiny_skia::Rect> {
+    if editor_state.sheet.is_none() || editor_state.frame.client.is_none() {
+        return None;
+    }
+    let width = editor_state.placements[0].size.0 as f32;
+    window_controls::close_rect(width)
+}
+
+pub fn title_rect(editor_state: &EditorState) -> Option<tiny_skia::Rect> {
+    if editor_state.sheet.is_none() || editor_state.frame.client.is_none() {
+        return None;
+    }
+    window_controls::title_rect(editor_state.placements[0].size.0 as f32)
 }
 
 pub fn grab(editor_state: &mut EditorState, pressed: bool) -> bool {

@@ -15,3 +15,30 @@ pub enum CursorIcon {
     NeswResize,
     NwseResize,
 }
+
+/// the window draws its own frame, the compositor gave none
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct WindowFrame {
+    /// not maximized, fullscreen or tiled
+    pub resizable: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Edge {
+    Top,
+    Bottom,
+    Left,
+    Right,
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum WindowRequest {
+    Move,
+    Resize(Edge),
+    Menu((i32, i32)),
+    ToggleMaximized,
+}

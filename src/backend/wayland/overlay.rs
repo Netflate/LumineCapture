@@ -19,15 +19,19 @@ use wayland_client::backend::WaylandError;
 pub mod state;
 
 use crate::backend::ScreenOverlay;
-use crate::backend::wayland::utils::shm::{create_shm_buffer, damage_of};
+use crate::backend::wayland::utils::decor;
+use crate::backend::wayland::utils::shm::{create_shm_buffer, damage_of, sync_into};
 use crate::backend::wayland::utils::surface::{Background, InputRegion, Inset, Role, SurfaceData};
-use crate::types::{CursorIcon, DamageRect, Output, OverlayEvent};
+use crate::types::{
+    CursorIcon, DamageRect, Edge, Output, OverlayEvent, WindowFrame, WindowRequest,
+};
 use log::warn;
 use smithay_client_toolkit::compositor::{FrameCallbackData, Region};
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer};
 use smithay_client_toolkit::shm::slot::SlotPool;
 use state::Probe;
+use wayland_protocols::xdg::shell::client::xdg_toplevel::ResizeEdge;
 
 const CONFIGURE_TIMEOUT: Duration = Duration::from_secs(5);
 const PROBE_TIMEOUT: Duration = Duration::from_millis(300);
@@ -105,6 +109,12 @@ impl WaylandOverlay {
                 inset: None,
                 output: None,
                 states: (false, false),
+                decor: None,
+                active: false,
+                dark: true,
+                geometry: None,
+                decor_painted: None,
+                framed: false,
             },
         );
 
@@ -251,6 +261,12 @@ impl ScreenOverlay for WaylandOverlay {
                     inset: None,
                     output: Some(wl_output),
                     states: (false, false),
+                    decor: None,
+                    active: false,
+                    dark: true,
+                    geometry: None,
+                    decor_painted: None,
+                    framed: false,
                 },
             );
         }
@@ -301,9 +317,10 @@ impl ScreenOverlay for WaylandOverlay {
             .ok_or("surface not found")?;
 
         let pool = &mut rt.state.pool;
-        let (bw, bh) = sd.buffer_size();
+        let (cw, ch) = sd.buffer_size();
+        let (bw, bh) = sd.shm_size();
         // drawn before resize, `Resized` is already queued for the right one
-        if rt.state.toplevel && pixels.len() != bw as usize * bh as usize * 4 {
+        if rt.state.toplevel && pixels.len() != cw as usize * ch as usize * 4 {
             return Ok(());
         }
 
@@ -314,9 +331,50 @@ impl ScreenOverlay for WaylandOverlay {
             .as_mut()
             .ok_or("SHM buffer is not configured yet")?;
 
-        let changed = match inset {
-            None => buffer.sync_rect(pool, pixels, bw, damage.unwrap_or((0, 0, bw, bh))),
-            Some(inset) => {
+        let decor = if rt.state.toplevel { sd.decor } else { None };
+        let mut changed = match (inset, decor) {
+            (None, Some(decor)) => {
+                let fresh = buffer.fresh;
+                let full_repaint = fresh || sd.decor_painted != Some(decor);
+                let rect = if full_repaint {
+                    (0, 0, cw, ch)
+                } else {
+                    damage.unwrap_or((0, 0, cw, ch))
+                };
+                let mut changed = match buffer.canvas(pool) {
+                    Some(dst) => sync_into(
+                        dst,
+                        bw,
+                        (decor.margin_px, decor.margin_px),
+                        pixels,
+                        cw,
+                        (0, 0),
+                        rect,
+                    ),
+                    None => Vec::new(),
+                };
+                if let Some(dst) = buffer.canvas(pool) {
+                    if full_repaint {
+                        decor::paint_shadow(dst, (bw, bh), (cw, ch), &decor);
+                        decor::compose_edges(
+                            dst,
+                            (bw, bh),
+                            (cw, ch),
+                            &decor,
+                            (decor.margin_px, decor.margin_px, cw, ch),
+                        );
+                        changed = vec![(0, 0, bw, bh)];
+                        sd.decor_painted = Some(decor);
+                    } else {
+                        for &(x, y, w, h) in &changed {
+                            decor::compose_edges(dst, (bw, bh), (cw, ch), &decor, (x, y, w, h));
+                        }
+                    }
+                }
+                changed
+            }
+            (None, None) => buffer.sync_rect(pool, pixels, bw, damage.unwrap_or((0, 0, bw, bh))),
+            (Some(inset), _) => {
                 let (sw, sh) = crate::types::px_size(inset.canvas, scale);
                 if pixels.len() != sw as usize * sh as usize * 4 {
                     return Ok(());
@@ -327,12 +385,22 @@ impl ScreenOverlay for WaylandOverlay {
                 buffer.sync_window(pool, pixels, (bw, sw), origin, damage)
             }
         };
-        let changed = damage_of(std::mem::take(&mut buffer.fresh), (bw, bh), changed);
+        if decor.is_none() {
+            changed = damage_of(std::mem::take(&mut buffer.fresh), (bw, bh), changed);
+        } else {
+            buffer.fresh = false;
+        }
         if changed.is_empty() {
             // still committed: a cleared background (synchronized subsurface) applies only
             // with the parent's commit. No frame callback, nothing will be shown
             sd.surface.commit();
             return Ok(());
+        }
+        if let Some((x, y, w, h)) = sd.geometry.take()
+            && let crate::backend::wayland::utils::surface::Role::Window(window) = &sd.role
+        {
+            use smithay_client_toolkit::shell::xdg::XdgSurface;
+            window.xdg_surface().set_window_geometry(x, y, w, h);
         }
         sd.surface.attach(Some(buffer.wl_buffer()), 0, 0);
         for (x, y, w, h) in changed {
@@ -420,6 +488,43 @@ impl ScreenOverlay for WaylandOverlay {
                 return Ok(OverlayEvent::Tick);
             }
         }
+    }
+
+    fn client_frame(&self) -> Option<WindowFrame> {
+        let state = &self.runtime.state;
+        if state.toplevel { state.frame } else { None }
+    }
+
+    fn set_frame_dark(&mut self, dark: bool) {
+        if let Some(sd) = self.runtime.state.surfaces.get_mut(&0) {
+            sd.dark = dark;
+            if let Some(decor) = sd.decor.as_mut() {
+                decor.dark = dark;
+            }
+        }
+    }
+
+    fn window_request(&mut self, request: WindowRequest) {
+        let rt = &mut self.runtime;
+        let state = &rt.state;
+        let (Some(sd), Some(seat)) = (state.surfaces.get(&0), state.wl_seat.as_ref()) else {
+            return;
+        };
+        let Role::Window(window) = &sd.role else {
+            return;
+        };
+        let serial = state.press_serial;
+        match request {
+            WindowRequest::Move => window.move_(seat, serial),
+            WindowRequest::Resize(edge) => window.resize(seat, serial, resize_edge(edge)),
+            WindowRequest::Menu((x, y)) => {
+                let m = sd.margin();
+                window.show_window_menu(seat, serial, (x + m, y + m))
+            }
+            WindowRequest::ToggleMaximized if sd.states.0 => window.unset_maximized(),
+            WindowRequest::ToggleMaximized => window.set_maximized(),
+        }
+        let _ = rt.event_queue.flush();
     }
 
     fn discovered_outputs(&self) -> &[Output] {
@@ -737,5 +842,18 @@ fn fault_in(pool: &mut SlotPool, faulted: &mut usize, size: usize) {
     if let Ok(slot) = pool.new_slot(size) {
         pool.raw_data_mut(&slot).fill(0);
         *faulted = size;
+    }
+}
+
+fn resize_edge(edge: Edge) -> ResizeEdge {
+    match edge {
+        Edge::Top => ResizeEdge::Top,
+        Edge::Bottom => ResizeEdge::Bottom,
+        Edge::Left => ResizeEdge::Left,
+        Edge::Right => ResizeEdge::Right,
+        Edge::TopLeft => ResizeEdge::TopLeft,
+        Edge::TopRight => ResizeEdge::TopRight,
+        Edge::BottomLeft => ResizeEdge::BottomLeft,
+        Edge::BottomRight => ResizeEdge::BottomRight,
     }
 }

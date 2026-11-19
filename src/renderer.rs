@@ -41,6 +41,9 @@ pub struct RenderRequest<'a> {
     pub base: Option<&'a Pixmap>,
     pub dimmed: &'a mut Pixmap,
     pub band: u32,
+    /// close button of a window with its own frame: rect in logical px, hovered
+    pub close_button: Option<(Rect, bool)>,
+    pub title: Option<Rect>,
     // selection + magnifier + toolbar
     pub selection: Option<&'a Rect>,
     pub prev_selection: Option<&'a Rect>,
@@ -334,10 +337,31 @@ pub fn render_frame(req: &mut RenderRequest) {
         fill_band(req.canvas, req.band, dirty_rect, s);
     }
 
+    // the band reset covers the whole button, so its antialiased edge never stacks
+    let close = req
+        .close_button
+        .filter(|(rect, _)| dirty_rect.is_none_or(|dirty| dirty.intersect(rect).is_some()));
+    if let Some((rect, _)) = close {
+        fill_band(req.canvas, req.band, Some(&rect), s);
+    }
+    let title = req
+        .title
+        .filter(|rect| dirty_rect.is_none_or(|dirty| dirty.intersect(rect).is_some()));
+    if let Some(rect) = title {
+        fill_band(req.canvas, req.band, Some(&rect), s);
+    }
+
     let mut p = Painter::new(req.canvas)
         .with_scale(s)
         .with_icons(req.icons_cache)
         .with_text(req.text.font_system, req.text.swash_cache);
+
+    if let Some((rect, hovered)) = close {
+        crate::ui::window_controls::draw_close(&mut p, rect, hovered);
+    }
+    if let Some(rect) = title {
+        crate::ui::window_controls::draw_title(&mut p, rect, crate::edit::TITLE);
+    }
 
     if req.is_mag_monitor
         && let Some(mag) = req.magnifier

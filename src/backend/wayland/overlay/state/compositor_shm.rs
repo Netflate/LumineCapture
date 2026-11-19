@@ -14,6 +14,7 @@ use wayland_client::protocol::{wl_output, wl_surface};
 use wayland_client::{Connection, QueueHandle};
 
 use crate::backend::wayland::overlay::state::OverlayState;
+use crate::backend::wayland::utils::decor::Decor;
 use crate::backend::wayland::utils::shm::create_shm_buffer;
 use crate::backend::wayland::utils::surface::Role;
 use crate::types::OverlayEvent;
@@ -111,7 +112,9 @@ impl OverlayState {
 
         // drag sends hundreds of configures: only the last size gets a buffer, in `apply_resize`
         if self.toplevel && sd.shm_buffer.is_some() {
-            self.resize = ((sd.width, sd.height) != (w, h)).then_some((monitor_idx, (w, h)));
+            let decor_changed = sd.decor.is_some() != sd.framed;
+            self.resize =
+                ((sd.width, sd.height) != (w, h) || decor_changed).then_some((monitor_idx, (w, h)));
             return;
         }
         // if its already configured, and sizes weren't changed
@@ -121,7 +124,9 @@ impl OverlayState {
         }
         // creating buffers and attaching
         let pool = &mut self.pool;
-        let (bw, bh) = crate::types::px_size((w, h), sd.scale);
+        sd.width = w;
+        sd.height = h;
+        let (bw, bh) = sd.shm_size();
 
         let mut shm_buffer = match create_shm_buffer(pool, bw, bh) {
             Ok(buffer) => buffer,
@@ -134,12 +139,14 @@ impl OverlayState {
         // app draws the new size before anything is attached,
         // since a blank buffer would flash on every resize
         if self.toplevel {
+            let m = sd.margin();
+            sd.geometry = Some((m, m, w as i32, h as i32));
             if let Some(viewport) = &sd.viewport {
-                viewport.set_destination(w as i32, h as i32);
+                viewport.set_destination(w as i32 + 2 * m, h as i32 + 2 * m);
             }
+            sd.apply_input(&self.compositor_state);
             sd.shm_buffer = Some(shm_buffer);
-            sd.width = w;
-            sd.height = h;
+            sd.framed = sd.decor.is_some();
             sd.mapped = true;
             self.events.push_back(OverlayEvent::Resized {
                 monitor_idx,
@@ -162,8 +169,7 @@ impl OverlayState {
         shm_buffer.fresh = false;
 
         sd.shm_buffer = Some(shm_buffer);
-        sd.width = w;
-        sd.height = h;
+        sd.framed = sd.decor.is_some();
     }
 
     pub fn apply_resize(&mut self) {
@@ -173,7 +179,9 @@ impl OverlayState {
         let Some(sd) = self.surfaces.get_mut(&monitor_idx) else {
             return;
         };
-        let (bw, bh) = crate::types::px_size((w, h), sd.scale);
+        sd.width = w;
+        sd.height = h;
+        let (bw, bh) = sd.shm_size();
         let shm_buffer = match create_shm_buffer(&mut self.pool, bw, bh) {
             Ok(buffer) => buffer,
             Err(e) => {
@@ -181,12 +189,14 @@ impl OverlayState {
                 return;
             }
         };
+        let m = sd.margin();
         if let Some(viewport) = &sd.viewport {
-            viewport.set_destination(w as i32, h as i32);
+            viewport.set_destination(w as i32 + 2 * m, h as i32 + 2 * m);
         }
+        sd.geometry = Some((m, m, w as i32, h as i32));
+        sd.decor_painted = None;
+        sd.apply_input(&self.compositor_state);
         sd.shm_buffer = Some(shm_buffer);
-        sd.width = w;
-        sd.height = h;
         resize_first(
             &mut self.events,
             OverlayEvent::Resized {
@@ -208,6 +218,9 @@ impl OverlayState {
             return;
         }
         sd.scale = scale;
+        if sd.decor.is_some() {
+            sd.decor = Some(Decor::new(scale, sd.active, sd.dark));
+        }
         // before the first configure the scale is just picked up by it
         if sd.shm_buffer.take().is_some() {
             let surface = sd.surface.clone();

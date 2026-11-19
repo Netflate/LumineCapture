@@ -12,10 +12,15 @@ use crate::backend::wayland::utils::input::wheel_clicks;
 use crate::types::{MouseButton, OverlayEvent};
 impl OverlayState {
     fn monitor_point(&self, idx: usize, (x, y): (f64, f64)) -> (f64, f64) {
-        match self.surfaces.get(&idx).and_then(|sd| sd.inset) {
-            Some(inset) => (x + inset.origin.0 as f64, y + inset.origin.1 as f64),
-            None => (x, y),
+        if let Some(sd) = self.surfaces.get(&idx) {
+            if let Some(inset) = sd.inset {
+                return (x + inset.origin.0 as f64, y + inset.origin.1 as f64);
+            }
+            if sd.decor.is_some() {
+                return (x - sd.margin() as f64, y - sd.margin() as f64);
+            }
         }
+        (x, y)
     }
 }
 
@@ -68,9 +73,12 @@ impl PointerHandler for OverlayState {
                     }
                 }
 
-                PointerEventKind::Press { button, .. }
-                | PointerEventKind::Release { button, .. } => {
+                PointerEventKind::Press { button, serial, .. }
+                | PointerEventKind::Release { button, serial, .. } => {
                     let pressed = matches!(event.kind, PointerEventKind::Press { .. });
+                    if pressed {
+                        self.press_serial = serial;
+                    }
 
                     // linux input codes (BTN_LEFT=0x110, BTN_RIGHT=0x111, BTN_MIDDLE=0x112)
                     let mb = match button {

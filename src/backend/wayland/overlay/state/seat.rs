@@ -27,6 +27,7 @@ impl SeatHandler for OverlayState {
                 let Ok(pointer) = self.seat.get_pointer(qh, &seat) else {
                     return;
                 };
+                self.wl_seat = Some(seat.clone());
                 let device = self.cursor_shape_manager.get_shape_device(&pointer, qh);
                 self.cursor_shape_device = Some(device);
             }

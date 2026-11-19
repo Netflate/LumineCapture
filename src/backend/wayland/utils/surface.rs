@@ -6,6 +6,7 @@
 // sub-orchestrator ('overlay.rs'), keeping protocol handlers free of state management
 // reminder: each output has its own surface
 
+use crate::backend::wayland::utils::decor::{self, Decor, GRAB, MARGIN};
 use crate::backend::wayland::utils::input;
 use crate::backend::wayland::utils::shm::ShmBuffer;
 use smithay_client_toolkit::compositor::CompositorState;
@@ -75,17 +76,55 @@ pub struct SurfaceData {
     pub inset: Option<Inset>,
     pub output: Option<wl_output::WlOutput>,
     pub states: (bool, bool),
+    pub decor: Option<Decor>,
+    pub active: bool,
+    pub dark: bool,
+    pub geometry: Option<(i32, i32, i32, i32)>,
+    pub decor_painted: Option<Decor>,
+    pub framed: bool,
 }
 
 impl SurfaceData {
+    pub fn margin(&self) -> i32 {
+        if self.decor.is_some() {
+            MARGIN as i32
+        } else {
+            0
+        }
+    }
+
     pub fn buffer_size(&self) -> (u32, u32) {
         crate::types::px_size((self.width, self.height), self.scale)
+    }
+
+    pub fn shm_size(&self) -> (u32, u32) {
+        self.decor.map_or_else(
+            || self.buffer_size(),
+            |d| decor::buffer_size(self.buffer_size(), &d),
+        )
     }
 
     /// Sets the pending input region on the surface without committing.
     pub fn apply_input(&self, compositor: &CompositorState) {
         match self.input {
-            InputRegion::Full => self.surface.set_input_region(None),
+            InputRegion::Full => {
+                if self.decor.is_some() {
+                    if let Ok(region) = smithay_client_toolkit::compositor::Region::new(compositor)
+                    {
+                        let g = GRAB as i32;
+                        let m = self.margin();
+                        region.add(
+                            m - g,
+                            m - g,
+                            self.width as i32 + 2 * g,
+                            self.height as i32 + 2 * g,
+                        );
+                        self.surface.set_input_region(Some(region.wl_region()));
+                    }
+                } else {
+                    self.surface.set_input_region(None)
+                }
+            }
             InputRegion::Hole(mut hole) => {
                 let size = (self.width as i32, self.height as i32);
                 if let Some(inset) = self.inset {

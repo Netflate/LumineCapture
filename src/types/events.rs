@@ -35,6 +35,9 @@ pub enum OverlayEvent {
     Focus {
         monitor_idx: usize,
     },
+    Redraw {
+        monitor_idx: usize,
+    },
     PointerButton {
         button: MouseButton,
         pressed: bool,

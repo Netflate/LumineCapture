@@ -159,6 +159,7 @@ pub struct EditorState {
     pub scroll: Option<crate::scroll::Scroll>,
     pub scroll_left: Option<(usize, Vec<usize>, bool)>,
     pub sheet: Option<crate::edit::Sheet>,
+    pub frame: crate::app::window::FrameState,
 }
 
 // types.rs
@@ -238,6 +239,7 @@ impl EditorState {
             scroll: None,
             scroll_left: None,
             sheet: None,
+            frame: Default::default(),
         }
     }
 

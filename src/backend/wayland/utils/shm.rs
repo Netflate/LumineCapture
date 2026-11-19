@@ -34,6 +34,9 @@ pub fn create_shm_buffer(
 }
 
 impl ShmBuffer {
+    pub fn canvas<'a>(&self, pool: &'a mut SlotPool) -> Option<&'a mut [u8]> {
+        pool.canvas(&self.buffer)
+    }
     pub fn wl_buffer(&self) -> &wl_buffer::WlBuffer {
         self.buffer.wl_buffer()
     }
@@ -106,6 +109,19 @@ pub fn sync_window(
     (ox, oy): (u32, u32),
     rect: DamageRect,
 ) -> Vec<DamageRect> {
+    sync_into(dst, dst_width, (0, 0), pixels, src_width, (ox, oy), rect)
+}
+
+pub fn sync_into(
+    dst: &mut [u8],
+    dst_width: u32,
+    dst_offset: (u32, u32),
+    pixels: &[u8],
+    src_width: u32,
+    src_origin: (u32, u32),
+    rect: DamageRect,
+) -> Vec<DamageRect> {
+    let (ox, oy) = src_origin;
     let dst_stride = (dst_width * 4) as usize;
     let src_stride = (src_width * 4) as usize;
     let dst_rows = (dst.len() / dst_stride.max(1)) as u32;
@@ -116,17 +132,17 @@ pub fn sync_window(
     let right = rect
         .0
         .saturating_add(rect.2)
-        .min(ox.saturating_add(dst_width))
+        .min(ox.saturating_add(dst_width.saturating_sub(dst_offset.0)))
         .min(src_width);
     let bottom = rect
         .1
         .saturating_add(rect.3)
-        .min(oy.saturating_add(dst_rows))
+        .min(oy.saturating_add(dst_rows.saturating_sub(dst_offset.1)))
         .min(src_rows);
     if left >= right || top >= bottom {
         return Vec::new();
     }
-    let (x, y) = (left - ox, top - oy);
+    let (x, y) = (left - ox + dst_offset.0, top - oy + dst_offset.1);
     let (w, h) = (right - left, bottom - top);
 
     let cols = w.div_ceil(TILE) as usize;
@@ -198,7 +214,7 @@ fn tile_rects(changed: &[bool], cols: usize) -> Vec<DamageRect> {
 
 #[cfg(test)]
 mod tests {
-    use super::{damage_of, sync_rect, sync_window, tile_rects};
+    use super::{damage_of, sync_into, sync_rect, sync_window, tile_rects};
 
     #[test]
     fn fresh_buffer_is_damaged_completely() {
@@ -332,5 +348,28 @@ mod tests {
             }
         }
         assert_eq!(dst[(3 * 20 * 4) as usize], 0);
+    }
+
+    #[test]
+    fn offset_copy_clips_and_reports_buffer_coordinates() {
+        let (sw, sh, dw, dh) = (8u32, 6u32, 12u32, 10u32);
+        let src = ramp(sw, sh);
+        let mut dst = vec![0; (dw * dh * 4) as usize];
+        let damage = sync_into(&mut dst, dw, (3, 2), &src, sw, (0, 0), (5, 3, 5, 5));
+        assert!(
+            damage
+                .iter()
+                .any(|r| r.0 <= 8 && r.1 <= 5 && r.0 + r.2 >= 11 && r.1 + r.3 >= 8)
+        );
+        for y in 0..dh {
+            for x in 0..dw {
+                let i = ((y * dw + x) * 4) as usize;
+                if (8..11).contains(&x) && (5..8).contains(&y) {
+                    assert_eq!(&dst[i..i + 4], &swizzled(&src, sw, x - 3, y - 2));
+                } else {
+                    assert_eq!(&dst[i..i + 4], &[0; 4]);
+                }
+            }
+        }
     }
 }

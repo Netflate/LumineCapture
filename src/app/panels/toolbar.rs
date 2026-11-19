@@ -13,9 +13,8 @@ fn fit_toolbar(editor_state: &EditorState) -> f32 {
     if editor_state.sheet.is_none() {
         return 1.0;
     }
-    ((editor_state.placements[0].size.0 as f32 - size::margin() * 2.0)
-        / editor_state.toolbar.width())
-    .clamp(MIN_SHRINK, 1.0)
+    let room = editor_state.placements[0].size.0 as f32 - size::margin() * 2.0;
+    (room / editor_state.toolbar.width()).clamp(MIN_SHRINK, 1.0)
 }
 
 pub fn update_toolbar(editor_state: &mut EditorState, dirty_mask: &mut u32) {
@@ -100,12 +99,19 @@ pub fn update_toolbar(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     }
 }
 
-pub fn min_window_size(toolbar: (f32, f32)) -> (u32, u32) {
+pub fn min_window_size(toolbar: (f32, f32), client_frame: bool) -> (u32, u32) {
     let margin = size::margin();
     (
         (toolbar.0 + margin * 2.0).ceil() as u32,
         // header + two toolbars of the picture under it
-        (toolbar.1 * 3.0 + crate::ui::settings_panel::height()).ceil() as u32,
+        (toolbar.1 * 3.0
+            + crate::ui::settings_panel::height()
+            + if client_frame {
+                crate::ui::window_controls::TITLE_HEIGHT
+            } else {
+                0.0
+            })
+        .ceil() as u32,
     )
 }
 
@@ -113,7 +119,13 @@ pub fn docked_inset(editor_state: &EditorState) -> f32 {
     let scale = editor_state.placements[0].scale;
     let toolbar = editor_state.toolbar.natural_size().1 * fit_toolbar(editor_state);
     // panel starts where the toolbar's rounded edge does
-    (toolbar * scale).round() + (crate::ui::settings_panel::height() * scale).ceil()
+    (toolbar * scale).round()
+        + if editor_state.frame.client.is_some() {
+            (crate::ui::window_controls::TITLE_HEIGHT * scale).round()
+        } else {
+            0.0
+        }
+        + (crate::ui::settings_panel::height() * scale).ceil()
 }
 
 fn compute_toolbar_placement(editor_state: &EditorState) -> (usize, (f32, f32), bool) {
@@ -132,7 +144,9 @@ fn compute_toolbar_placement(editor_state: &EditorState) -> (usize, (f32, f32), 
         let monitor_idx = editor_state.input.pointer.monitor_idx;
         let placement = &editor_state.placements[monitor_idx];
         let mon_w = placement.size.0 as f32;
-        let top = if editor_state.toolbar.docked {
+        let top = if editor_state.toolbar.docked && editor_state.frame.client.is_some() {
+            crate::ui::window_controls::TITLE_HEIGHT
+        } else if editor_state.toolbar.docked {
             0.0
         } else {
             size::margin()
@@ -237,7 +251,7 @@ mod tests {
     #[test]
     fn the_window_is_never_smaller_than_the_header_and_some_picture() {
         let toolbar = (600.0, 42.0);
-        let (_, h) = min_window_size(toolbar);
+        let (_, h) = min_window_size(toolbar, false);
         assert_eq!(h as f32, toolbar.1 * 3.0 + height());
     }
 }

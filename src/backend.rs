@@ -1,7 +1,10 @@
 pub mod notify;
 pub mod wayland;
 
-use crate::types::{Capture, CaptureResult, CursorIcon, DamageRect, Output, OverlayEvent};
+use crate::types::{
+    Capture, CaptureResult, CursorIcon, DamageRect, Output, OverlayEvent, WindowFrame,
+    WindowRequest,
+};
 use crate::utils::format::FileFormat;
 use async_trait::async_trait;
 use log::{info, warn};
@@ -138,6 +141,13 @@ pub trait ScreenOverlay: Send {
         height: u32,
     ) -> Result<(), Box<dyn std::error::Error>>;
     fn set_cursor(&mut self, icon: CursorIcon);
+    /// `Some` when the window has to draw its own frame
+    fn client_frame(&self) -> Option<WindowFrame> {
+        None
+    }
+    fn set_frame_dark(&mut self, _dark: bool) {}
+    /// move, resize, menu or maximize, started by the last button press
+    fn window_request(&mut self, _request: WindowRequest) {}
     /// Caret rect in surface coordinates while a text field is edited, `None` otherwise
     fn set_ime(&mut self, area: Option<(i32, i32, i32, i32)>);
     /// Drops the static snapshot subsurface on `monitor_idx` to expose the live screen beneath.

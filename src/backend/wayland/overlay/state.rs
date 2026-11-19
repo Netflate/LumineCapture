@@ -68,6 +68,12 @@ pub struct OverlayState {
     pub toplevel: bool,
     pub min_size: Option<(u32, u32)>,
     pub resize: Option<(usize, (u32, u32))>,
+    // ── window frame (client side decorations) ───────────────────────────────────
+    // which is used, hopefully only and only on GNOME
+    // `seat` is taken by SCTK's SeatState, so the wl_seat lives in `wl_seat`
+    pub wl_seat: Option<wayland_client::protocol::wl_seat::WlSeat>,
+    pub press_serial: u32,
+    pub frame: Option<crate::types::WindowFrame>,
 }
 
 pub struct Probe {
@@ -196,6 +202,9 @@ impl OverlayState {
             pointer_enter_serial: 0,
             toplevel: false,
             min_size: None,
+            wl_seat: None,
+            press_serial: 0,
+            frame: None,
         }
     }
 }

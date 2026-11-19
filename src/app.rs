@@ -391,7 +391,11 @@ async fn run_overlay(
                     }
                     _ => {}
                 }
+                sync_client_frame(editor_state, overlay.as_ref());
                 handle_event(editor_state, ev, &mut dirty_mask);
+                if let Some(request) = editor_state.frame.request.take() {
+                    overlay.window_request(request);
+                }
             }
         }
 
@@ -483,12 +487,28 @@ fn poll_background_work(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     }
 }
 
+/// maximizing or tiling the window turns its resize edges off
+fn sync_client_frame(editor_state: &mut EditorState, overlay: &dyn ScreenOverlay) {
+    if editor_state.sheet.is_some() {
+        editor_state.frame.client = overlay.client_frame();
+    }
+}
+
 fn handle_event(editor_state: &mut EditorState, ev: OverlayEvent, dirty_mask: &mut u32) {
     match ev {
         OverlayEvent::Tick
         | OverlayEvent::EscapePressed
         | OverlayEvent::Focus { .. }
         | OverlayEvent::FrameDone { .. } => {}
+        OverlayEvent::Redraw { monitor_idx } => {
+            if let Some(placement) = editor_state.placements.get(monitor_idx)
+                && let Some(whole) =
+                    Rect::from_xywh(0.0, 0.0, placement.size.0 as f32, placement.size.1 as f32)
+            {
+                editor_state.damage_local(monitor_idx, whole);
+                mark_dirty(dirty_mask, monitor_idx);
+            }
+        }
         OverlayEvent::Resized { size, scale, .. } => {
             window::resized(editor_state, size, scale, dirty_mask);
         }
@@ -500,6 +520,10 @@ fn handle_event(editor_state: &mut EditorState, ev: OverlayEvent, dirty_mask: &m
         OverlayEvent::PointerLeave => {
             input::handle_pointer_leave(editor_state, dirty_mask);
         }
+        OverlayEvent::PointerButton {
+            button: crate::types::MouseButton::Left,
+            pressed: true,
+        } if window::frame_edge_press(editor_state) => {}
         OverlayEvent::PointerButton {
             button: crate::types::MouseButton::Middle,
             pressed,
@@ -843,6 +867,9 @@ fn render_monitor(
     let hidden = frame.annotations_hidden || editor_state.scroll.is_some();
     let dragged_index = editor_state.dragged_index();
     let dirty = dirty_rect.as_ref();
+    let close_button =
+        window::close_rect(editor_state).map(|rect| (rect, editor_state.frame.close_hovered));
+    let title = window::title_rect(editor_state);
     let toolbar = panel_to_draw(&mut editor_state.toolbar, i, dirty);
     let settings_panel = panel_to_draw(&mut editor_state.settings_panel, i, dirty);
     let color_picker = panel_to_draw(&mut editor_state.color_popover, i, dirty);
@@ -856,6 +883,8 @@ fn render_monitor(
             .sheet
             .as_ref()
             .map_or(0, |sheet| sheet.view.inset() as u32),
+        close_button,
+        title,
         dimmed: &mut editor_state.dimmed[i],
         selection: local_sel.as_ref(),
         prev_selection: prev_local.as_ref(),

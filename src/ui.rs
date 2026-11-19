@@ -9,3 +9,4 @@ pub mod settings_panel;
 pub mod text_field;
 pub mod toast;
 pub mod toolbar;
+pub mod window_controls;

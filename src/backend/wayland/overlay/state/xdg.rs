@@ -2,12 +2,15 @@
 // - xdg_shell: used for managing desktop windows (doesn't work on gnome)
 
 use smithay_client_toolkit::shell::WaylandSurface;
-use smithay_client_toolkit::shell::xdg::window::{Window, WindowConfigure, WindowHandler};
+use smithay_client_toolkit::shell::xdg::window::{
+    DecorationMode, Window, WindowConfigure, WindowHandler,
+};
 
 use wayland_client::{Connection, QueueHandle};
 
 use crate::backend::wayland::overlay::state::OverlayState;
-use crate::types::OverlayEvent;
+use crate::backend::wayland::utils::decor::Decor;
+use crate::types::{OverlayEvent, WindowFrame};
 
 impl WindowHandler for OverlayState {
     fn configure(
@@ -22,12 +25,33 @@ impl WindowHandler for OverlayState {
             (Some(width), Some(height)) => Some((width.get(), height.get())),
             _ => None,
         };
-        if let Some(sd) = self
+        let found = self
             .surfaces
-            .values_mut()
-            .find(|sd| &sd.surface == window.wl_surface())
-        {
+            .iter_mut()
+            .find(|(_, sd)| &sd.surface == window.wl_surface());
+        if let Some((idx, sd)) = found {
             sd.states = (configure.is_maximized(), configure.is_fullscreen());
+            if self.toplevel {
+                self.frame =
+                    (configure.decoration_mode == DecorationMode::Client).then_some(WindowFrame {
+                        resizable: !(configure.is_maximized()
+                            || configure.is_fullscreen()
+                            || configure.is_tiled_left()
+                            || configure.is_tiled_right()
+                            || configure.is_tiled_top()
+                            || configure.is_tiled_bottom()),
+                    });
+                let old_decor = sd.decor;
+                sd.active = configure.is_activated();
+                sd.decor = self
+                    .frame
+                    .filter(|f| f.resizable)
+                    .map(|_| Decor::new(sd.scale, sd.active, sd.dark));
+                if old_decor.is_some() == sd.decor.is_some() && old_decor != sd.decor {
+                    self.events
+                        .push_back(OverlayEvent::Redraw { monitor_idx: *idx });
+                }
+            }
         }
         self.configure_surface(window.wl_surface(), size);
     }

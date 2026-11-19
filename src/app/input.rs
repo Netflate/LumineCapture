@@ -14,7 +14,7 @@ use crate::tools::{
     Tool, dispatch_activate, dispatch_button, dispatch_cursor, dispatch_deactivate, dispatch_key,
     dispatch_move, dispatch_text,
 };
-use crate::types::{CursorIcon, MouseButton, PointerState, SpecialKey};
+use crate::types::{CursorIcon, MouseButton, PointerState, SpecialKey, WindowFrame};
 use crate::ui::color_popover::ColorField;
 use crate::ui::magnifier::MagnifierState;
 use crate::ui::panel::UiPanel;
@@ -22,6 +22,7 @@ use crate::ui::settings_panel::char_index_for_x;
 use crate::ui::settings_panel::{ArrowHoldState, SettingsWidget, StepperArrow};
 use crate::ui::text_field::CursorInit;
 use crate::ui::toolbar::{ToolbarButton, ToolbarItem};
+use crate::ui::window_controls;
 use crate::utils::global_point_to_local;
 
 use std::time::Instant;
@@ -66,6 +67,7 @@ pub fn handle_pointer_move(
         (local_x, local_y),
         global,
     );
+    super::window::update_close_hover(editor_state, dirty_mask);
     update_magnifier(editor_state, dirty_mask);
     super::scroll::hover(editor_state, dirty_mask);
     if !super::scroll::blocks_tool(editor_state) {
@@ -87,6 +89,7 @@ pub fn handle_pointer_move(
 
 pub fn handle_pointer_leave(editor_state: &mut EditorState, dirty_mask: &mut u32) {
     editor_state.input.hovering = false;
+    super::window::close_hover(editor_state, false, dirty_mask);
     update_magnifier(editor_state, dirty_mask);
     apply_damage_rects(editor_state, dirty_mask);
 }
@@ -119,6 +122,8 @@ enum UiHit {
     ColorPopoverOutside,
     ModelPopoverInside,
     ModelPopoverOutside,
+    /// the window's close button, drawn by us when the compositor gave no frame
+    Close,
     ToolbarItem(usize),
     ToolbarBackground,
     Band,
@@ -128,6 +133,13 @@ enum UiHit {
 }
 
 fn hit_test_ui(editor_state: &EditorState, local: (f64, f64)) -> UiHit {
+    // in the window's own shadow, outside of it
+    let (w, h) = editor_state.placements[0].size;
+    if editor_state.sheet.is_some()
+        && (local.0 < 0.0 || local.1 < 0.0 || local.0 >= w as f64 || local.1 >= h as f64)
+    {
+        return UiHit::None;
+    }
     // 1. Popovers
     if editor_state.color_popover.open {
         return if editor_state.color_popover.hit_test(local) {
@@ -143,6 +155,12 @@ fn hit_test_ui(editor_state: &EditorState, local: (f64, f64)) -> UiHit {
         } else {
             UiHit::ModelPopoverOutside
         };
+    }
+
+    if let Some(rect) = super::window::close_rect(editor_state)
+        && window_controls::contains(rect, local)
+    {
+        return UiHit::Close;
     }
 
     // 2. Toolbar (`(bool, Option<usize>)`)
@@ -183,6 +201,16 @@ pub fn hand_over_picture(editor_state: &EditorState) -> bool {
 }
 
 pub fn compute_cursor(editor_state: &EditorState) -> CursorIcon {
+    if editor_state.sheet.is_some()
+        && editor_state.frame.client == Some(WindowFrame { resizable: true })
+    {
+        let (w, h) = editor_state.placements[0].size;
+        if let Some(edge) =
+            window_controls::edge_at(editor_state.input.pointer.local, (w as f32, h as f32))
+        {
+            return window_controls::edge_cursor(edge);
+        }
+    }
     if super::window::grabbing(editor_state) {
         return CursorIcon::Grabbing;
     }
@@ -193,9 +221,10 @@ pub fn compute_cursor(editor_state: &EditorState) -> CursorIcon {
         };
     }
     match hit_test_ui(editor_state, editor_state.input.pointer.local) {
-        UiHit::ColorPopoverInside | UiHit::ToolbarItem(_) | UiHit::SettingsItem(_) => {
-            CursorIcon::Pointer
-        }
+        UiHit::Close
+        | UiHit::ColorPopoverInside
+        | UiHit::ToolbarItem(_)
+        | UiHit::SettingsItem(_) => CursorIcon::Pointer,
         UiHit::ModelPopoverInside => {
             if editor_state
                 .model_popover
@@ -254,6 +283,12 @@ pub fn handle_pointer_button(
         return;
     }
 
+    if matches!(button, MouseButton::Right) && pressed && header_hit(editor_state) {
+        super::window::menu_press(editor_state);
+        apply_damage_rects(editor_state, dirty_mask);
+        return;
+    }
+
     if is_left_click_pressed {
         let mut ui_hit = hit_test_ui(editor_state, editor_state.input.pointer.local);
 
@@ -286,7 +321,13 @@ pub fn handle_pointer_button(
             }
             UiHit::ModelPopoverOutside => unreachable!("popover is closed at this point"),
 
+            UiHit::Close => {
+                editor_state.cancel = true;
+                return;
+            }
+
             UiHit::ToolbarBackground | UiHit::Band => {
+                super::window::header_press(editor_state);
                 return;
             }
 
@@ -315,6 +356,7 @@ pub fn handle_pointer_button(
             }
 
             UiHit::SettingsBackground => {
+                super::window::header_press(editor_state);
                 return;
             }
 
@@ -482,6 +524,15 @@ pub fn handle_pointer_button(
     }
 
     apply_damage_rects(editor_state, dirty_mask);
+}
+
+/// the header of the window, the places where the window menu opens on a right press
+fn header_hit(editor_state: &EditorState) -> bool {
+    editor_state.frame.client.is_some()
+        && matches!(
+            hit_test_ui(editor_state, editor_state.input.pointer.local),
+            UiHit::Band | UiHit::ToolbarBackground | UiHit::SettingsBackground
+        )
 }
 
 pub fn select_tool(editor_state: &mut EditorState, tool: Tool, dirty_mask: &mut u32) {
