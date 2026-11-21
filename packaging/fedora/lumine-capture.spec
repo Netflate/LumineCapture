@@ -48,6 +48,8 @@ cargo build --locked --profile dist --features asm
 install -D -p -m 0755 target/dist/%{name} %{buildroot}%{_bindir}/%{name}
 # KWin grants screenshot access by the Exec= path of this file, so it has to be /usr/bin/lumine-capture
 install -D -p -m 0644 assets/%{name}.desktop %{buildroot}%{_datadir}/applications/%{name}.desktop
+install -D -p -m 0644 gnome-extension/lumine-capture@netflate.github.io/extension.js %{buildroot}%{_datadir}/gnome-shell/extensions/lumine-capture@netflate.github.io/extension.js
+install -D -p -m 0644 gnome-extension/lumine-capture@netflate.github.io/metadata.json %{buildroot}%{_datadir}/gnome-shell/extensions/lumine-capture@netflate.github.io/metadata.json
 for icon in assets/hicolor/*/apps/*; do
     install -D -p -m 0644 "$icon" "%{buildroot}%{_datadir}/icons/${icon#assets/}"
 done
@@ -64,6 +66,9 @@ cargo test --locked --profile dist
 %{_datadir}/applications/%{name}.desktop
 %{_datadir}/icons/hicolor/*/apps/lumine-capture.*
 %{_datadir}/icons/hicolor/*/apps/lumine-pin.*
+%dir %{_datadir}/gnome-shell
+%dir %{_datadir}/gnome-shell/extensions
+%{_datadir}/gnome-shell/extensions/lumine-capture@netflate.github.io/
 
 %changelog
 * Mon Nov 16 2026 Netflate <netflate@gmail.com> - 0.4.0-1

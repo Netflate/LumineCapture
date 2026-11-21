@@ -32,6 +32,7 @@ package() {
     install -Dm755 target/dist/lumine-capture -t "$pkgdir/usr/bin"
     # KWin grants screenshot access by the Exec= path of this file, so it has to be /usr/bin/lumine-capture
     install -Dm644 assets/lumine-capture.desktop -t "$pkgdir/usr/share/applications"
+    install -Dm644 gnome-extension/lumine-capture@netflate.github.io/extension.js gnome-extension/lumine-capture@netflate.github.io/metadata.json -t "$pkgdir/usr/share/gnome-shell/extensions/lumine-capture@netflate.github.io"
 
     local icon
     for icon in assets/hicolor/*/apps/*; do

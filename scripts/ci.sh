@@ -113,6 +113,8 @@ package_rpm() {
     for path in /usr/bin/lumine-capture /usr/share/applications/lumine-capture.desktop; do
         grep -qx "$path" <<<"$payload" || die "$path is not in the package"
     done
+    grep -qx "/usr/share/gnome-shell/extensions/lumine-capture@netflate.github.io/extension.js" <<<"$payload" \
+        || die "GNOME Shell extension is not in the package"
     grep -q '^/usr/share/icons/hicolor/.*\.png$' <<<"$payload" \
         || die "the package ships no icons"
 

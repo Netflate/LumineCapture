@@ -98,6 +98,8 @@ strip = "symbols"
 assets = [
     { source = "target/release/lumine-capture", dest = "/usr/bin/lumine-capture", mode = "755" },
     { source = "assets/lumine-capture.desktop", dest = "/usr/share/applications/lumine-capture.desktop", mode = "644" },
+    { source = "gnome-extension/lumine-capture@netflate.github.io/extension.js", dest = "/usr/share/gnome-shell/extensions/lumine-capture@netflate.github.io/extension.js", mode = "644" },
+    { source = "gnome-extension/lumine-capture@netflate.github.io/metadata.json", dest = "/usr/share/gnome-shell/extensions/lumine-capture@netflate.github.io/metadata.json", mode = "644" },
     { source = "assets/hicolor/16x16/apps/lumine-capture.png", dest = "/usr/share/icons/hicolor/16x16/apps/lumine-capture.png", mode = "644" },
     { source = "assets/hicolor/16x16/apps/lumine-pin.png", dest = "/usr/share/icons/hicolor/16x16/apps/lumine-pin.png", mode = "644" },
     { source = "assets/hicolor/22x22/apps/lumine-capture.png", dest = "/usr/share/icons/hicolor/22x22/apps/lumine-capture.png", mode = "644" },
@@ -136,6 +138,8 @@ Currently captures through KWin, ext-image-copy-capture, wlr-screencopy or the d
 assets = [
     ["target/release/lumine-capture", "usr/bin/", "755"],
     ["assets/lumine-capture.desktop", "usr/share/applications/", "644"],
+    ["gnome-extension/lumine-capture@netflate.github.io/extension.js", "usr/share/gnome-shell/extensions/lumine-capture@netflate.github.io/extension.js", "644"],
+    ["gnome-extension/lumine-capture@netflate.github.io/metadata.json", "usr/share/gnome-shell/extensions/lumine-capture@netflate.github.io/metadata.json", "644"],
     ["assets/hicolor/16x16/apps/lumine-capture.png", "usr/share/icons/hicolor/16x16/apps/", "644"],
     ["assets/hicolor/16x16/apps/lumine-pin.png", "usr/share/icons/hicolor/16x16/apps/", "644"],
     ["assets/hicolor/22x22/apps/lumine-capture.png", "usr/share/icons/hicolor/22x22/apps/", "644"],
