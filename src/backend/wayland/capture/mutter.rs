@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::StreamExt;
-use log::warn;
+use log::{debug, warn};
 use zbus::zvariant::{OwnedObjectPath, Value};
 use zbus::{Connection, proxy};
 
@@ -195,9 +195,18 @@ fn window_rect(
 
 async fn capture_window() -> Result<crate::types::Capture, BoxErr> {
     let conn = Connection::session().await?;
-    let focused = gnome::focus_window(&conn).await.map_err(|e| format!(
-        "capturing the active window on GNOME needs the LumineCapture GNOME Shell extension: {e}"
-    ))?;
+    let focused = gnome::focus_window(&conn).await.map_err(|e| {
+        if matches!(
+            &e,
+            zbus::Error::MethodError(name, _, _)
+                if name.as_str() == "org.freedesktop.DBus.Error.ServiceUnknown"
+        ) {
+            debug!("{e}");
+            "capturing the active window on GNOME needs the LumineCapture GNOME Shell extension. If you just installed the package, log out and back in, then run:\n  gnome-extensions enable lumine-capture@netflate.github.io".to_string()
+        } else {
+            format!("GNOME Shell extension call failed: {e}")
+        }
+    })?;
     let path = ScreenCastProxy::new(&conn)
         .await?
         .create_session(HashMap::new())
