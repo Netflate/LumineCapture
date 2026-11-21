@@ -99,6 +99,11 @@ pub fn initialize_capture(conn: &Connection) -> Box<dyn CaptureMethod> {
         "screencopy" => Box::new(wayland::capture::screencopy::ScreencopyMethod::new(
             conn.clone(),
         )),
+        // TODO: Portal doesn't work on Niri+Hyprland
+        // This can be fixed for the sake of fix, leaving no broken things behind.
+        //
+        // but since they handle image-copy and screencopy well
+        // there's no good reason for them to fail while portal would work fine.
         _ => Box::new(wayland::capture::portal::PortalMethod),
     }
 }
