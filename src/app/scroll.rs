@@ -82,7 +82,11 @@ pub async fn start(
 
     let monitors = editor_state.placements.len();
     let mut scroll = Scroll::new(session, zone, crop, scale, size, capture, monitors);
-    if crate::backend::scroll_maximized() {
+    // in gnome, under fullscreen window there isn't anything (black screen)
+    // even if its fully transparent
+    let maximized =
+        crate::backend::scroll_maximized() && !crate::backend::gnome::passthrough().await;
+    if maximized {
         scroll.locate = Locate::Pending;
         for (i, snapshot) in scroll.snapshots.iter_mut().enumerate() {
             if i != monitor_idx {

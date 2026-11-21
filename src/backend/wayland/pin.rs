@@ -8,7 +8,9 @@
 use smithay_client_toolkit::reexports::protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::{
     Shape, WpCursorShapeDeviceV1,
 };
-use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState, Region};
+use smithay_client_toolkit::compositor::{
+    CompositorHandler, CompositorState, FrameCallbackData, Region,
+};
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
 use smithay_client_toolkit::registry::{ProvidesRegistryState, RegistryState};
 use smithay_client_toolkit::seat::keyboard::{
@@ -157,6 +159,7 @@ pub fn run(png: &[u8], scale: f32) -> Result<(), Box<dyn std::error::Error>> {
         frame: None,
         viewport,
         redraw: false,
+        keep_above: false,
         shade: false,
         opacity: 1.0,
         output: None,
@@ -306,6 +309,7 @@ struct Pin {
     frame: Option<Pixmap>,
     viewport: Option<wp_viewport::WpViewport>,
     redraw: bool,
+    keep_above: bool,
     shade: bool,
     opacity: f32,
     output: Option<wl_output::WlOutput>,
@@ -430,13 +434,18 @@ impl WindowHandler for Pin {
     fn configure(
         &mut self,
         _: &Connection,
-        _: &QueueHandle<Self>,
+        qh: &QueueHandle<Self>,
         _: &Window,
         _: WindowConfigure,
         _: u32,
     ) {
         if self.mapped {
             return;
+        }
+        if crate::backend::desktop_is("GNOME") {
+            let surface = self.window.wl_surface();
+            surface.frame(qh, FrameCallbackData(surface.clone()));
+            self.keep_above = true;
         }
         self.draw();
         self.mapped = !self.exit;
@@ -657,7 +666,12 @@ impl CompositorHandler for Pin {
         _: wl_output::Transform,
     ) {
     }
-    fn frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: u32) {}
+    fn frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: u32) {
+        if self.keep_above {
+            self.keep_above = false;
+            std::thread::spawn(crate::backend::gnome::keep_above);
+        }
+    }
     fn surface_enter(
         &mut self,
         _: &Connection,

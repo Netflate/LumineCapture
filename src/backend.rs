@@ -1,3 +1,4 @@
+pub mod gnome;
 pub mod notify;
 pub mod wayland;
 

@@ -21,9 +21,11 @@ use zbus::zvariant::{OwnedObjectPath, Value};
 use zbus::{Connection, proxy};
 
 use crate::backend::CaptureMethod;
+use crate::backend::gnome;
 use crate::backend::wayland::capture::portal::PortalMethod;
 use crate::backend::wayland::capture::stream;
 use crate::types::{CaptureResult, MonitorFrame, Output, StreamInfo};
+use tiny_skia::{IntSize, Pixmap};
 
 type BoxErr = Box<dyn Error + Send + Sync>;
 
@@ -53,6 +55,8 @@ trait Session {
         connector: &str,
         properties: HashMap<&str, Value<'_>>,
     ) -> zbus::Result<OwnedObjectPath>;
+
+    fn record_window(&self, properties: HashMap<&str, Value<'_>>) -> zbus::Result<OwnedObjectPath>;
 }
 
 #[proxy(
@@ -93,6 +97,7 @@ async fn record(
         listeners.push((idx, stream.receive_pipe_wire_stream_added().await?));
     }
 
+    gnome::claim_recording(conn).await;
     session.start().await?;
 
     let mut frames = Vec::with_capacity(listeners.len());
@@ -158,8 +163,98 @@ async fn capture(
     }
 }
 
+fn window_rect(
+    frame: (i32, i32, i32, i32),
+    buffer: (i32, i32, i32, i32),
+    crop: (u32, u32, u32, u32),
+) -> Result<(u32, u32, u32, u32, f64), BoxErr> {
+    // Mutter may clip either crop axis to the monitor-sized stream.
+    let k = (crop.2 as f64 / buffer.2 as f64).max(crop.3 as f64 / buffer.3 as f64);
+    if !k.is_finite() || k <= 0.0 || buffer.2 <= 0 || buffer.3 <= 0 {
+        return Err("invalid Mutter window geometry".into());
+    }
+    let x = crop.0 as f64 + ((frame.0 - buffer.0) as f64 * k).round();
+    let y = crop.1 as f64 + ((frame.1 - buffer.1) as f64 * k).round();
+    let right = x + (frame.2 as f64 * k).round();
+    let bottom = y + (frame.3 as f64 * k).round();
+    let left = x.max(crop.0 as f64).max(0.0);
+    let top = y.max(crop.1 as f64).max(0.0);
+    let right = right.min((crop.0 + crop.2) as f64);
+    let bottom = bottom.min((crop.1 + crop.3) as f64);
+    if right <= left || bottom <= top {
+        return Err("active window frame is empty".into());
+    }
+    Ok((
+        left as u32,
+        top as u32,
+        right as u32 - left as u32,
+        bottom as u32 - top as u32,
+        k,
+    ))
+}
+
+async fn capture_window() -> Result<crate::types::Capture, BoxErr> {
+    let conn = Connection::session().await?;
+    let focused = gnome::focus_window(&conn).await.map_err(|e| format!(
+        "capturing the active window on GNOME needs the LumineCapture GNOME Shell extension: {e}"
+    ))?;
+    let path = ScreenCastProxy::new(&conn)
+        .await?
+        .create_session(HashMap::new())
+        .await?;
+    let session = SessionProxy::builder(&conn).path(path)?.build().await?;
+    let result = async {
+        let stream_path = session
+            .record_window(HashMap::from([
+                ("window-id", Value::U64(focused.id)),
+                ("cursor-mode", Value::U32(0)),
+                ("is-recording", Value::Bool(true)),
+            ]))
+            .await?;
+        let stream_proxy = StreamProxy::builder(&conn)
+            .path(stream_path)?
+            .build()
+            .await?;
+        let mut added = stream_proxy.receive_pipe_wire_stream_added().await?;
+        gnome::claim_recording(&conn).await;
+        session.start().await?;
+        let signal = tokio::time::timeout(NODE_TIMEOUT, added.next())
+            .await
+            .map_err(|_| "mutter didn't announce a PipeWire node in time")?
+            .ok_or("mutter closed the stream before announcing a node")?;
+        let frame =
+            stream::capture_window(signal.args()?.node_id, None).map_err(|e| e.to_string())?;
+        let crop = frame.crop.ok_or("Mutter didn't report the window size")?;
+        let (x, y, width, height, k) = window_rect(focused.frame, focused.buffer, crop)?;
+        let size = IntSize::from_wh(width, height).ok_or("empty active window image")?;
+        let mut pixmap = Pixmap::new(size.width(), size.height())
+            .ok_or("couldn't allocate active window image")?;
+        let row_bytes = size.width() as usize * 4;
+        for (dst, row) in pixmap.data_mut().chunks_exact_mut(row_bytes).zip(0..) {
+            let start = (y as usize + row) * frame.stride as usize + x as usize * 4;
+            let src = frame
+                .pixels
+                .get(start..start + row_bytes)
+                .ok_or("PipeWire window row is truncated")?;
+            dst.copy_from_slice(src);
+        }
+        Ok(crate::types::Capture {
+            pixmap,
+            scale: k as f32,
+        })
+    }
+    .await;
+    stop(&session).await;
+    result
+}
+
 #[async_trait]
 impl CaptureMethod for MutterMethod {
+    async fn capture_active_window(
+        &self,
+    ) -> Result<crate::types::Capture, Box<dyn std::error::Error>> {
+        capture_window().await.map_err(|e| e.to_string().into())
+    }
     async fn capture_frame(
         &self,
         outputs: &[Output],
@@ -186,5 +281,37 @@ impl CaptureMethod for MutterMethod {
         if let Some(session) = held {
             stop(&session).await;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::window_rect;
+
+    #[test]
+    fn window_rect_removes_client_side_shadow_and_scales_crop() {
+        let frame = (114, 214, 972, 772);
+        let buffer = (90, 190, 1020, 820);
+        assert_eq!(
+            window_rect(frame, buffer, (0, 0, 1020, 820)).unwrap(),
+            (24, 24, 972, 772, 1.0)
+        );
+        assert_eq!(
+            window_rect(frame, buffer, (0, 0, 2040, 1640)).unwrap(),
+            (48, 48, 1944, 1544, 2.0)
+        );
+    }
+
+    #[test]
+    fn window_rect_uses_unclipped_axis_for_scale() {
+        assert_eq!(
+            window_rect(
+                (10, 206, 1900, 700),
+                (-13, 183, 1946, 746),
+                (0, 0, 1920, 746)
+            )
+            .unwrap(),
+            (23, 23, 1897, 700, 1.0)
+        );
     }
 }
